@@ -72,6 +72,10 @@
 Для локальной работы из грязного worktree использовать `make werf-build-dev`, а
 строгий `werf build` оставлять для committed state и CI.
 
+Для Go-based `werf` stages repo использует default
+`GOPROXY=https://proxy.golang.org,direct`. Если нужен другой proxy или
+внутренний mirror, его нужно передать через environment variable `GOPROXY`.
+
 Для нестабильных сетей локальные Docker stages ставят apt-пакеты через retry-aware helper из internal build scripts.
 
 Локальный `make backend-build-ui` всегда пересобирает throwaway worktree из build-only upstream cache, накладывает patch queue и только потом собирает frontend. `make backend-build-dist` и `make backend-build-image` используют уже подготовленный worktree.

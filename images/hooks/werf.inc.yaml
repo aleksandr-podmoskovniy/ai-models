@@ -1,16 +1,22 @@
 ---
-image: go-hooks-artifact
+image: hooks-src-artifact
 final: false
-fromImage: builder/golang-bookworm
+fromImage: src-artifact
 git:
   - add: /images/hooks
     to: /src/images/hooks
     stageDependencies:
       install:
-        - go.mod
-        - go.sum
-      setup:
-        - "**/*.go"
+        - "**/*"
+---
+image: go-hooks-artifact
+final: false
+fromImage: builder/golang-bookworm
+import:
+  - image: hooks-src-artifact
+    add: /src
+    to: /app
+    before: install
 secrets:
   - id: GOPROXY
     value: "{{ .GOPROXY }}"
@@ -22,10 +28,10 @@ mount:
 shell:
   install:
     - export GOPROXY=$(cat /run/secrets/GOPROXY)
-    - cd /src/images/hooks
+    - cd /app/images/hooks
     - go mod download
   setup:
-    - cd /src/images/hooks
+    - cd /app/images/hooks
     - export GOOS=linux
     - export GOARCH=amd64
     - export CGO_ENABLED=0
