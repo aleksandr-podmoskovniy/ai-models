@@ -1,6 +1,7 @@
 repository: https://github.com/mlflow/mlflow.git
-ref: 7e61730de0ddba0373186bfb67ce946af1371f35
-version: 3.11.1.dev0
+release_tag: v3.10.1
+ref: cadc323c059d08ee15c3a312afd0eefeeccedc94
+version: 3.10.1
 fetch:
   strategy: git
   local_override_env: BACKEND_SOURCE_DIR
@@ -8,8 +9,8 @@ fetch:
 required_paths:
   - mlflow/assistant/skills
 image_variants:
-  default: backend:3.11.1.dev0
-  full: backend:3.11.1.dev0-full
+  default: backend:3.10.1
+  full: backend:3.10.1-full
   full_extras:
     - extras
     - azure

@@ -17,11 +17,14 @@ BACKEND_SOURCE_DIR=/path/to/backend-source bash images/backend/scripts/fetch-sou
 ```
 
 Pinned upstream metadata is tracked in `images/backend/upstream.lock`.
+For production builds it must point to a stable upstream release tag and its
+resolved commit, not to a moving `main` snapshot.
 
 ## Required Metadata
 
 - Upstream repository:
-- Pinned tag or commit:
+- Pinned stable release tag:
+- Resolved commit from that release:
 - Why the patch exists:
 - Expected upstreaming or removal path:
 

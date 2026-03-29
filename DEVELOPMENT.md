@@ -39,7 +39,12 @@
 
 ## Internal Backend Upstream Fetch And Build Shell
 
-Для phase-1 runtime внутренний backend тянется как внешний 3p source и живёт только в build-only каталогах.
+Для phase-1 runtime внутренний backend тянется как внешний 3p source и живёт
+только в build-only каталогах.
+
+`images/backend/upstream.lock` должен фиксировать стабильный upstream release,
+а не moving `main` snapshot. Для воспроизводимости в metadata хранится и release
+tag, и resolved commit.
 
 Основные команды:
 
