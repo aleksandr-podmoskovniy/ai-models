@@ -16,6 +16,10 @@ weight: 60
 - `External`: подключить ai-models к существующему PostgreSQL, используя пароль
   из уже созданного Secret.
 
+Базовый managed profile намеренно маленький: по умолчанию он использует уже
+существующий cluster-wide `PostgresClass`, запрашивает том на 5Gi и держит
+минимальный resource profile для phase-1 metadata storage.
+
 `artifacts` определяет S3-compatible backend для артефактов ai-models: bucket,
 path prefix, endpoint URL, region, TLS policy, addressing style и Secret с
 учётными данными доступа.

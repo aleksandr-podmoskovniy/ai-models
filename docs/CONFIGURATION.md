@@ -16,6 +16,10 @@ logging, PostgreSQL wiring, and S3-compatible artifact storage.
 - `External`: connect ai-models to an existing PostgreSQL instance using a password
   from an existing Secret.
 
+The default managed baseline is intentionally small: it reuses an existing
+cluster-wide `PostgresClass`, requests a 5Gi volume, and keeps the rest of the
+resource profile minimal for phase-1 metadata storage.
+
 `artifacts` config defines the S3-compatible backend for ai-models artifacts:
 bucket, path prefix, endpoint URL, region, TLS policy, addressing style, and
 the Secret with access credentials.

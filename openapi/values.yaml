@@ -28,10 +28,10 @@ properties:
         default:
           name: ai-models
           database: ai_models
-          postgresClassName: ai-models-default
-          createPostgresClass: true
+          postgresClassName: default
+          createPostgresClass: false
           storageClassName: ""
-          storageSize: 10Gi
+          storageSize: 5Gi
           memorySize: 1Gi
           cpuCores: 1
         properties:
@@ -43,16 +43,16 @@ properties:
             default: ai_models
           postgresClassName:
             type: string
-            default: ai-models-default
+            default: default
           createPostgresClass:
             type: boolean
-            default: true
+            default: false
           storageClassName:
             type: string
             default: ""
           storageSize:
             type: string
-            default: 10Gi
+            default: 5Gi
           memorySize:
             type: string
             default: 1Gi
@@ -172,10 +172,10 @@ properties:
             managed:
               name: ai-models
               database: ai_models
-              postgresClassName: ai-models-default
-              createPostgresClass: true
+              postgresClassName: default
+              createPostgresClass: false
               storageClassName: ""
-              storageSize: 10Gi
+              storageSize: 5Gi
               memorySize: 1Gi
               cpuCores: 1
             external:
@@ -245,10 +245,10 @@ properties:
           sslMode: require
           managed:
             name: ai-models
-            postgresClassName: ai-models-default
-            createPostgresClass: true
+            postgresClassName: default
+            createPostgresClass: false
             storageClassName: ""
-            storageSize: 10Gi
+            storageSize: 5Gi
             memorySize: 1Gi
             cpuCores: 1
             credentialsSecretName: ai-models-postgresql

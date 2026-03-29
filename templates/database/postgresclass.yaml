@@ -1,11 +1,11 @@
 {{- if and (include "ai-models.isEnabled" .) (eq (include "ai-models.postgresqlMode" .) "Managed") (include "ai-models.hasAPI" (list . "managed-services.deckhouse.io/v1alpha1/PostgresClass")) }}
 {{- $managed := (index ((index ((index .Values "aiModels") | default dict) "postgresql") | default dict) "managed") | default dict }}
-{{- if (default true (index $managed "createPostgresClass")) }}
+{{- if (default false (index $managed "createPostgresClass")) }}
 ---
 apiVersion: managed-services.deckhouse.io/v1alpha1
 kind: PostgresClass
 metadata:
-  name: {{ default "ai-models-default" (index $managed "postgresClassName") }}
+  name: {{ default "default" (index $managed "postgresClassName") }}
   {{- include "helm_lib_module_labels" (list . (dict "app" "managed-postgres" "component" "postgres-class")) | nindent 2 }}
 spec:
   topology:

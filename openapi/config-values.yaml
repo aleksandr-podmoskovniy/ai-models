@@ -48,11 +48,11 @@ properties:
           postgresClassName:
             type: string
             description: PostgresClass name used by the managed Postgres resource.
-            default: ai-models-default
+            default: default
           createPostgresClass:
             type: boolean
-            description: Create a dedicated PostgresClass for ai-models when true.
-            default: true
+            description: Create a dedicated PostgresClass for ai-models when true. Keep false when an existing cluster-wide PostgresClass should be reused.
+            default: false
           storageClassName:
             type: string
             description: StorageClass for PostgreSQL persistent volume. Empty means cluster default.
@@ -60,7 +60,7 @@ properties:
           storageSize:
             type: string
             description: Persistent volume size for managed PostgreSQL.
-            default: 10Gi
+            default: 5Gi
           memorySize:
             type: string
             description: Requested memory size for managed PostgreSQL instance.

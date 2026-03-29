@@ -28,10 +28,10 @@ aiModels:
     managed:
       name: ai-models
       database: ai_models
-      postgresClassName: ai-models-default
-      createPostgresClass: true
+      postgresClassName: default
+      createPostgresClass: false
       storageClassName: ""
-      storageSize: 10Gi
+      storageSize: 5Gi
       memorySize: 1Gi
       cpuCores: 1
   artifacts:

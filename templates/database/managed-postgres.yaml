@@ -8,7 +8,7 @@ metadata:
   namespace: {{ include "ai-models.namespace" . }}
   {{- include "helm_lib_module_labels" (list . (dict "app" "managed-postgres" "component" "database")) | nindent 2 }}
 spec:
-  postgresClassName: {{ default "ai-models-default" (index $managed "postgresClassName") }}
+  postgresClassName: {{ default "default" (index $managed "postgresClassName") }}
   type: {{ include "ai-models.postgresqlManagedType" . }}
   instance:
     memory:
@@ -17,7 +17,7 @@ spec:
       cores: {{ default 1 (index $managed "cpuCores") }}
       coreFraction: 100
     persistentVolumeClaim:
-      size: {{ default "10Gi" (index $managed "storageSize") }}
+      size: {{ default "5Gi" (index $managed "storageSize") }}
       {{- if (default "" (index $managed "storageClassName")) }}
       storageClassName: {{ index $managed "storageClassName" }}
       {{- end }}
