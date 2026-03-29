@@ -1,0 +1,146 @@
+# Copyright 2026 Flant JSC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+      - release-*
+    tags:
+      - "*"
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+  workflow_dispatch: {}
+
+env:
+  GO_VERSION: "1.25.7"
+  # In ARC+dind, host mount cache is not persistent/visible enough; keep Go modules in install layers in CI.
+  WERF_ENABLE_HOST_GO_PKG_CACHE: "false"
+  # Keep werf local cache during CI job and avoid external synchronization endpoint latency.
+  WERF_DISABLE_AUTO_HOST_CLEANUP: "true"
+  WERF_SYNCHRONIZATION: ":local"
+  WERF_PARALLEL_TASKS_LIMIT: "6"
+  # Shared cache volume mounted by ARC at /home/runner/_cache.
+  RUNNER_CACHE_DIR: /home/runner/_cache
+  RUNNER_TOOL_CACHE: /home/runner/_cache/toolcache
+  GOMODCACHE: /home/runner/_cache/go/pkg/mod
+  # Keep hot build cache on local work volume.
+  GOCACHE: /home/runner/_work/.gocache
+  # WERF_HOME must be on ARC shared work volume, otherwise dind dockerd cannot see bind-mount sources.
+  WERF_HOME: /home/runner/_work/.werf-home
+  # Keep werf temp files on shared work volume so stapel shell scripts are visible to dockerd.
+  WERF_TMP_DIR: /home/runner/_work/.werf-tmp
+  CI_COMMIT_REF_NAME: ${{ github.ref_name }}
+  MODULES_REGISTRY: ghcr.io
+  MODULES_REGISTRY_LOGIN: ${{ secrets.MODULES_REGISTRY_LOGIN || github.repository_owner }}
+  MODULES_REGISTRY_PASSWORD: ${{ secrets.TOKEN || secrets.MODULES_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.number || github.ref }}"
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: ai-models-runners
+    name: Lint
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run lint
+        run: make lint
+
+  verify:
+    runs-on: ai-models-runners
+    name: Verify
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare cache dirs
+        run: |
+          mkdir -p "${{ env.RUNNER_TOOL_CACHE }}"
+          mkdir -p "${{ env.GOMODCACHE }}"
+          mkdir -p "${{ env.GOCACHE }}"
+      - name: Install verify toolchain
+        run: |
+          if ! command -v make >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends build-essential
+          fi
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "${{ env.GO_VERSION }}"
+          cache: false
+      - name: Run verify
+        run: make verify
+
+  build:
+    needs:
+      - lint
+      - verify
+    if: github.event_name != 'pull_request'
+    runs-on: ai-models-runners
+    name: Build and push images
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare cache dirs
+        run: |
+          mkdir -p "${{ env.RUNNER_TOOL_CACHE }}"
+          mkdir -p "${{ env.GOMODCACHE }}"
+          mkdir -p "${{ env.GOCACHE }}"
+          mkdir -p "${{ env.WERF_HOME }}"
+          mkdir -p "${{ env.WERF_TMP_DIR }}"
+      - uses: werf/actions/install@fcc652012a0bde8c66569e07c8d7f5370e6c8213
+        with:
+          version: v2.63.1
+      - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e
+      - name: Login into registry
+        run: werf cr login -u "${{ env.MODULES_REGISTRY_LOGIN }}" -p "${{ env.MODULES_REGISTRY_PASSWORD }}" "${{ env.MODULES_REGISTRY }}"
+      - name: Compute module tag
+        id: module_tag
+        run: |
+          ref="${{ github.ref_name }}"
+          tag="${ref//\//-}"
+          tag="$(echo "$tag" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_.-' '-')"
+          tag="$(echo "$tag" | sed -E 's/^[.-]+//; s/[.-]+$//')"
+          tag="${tag:0:128}"
+          tag="$(echo "$tag" | sed -E 's/[.-]+$//')"
+          if [ -z "$tag" ]; then
+            tag="${GITHUB_SHA::12}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "CI_COMMIT_REF_NAME=$tag" >> "$GITHUB_ENV"
+      - name: Free disk space
+        run: |
+          df -h
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet /opt/hostedtoolcache || true
+          sudo docker system prune -af --volumes || true
+          df -h
+      - uses: deckhouse/modules-actions/build@v4
+        env:
+          CI_COMMIT_REF_NAME: ${{ steps.module_tag.outputs.tag }}
+        with:
+          module_source: ghcr.io/${{ github.repository_owner }}/modules
+          module_name: ai-models
+          module_tag: ${{ steps.module_tag.outputs.tag }}

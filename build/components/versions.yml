@@ -1,0 +1,13 @@
+core:
+  operator-sdk: v1.42.2
+  kubernetes-api-conventions: main
+  deckhouse-lib-helm: "1.70.1"
+  deckhouse-base-images: v0.5.55
+  deckhouse-base-images-source: candi/base_images.yml
+  werf: v2.63.1
+package:
+  golang: go1.25.7
+  dmt: v0.1.68
+  module-sdk: v0.10.3
+  golangci-lint: v2.6.2
+  helm: v3.20.1

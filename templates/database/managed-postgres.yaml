@@ -1,0 +1,35 @@
+{{- if and (include "ai-models.isEnabled" .) (eq (include "ai-models.postgresqlMode" .) "Managed") (include "ai-models.hasAPI" (list . "managed-services.deckhouse.io/v1alpha1/Postgres")) }}
+{{- $managed := (index ((index ((index .Values "aiModels") | default dict) "postgresql") | default dict) "managed") | default dict }}
+---
+apiVersion: managed-services.deckhouse.io/v1alpha1
+kind: Postgres
+metadata:
+  name: {{ include "ai-models.postgresqlManagedName" . }}
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "managed-postgres" "component" "database")) | nindent 2 }}
+spec:
+  postgresClassName: {{ default "ai-models-default" (index $managed "postgresClassName") }}
+  type: {{ include "ai-models.postgresqlManagedType" . }}
+  instance:
+    memory:
+      size: {{ default "1Gi" (index $managed "memorySize") }}
+    cpu:
+      cores: {{ default 1 (index $managed "cpuCores") }}
+      coreFraction: 100
+    persistentVolumeClaim:
+      size: {{ default "10Gi" (index $managed "storageSize") }}
+      {{- if (default "" (index $managed "storageClassName")) }}
+      storageClassName: {{ index $managed "storageClassName" }}
+      {{- end }}
+  {{- if eq (include "ai-models.postgresqlManagedType" .) "Cluster" }}
+  cluster:
+    topology: Zonal
+    replication: ConsistencyAndAvailability
+  {{- end }}
+  databases:
+    - name: {{ include "ai-models.postgresqlDatabase" . }}
+  users:
+    - name: {{ include "ai-models.postgresqlUser" . }}
+      role: rw
+      storeCredsToSecret: {{ include "ai-models.postgresqlSecretName" . }}
+{{- end }}

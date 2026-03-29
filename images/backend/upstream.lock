@@ -1,0 +1,18 @@
+repository: https://github.com/mlflow/mlflow.git
+ref: 7e61730de0ddba0373186bfb67ce946af1371f35
+version: 3.11.1.dev0
+fetch:
+  strategy: git
+  local_override_env: BACKEND_SOURCE_DIR
+  submodules: recursive
+required_paths:
+  - mlflow/assistant/skills
+image_variants:
+  default: backend:3.11.1.dev0
+  full: backend:3.11.1.dev0-full
+  full_extras:
+    - extras
+    - azure
+    - db
+    - gateway
+    - genai

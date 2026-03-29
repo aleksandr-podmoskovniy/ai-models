@@ -1,0 +1,121 @@
+include:
+  - remote: 'https://raw.githubusercontent.com/deckhouse/modules-gitlab-ci/refs/heads/v8.0/templates/Setup.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/deckhouse/modules-gitlab-ci/refs/heads/v8.0/templates/Build.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/deckhouse/modules-gitlab-ci/refs/heads/v8.0/templates/Deploy.gitlab-ci.yml'
+  - remote: 'https://raw.githubusercontent.com/deckhouse/modules-gitlab-ci/refs/heads/v8.0/templates/CVE_Scan.gitlab-ci.yml'
+
+variables:
+  DEV_MODULES_REGISTRY: dev-registry.deckhouse.io
+  DEV_MODULE_SOURCE: ${DEV_MODULES_REGISTRY}/sys/deckhouse-oss/modules
+  MODULES_MODULE_TAG: ${CI_COMMIT_REF_NAME}
+  MODULES_REGISTRY: ${DEV_MODULES_REGISTRY}
+  MODULES_REGISTRY_LOGIN: ${DEV_MODULES_REGISTRY_LOGIN}
+  MODULES_REGISTRY_PASSWORD: ${DEV_MODULES_REGISTRY_PASSWORD}
+  PROD_MODULES_REGISTRY: registry-write.deckhouse.io
+  MODULES_MODULE_NAME: ai-models
+  # Keep the modules-gitlab-ci channel-style contract here; current resolved baseline is v2.63.1.
+  WERF_VERSION: "2 stable"
+  BASE_IMAGES_VERSION: v0.5.55
+  GOLANG_VERSION: "1.25.7"
+  DMT_VERSION: "0.1.68"
+  MODULE_SDK_VERSION: "0.10.3"
+
+default:
+  tags:
+    - deckhouse
+
+stages:
+  - info
+  - lint
+  - verify
+  - build
+  - deploy_dev
+  - cleanup
+
+show:dev-manifest:
+  stage: info
+  script:
+    - |
+      cat <<OUTER
+      Create or update ModulePullOverride to test this build:
+      cat <<EOF | kubectl apply -f -
+      ---
+      apiVersion: deckhouse.io/v1alpha1
+      kind: ModulePullOverride
+      metadata:
+        name: ai-models
+      spec:
+        imageTag: ${CI_COMMIT_REF_NAME}
+        source: deckhouse
+      EOF
+
+      Then configure ModuleConfig ai-models with the required PostgreSQL and
+      artifact storage settings for your environment.
+      OUTER
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: on_success
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: on_success
+    - when: never
+
+lint:repo:
+  stage: lint
+  extends: .lint
+  script:
+    - make lint
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - !reference [.lint, rules]
+
+verify:repo:
+  stage: verify
+  script:
+    - export PATH="/usr/local/go/bin:/opt/homebrew/bin:${PATH}"
+    - go version
+    - make verify
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - when: on_success
+
+build:dev:
+  stage: build
+  extends: .build
+  variables:
+    MODULES_MODULE_SOURCE: ${DEV_MODULE_SOURCE}
+    WERF_FINAL_IMAGES_ONLY: "true"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - !reference [.build, rules]
+
+deploy:dev:
+  stage: deploy_dev
+  extends: .deploy
+  variables:
+    RELEASE_CHANNEL: ${RELEASE_CHANNEL}
+    MODULES_MODULE_SOURCE: ${DEV_MODULE_SOURCE}
+  parallel:
+    matrix:
+      - RELEASE_CHANNEL:
+          - alpha
+          - beta
+          - early-access
+          - stable
+          - rock-solid
+  needs:
+    - build:dev
+
+cleanup:dev:
+  stage: cleanup
+  script:
+    - werf cr login -u "${DEV_MODULES_REGISTRY_LOGIN:?}" -p "${DEV_MODULES_REGISTRY_PASSWORD:?}" "${DEV_MODULES_REGISTRY:?}"
+    - export WERF_REPO=${DEV_MODULE_SOURCE}/${MODULES_MODULE_NAME}
+    - werf managed-images ls
+    - werf cleanup --config werf_cleanup.yaml --without-kube --disable-auto-host-cleanup=true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CLEANUP_REPO == "true"
+      when: on_success
+    - when: never

@@ -1,0 +1,16 @@
+giterminismConfigVersion: 1
+config:
+  goTemplateRendering:
+    allowEnvVariables:
+      - /CI_.+/
+      - MODULES_MODULE_TAG
+      - MODULES_MODULE_NAME
+      - WERF_MODULE_NAME
+      - SOURCE_REPO
+  allowUncommittedFiles:
+    - "build/base-images/deckhouse_images.yml"
+helm:
+  allowUncommittedFiles:
+    - "Chart.lock"
+    - "charts/*.tgz"
+    - ".helmignore"

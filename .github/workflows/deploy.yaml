@@ -1,0 +1,87 @@
+# Copyright 2026 Flant JSC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_channel:
+        description: "Select the release channel"
+        type: choice
+        default: alpha
+        options:
+          - "alpha"
+          - "beta"
+          - "early-access"
+          - "stable"
+          - "rock-solid"
+      tag:
+        description: "Tag of the module, e.g., v1.2.3"
+        type: string
+        required: true
+
+env:
+  WERF_ENABLE_HOST_GO_PKG_CACHE: "false"
+  RUNNER_CACHE_DIR: /home/runner/_cache
+  RUNNER_TOOL_CACHE: /home/runner/_cache/toolcache
+  WERF_HOME: /home/runner/_work/.werf-home
+  WERF_TMP_DIR: /home/runner/_work/.werf-tmp
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    runs-on: ai-models-runners
+    name: Deploy the module
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare cache dirs
+        run: |
+          mkdir -p "${{ env.RUNNER_TOOL_CACHE }}"
+          mkdir -p "${{ env.WERF_HOME }}"
+          mkdir -p "${{ env.WERF_TMP_DIR }}"
+      - uses: werf/actions/install@fcc652012a0bde8c66569e07c8d7f5370e6c8213
+        with:
+          version: v2.63.1
+      - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e
+      - name: Login into registry
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
+        run: werf cr login -u "$REGISTRY_USER" -p "$REGISTRY_PASSWORD" ghcr.io
+      - name: Compute module tag
+        id: module_tag
+        run: |
+          ref="${{ github.event.inputs.tag }}"
+          tag="${ref//\//-}"
+          tag="$(echo "$tag" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_.-' '-')"
+          tag="$(echo "$tag" | sed -E 's/^[.-]+//; s/[.-]+$//')"
+          tag="${tag:0:128}"
+          tag="$(echo "$tag" | sed -E 's/[.-]+$//')"
+          if [ -z "$tag" ]; then
+            echo "computed module tag is empty from input '${ref}'" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: deckhouse/modules-actions/deploy@v2
+        env:
+          CI_COMMIT_REF_NAME: ${{ steps.module_tag.outputs.tag }}
+        with:
+          module_source: ghcr.io/${{ github.repository_owner }}/modules
+          module_name: ai-models
+          module_tag: ${{ steps.module_tag.outputs.tag }}
+          release_channel: ${{ github.event.inputs.release_channel }}

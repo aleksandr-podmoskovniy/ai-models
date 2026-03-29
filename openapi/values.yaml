@@ -1,0 +1,288 @@
+x-extend:
+  schema: config-values.yaml
+type: object
+properties:
+  logLevel:
+    type: string
+    description: Logging level used by ai-models runtime components.
+    default: "Info"
+    enum:
+      - "Debug"
+      - "Info"
+      - "Warn"
+      - "Error"
+  postgresql:
+    type: object
+    description: Stable PostgreSQL settings exposed by the ai-models module.
+    additionalProperties: false
+    properties:
+      mode:
+        type: string
+        enum:
+          - "Managed"
+          - "External"
+        default: "Managed"
+      managed:
+        type: object
+        additionalProperties: false
+        default:
+          name: ai-models
+          database: ai_models
+          postgresClassName: ai-models-default
+          createPostgresClass: true
+          storageClassName: ""
+          storageSize: 10Gi
+          memorySize: 1Gi
+          cpuCores: 1
+        properties:
+          name:
+            type: string
+            default: ai-models
+          database:
+            type: string
+            default: ai_models
+          postgresClassName:
+            type: string
+            default: ai-models-default
+          createPostgresClass:
+            type: boolean
+            default: true
+          storageClassName:
+            type: string
+            default: ""
+          storageSize:
+            type: string
+            default: 10Gi
+          memorySize:
+            type: string
+            default: 1Gi
+          cpuCores:
+            type: integer
+            default: 1
+      external:
+        type: object
+        additionalProperties: false
+        default:
+          host: ""
+          port: 5432
+          database: ai_models
+          user: ai_models
+          sslMode: Require
+          existingSecret: ""
+          existingSecretKey: password
+        properties:
+          host:
+            type: string
+            default: ""
+          port:
+            type: integer
+            default: 5432
+          database:
+            type: string
+            default: ai_models
+          user:
+            type: string
+            default: ai_models
+          sslMode:
+            type: string
+            default: Require
+            enum:
+              - Disable
+              - Require
+              - VerifyCA
+              - VerifyFull
+          existingSecret:
+            type: string
+            default: ""
+          existingSecretKey:
+            type: string
+            default: password
+  artifacts:
+    type: object
+    description: Stable S3-compatible artifact storage settings exposed by ai-models.
+    additionalProperties: false
+    default:
+      bucket: ""
+      pathPrefix: ai-models
+      endpoint: ""
+      region: us-east-1
+      insecure: false
+      usePathStyle: true
+      existingSecret: ""
+      accessKeyKey: accessKey
+      secretKeyKey: secretKey
+    properties:
+      bucket:
+        type: string
+        default: ""
+      pathPrefix:
+        type: string
+        default: ai-models
+      endpoint:
+        type: string
+        default: ""
+      region:
+        type: string
+        default: us-east-1
+      insecure:
+        type: boolean
+        default: false
+      usePathStyle:
+        type: boolean
+        default: true
+      existingSecret:
+        type: string
+        default: ""
+      accessKeyKey:
+        type: string
+        default: accessKey
+      secretKeyKey:
+        type: string
+        default: secretKey
+  registry:
+    type: object
+    description: Registry credentials injected by Deckhouse runtime.
+    default: {}
+    properties:
+      dockercfg:
+        type: string
+        description: Base64-encoded docker config json used for the module image pull secret.
+    additionalProperties: false
+  internal:
+    type: object
+    description: Internal runtime values used by templates and hooks.
+    default: {}
+    properties:
+      customCertificateData:
+        type: object
+        properties:
+          tls.crt:
+            type: string
+          tls.key:
+            type: string
+          ca.crt:
+            type: string
+      moduleConfig:
+        type: object
+        description: Normalized module configuration consumed by runtime components.
+        default:
+          logLevel: Info
+          postgresql:
+            mode: Managed
+            managed:
+              name: ai-models
+              database: ai_models
+              postgresClassName: ai-models-default
+              createPostgresClass: true
+              storageClassName: ""
+              storageSize: 10Gi
+              memorySize: 1Gi
+              cpuCores: 1
+            external:
+              host: ""
+              port: 5432
+              database: ai_models
+              user: ai_models
+              sslMode: Require
+              existingSecret: ""
+              existingSecretKey: password
+          artifacts:
+            bucket: ""
+            pathPrefix: ai-models
+            endpoint: ""
+            region: us-east-1
+            insecure: false
+            usePathStyle: true
+            existingSecret: ""
+            accessKeyKey: accessKey
+            secretKeyKey: secretKey
+        additionalProperties: true
+      conditions:
+        type: array
+        description: Module status conditions reported to Deckhouse.
+        items:
+          type: object
+          additionalProperties: true
+      registry:
+        type: object
+        description: Registry-related computed values.
+        default:
+          secretName: ai-models-module-registry
+        properties:
+          secretName:
+            type: string
+            description: Name of the module registry secret rendered into the module namespace.
+            default: ai-models-module-registry
+        additionalProperties: false
+      backend:
+        type: object
+        description: Runtime-only backend settings composed from platform defaults and module logic.
+        default:
+          replicas: 1
+          servicePort: 5000
+          containerPort: 5000
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          extraEnv: {}
+        additionalProperties: true
+      postgresql:
+        type: object
+        description: Runtime-only database wiring for ai-models metadata storage.
+        default:
+          mode: Managed
+          database: ai_models
+          user: ai_models
+          port: 5432
+          sslMode: require
+          managed:
+            name: ai-models
+            postgresClassName: ai-models-default
+            createPostgresClass: true
+            storageClassName: ""
+            storageSize: 10Gi
+            memorySize: 1Gi
+            cpuCores: 1
+            credentialsSecretName: ai-models-postgresql
+        additionalProperties: true
+      artifacts:
+        type: object
+        description: Runtime-only S3 artifact storage wiring for ai-models.
+        default:
+          bucket: ""
+          pathPrefix: ai-models
+          endpoint: ""
+          region: us-east-1
+          insecure: false
+          usePathStyle: true
+          existingSecret: ""
+          accessKeyKey: accessKey
+          secretKeyKey: secretKey
+        additionalProperties: true
+      ingress:
+        type: object
+        description: Runtime-only ingress wiring derived from platform defaults and module runtime logic.
+        default:
+          host: ai-models
+          path: /
+          className: ""
+          tlsSecretName: ingress-tls
+        additionalProperties: true
+      auth:
+        type: object
+        description: Runtime-only authentication settings derived from platform defaults and platform integrations.
+        default:
+          mode: Dex
+          dexAuthenticatorName: ai-models
+          sendAuthorizationHeader: true
+        additionalProperties: true
+    additionalProperties: true
+additionalProperties: false

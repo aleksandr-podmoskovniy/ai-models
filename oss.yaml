@@ -1,0 +1,6 @@
+- id: ai-models
+  name: AI Models
+  version: 0.0.1
+  description: Deckhouse module for AI/ML model registry and catalog services.
+  link: https://github.com/flant/ai-models
+  license: Apache License 2.0

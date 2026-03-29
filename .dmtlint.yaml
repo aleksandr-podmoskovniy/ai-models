@@ -1,0 +1,9 @@
+linters-settings:
+  module:
+    exclude-rules:
+      license:
+        directories:
+          - .cache/
+  images:
+    patches:
+      disable: true

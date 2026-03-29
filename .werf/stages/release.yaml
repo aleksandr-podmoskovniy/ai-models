@@ -1,0 +1,8 @@
+---
+image: release-channel-version
+fromImage: builder/scratch
+import:
+  - image: images-digests-and-version
+    add: /version.json
+    to: /version.json
+    after: install

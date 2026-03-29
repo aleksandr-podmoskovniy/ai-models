@@ -1,0 +1,10 @@
+model = "gpt-5.4"
+project_root_markers = [".git", "module.yaml", "werf.yaml"]
+project_doc_max_bytes = 65536
+
+[agents]
+# Upper bound only. This does not imply automatic subagent spawning.
+max_threads = 6
+# Keep orchestration shallow unless a task explicitly needs nested delegation.
+max_depth = 1
+job_max_runtime_seconds = 3600

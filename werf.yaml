@@ -1,0 +1,18 @@
+project: ai-models
+configVersion: 1
+build:
+  imageSpec:
+    author: "Deckhouse Kubernetes Platform <contact@deckhouse.io>"
+    clearHistory: true
+    config:
+      keepEssentialWerfLabels: true
+      removeLabels:
+        - /.*/
+---
+{{- $_ := set . "SOURCE_REPO" (env "SOURCE_REPO" "https://github.com") }}
+---
+{{ tpl (.Files.Get ".werf/stages/base-images.yaml") $ }}
+{{ tpl (.Files.Get ".werf/stages/images.yaml") $ }}
+{{ tpl (.Files.Get ".werf/stages/images-digests.yaml") $ }}
+{{ tpl (.Files.Get ".werf/stages/bundle.yaml") $ }}
+{{ tpl (.Files.Get ".werf/stages/release.yaml") $ }}

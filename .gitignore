@@ -1,0 +1,15 @@
+.DS_Store
+.bin/
+.cache/
+.tmp/
+artifacts/
+charts/
+Chart.lock
+node_modules/
+tools/kubeconform/.venv/
+tools/kubeconform/kubeconform.git/
+tools/kubeconform/renders/
+tools/kubeconform/schemas/
+tools/kubeconform/helm-template-render.yaml
+tools/kubeconform/kubeconform-report.json
+Taskfile.my.yaml

@@ -1,0 +1,39 @@
+{{- /*
+Use the full Deckhouse base image map as the source of truth and instantiate only
+those images that are actually referenced by the current werf/build manifests.
+*/ -}}
+
+{{- define "project_images" }}
+{{- $globImages := "images/*/{Dockerfile,werf.inc.yaml}" }}
+{{- $globRootWerf := "werf.yaml" }}
+{{- $globStages := ".werf/stages/*.yaml" }}
+{{- $regexp := "(builder|tools|libs|base)/([a-zA-Z0-9._-]+)" }}
+{{- $globAll := merge (.Files.Glob $globImages) (.Files.Glob $globRootWerf) (.Files.Glob $globStages) }}
+{{- $imagesMap := dict }}
+{{- range $path, $content := $globAll }}
+{{- $findImg := regexFindAll $regexp $content -1 }}
+{{- range $findImg }}
+{{- $_ := set $imagesMap . "" }}
+{{- end }}
+{{- end }}
+{{- $imagesMap | toJson }}
+{{- end }}
+
+{{- $deckhouseImages := .Files.Get "build/base-images/deckhouse_images.yml" | fromYaml }}
+{{- $usedImagesDict := (include "project_images" . | fromJson) }}
+{{- range $k, $v := $deckhouseImages }}
+{{- $baseImagePath := (printf "%s@%s" $deckhouseImages.REGISTRY_PATH (trimSuffix "/" $v)) }}
+{{- if ne $k "REGISTRY_PATH" }}
+{{- $_ := set $deckhouseImages $k $baseImagePath }}
+{{- end }}
+{{- end }}
+{{- $_ := unset $deckhouseImages "REGISTRY_PATH" }}
+{{- $_ := set . "Images" (mustMerge $deckhouseImages) }}
+{{- range $k, $v := .Images }}
+{{- if hasKey $usedImagesDict $k }}
+---
+image: {{ $k }}
+from: {{ $v }}
+final: false
+{{- end }}
+{{- end }}

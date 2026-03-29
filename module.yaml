@@ -1,0 +1,29 @@
+name: ai-models
+stage: Preview
+requirements:
+  deckhouse: ">= 1.74.0"
+  kubernetes: ">= 1.30"
+subsystems:
+  - infrastructure
+  - ml
+namespace: d8-ai-models
+descriptions:
+  en: "DKP module for AI/ML model registry and catalog services."
+  ru: "Модуль DKP для реестра и каталога AI/ML-моделей."
+tags: ["ai", "ml", "models"]
+disable:
+  confirmation: true
+  message: |
+    Attention!
+
+    Disabling this module will stop ai-models services, including the internal
+    registry backend, the module UI/API entrypoint, and the artifact storage
+    integration used by the AI/ML model registry.
+accessibility:
+  editions:
+    _default:
+      available: false
+    fe:
+      available: true
+    ee:
+      available: true

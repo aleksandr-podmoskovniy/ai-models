@@ -1,0 +1,33 @@
+---
+image: go-hooks-artifact
+final: false
+fromImage: builder/golang-bookworm
+git:
+  - add: /images/hooks
+    to: /src/images/hooks
+    stageDependencies:
+      install:
+        - go.mod
+        - go.sum
+      setup:
+        - "**/*.go"
+secrets:
+  - id: GOPROXY
+    value: "{{ .GOPROXY }}"
+{{- if eq (env "WERF_ENABLE_HOST_GO_PKG_CACHE" "true") "true" }}
+mount:
+  - fromPath: "~/go-pkg-cache"
+    to: /go/pkg
+{{- end }}
+shell:
+  install:
+    - export GOPROXY=$(cat /run/secrets/GOPROXY)
+    - cd /src/images/hooks
+    - go mod download
+  setup:
+    - cd /src/images/hooks
+    - export GOOS=linux
+    - export GOARCH=amd64
+    - export CGO_ENABLED=0
+    - mkdir -p /go-hooks
+    - go build -ldflags="-s -w" -a -o /go-hooks/ai-models-hooks ./cmd/ai-models-hooks

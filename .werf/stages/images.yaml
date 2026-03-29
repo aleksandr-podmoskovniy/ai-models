@@ -1,0 +1,19 @@
+{{- $ImagesBuildFiles := .Files.Glob "images/*/{Dockerfile,werf.inc.yaml}" }}
+
+{{- range $path, $content := $ImagesBuildFiles }}
+  {{- $ctx := merge (dict "ImageName" ($path | split "/")._1) $ }}
+---
+  {{- if not (regexMatch "/werf.inc.yaml$" $path) }}
+    {{- if not (hasKey $ImagesBuildFiles (printf "images/%s/werf.inc.yaml" $ctx.ImageName)) }}
+image: {{ $ctx.ImageName }}
+context: images/{{ $ctx.ImageName }}
+dockerfile: Dockerfile
+staged: {{ env "STAGED_DOCKERFILE" "false" }}
+      {{- if (regexMatch "--mount=type=ssh" $content) }}
+ssh: default
+      {{- end }}
+    {{- end }}
+  {{- else }}
+{{ tpl $content $ctx }}
+  {{- end }}
+{{- end }}

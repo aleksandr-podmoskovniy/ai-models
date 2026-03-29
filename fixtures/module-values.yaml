@@ -1,0 +1,49 @@
+global:
+  enabledModules:
+    - ai-models
+    - cert-manager
+    - user-authn
+    - managed-postgres
+  modules:
+    publicDomainTemplate: "%s.platform.local"
+    https:
+      mode: CertManager
+      certManager:
+        clusterIssuerName: letsencrypt
+  modulesImages:
+    registry:
+      base: dev-registry.deckhouse.io/sys/deckhouse-oss/modules/ai-models
+      dockercfg: eyJhdXRocyI6e319
+    digests:
+      aiModels:
+        backend: sha256:1111111111111111111111111111111111111111111111111111111111111111
+  discovery:
+    clusterDomain: cluster.local
+  clusterConfiguration:
+    clusterDomain: cluster.local
+aiModels:
+  logLevel: Info
+  postgresql:
+    mode: Managed
+    managed:
+      name: ai-models
+      database: ai_models
+      postgresClassName: ai-models-default
+      createPostgresClass: true
+      storageClassName: ""
+      storageSize: 10Gi
+      memorySize: 1Gi
+      cpuCores: 1
+  artifacts:
+    bucket: ai-models
+    pathPrefix: ai-models
+    endpoint: https://s3.internal.local
+    region: us-east-1
+    insecure: false
+    usePathStyle: true
+    existingSecret: ai-models-artifacts
+    accessKeyKey: accessKey
+    secretKeyKey: secretKey
+  internal:
+    moduleConfig:
+      enabled: true

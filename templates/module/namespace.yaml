@@ -1,0 +1,8 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "ai-models.namespace" . }}
+  labels:
+    heritage: deckhouse
+    module: {{ include "ai-models.moduleName" . }}

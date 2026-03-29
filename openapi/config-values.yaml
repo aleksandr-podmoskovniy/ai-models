@@ -1,0 +1,147 @@
+type: object
+description: |
+  User-facing configuration for the ai-models module.
+
+  The module exposes only stable settings that are specific to ai-models runtime.
+  High availability mode, HTTPS policy, certificate source, ingress class, and
+  Dex integration are taken from global Deckhouse configuration and internal
+  module wiring.
+properties:
+  logLevel:
+    type: string
+    description: Logging level used by ai-models runtime components.
+    default: "Info"
+    enum:
+      - "Debug"
+      - "Info"
+      - "Warn"
+      - "Error"
+  postgresql:
+    type: object
+    description: Settings for the ai-models metadata database.
+    additionalProperties: false
+    properties:
+      mode:
+        type: string
+        description: |
+          Database connection mode for ai-models.
+          `Managed` uses the Deckhouse managed-postgres module.
+          `External` uses an existing PostgreSQL instance.
+        enum:
+          - "Managed"
+          - "External"
+        default: "Managed"
+      managed:
+        type: object
+        description: |
+          Create PostgreSQL for ai-models through the Deckhouse managed-postgres module.
+        additionalProperties: false
+        properties:
+          name:
+            type: string
+            description: Name of the Postgres resource.
+            default: ai-models
+          database:
+            type: string
+            description: Logical database name for ai-models metadata.
+            default: ai_models
+          postgresClassName:
+            type: string
+            description: PostgresClass name used by the managed Postgres resource.
+            default: ai-models-default
+          createPostgresClass:
+            type: boolean
+            description: Create a dedicated PostgresClass for ai-models when true.
+            default: true
+          storageClassName:
+            type: string
+            description: StorageClass for PostgreSQL persistent volume. Empty means cluster default.
+            default: ""
+          storageSize:
+            type: string
+            description: Persistent volume size for managed PostgreSQL.
+            default: 10Gi
+          memorySize:
+            type: string
+            description: Requested memory size for managed PostgreSQL instance.
+            default: 1Gi
+          cpuCores:
+            type: integer
+            description: Requested CPU cores for managed PostgreSQL instance.
+            default: 1
+      external:
+        type: object
+        description: Connection settings for an existing PostgreSQL instance.
+        additionalProperties: false
+        properties:
+          host:
+            type: string
+            description: PostgreSQL hostname or address.
+            default: ""
+          port:
+            type: integer
+            default: 5432
+          database:
+            type: string
+            default: ai_models
+          user:
+            type: string
+            default: ai_models
+          sslMode:
+            type: string
+            default: Require
+            enum:
+              - Disable
+              - Require
+              - VerifyCA
+              - VerifyFull
+          existingSecret:
+            type: string
+            description: Secret with the PostgreSQL password for the external connection.
+            default: ""
+          existingSecretKey:
+            type: string
+            description: Key in existingSecret with PostgreSQL password.
+            default: password
+  artifacts:
+    type: object
+    description: S3-compatible artifact storage used by ai-models.
+    additionalProperties: false
+    properties:
+      bucket:
+        type: string
+        description: Bucket name for ai-models artifacts.
+        default: ""
+      pathPrefix:
+        type: string
+        description: Prefix inside the bucket used for ai-models artifacts.
+        default: ai-models
+      endpoint:
+        type: string
+        description: S3-compatible endpoint URL.
+        default: ""
+      region:
+        type: string
+        description: S3 region value used by the client.
+        default: us-east-1
+      insecure:
+        type: boolean
+        description: Disable TLS verification for S3-compatible endpoint access.
+        default: false
+      usePathStyle:
+        type: boolean
+        description: Use path-style S3 requests.
+        default: true
+      existingSecret:
+        type: string
+        description: Secret with S3 credentials for ai-models artifacts.
+        default: ""
+      accessKeyKey:
+        type: string
+        description: Key in existingSecret with S3 access key.
+        default: accessKey
+      secretKeyKey:
+        type: string
+        description: Key in existingSecret with S3 secret key.
+        default: secretKey
+additionalProperties: false

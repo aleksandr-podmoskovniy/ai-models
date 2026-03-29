@@ -1,0 +1,52 @@
+{{- if (include "ai-models.isEnabled" .) }}
+{{- include "ai-models.validate" . }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ai-models.configMapName" . }}
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "backend")) | nindent 2 }}
+data:
+  start-backend.sh: |
+    #!/bin/sh
+    set -eu
+
+    backend_store_uri="$(python3 /opt/ai-models/bin/render-db-uri.py)"
+    backend_log_level="$(printf '%s' "${AI_MODELS_LOG_LEVEL}" | tr '[:upper:]' '[:lower:]')"
+
+    export GUNICORN_CMD_ARGS="--log-level ${backend_log_level}"
+
+    exec ai-models-backend server \
+      --backend-store-uri="${backend_store_uri}" \
+      --artifacts-destination="${AI_MODELS_ARTIFACT_ROOT}" \
+      --serve-artifacts \
+      --host="0.0.0.0" \
+      --port="${AI_MODELS_HTTP_PORT}" \
+      --expose-prometheus="{{ include "ai-models.backendMetricsDir" . }}"
+  upgrade-db.sh: |
+    #!/bin/sh
+    set -eu
+
+    backend_store_uri="$(python3 /opt/ai-models/bin/render-db-uri.py)"
+    exec ai-models-backend db upgrade "${backend_store_uri}"
+  render-db-uri.py: |
+    import os
+    from urllib.parse import quote_plus
+
+    password = quote_plus(os.environ["AI_MODELS_DATABASE_PASSWORD"])
+    user = quote_plus(os.environ["AI_MODELS_DATABASE_USER"])
+    host = os.environ["AI_MODELS_DATABASE_HOST"]
+    port = os.environ["AI_MODELS_DATABASE_PORT"]
+    database = os.environ["AI_MODELS_DATABASE_NAME"]
+    sslmode = os.environ["AI_MODELS_DATABASE_SSLMODE"]
+
+    print(
+        f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}?sslmode={sslmode}"
+    )
+  aws-config: |
+    [default]
+    region = {{ include "ai-models.artifactsRegion" . }}
+    s3 =
+      addressing_style = {{ include "ai-models.artifactsUsePathStyle" . }}
+{{- end }}
