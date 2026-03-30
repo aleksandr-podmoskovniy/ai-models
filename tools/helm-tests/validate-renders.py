@@ -266,6 +266,25 @@ def validate_backend_db_upgrade_flow(path: Path) -> list[str]:
     return errors
 
 
+def validate_backend_runtime_profile(path: Path) -> list[str]:
+    errors: list[str] = []
+    content = path.read_text(encoding="utf-8")
+
+    if 'kind: ConfigMap' in content and 'start-backend.sh: |' in content:
+        if '--workers="1"' not in content:
+            errors.append(
+                f"{path.name}: backend start-backend.sh must pin server workers to 1 for phase-1"
+            )
+
+    if "kind: Deployment" in content and "name: ai-models" in content:
+        if 'name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION' not in content or 'value: "false"' not in content:
+            errors.append(
+                f"{path.name}: backend deployment must disable MLflow job execution for phase-1"
+            )
+
+    return errors
+
+
 def main() -> int:
     renders_dir = Path(sys.argv[1])
     errors: list[str] = []
@@ -274,6 +293,7 @@ def main() -> int:
         errors.extend(validate_postgres_users(render))
         errors.extend(validate_postgresclasses(render))
         errors.extend(validate_backend_db_upgrade_flow(render))
+        errors.extend(validate_backend_runtime_profile(render))
 
     if errors:
         for error in errors:

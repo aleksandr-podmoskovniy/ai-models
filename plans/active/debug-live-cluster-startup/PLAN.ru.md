@@ -24,19 +24,29 @@ external DKP module на живом кластере.
       `mlflow.store.db.utils._safe_initialize_tables()`;
     - из-за этого `alembic` пытается выполнить `ALTER TABLE metrics ...` до
       создания initial tables и падает на `relation "metrics" does not exist`.
+    - после исправления DB init path новый ближайший blocker находится уже в
+      backend container: он уходит в `OOMKilled` после старта;
+    - текущий runtime profile поднимает лишние для phase-1 процессы:
+      `uvicorn` по умолчанию с `4` workers и `Huey` job runner/consumers;
+    - для phase-1 managed backend это лишний footprint: нужны tracking/UI/registry,
+      но не genai job execution runtime.
 
 ### Slice 2. Починить ближайший blocker в модуле
 - Цель: устранить следующую реальную причину падения, если она находится в
   repo/module contract.
 - Области:
   - `templates/backend/configmap.yaml`
+  - `templates/backend/deployment.yaml`
+  - `docs/CONFIGURATION*.md`
   - `tools/helm-tests/validate-renders.py`
 - Проверки:
   - узкие локальные проверки
   - `make verify`
 - Артефакт:
   - init/upgrade flow, который корректно обрабатывает и пустую БД, и
-    существующую схему.
+    существующую схему;
+  - backend runtime profile, который укладывается в phase-1 scope и не
+    завышает footprint без необходимости.
 
 ### Slice 3. Подтвердить новое состояние
 - Цель: сверить repo state и сформулировать следующий cluster retry step.

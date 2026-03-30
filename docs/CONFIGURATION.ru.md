@@ -46,5 +46,11 @@ Deckhouse configuration и internal module wiring.
 - модуль `user-authn` для module SSO;
 - модуль `managed-postgres`, если `postgresql.mode=Managed`.
 
+Текущий phase-1 runtime profile намеренно консервативен:
+каждый backend pod запускает один MLflow web worker, а MLflow server job
+execution отключён. High availability backend достигается через Deckhouse
+module HA и несколько pod replicas, а не через лишние in-process workers и
+genai job consumers.
+
 `Model` и `ClusterModel` пока не входят в текущий user-facing контракт.
 Они появятся позже, когда для этого будет готов стабильный module-level API.

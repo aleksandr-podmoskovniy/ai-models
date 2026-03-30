@@ -108,6 +108,8 @@ spec:
               value: {{ include "ai-models.artifactsEndpoint" . | quote }}
             - name: AI_MODELS_S3_IGNORE_TLS
               value: {{ include "ai-models.artifactsIgnoreTLS" . | quote }}
+            - name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION
+              value: "false"
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:

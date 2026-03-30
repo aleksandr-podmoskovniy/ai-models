@@ -47,5 +47,11 @@ runtime expects:
 - the `user-authn` module for module SSO;
 - the `managed-postgres` module when `postgresql.mode=Managed`.
 
+The current phase-1 backend runtime profile is intentionally conservative:
+each backend pod runs a single MLflow web worker, and MLflow server job
+execution is disabled. High availability for the backend is achieved through
+Deckhouse module HA and pod replicas, not through extra in-process workers or
+genai job consumers.
+
 `Model` and `ClusterModel` are not exposed as part of the current user-facing
 contract yet. They will be added later only when a stable module-level API is ready.
