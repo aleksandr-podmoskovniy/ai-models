@@ -36,15 +36,30 @@ path prefix, endpoint URL, region, TLS policy, addressing style и credentials.
 `bucket`, `pathPrefix`, `endpoint`, `region` и флаги addressing/TLS не считаются
 секретами и остаются обычной частью module configuration contract.
 
-Режим доступности, HTTPS policy, ingress behavior и Dex SSO берутся из global
-Deckhouse configuration и internal module wiring.
+Режим доступности и HTTPS policy берутся из global Deckhouse configuration и
+internal module wiring.
 Текущий runtime ожидает:
 
 - настроенный `global.modules.publicDomainTemplate`;
 - глобально включённый HTTPS через Deckhouse module HTTPS policy
   (`CertManager` или `CustomCertificate`);
-- модуль `user-authn` для module SSO;
 - модуль `managed-postgres`, если `postgresql.mode=Managed`.
+
+Аутентификация backend теперь идёт через upstream-native MLflow basic auth и
+MLflow workspaces. Модуль сам создаёт внутренний auth Secret со:
+
+- bootstrap admin username;
+- стабильным сгенерированным admin password;
+- стабильным `MLFLOW_FLASK_SERVER_SECRET_KEY`, который требует upstream auth app.
+
+Из-за этого raw backend service больше не защищён только на ingress-уровне.
+Даже при прямом доступе к service нужны MLflow credentials, а логическая
+сегментация идёт через native MLflow workspaces.
+
+Большие machine-oriented import flows теперь используют direct artifact access
+вместо server-side artifact proxying. Backend запускается с
+`--no-serve-artifacts`, а in-cluster import Jobs ходят в MLflow metadata APIs,
+но пишут artifacts напрямую в S3.
 
 Текущий phase-1 runtime profile намеренно консервативен:
 каждый backend pod запускает один MLflow web worker, а MLflow server job
@@ -54,8 +69,15 @@ genai job consumers.
 
 Backend также оставляет включённым upstream security middleware MLflow.
 Модуль вычисляет `allowed-hosts` и same-origin CORS policy от публичного
-ingress domain и при этом сохраняет безопасные private-network/service
-паттерны, нужные для внутрикластерных probes и monitoring.
+ingress domain и при этом сохраняет private-network/service паттерны, нужные
+для внутрикластерного доступа. Health probes используют upstream
+неаутентифицированный `/health`, а `ServiceMonitor` ходит в `/metrics` через
+MLflow basic auth.
+
+Модуль также создаёт внутренний Secret со стабильным значением
+`MLFLOW_CRYPTO_KEK_PASSPHRASE` для upstream crypto-backed runtime features
+MLflow. Это убирает небезопасный upstream default passphrase из shared cluster
+deployments и при этом не выводит KEK в user-facing contract модуля.
 
 `Model` и `ClusterModel` пока не входят в текущий user-facing контракт.
 Они появятся позже, когда для этого будет готов стабильный module-level API.

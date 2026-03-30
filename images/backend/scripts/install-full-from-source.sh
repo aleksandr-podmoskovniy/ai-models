@@ -31,7 +31,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 source_root="${1:-/src/backend}"
-base_extras="${BACKEND_BASE_EXTRAS:-extras,azure,db,gateway,genai}"
+base_extras="${BACKEND_BASE_EXTRAS:-extras,auth,azure,db,gateway,genai}"
 overlay_extras="${BACKEND_OVERLAY_EXTRAS:-}"
 
 if ! command -v python3 >/dev/null 2>&1; then

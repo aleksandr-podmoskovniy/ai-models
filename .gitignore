@@ -6,6 +6,8 @@ artifacts/
 charts/
 Chart.lock
 node_modules/
+__pycache__/
+*.pyc
 tools/kubeconform/.venv/
 tools/kubeconform/kubeconform.git/
 tools/kubeconform/renders/

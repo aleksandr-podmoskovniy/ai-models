@@ -39,7 +39,7 @@
 `tools/kubeconform/renders/helm-template-*.yaml`.
 
 Local render matrix also forces key custom resources (`Postgres`,
-`PostgresClass`, `DexAuthenticator`, `Certificate`, `ServiceMonitor`) into the
+`PostgresClass`, `Certificate`, `ServiceMonitor`) into the
 render output. `kubeconform` continues to validate built-in Kubernetes objects
 strictly and skips these custom kinds because the repo does not vendor a local
 schema catalog for them.
@@ -108,7 +108,6 @@ Phase-1 runtime модуля ожидает платформенные prerequis
 
 - `global.modules.publicDomainTemplate`;
 - global HTTPS mode `CertManager` или `CustomCertificate`;
-- модуль `user-authn` для module SSO;
 - модуль `managed-postgres`, если используется `aiModels.postgresql.mode=Managed`.
 
 Во время локального `helm template` custom resources рендерятся только если

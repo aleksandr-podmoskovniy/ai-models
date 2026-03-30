@@ -13,7 +13,7 @@ RUN set -eux; \
 
 FROM ${BACKEND_PYTHON_IMAGE} AS runtime
 WORKDIR /work
-ARG BACKEND_BASE_EXTRAS=extras,azure,db,gateway,genai
+ARG BACKEND_BASE_EXTRAS=extras,auth,azure,db,gateway,genai
 ARG BACKEND_OVERLAY_EXTRAS=
 ENV BACKEND_BASE_EXTRAS=${BACKEND_BASE_EXTRAS}
 ENV BACKEND_OVERLAY_EXTRAS=${BACKEND_OVERLAY_EXTRAS}
@@ -25,6 +25,14 @@ RUN set -eux; \
     python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel; \
     bash /work/images/backend/scripts/install-full-from-source.sh /work/src/backend; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade; \
+    install -m 0755 /work/images/backend/scripts/ai-models-backend-render-db-uri.py /usr/local/bin/ai-models-backend-render-db-uri; \
+    install -m 0755 /work/images/backend/scripts/ai-models-backend-render-auth-config.py /usr/local/bin/ai-models-backend-render-auth-config; \
+    install -m 0755 /work/images/backend/scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-hf-import; \
+    python3 -m pip install --no-cache-dir \
+      "transformers<5" \
+      "huggingface-hub>=0.10.0" \
+      sentencepiece \
+      safetensors; \
     printf '%s\n' \
       '#!/bin/sh' \
       'set -eu' \

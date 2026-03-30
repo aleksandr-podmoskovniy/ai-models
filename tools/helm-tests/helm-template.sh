@@ -125,15 +125,13 @@ render_scenario() {
     "$@" \
     --set-string global.enabledModules[0]=ai-models \
     --set-string global.enabledModules[1]=cert-manager \
-    --set-string global.enabledModules[2]=user-authn \
-    --set-string global.enabledModules[3]=managed-postgres \
+    --set-string global.enabledModules[2]=managed-postgres \
     --set global.deckhouseVersion="dev" \
     --set global.clusterConfiguration.clusterDomain="cluster.local" \
     --set global.discovery.clusterDomain="cluster.local" \
     --set global.internal.modules.ai-models=true \
     --api-versions managed-services.deckhouse.io/v1alpha1/Postgres \
     --api-versions managed-services.deckhouse.io/v1alpha1/PostgresClass \
-    --api-versions deckhouse.io/v1/DexAuthenticator \
     --api-versions cert-manager.io/v1/Certificate \
     --api-versions monitoring.coreos.com/v1/ServiceMonitor \
     --namespace d8-ai-models \

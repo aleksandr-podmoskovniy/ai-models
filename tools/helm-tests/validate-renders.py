@@ -275,12 +275,85 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
             errors.append(
                 f"{path.name}: backend start-backend.sh must pin server workers to 1 for phase-1"
             )
+        if '--app-name="basic-auth"' not in content:
+            errors.append(
+                f"{path.name}: backend start-backend.sh must use the upstream MLflow basic-auth app"
+            )
+        if '--enable-workspaces' not in content:
+            errors.append(
+                f"{path.name}: backend start-backend.sh must enable MLflow workspaces"
+            )
+        if '--no-serve-artifacts' not in content or '--default-artifact-root="' not in content:
+            errors.append(
+                f"{path.name}: backend start-backend.sh must use direct artifact access with --no-serve-artifacts and --default-artifact-root"
+            )
+        if '--serve-artifacts' in content:
+            errors.append(
+                f"{path.name}: backend start-backend.sh must not keep proxied artifact uploads enabled"
+            )
 
     if "kind: Deployment" in content and "name: ai-models" in content:
         if 'name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION' not in content or 'value: "false"' not in content:
             errors.append(
                 f"{path.name}: backend deployment must disable MLflow job execution for phase-1"
             )
+        if 'name: MLFLOW_FLASK_SERVER_SECRET_KEY' not in content:
+            errors.append(
+                f"{path.name}: backend deployment must set MLFLOW_FLASK_SERVER_SECRET_KEY for MLflow basic-auth"
+            )
+        if 'name: AI_MODELS_AUTH_ADMIN_PASSWORD' not in content:
+            errors.append(
+                f"{path.name}: backend deployment must mount internal MLflow admin credentials"
+            )
+        if 'path: /health' not in content:
+            errors.append(
+                f"{path.name}: backend probes must use the unauthenticated /health endpoint"
+            )
+
+    return errors
+
+
+def validate_backend_crypto_baseline(path: Path) -> list[str]:
+    errors: list[str] = []
+    content = path.read_text(encoding="utf-8")
+
+    if "kind: Secret" not in content or "name: ai-models-backend-crypto" not in content:
+        errors.append(
+            f"{path.name}: rendered output must include the internal ai-models backend crypto Secret"
+        )
+
+    if "kind: Deployment" in content and "name: ai-models" in content:
+        if 'name: MLFLOW_CRYPTO_KEK_PASSPHRASE' not in content:
+            errors.append(
+                f"{path.name}: backend deployment must set MLFLOW_CRYPTO_KEK_PASSPHRASE from internal Secret"
+            )
+        if 'name: ai-models-backend-crypto' not in content or 'key: kekPassphrase' not in content:
+            errors.append(
+                f"{path.name}: backend deployment must read KEK passphrase from ai-models-backend-crypto/kekPassphrase"
+            )
+
+    return errors
+
+
+def validate_backend_auth_baseline(path: Path) -> list[str]:
+    errors: list[str] = []
+    content = path.read_text(encoding="utf-8")
+
+    if "name: ai-models-backend-auth" not in content:
+        errors.append(
+            f"{path.name}: rendered output must include the internal ai-models backend auth Secret"
+        )
+
+    if "kind: ServiceMonitor" in content and "name: ai-models" in content:
+        if "basicAuth:" not in content:
+            errors.append(
+                f"{path.name}: ServiceMonitor must authenticate against native MLflow auth"
+            )
+
+    if "kind: DexAuthenticator" in content:
+        errors.append(
+            f"{path.name}: DexAuthenticator must not be rendered when native MLflow auth is the phase-1 baseline"
+        )
 
     return errors
 
@@ -327,6 +400,8 @@ def main() -> int:
         errors.extend(validate_postgresclasses(render))
         errors.extend(validate_backend_db_upgrade_flow(render))
         errors.extend(validate_backend_runtime_profile(render))
+        errors.extend(validate_backend_crypto_baseline(render))
+        errors.extend(validate_backend_auth_baseline(render))
         errors.extend(validate_backend_security_profile(render))
 
     if errors:

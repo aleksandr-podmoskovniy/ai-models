@@ -12,15 +12,22 @@ data:
     #!/bin/sh
     set -eu
 
-    backend_store_uri="$(python3 /opt/ai-models/bin/render-db-uri.py)"
+    backend_store_uri="$(ai-models-backend-render-db-uri)"
     backend_log_level="$(printf '%s' "${AI_MODELS_LOG_LEVEL}" | tr '[:upper:]' '[:lower:]')"
+    auth_config_path="/tmp/basic_auth.ini"
 
     export GUNICORN_CMD_ARGS="--log-level ${backend_log_level}"
+    export MLFLOW_AUTH_CONFIG_PATH="${auth_config_path}"
+    printf '%s' "${backend_store_uri}" | ai-models-backend-render-auth-config "${auth_config_path}"
 
     exec ai-models-backend server \
+      --app-name="basic-auth" \
       --backend-store-uri="${backend_store_uri}" \
-      --artifacts-destination="${AI_MODELS_ARTIFACT_ROOT}" \
-      --serve-artifacts \
+      --registry-store-uri="${backend_store_uri}" \
+      --workspace-store-uri="${backend_store_uri}" \
+      --default-artifact-root="${AI_MODELS_ARTIFACT_ROOT}" \
+      --no-serve-artifacts \
+      --enable-workspaces \
       --host="0.0.0.0" \
       --port="${AI_MODELS_HTTP_PORT}" \
       --workers="1" \
@@ -31,22 +38,8 @@ data:
     #!/bin/sh
     set -eu
 
-    backend_store_uri="$(python3 /opt/ai-models/bin/render-db-uri.py)"
+    backend_store_uri="$(ai-models-backend-render-db-uri)"
     exec ai-models-backend-db-upgrade "${backend_store_uri}"
-  render-db-uri.py: |
-    import os
-    from urllib.parse import quote_plus
-
-    password = quote_plus(os.environ["AI_MODELS_DATABASE_PASSWORD"])
-    user = quote_plus(os.environ["AI_MODELS_DATABASE_USER"])
-    host = os.environ["AI_MODELS_DATABASE_HOST"]
-    port = os.environ["AI_MODELS_DATABASE_PORT"]
-    database = os.environ["AI_MODELS_DATABASE_NAME"]
-    sslmode = os.environ["AI_MODELS_DATABASE_SSLMODE"]
-
-    print(
-        f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}?sslmode={sslmode}"
-    )
   aws-config: |
     [default]
     region = {{ include "ai-models.artifactsRegion" . }}

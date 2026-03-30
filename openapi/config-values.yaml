@@ -3,9 +3,10 @@ description: |
   User-facing configuration for the ai-models module.
 
   The module exposes only stable settings that are specific to ai-models runtime.
-  High availability mode, HTTPS policy, certificate source, ingress class, and
-  Dex integration are taken from global Deckhouse configuration and internal
-  module wiring.
+  High availability mode, HTTPS policy, and ingress class are taken from global
+  Deckhouse configuration and internal module wiring, while backend
+  authentication and workspace isolation are handled by upstream-native MLflow
+  runtime.
 properties:
   logLevel:
     type: string

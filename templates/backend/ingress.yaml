@@ -13,11 +13,6 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "256m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-    {{- if (include "ai-models.dexEnabled" .) }}
-    nginx.ingress.kubernetes.io/auth-signin: {{ include "ai-models.dexAuthSignInURL" . | quote }}
-    nginx.ingress.kubernetes.io/auth-url: {{ include "ai-models.dexAuthServiceHost" . | quote }}
-    nginx.ingress.kubernetes.io/auth-response-headers: "authorization"
-    {{- end }}
     {{- if gt (include "ai-models.backendReplicas" . | int) 1 }}
     nginx.ingress.kubernetes.io/affinity: cookie
     nginx.ingress.kubernetes.io/affinity-mode: persistent

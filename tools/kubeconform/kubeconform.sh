@@ -86,7 +86,7 @@ ensure_kubeconform
 cat "${HELM_RENDER}" | "${KUBECONFORM_BIN}" -verbose -strict \
   -kubernetes-version 1.30.0 \
   -schema-location default \
-  -skip Postgres,PostgresClass,DexAuthenticator,Certificate,ServiceMonitor \
+  -skip Postgres,PostgresClass,Certificate,ServiceMonitor \
   -output json - > "${REPORT_FILE}"
 
 cat "${REPORT_FILE}" | python3 -c 'import json,sys; json.load(sys.stdin); print("kubeconform report is valid JSON")'

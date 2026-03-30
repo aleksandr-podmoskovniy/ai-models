@@ -18,8 +18,11 @@ repo. Поэтому layout должен разделять:
 Подкаталоги:
 - `templates/module/` — namespace, registry secret и прочая module-wide обвязка;
 - `templates/backend/` — runtime manifests внутреннего backend;
-- `templates/database/` — declarative managed-postgres resources;
-- `templates/auth/` — auth/SSO integration resources.
+- `templates/database/` — declarative managed-postgres resources.
+
+Опционально:
+- `templates/auth/` — отдельные auth integration resources, только если module
+  действительно требует самостоятельных auth manifests сверх backend runtime.
 
 Правила:
 - не складывать всё в корень `templates/`;

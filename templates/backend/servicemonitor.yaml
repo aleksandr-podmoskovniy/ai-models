@@ -15,6 +15,13 @@ spec:
     - port: http
       path: /metrics
       interval: 30s
+      basicAuth:
+        username:
+          name: {{ include "ai-models.backendAuthSecretName" . }}
+          key: adminUsername
+        password:
+          name: {{ include "ai-models.backendAuthSecretName" . }}
+          key: adminPassword
   namespaceSelector:
     matchNames:
       - {{ include "ai-models.namespace" . }}

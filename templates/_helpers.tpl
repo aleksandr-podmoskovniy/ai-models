@@ -30,6 +30,14 @@ ai-models-postgresql
 ai-models-artifacts
 {{- end -}}
 
+{{- define "ai-models.backendCryptoSecretName" -}}
+ai-models-backend-crypto
+{{- end -}}
+
+{{- define "ai-models.backendAuthSecretName" -}}
+ai-models-backend-auth
+{{- end -}}
+
 {{- define "ai-models.registrySecretName" -}}
 {{- printf "%s-module-registry" .Chart.Name -}}
 {{- end -}}
@@ -146,6 +154,28 @@ true
 {{- end -}}
 {{- end -}}
 
+{{- define "ai-models.backendAuthAdminUsername" -}}
+admin
+{{- end -}}
+
+{{- define "ai-models.backendAuthAdminPassword" -}}
+{{- $secretName := include "ai-models.backendAuthSecretName" . -}}
+{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
+{{- $existingPassword := (get $existingData "adminPassword" | default "" | b64dec) -}}
+{{- $generatedPassword := printf "A1a%s" (randAlphaNum 29) -}}
+{{- coalesce $existingPassword $generatedPassword -}}
+{{- end -}}
+
+{{- define "ai-models.backendAuthFlaskSecretKey" -}}
+{{- $secretName := include "ai-models.backendAuthSecretName" . -}}
+{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
+{{- $existingSecretKey := (get $existingData "flaskServerSecretKey" | default "" | b64dec) -}}
+{{- $generatedSecretKey := randAlphaNum 64 -}}
+{{- coalesce $existingSecretKey $generatedSecretKey -}}
+{{- end -}}
+
 {{- define "ai-models.postgresqlMode" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $postgresql := (index $moduleValues "postgresql") | default dict -}}
@@ -222,6 +252,15 @@ password
 {{- $existingPassword := (get $existingData "password" | default "" | b64dec) -}}
 {{- $generatedPassword := printf "A1a%s" (randAlphaNum 37) -}}
 {{- coalesce $existingPassword $generatedPassword -}}
+{{- end -}}
+
+{{- define "ai-models.backendCryptoKEKPassphrase" -}}
+{{- $secretName := include "ai-models.backendCryptoSecretName" . -}}
+{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
+{{- $existingPassphrase := (get $existingData "kekPassphrase" | default "" | b64dec) -}}
+{{- $generatedPassphrase := randAlphaNum 64 -}}
+{{- coalesce $existingPassphrase $generatedPassphrase -}}
 {{- end -}}
 
 {{- define "ai-models.postgresqlSSLMode" -}}
@@ -368,24 +407,6 @@ false
 {{- end -}}
 {{- end -}}
 
-{{- define "ai-models.dexEnabled" -}}
-{{- $globalValues := (index .Values "global") | default dict -}}
-{{- $enabledModules := (index $globalValues "enabledModules") | default list -}}
-{{- $modulesValues := (index $globalValues "modules") | default dict -}}
-{{- $publicDomainTemplate := default "" (index $modulesValues "publicDomainTemplate") -}}
-{{- if and $publicDomainTemplate (has "user-authn" $enabledModules) (ne (include "helm_lib_module_https_mode" .) "Disabled") -}}
-true
-{{- end -}}
-{{- end -}}
-
-{{- define "ai-models.dexAuthServiceHost" -}}
-{{- printf "https://ai-models-dex-authenticator.%s.svc.%s/dex-authenticator/auth" (include "ai-models.namespace" .) (include "ai-models.clusterDomain" .) -}}
-{{- end -}}
-
-{{- define "ai-models.dexAuthSignInURL" -}}
-{{- printf "https://$host/dex-authenticator/sign_in" -}}
-{{- end -}}
-
 {{- define "ai-models.hasAPI" -}}
 {{- $context := index . 0 -}}
 {{- $apiVersion := index . 1 -}}
@@ -409,9 +430,6 @@ true
   {{- end -}}
   {{- if eq $httpsMode "Disabled" -}}
     {{- fail "ai-models requires HTTPS enabled via global.modules.https" -}}
-  {{- end -}}
-  {{- if not (has "user-authn" $enabledModules) -}}
-    {{- fail "ai-models requires the user-authn module for Dex SSO" -}}
   {{- end -}}
   {{- if and (eq (include "ai-models.postgresqlMode" .) "Managed") (not (has "managed-postgres" $enabledModules)) -}}
     {{- fail "ai-models.postgresql.mode=Managed requires the managed-postgres module" -}}

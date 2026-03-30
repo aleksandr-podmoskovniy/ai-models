@@ -278,11 +278,11 @@ properties:
         additionalProperties: true
       auth:
         type: object
-        description: Runtime-only authentication settings derived from platform defaults and platform integrations.
+        description: Runtime-only authentication settings derived from upstream-native MLflow auth and module runtime wiring.
         default:
-          mode: Dex
-          dexAuthenticatorName: ai-models
-          sendAuthorizationHeader: true
+          mode: Native
+          adminSecretName: ai-models-backend-auth
+          workspacesEnabled: true
         additionalProperties: true
     additionalProperties: true
 additionalProperties: false

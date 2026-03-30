@@ -108,8 +108,28 @@ spec:
               value: {{ include "ai-models.artifactsEndpoint" . | quote }}
             - name: AI_MODELS_S3_IGNORE_TLS
               value: {{ include "ai-models.artifactsIgnoreTLS" . | quote }}
+            - name: AI_MODELS_AUTH_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.backendAuthSecretName" . }}
+                  key: adminUsername
+            - name: AI_MODELS_AUTH_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.backendAuthSecretName" . }}
+                  key: adminPassword
+            - name: MLFLOW_FLASK_SERVER_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.backendAuthSecretName" . }}
+                  key: flaskServerSecretKey
             - name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION
               value: "false"
+            - name: MLFLOW_CRYPTO_KEK_PASSPHRASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.backendCryptoSecretName" . }}
+                  key: kekPassphrase
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -136,7 +156,7 @@ spec:
               protocol: TCP
           readinessProbe:
             httpGet:
-              path: /
+              path: /health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
@@ -144,7 +164,7 @@ spec:
             failureThreshold: 6
           livenessProbe:
             httpGet:
-              path: /
+              path: /health
               port: http
             initialDelaySeconds: 30
             periodSeconds: 15
@@ -152,7 +172,7 @@ spec:
             failureThreshold: 6
           startupProbe:
             httpGet:
-              path: /
+              path: /health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10

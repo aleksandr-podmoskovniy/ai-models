@@ -2,7 +2,6 @@ global:
   enabledModules:
     - ai-models
     - cert-manager
-    - user-authn
     - managed-postgres
   modules:
     publicDomainTemplate: "%s.platform.local"

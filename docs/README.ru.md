@@ -13,8 +13,7 @@ weight: 10
 - короткий стабильный user-facing контракт конфигурации для логирования,
   PostgreSQL и S3-compatible artifacts; общие runtime-настройки берутся
   из platform и global defaults Deckhouse;
-- wiring для Dex SSO, ingress/https и managed-postgres на базе runtime
-  возможностей Deckhouse;
+- wiring для native MLflow auth/workspaces, ingress/https и managed-postgres;
 - `werf` и CI/CD для сборки и поставки модуля;
 - repo-local guidance и skills для следующих шагов по упаковке backend engine
   и разработке DKP API.
