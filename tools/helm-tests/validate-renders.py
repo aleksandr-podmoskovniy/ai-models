@@ -15,34 +15,96 @@
 # limitations under the License.
 
 import sys
+import re
 from pathlib import Path
 
-import yaml
+def split_documents(text: str) -> list[str]:
+    documents = re.split(r"(?m)^---\s*$", text)
+    return [document for document in documents if document.strip()]
 
 
-def iter_yaml_documents(path: Path):
-    with path.open("r", encoding="utf-8") as stream:
-        for document in yaml.safe_load_all(stream):
-            if document:
-                yield document
+def parse_postgres_document(document: str) -> tuple[str, list[dict[str, str]]] | None:
+    kind = ""
+    metadata_name = "<unknown>"
+    users: list[dict[str, str]] = []
+    current_user: dict[str, str] | None = None
+    in_metadata = False
+    in_spec = False
+    in_users = False
+
+    for raw_line in document.splitlines():
+        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            continue
+
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        line = raw_line.strip()
+
+        if indent == 0:
+            in_metadata = line == "metadata:"
+            in_spec = line == "spec:"
+            if line.startswith("kind:"):
+                kind = line.split(":", 1)[1].strip()
+            if in_users and current_user is not None:
+                users.append(current_user)
+                current_user = None
+            in_users = False
+            continue
+
+        if in_metadata and indent == 2 and line.startswith("name:"):
+            metadata_name = line.split(":", 1)[1].strip().strip('"')
+            continue
+
+        if in_spec and indent == 2 and line == "users:":
+            in_users = True
+            continue
+
+        if in_users:
+            if indent <= 2:
+                if current_user is not None:
+                    users.append(current_user)
+                    current_user = None
+                in_users = False
+                continue
+
+            if indent == 4 and line.startswith("- "):
+                if current_user is not None:
+                    users.append(current_user)
+                current_user = {}
+                item = line[2:].strip()
+                if ":" in item:
+                    key, value = item.split(":", 1)
+                    current_user[key.strip()] = value.strip().strip('"')
+                continue
+
+            if indent >= 6 and current_user is not None and ":" in line:
+                key, value = line.split(":", 1)
+                current_user[key.strip()] = value.strip().strip('"')
+
+    if in_users and current_user is not None:
+        users.append(current_user)
+
+    if kind != "Postgres":
+        return None
+
+    return metadata_name, users
 
 
 def validate_postgres_users(path: Path) -> list[str]:
     errors: list[str] = []
-    for document in iter_yaml_documents(path):
-        if document.get("kind") != "Postgres":
+    content = path.read_text(encoding="utf-8")
+    for document in split_documents(content):
+        parsed = parse_postgres_document(document)
+        if parsed is None:
             continue
 
-        metadata = document.get("metadata") or {}
-        name = metadata.get("name", "<unknown>")
-        users = (((document.get("spec") or {}).get("users")) or [])
+        name, users = parsed
         if not users:
             errors.append(f"{path.name}: Postgres/{name} has no users")
             continue
 
         for idx, user in enumerate(users):
-            password = (user or {}).get("password", "")
-            hashed_password = (user or {}).get("hashedPassword", "")
+            password = user.get("password", "")
+            hashed_password = user.get("hashedPassword", "")
             if not password and not hashed_password:
                 errors.append(
                     f"{path.name}: Postgres/{name} user[{idx}] must set password or hashedPassword"
