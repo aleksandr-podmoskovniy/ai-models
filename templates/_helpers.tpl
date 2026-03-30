@@ -26,6 +26,10 @@ ai-models-runtime
 ai-models-postgresql
 {{- end -}}
 
+{{- define "ai-models.artifactsManagedSecretName" -}}
+ai-models-artifacts
+{{- end -}}
+
 {{- define "ai-models.registrySecretName" -}}
 {{- printf "%s-module-registry" .Chart.Name -}}
 {{- end -}}
@@ -209,22 +213,24 @@ Standalone
 {{- default "us-east-1" (index $artifacts "region") -}}
 {{- end -}}
 
-{{- define "ai-models.artifactsSecretName" -}}
+{{- define "ai-models.artifactsInlineAccessKey" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
-{{- default "" (index $artifacts "existingSecret") -}}
+{{- default "" (index $artifacts "accessKey") -}}
 {{- end -}}
 
-{{- define "ai-models.artifactsAccessKeyKey" -}}
+{{- define "ai-models.artifactsInlineSecretKey" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
-{{- default "accessKey" (index $artifacts "accessKeyKey") -}}
+{{- default "" (index $artifacts "secretKey") -}}
 {{- end -}}
 
-{{- define "ai-models.artifactsSecretKeyKey" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
-{{- default "secretKey" (index $artifacts "secretKeyKey") -}}
+{{- define "ai-models.artifactsHasInlineCredentials" -}}
+{{- $accessKey := include "ai-models.artifactsInlineAccessKey" . | trim -}}
+{{- $secretKey := include "ai-models.artifactsInlineSecretKey" . | trim -}}
+{{- if and $accessKey $secretKey -}}
+true
+{{- end -}}
 {{- end -}}
 
 {{- define "ai-models.artifactsUsePathStyle" -}}
@@ -321,8 +327,14 @@ true
   {{- if not (include "ai-models.artifactsEndpoint" . | trim) -}}
     {{- fail "ai-models.artifacts.endpoint is required" -}}
   {{- end -}}
-  {{- if not (include "ai-models.artifactsSecretName" . | trim) -}}
-    {{- fail "ai-models.artifacts.existingSecret is required" -}}
+  {{- if and (include "ai-models.artifactsInlineAccessKey" . | trim) (not (include "ai-models.artifactsInlineSecretKey" . | trim)) -}}
+    {{- fail "ai-models.artifacts.secretKey is required when ai-models.artifacts.accessKey is set" -}}
+  {{- end -}}
+  {{- if and (include "ai-models.artifactsInlineSecretKey" . | trim) (not (include "ai-models.artifactsInlineAccessKey" . | trim)) -}}
+    {{- fail "ai-models.artifacts.accessKey is required when ai-models.artifacts.secretKey is set" -}}
+  {{- end -}}
+  {{- if not (include "ai-models.artifactsHasInlineCredentials" . | trim) -}}
+    {{- fail "ai-models.artifacts.accessKey and ai-models.artifacts.secretKey are required" -}}
   {{- end -}}
 {{- end -}}
 {{- end -}}

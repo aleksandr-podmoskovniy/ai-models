@@ -18,6 +18,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 VALUES_BASE="${ROOT_DIR}/fixtures/module-values.yaml"
+SCENARIOS_DIR="${ROOT_DIR}/fixtures/render"
 RENDERS_DIR="${ROOT_DIR}/tools/kubeconform/renders"
 HELM_BIN=""
 HELM_TMPDIR=""
@@ -115,17 +116,46 @@ ensure_helm
 mkdir -p "${RENDERS_DIR}"
 rm -f "${RENDERS_DIR}"/helm-template-*.yaml
 
-"${HELM_BIN}" template ai-models "${ROOT_DIR}" \
-  -f "${VALUES_BASE}" \
-  --set-string global.enabledModules[0]=ai-models \
-  --set-string global.enabledModules[1]=cert-manager \
-  --set-string global.enabledModules[2]=user-authn \
-  --set-string global.enabledModules[3]=managed-postgres \
-  --set global.deckhouseVersion="dev" \
-  --set global.clusterConfiguration.clusterDomain="cluster.local" \
-  --set global.discovery.clusterDomain="cluster.local" \
-  --set global.internal.modules.ai-models=true \
-  --namespace d8-ai-models \
-  > "${RENDERS_DIR}/helm-template-base.yaml"
+render_scenario() {
+  local scenario_name="${1:?scenario name is required}"
+  shift
 
-echo "rendered: ${RENDERS_DIR}/helm-template-base.yaml"
+  "${HELM_BIN}" template ai-models "${ROOT_DIR}" \
+    -f "${VALUES_BASE}" \
+    "$@" \
+    --set-string global.enabledModules[0]=ai-models \
+    --set-string global.enabledModules[1]=cert-manager \
+    --set-string global.enabledModules[2]=user-authn \
+    --set-string global.enabledModules[3]=managed-postgres \
+    --set global.deckhouseVersion="dev" \
+    --set global.clusterConfiguration.clusterDomain="cluster.local" \
+    --set global.discovery.clusterDomain="cluster.local" \
+    --set global.internal.modules.ai-models=true \
+    --api-versions managed-services.deckhouse.io/v1alpha1/Postgres \
+    --api-versions managed-services.deckhouse.io/v1alpha1/PostgresClass \
+    --api-versions deckhouse.io/v1/DexAuthenticator \
+    --api-versions cert-manager.io/v1/Certificate \
+    --api-versions monitoring.coreos.com/v1/ServiceMonitor \
+    --namespace d8-ai-models \
+    > "${RENDERS_DIR}/helm-template-${scenario_name}.yaml"
+
+  echo "rendered: ${RENDERS_DIR}/helm-template-${scenario_name}.yaml"
+}
+
+if [[ ! -d "${SCENARIOS_DIR}" ]]; then
+  echo "scenario fixtures directory not found: ${SCENARIOS_DIR}" >&2
+  exit 1
+fi
+
+scenario_count=0
+while IFS= read -r scenario_file; do
+  [[ -n "${scenario_file}" ]] || continue
+  scenario_name="$(basename "${scenario_file}" .yaml)"
+  render_scenario "${scenario_name}" -f "${scenario_file}"
+  scenario_count=$((scenario_count + 1))
+done < <(find "${SCENARIOS_DIR}" -maxdepth 1 -type f -name '*.yaml' | sort)
+
+if [[ "${scenario_count}" -eq 0 ]]; then
+  echo "no scenario fixtures found in ${SCENARIOS_DIR}" >&2
+  exit 1
+fi

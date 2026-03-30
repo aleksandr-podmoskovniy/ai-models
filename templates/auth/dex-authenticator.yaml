@@ -14,5 +14,5 @@ spec:
   applicationIngressClassName: {{ include "helm_lib_module_ingress_class" . | quote }}
   signOutURL: "/logout"
   sendAuthorizationHeader: true
-  highAvailability: {{ ternary true false (include "helm_lib_ha_enabled" .) }}
+  highAvailability: {{ not (empty (include "helm_lib_ha_enabled" .)) }}
 {{- end }}

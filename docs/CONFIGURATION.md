@@ -22,7 +22,12 @@ resource profile minimal for phase-1 metadata storage.
 
 `artifacts` config defines the S3-compatible backend for ai-models artifacts:
 bucket, path prefix, endpoint URL, region, TLS policy, addressing style, and
-the Secret with access credentials.
+credentials.
+
+Artifact credentials can be provided in two ways:
+
+- via inline `accessKey` and `secretKey` in ModuleConfig;
+- the module renders an internal Secret in `d8-ai-models` from these values.
 
 High availability mode, HTTPS policy, certificate source, ingress behavior,
 and Dex SSO are taken from global Deckhouse configuration and internal module

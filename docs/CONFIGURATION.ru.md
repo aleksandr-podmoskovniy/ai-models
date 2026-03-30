@@ -21,8 +21,12 @@ weight: 60
 минимальный resource profile для phase-1 metadata storage.
 
 `artifacts` определяет S3-compatible backend для артефактов ai-models: bucket,
-path prefix, endpoint URL, region, TLS policy, addressing style и Secret с
-учётными данными доступа.
+path prefix, endpoint URL, region, TLS policy, addressing style и credentials.
+
+Учётные данные для artifact storage можно задавать двумя способами:
+
+- через inline `accessKey` и `secretKey` в ModuleConfig;
+- модуль сам создаёт внутренний Secret в `d8-ai-models` из этих значений.
 
 Режим доступности, HTTPS policy, выбор сертификатов, ingress behavior и Dex SSO
 берутся из global Deckhouse configuration и internal module wiring.

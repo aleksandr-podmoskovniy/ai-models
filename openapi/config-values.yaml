@@ -124,6 +124,16 @@ properties:
         type: string
         description: S3 region value used by the client.
         default: us-east-1
+      accessKey:
+        type: string
+        description: |
+          S3 access key used by ai-models artifact storage.
+        default: ""
+      secretKey:
+        type: string
+        description: |
+          S3 secret key used by ai-models artifact storage.
+        default: ""
       insecure:
         type: boolean
         description: Disable TLS verification for S3-compatible endpoint access.
@@ -132,16 +142,4 @@ properties:
         type: boolean
         description: Use path-style S3 requests.
         default: true
-      existingSecret:
-        type: string
-        description: Secret with S3 credentials for ai-models artifacts.
-        default: ""
-      accessKeyKey:
-        type: string
-        description: Key in existingSecret with S3 access key.
-        default: accessKey
-      secretKeyKey:
-        type: string
-        description: Key in existingSecret with S3 secret key.
-        default: secretKey
 additionalProperties: false

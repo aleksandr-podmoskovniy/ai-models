@@ -37,6 +37,17 @@
 должен быть доступен либо через обычный `PATH`, либо через стандартные macOS
 пути `/opt/homebrew/bin/go` или `/usr/local/go/bin/go`.
 
+`make helm-template` не ограничивается одним happy-path render: базовые values
+из `fixtures/module-values.yaml` комбинируются со scenario overlays из
+`fixtures/render/*.yaml`, и каждый сценарий рендерится в отдельный
+`tools/kubeconform/renders/helm-template-*.yaml`.
+
+Local render matrix also forces key custom resources (`Postgres`,
+`PostgresClass`, `DexAuthenticator`, `Certificate`, `ServiceMonitor`) into the
+render output. `kubeconform` continues to validate built-in Kubernetes objects
+strictly and skips these custom kinds because the repo does not vendor a local
+schema catalog for them.
+
 ## Internal Backend Upstream Fetch And Build Shell
 
 Для phase-1 runtime внутренний backend тянется как внешний 3p source и живёт

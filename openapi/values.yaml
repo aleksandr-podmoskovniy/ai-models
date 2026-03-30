@@ -106,11 +106,10 @@ properties:
       pathPrefix: ai-models
       endpoint: ""
       region: us-east-1
+      accessKey: ""
+      secretKey: ""
       insecure: false
       usePathStyle: true
-      existingSecret: ""
-      accessKeyKey: accessKey
-      secretKeyKey: secretKey
     properties:
       bucket:
         type: string
@@ -124,21 +123,18 @@ properties:
       region:
         type: string
         default: us-east-1
+      accessKey:
+        type: string
+        default: ""
+      secretKey:
+        type: string
+        default: ""
       insecure:
         type: boolean
         default: false
       usePathStyle:
         type: boolean
         default: true
-      existingSecret:
-        type: string
-        default: ""
-      accessKeyKey:
-        type: string
-        default: accessKey
-      secretKeyKey:
-        type: string
-        default: secretKey
   registry:
     type: object
     description: Registry credentials injected by Deckhouse runtime.
@@ -191,11 +187,10 @@ properties:
             pathPrefix: ai-models
             endpoint: ""
             region: us-east-1
+            accessKey: ""
+            secretKey: ""
             insecure: false
             usePathStyle: true
-            existingSecret: ""
-            accessKeyKey: accessKey
-            secretKeyKey: secretKey
         additionalProperties: true
       conditions:
         type: array
@@ -261,11 +256,10 @@ properties:
           pathPrefix: ai-models
           endpoint: ""
           region: us-east-1
+          accessKey: ""
+          secretKey: ""
           insecure: false
           usePathStyle: true
-          existingSecret: ""
-          accessKeyKey: accessKey
-          secretKeyKey: secretKey
         additionalProperties: true
       ingress:
         type: object
