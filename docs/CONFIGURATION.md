@@ -53,5 +53,10 @@ execution is disabled. High availability for the backend is achieved through
 Deckhouse module HA and pod replicas, not through extra in-process workers or
 genai job consumers.
 
+The backend also keeps MLflow security middleware enabled. The module derives
+MLflow `allowed-hosts` and same-origin CORS settings from the public ingress
+domain and preserves the default private-network/service access patterns needed
+for in-cluster probes and monitoring.
+
 `Model` and `ClusterModel` are not exposed as part of the current user-facing
 contract yet. They will be added later only when a stable module-level API is ready.

@@ -66,12 +66,76 @@ true
 {{- include "helm_lib_module_public_domain" (list . "ai-models") -}}
 {{- end -}}
 
+{{- define "ai-models.clusterDomain" -}}
+{{- $globalValues := (index .Values "global") | default dict -}}
+{{- $clusterConfiguration := (index $globalValues "clusterConfiguration") | default dict -}}
+{{- $discovery := (index $globalValues "discovery") | default dict -}}
+{{- default (index $clusterConfiguration "clusterDomain") (index $discovery "clusterDomain") -}}
+{{- end -}}
+
 {{- define "ai-models.backendPort" -}}
 5000
 {{- end -}}
 
 {{- define "ai-models.backendMetricsDir" -}}
 /tmp/ai-models-metrics
+{{- end -}}
+
+{{- define "ai-models.backendAllowedHosts" -}}
+{{- $hosts := list -}}
+{{- $publicHost := include "ai-models.publicHost" . | trim -}}
+{{- $namespace := include "ai-models.namespace" . -}}
+{{- $serviceName := include "ai-models.serviceName" . -}}
+{{- $clusterDomain := include "ai-models.clusterDomain" . -}}
+{{- range $host := list
+  $publicHost
+  (printf "%s:*" $publicHost)
+  $serviceName
+  (printf "%s:*" $serviceName)
+  (printf "%s.%s" $serviceName $namespace)
+  (printf "%s.%s:*" $serviceName $namespace)
+  (printf "%s.%s.svc" $serviceName $namespace)
+  (printf "%s.%s.svc:*" $serviceName $namespace)
+  (printf "%s.%s.svc.%s" $serviceName $namespace $clusterDomain)
+  (printf "%s.%s.svc.%s:*" $serviceName $namespace $clusterDomain)
+  "localhost"
+  "localhost:*"
+  "127.0.0.1"
+  "127.0.0.1:*"
+  "[::1]"
+  "[::1]:*"
+  "0.0.0.0"
+  "0.0.0.0:*"
+  "10.*"
+  "192.168.*"
+  "172.16.*"
+  "172.17.*"
+  "172.18.*"
+  "172.19.*"
+  "172.20.*"
+  "172.21.*"
+  "172.22.*"
+  "172.23.*"
+  "172.24.*"
+  "172.25.*"
+  "172.26.*"
+  "172.27.*"
+  "172.28.*"
+  "172.29.*"
+  "172.30.*"
+  "172.31.*"
+  "fc00:*"
+  "fd00:*"
+-}}
+  {{- if $host -}}
+    {{- $hosts = append $hosts $host -}}
+  {{- end -}}
+{{- end -}}
+{{- join "," $hosts -}}
+{{- end -}}
+
+{{- define "ai-models.backendCORSAllowedOrigins" -}}
+{{- printf "https://%s" (include "ai-models.publicHost" .) -}}
 {{- end -}}
 
 {{- define "ai-models.backendReplicas" -}}
@@ -205,11 +269,7 @@ Standalone
   {{- $external := (index $postgresql "external") | default dict -}}
   {{- default "" (index $external "host") -}}
 {{- else -}}
-{{- $globalValues := (index .Values "global") | default dict -}}
-{{- $clusterConfiguration := (index $globalValues "clusterConfiguration") | default dict -}}
-{{- $discovery := (index $globalValues "discovery") | default dict -}}
-{{- $clusterDomain := default (index $discovery "clusterDomain") (index $clusterConfiguration "clusterDomain") -}}
-{{- printf "d8ms-pg-%s-rw.%s.svc.%s" (include "ai-models.postgresqlManagedName" .) (include "ai-models.namespace" .) $clusterDomain -}}
+{{- printf "d8ms-pg-%s-rw.%s.svc.%s" (include "ai-models.postgresqlManagedName" .) (include "ai-models.namespace" .) (include "ai-models.clusterDomain" .) -}}
 {{- end -}}
 {{- end -}}
 
@@ -319,11 +379,7 @@ true
 {{- end -}}
 
 {{- define "ai-models.dexAuthServiceHost" -}}
-{{- $globalValues := (index .Values "global") | default dict -}}
-{{- $clusterConfiguration := (index $globalValues "clusterConfiguration") | default dict -}}
-{{- $discovery := (index $globalValues "discovery") | default dict -}}
-{{- $clusterDomain := default (index $discovery "clusterDomain") (index $clusterConfiguration "clusterDomain") -}}
-{{- printf "https://ai-models-dex-authenticator.%s.svc.%s/dex-authenticator/auth" (include "ai-models.namespace" .) $clusterDomain -}}
+{{- printf "https://ai-models-dex-authenticator.%s.svc.%s/dex-authenticator/auth" (include "ai-models.namespace" .) (include "ai-models.clusterDomain" .) -}}
 {{- end -}}
 
 {{- define "ai-models.dexAuthSignInURL" -}}

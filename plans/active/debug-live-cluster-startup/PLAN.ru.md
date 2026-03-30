@@ -30,11 +30,16 @@ external DKP module на живом кластере.
       `uvicorn` по умолчанию с `4` workers и `Huey` job runner/consumers;
     - для phase-1 managed backend это лишний footprint: нужны tracking/UI/registry,
       но не genai job execution runtime.
+    - после сужения runtime profile backend уже стартует, но внешние запросы через
+      ingress получают `Invalid Host header`, потому что upstream security
+      middleware остаётся в default `localhost-only` mode без явных
+      `allowed-hosts` и `cors-allowed-origins` для публичного домена модуля.
 
 ### Slice 2. Починить ближайший blocker в модуле
 - Цель: устранить следующую реальную причину падения, если она находится в
   repo/module contract.
 - Области:
+  - `templates/_helpers.tpl`
   - `templates/backend/configmap.yaml`
   - `templates/backend/deployment.yaml`
   - `docs/CONFIGURATION*.md`
@@ -46,7 +51,9 @@ external DKP module на живом кластере.
   - init/upgrade flow, который корректно обрабатывает и пустую БД, и
     существующую схему;
   - backend runtime profile, который укладывается в phase-1 scope и не
-    завышает footprint без необходимости.
+    завышает footprint без необходимости;
+  - backend security profile, который допускает public ingress host и
+    same-origin browser access без отключения upstream security middleware.
 
 ### Slice 3. Подтвердить новое состояние
 - Цель: сверить repo state и сформулировать следующий cluster retry step.

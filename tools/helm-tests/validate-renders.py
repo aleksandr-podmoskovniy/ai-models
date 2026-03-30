@@ -285,6 +285,39 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
     return errors
 
 
+def validate_backend_security_profile(path: Path) -> list[str]:
+    errors: list[str] = []
+    content = path.read_text(encoding="utf-8")
+
+    if 'kind: ConfigMap' not in content or 'start-backend.sh: |' not in content:
+        return errors
+
+    ingress_host_match = re.search(r"(?m)^    - host: ([^\s]+)$", content)
+    if ingress_host_match is None:
+        errors.append(f"{path.name}: rendered output must include the ai-models ingress host")
+        return errors
+
+    ingress_host = ingress_host_match.group(1).strip().strip('"')
+
+    if '--allowed-hosts="' not in content or ingress_host not in content:
+        errors.append(
+            f"{path.name}: backend start-backend.sh must configure MLflow allowed hosts for the public ingress host"
+        )
+
+    expected_origin = f"https://{ingress_host}"
+    if f'--cors-allowed-origins="{expected_origin}"' not in content:
+        errors.append(
+            f"{path.name}: backend start-backend.sh must configure MLflow CORS origins for the public ingress origin"
+        )
+
+    if "--disable-security-middleware" in content:
+        errors.append(
+            f"{path.name}: backend start-backend.sh must not disable MLflow security middleware"
+        )
+
+    return errors
+
+
 def main() -> int:
     renders_dir = Path(sys.argv[1])
     errors: list[str] = []
@@ -294,6 +327,7 @@ def main() -> int:
         errors.extend(validate_postgresclasses(render))
         errors.extend(validate_backend_db_upgrade_flow(render))
         errors.extend(validate_backend_runtime_profile(render))
+        errors.extend(validate_backend_security_profile(render))
 
     if errors:
         for error in errors:
