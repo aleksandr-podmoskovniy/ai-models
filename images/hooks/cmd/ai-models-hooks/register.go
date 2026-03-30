@@ -14,12 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package copycustomcertificate
+package main
 
 import (
-	copycustomcertificate "github.com/deckhouse/module-sdk/common-hooks/copy-custom-certificate"
+	// Blank imports register hook init() handlers.
+	_ "hooks/pkg/hooks/copy_custom_certificate"
 )
-
-const moduleName = "aiModels"
-
-var _ = copycustomcertificate.RegisterHook(moduleName)

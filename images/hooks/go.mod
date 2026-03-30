@@ -1,4 +1,4 @@
-module hook
+module hooks
 
 go 1.25.0
 

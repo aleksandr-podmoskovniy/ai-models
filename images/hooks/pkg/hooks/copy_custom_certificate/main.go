@@ -14,14 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package copy_custom_certificate
 
 import (
-	_ "hook/https"
+	copycustomcertificate "github.com/deckhouse/module-sdk/common-hooks/copy-custom-certificate"
 
-	"github.com/deckhouse/module-sdk/pkg/app"
+	"hooks/pkg/settings"
 )
 
-func main() {
-	app.Run()
-}
+var _ = copycustomcertificate.RegisterHook(settings.ModuleName)

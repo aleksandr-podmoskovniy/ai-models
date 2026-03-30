@@ -8,26 +8,29 @@
 Причина: задача архитектурно важная, но основной риск уже локализован и подтверждён по reference-проектам; для этого среза достаточно прямой локальной реализации без delegation.
 
 ## Slice 1. Зафиксировать канонический hooks path
-Цель: вернуть правильную структуру hooks на уровне layout и build shell.
+Цель: вернуть правильную структуру hooks на уровне layout и build shell без
+oversized hook artifact.
 
 Файлы/каталоги:
-- `hooks/batch/*`
-- `.werf/stages/batch-go.yaml`
+- `hooks/*`
 - `.werf/stages/bundle.yaml`
+- `werf.yaml`
 - `images/hooks/*` только для удаления остатков
 
 Проверки:
-- чтение reference flow в `n8n-d8`;
+- чтение reference flow в `n8n-d8` и Deckhouse `shell_lib`;
 - локальная sanity-проверка путей bundle/render.
 
 Артефакт результата:
-- batch hooks собираются из top-level `hooks/batch`, мёртвый `images/hooks` path убран.
+- shell hook лежит в top-level `hooks/`, мёртвый `images/hooks` path убран, а
+  oversized binary path не участвует в bundle.
 
 ## Slice 2. Вернуть рабочий CustomCertificate flow
-Цель: снять временный запрет на custom certificate и подключить common hook обратно.
+Цель: снять временный запрет на custom certificate и подключить common hook
+обратно через shell wrapper.
 
 Файлы/каталоги:
-- `hooks/batch/*.go`
+- `hooks/*`
 - `templates/_helpers.tpl`
 - `openapi/values.yaml` при необходимости
 
@@ -36,7 +39,8 @@
 - `make helm-template`
 
 Артефакт результата:
-- `CustomCertificate` снова поддерживается через DKP hook, validate не режет сценарий.
+- `CustomCertificate` снова поддерживается через DKP shell hook, validate не
+  режет сценарий.
 
 ## Slice 3. Выровнять docs и hygiene
 Цель: убрать ложные описания и зафиксировать новый канонический path.

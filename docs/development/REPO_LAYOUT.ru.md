@@ -43,30 +43,28 @@ repo. Поэтому layout должен разделять:
 
 Текущее разделение:
 - `images/backend/` — internal backend engine packaging;
+- `images/hooks/` — Deckhouse Go hooks, доставляемые в bundle как `/hooks/go`;
 - `images/controller/` — канонический корень для будущего controller executable code;
 - `images/src-artifact/` — reusable source artifact fetch layer.
 
 Правила:
 - controller source, module-local `go.mod` и image build files должны жить под
   `images/controller/`, а не в top-level `controllers/`;
+- Go hooks source, module-local `go.mod` и werf wiring для них должны жить под
+  `images/hooks/`, а не в top-level `hooks/batch`;
 - `images/` не должен превращаться в свалку unrelated tooling или docs.
 
 ### `hooks/`
 
-Top-level `hooks/` нужен для Deckhouse batch hooks.
-
-Текущее разделение:
-- `hooks/batch/` — batch hook runner и common hooks для module-side value
-  preparation;
-- в phase-1 сейчас здесь живёт copy-custom-certificate flow для global HTTPS
-  `CustomCertificate`.
+Top-level `hooks/` зарезервирован только для редких classic/shell hook
+сценариев. В phase-1 у `ai-models` собственных top-level hooks нет: module
+hooks доставляются через `images/hooks` в `/hooks/go`.
 
 Правила:
-- не держать module hooks под `images/*`: это не image runtime code, а DKP
-  module hook packaging;
-- не смешивать batch hooks и controller/backend runtime code;
-- shell hooks добавлять только если их нельзя выразить через batch/common hook
-  pattern.
+- не смешивать top-level shell/classic hooks и Go hooks в одном механизме
+  delivery;
+- не складывать module-local Go hooks source в корень `hooks/`;
+- не держать временные workaround paths вроде `batchhooks` в корне chart.
 
 Правило по database bootstrap:
 - если используется `managed-postgres`, создание database/user должно оставаться

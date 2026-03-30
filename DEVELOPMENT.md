@@ -110,9 +110,11 @@ Phase-1 runtime модуля ожидает платформенные prerequis
 `global.discovery.apiVersions`, поэтому базовый repo render остаётся на built-in
 Kubernetes ресурсах.
 
-Для `global.modules.https.mode=CustomCertificate` модуль использует canonical
-Deckhouse batch hooks path `hooks/batch` и common hook
-`copy-custom-certificate`, а не image-local hooks under `images/*`.
+Для `global.modules.https.mode=CustomCertificate` модуль использует
+канонический DKP Go hooks flow из `images/hooks`, который собирается в
+`go-hooks-artifact` и импортируется в bundle по пути `/hooks/go`.
+`copy_custom_certificate` остаётся на стандартном helper из `module-sdk`, но
+hooks delivery теперь выровнен с `gpu-control-plane` и `virtualization`.
 
 ## Правило по стадиям
 

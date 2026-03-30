@@ -9,22 +9,19 @@ import:
       - images_digests.json
       - version.json
     after: setup
-  - image: batch-hooks
-    add: /usr/local/bin/batchhooks
-    to: /hooks/batchhooks
+  - image: go-hooks-artifact
+    add: /go-hooks
+    to: /hooks/go
     after: setup
 git:
   - add: /
     to: /
-    excludePaths:
-      - hooks/batch
     includePaths:
       - Chart.yaml
       - module.yaml
       - oss.yaml
       - .helmignore
       - docs
-      - hooks
       - openapi
       - templates
       - README.md

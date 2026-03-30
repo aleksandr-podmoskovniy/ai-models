@@ -155,7 +155,7 @@ properties:
     properties:
       customCertificateData:
         type: object
-        description: Copied custom certificate data prepared by the Deckhouse batch hook for CustomCertificate mode.
+        description: Copied custom certificate data prepared by the module Go hook for CustomCertificate mode.
         properties:
           tls.crt:
             type: string
