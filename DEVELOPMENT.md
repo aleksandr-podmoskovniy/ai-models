@@ -33,10 +33,6 @@
 - `make kubeconform`
 - `make verify`
 
-`make test` теперь также собирает image-based Go hooks из `images/hooks`, поэтому host `go`
-должен быть доступен либо через обычный `PATH`, либо через стандартные macOS
-пути `/opt/homebrew/bin/go` или `/usr/local/go/bin/go`.
-
 `make helm-template` не ограничивается одним happy-path render: базовые values
 из `fixtures/module-values.yaml` комбинируются со scenario overlays из
 `fixtures/render/*.yaml`, и каждый сценарий рендерится в отдельный
@@ -105,7 +101,7 @@ tag, и resolved commit.
 Phase-1 runtime модуля ожидает платформенные prerequisites:
 
 - `global.modules.publicDomainTemplate`;
-- global HTTPS mode, отличный от `Disabled`;
+- global HTTPS mode `CertManager` или `CustomCertificate`;
 - модуль `user-authn` для module SSO;
 - модуль `managed-postgres`, если используется `aiModels.postgresql.mode=Managed`.
 
@@ -114,9 +110,9 @@ Phase-1 runtime модуля ожидает платформенные prerequis
 `global.discovery.apiVersions`, поэтому базовый repo render остаётся на built-in
 Kubernetes ресурсах.
 
-Для global HTTPS mode `CustomCertificate` модуль использует image-based Go hooks
-из `images/hooks` и common hook `copy-custom-certificate`, поэтому bundle
-должен включать `/hooks/go`.
+Для `global.modules.https.mode=CustomCertificate` модуль использует canonical
+Deckhouse batch hooks path `hooks/batch` и common hook
+`copy-custom-certificate`, а не image-local hooks under `images/*`.
 
 ## Правило по стадиям
 

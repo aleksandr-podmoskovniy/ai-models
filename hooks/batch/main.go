@@ -17,7 +17,7 @@ limitations under the License.
 package main
 
 import (
-	_ "hooks/pkg/https"
+	_ "hook/https"
 
 	"github.com/deckhouse/module-sdk/pkg/app"
 )

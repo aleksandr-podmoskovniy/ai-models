@@ -1,8 +1,8 @@
-module hooks
+module hook
 
 go 1.25.0
 
-require github.com/deckhouse/module-sdk v0.10.0
+require github.com/deckhouse/module-sdk v0.10.3
 
 require (
 	github.com/DataDog/gostackparse v0.7.0 // indirect

@@ -26,15 +26,21 @@ credentials.
 
 Artifact credentials can be provided in two ways:
 
-- via inline `accessKey` and `secretKey` in ModuleConfig;
-- the module renders an internal Secret in `d8-ai-models` from these values.
+- via `credentialsSecretName` that points to an existing Secret in `d8-ai-models`
+  with fixed keys `accessKey` and `secretKey`;
+- via inline `accessKey` and `secretKey` in ModuleConfig, in which case the
+  module renders an internal Secret in `d8-ai-models`.
 
-High availability mode, HTTPS policy, certificate source, ingress behavior,
-and Dex SSO are taken from global Deckhouse configuration and internal module
-wiring. The current runtime expects:
+`bucket`, `pathPrefix`, `endpoint`, `region`, and addressing/TLS flags are not
+treated as secrets. They remain part of the normal module configuration surface.
+
+High availability mode, HTTPS policy, ingress behavior, and Dex SSO are taken
+from global Deckhouse configuration and internal module wiring. The current
+runtime expects:
 
 - `global.modules.publicDomainTemplate` to be configured;
-- HTTPS to be enabled globally;
+- HTTPS to be enabled globally through Deckhouse module HTTPS policy
+  (`CertManager` or `CustomCertificate`);
 - the `user-authn` module for module SSO;
 - the `managed-postgres` module when `postgresql.mode=Managed`.
 

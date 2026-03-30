@@ -44,20 +44,29 @@ repo. Поэтому layout должен разделять:
 Текущее разделение:
 - `images/backend/` — internal backend engine packaging;
 - `images/controller/` — канонический корень для будущего controller executable code;
-- `images/hooks/` — image-based Go hooks для platform-side effects;
 - `images/src-artifact/` — reusable source artifact fetch layer.
 
 Правила:
 - controller source, module-local `go.mod` и image build files должны жить под
   `images/controller/`, а не в top-level `controllers/`;
-- code Go hooks должен жить под `images/hooks/`, а bundle должен импортировать
-  его как `/hooks/go`;
 - `images/` не должен превращаться в свалку unrelated tooling или docs.
 
 ### `hooks/`
 
-Top-level `hooks/` нужен только для classic shell hooks, если такие когда-либо
-понадобятся. Текущий модуль использует image-based Go hooks из `images/hooks`.
+Top-level `hooks/` нужен для Deckhouse batch hooks.
+
+Текущее разделение:
+- `hooks/batch/` — batch hook runner и common hooks для module-side value
+  preparation;
+- в phase-1 сейчас здесь живёт copy-custom-certificate flow для global HTTPS
+  `CustomCertificate`.
+
+Правила:
+- не держать module hooks под `images/*`: это не image runtime code, а DKP
+  module hook packaging;
+- не смешивать batch hooks и controller/backend runtime code;
+- shell hooks добавлять только если их нельзя выразить через batch/common hook
+  pattern.
 
 Правило по database bootstrap:
 - если используется `managed-postgres`, создание database/user должно оставаться

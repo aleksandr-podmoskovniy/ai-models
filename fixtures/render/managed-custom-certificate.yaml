@@ -1,0 +1,21 @@
+global:
+  modules:
+    https:
+      mode: CustomCertificate
+      customCertificate:
+        secretName: ai-models-custom-certificate
+aiModels:
+  internal:
+    customCertificateData:
+      tls.crt: |
+        -----BEGIN CERTIFICATE-----
+        TESTCERT
+        -----END CERTIFICATE-----
+      tls.key: |
+        -----BEGIN PRIVATE KEY-----
+        TESTKEY
+        -----END PRIVATE KEY-----
+      ca.crt: |
+        -----BEGIN CERTIFICATE-----
+        TESTCA
+        -----END CERTIFICATE-----

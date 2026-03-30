@@ -106,6 +106,7 @@ properties:
       pathPrefix: ai-models
       endpoint: ""
       region: us-east-1
+      credentialsSecretName: ""
       accessKey: ""
       secretKey: ""
       insecure: false
@@ -123,6 +124,9 @@ properties:
       region:
         type: string
         default: us-east-1
+      credentialsSecretName:
+        type: string
+        default: ""
       accessKey:
         type: string
         default: ""
@@ -146,11 +150,12 @@ properties:
     additionalProperties: false
   internal:
     type: object
-    description: Internal runtime values used by templates and hooks.
+    description: Internal runtime values used by templates.
     default: {}
     properties:
       customCertificateData:
         type: object
+        description: Copied custom certificate data prepared by the Deckhouse batch hook for CustomCertificate mode.
         properties:
           tls.crt:
             type: string
@@ -187,6 +192,7 @@ properties:
             pathPrefix: ai-models
             endpoint: ""
             region: us-east-1
+            credentialsSecretName: ""
             accessKey: ""
             secretKey: ""
             insecure: false

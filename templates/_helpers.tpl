@@ -225,11 +225,32 @@ Standalone
 {{- default "" (index $artifacts "secretKey") -}}
 {{- end -}}
 
+{{- define "ai-models.artifactsCredentialsSecretName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
+{{- default "" (index $artifacts "credentialsSecretName") -}}
+{{- end -}}
+
 {{- define "ai-models.artifactsHasInlineCredentials" -}}
 {{- $accessKey := include "ai-models.artifactsInlineAccessKey" . | trim -}}
 {{- $secretKey := include "ai-models.artifactsInlineSecretKey" . | trim -}}
 {{- if and $accessKey $secretKey -}}
 true
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.artifactsHasSecretReference" -}}
+{{- if (include "ai-models.artifactsCredentialsSecretName" . | trim) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.artifactsResolvedSecretName" -}}
+{{- $external := include "ai-models.artifactsCredentialsSecretName" . | trim -}}
+{{- if $external -}}
+{{- $external -}}
+{{- else -}}
+{{- include "ai-models.artifactsManagedSecretName" . -}}
 {{- end -}}
 {{- end -}}
 
@@ -333,8 +354,11 @@ true
   {{- if and (include "ai-models.artifactsInlineSecretKey" . | trim) (not (include "ai-models.artifactsInlineAccessKey" . | trim)) -}}
     {{- fail "ai-models.artifacts.accessKey is required when ai-models.artifacts.secretKey is set" -}}
   {{- end -}}
-  {{- if not (include "ai-models.artifactsHasInlineCredentials" . | trim) -}}
-    {{- fail "ai-models.artifacts.accessKey and ai-models.artifacts.secretKey are required" -}}
+  {{- if and (include "ai-models.artifactsHasInlineCredentials" . | trim) (include "ai-models.artifactsHasSecretReference" . | trim) -}}
+    {{- fail "ai-models.artifacts.credentialsSecretName cannot be used together with inline accessKey/secretKey" -}}
+  {{- end -}}
+  {{- if not (or (include "ai-models.artifactsHasInlineCredentials" . | trim) (include "ai-models.artifactsHasSecretReference" . | trim)) -}}
+    {{- fail "ai-models.artifacts requires either credentialsSecretName or inline accessKey and secretKey" -}}
   {{- end -}}
 {{- end -}}
 {{- end -}}

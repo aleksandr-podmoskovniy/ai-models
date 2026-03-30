@@ -1,0 +1,25 @@
+# Batch hooks build, following the canonical Deckhouse module pattern.
+---
+image: batch-hooks
+fromImage: builder/golang-alpine
+final: false
+git:
+  - add: /
+    to: /usr/src/app
+    includePaths:
+      - hooks/batch
+    stageDependencies:
+      install:
+        - "**/go.mod"
+        - "**/go.sum"
+      beforeSetup:
+        - "**/*.go"
+shell:
+  install:
+    - cd /usr/src/app/hooks/batch
+    - go mod download
+  beforeSetup:
+    - |
+      cd /usr/src/app/hooks/batch
+      # Keep embedded source paths in the binary so addon-operator can identify hook names correctly.
+      CGO_ENABLED=0 go build -gcflags=all="-l -B" -ldflags="-w -s" -o /usr/local/bin/batchhooks *.go

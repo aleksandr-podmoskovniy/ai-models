@@ -25,15 +25,21 @@ path prefix, endpoint URL, region, TLS policy, addressing style и credentials.
 
 Учётные данные для artifact storage можно задавать двумя способами:
 
-- через inline `accessKey` и `secretKey` в ModuleConfig;
-- модуль сам создаёт внутренний Secret в `d8-ai-models` из этих значений.
+- через `credentialsSecretName`, указывающий на уже существующий Secret в
+  `d8-ai-models` с фиксированными ключами `accessKey` и `secretKey`;
+- через inline `accessKey` и `secretKey` в ModuleConfig, после чего модуль сам
+  создаёт внутренний Secret в `d8-ai-models`.
 
-Режим доступности, HTTPS policy, выбор сертификатов, ingress behavior и Dex SSO
-берутся из global Deckhouse configuration и internal module wiring.
+`bucket`, `pathPrefix`, `endpoint`, `region` и флаги addressing/TLS не считаются
+секретами и остаются обычной частью module configuration contract.
+
+Режим доступности, HTTPS policy, ingress behavior и Dex SSO берутся из global
+Deckhouse configuration и internal module wiring.
 Текущий runtime ожидает:
 
 - настроенный `global.modules.publicDomainTemplate`;
-- глобально включённый HTTPS;
+- глобально включённый HTTPS через Deckhouse module HTTPS policy
+  (`CertManager` или `CustomCertificate`);
 - модуль `user-authn` для module SSO;
 - модуль `managed-postgres`, если `postgresql.mode=Managed`.
 

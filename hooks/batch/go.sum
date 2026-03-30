@@ -18,8 +18,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/deckhouse/deckhouse/pkg/log v0.2.0 h1:6tmZQLwNb1o/hP1gzJQBjcwfA/bubbgObovXzxq+Exo=
 github.com/deckhouse/deckhouse/pkg/log v0.2.0/go.mod h1:pbAxTSDcPmwyl3wwKDcEB3qdxHnRxqTV+J0K+sha8bw=
-github.com/deckhouse/module-sdk v0.10.0 h1:VPhYvMVQ3pT32I2WL1ITtQyrYdpiUR0RocLw7S4TfNg=
-github.com/deckhouse/module-sdk v0.10.0/go.mod h1:Z1jfmd0fICoYww0daMijWAU+OZTxeJUXfMciKKuYAYA=
+github.com/deckhouse/module-sdk v0.10.3 h1:+IRQWGWnt909zk8h4AvS6Obag/56nLZCikxNkAQZsB0=
+github.com/deckhouse/module-sdk v0.10.3/go.mod h1:Z1jfmd0fICoYww0daMijWAU+OZTxeJUXfMciKKuYAYA=
 github.com/docker/cli v28.2.2+incompatible h1:qzx5BNUDFqlvyq4AHzdNB7gSyVTmU4cgsyN9SdInc1A=
 github.com/docker/cli v28.2.2+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
 github.com/docker/distribution v2.8.3+incompatible h1:AtKxIZ36LoNK51+Z6RpzLpddBirtxJnzDrHLEKxTAYk=

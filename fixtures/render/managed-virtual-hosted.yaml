@@ -1,3 +1,6 @@
 aiModels:
   artifacts:
+    credentialsSecretName: ai-models-artifacts
+    accessKey: ""
+    secretKey: ""
     usePathStyle: false

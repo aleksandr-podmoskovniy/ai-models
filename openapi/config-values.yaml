@@ -124,15 +124,23 @@ properties:
         type: string
         description: S3 region value used by the client.
         default: us-east-1
+      credentialsSecretName:
+        type: string
+        description: |
+          Existing Secret in `d8-ai-models` with `accessKey` and `secretKey`.
+          Prefer this path in production. Inline credentials remain available for bootstrap.
+        default: ""
       accessKey:
         type: string
         description: |
-          S3 access key used by ai-models artifact storage.
+          Inline S3 access key used to render the internal artifact credentials Secret.
+          Intended mainly for bootstrap when a pre-created Secret is not used.
         default: ""
       secretKey:
         type: string
         description: |
-          S3 secret key used by ai-models artifact storage.
+          Inline S3 secret key used to render the internal artifact credentials Secret.
+          Intended mainly for bootstrap when a pre-created Secret is not used.
         default: ""
       insecure:
         type: boolean
