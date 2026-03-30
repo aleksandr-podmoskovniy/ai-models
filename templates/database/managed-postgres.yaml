@@ -9,7 +9,7 @@ metadata:
   namespace: {{ include "ai-models.namespace" . }}
   {{- include "helm_lib_module_labels" (list . (dict "app" "managed-postgres" "component" "database")) | nindent 2 }}
 spec:
-  postgresClassName: {{ default "default" (index $managed "postgresClassName") }}
+  postgresClassName: {{ include "ai-models.postgresqlManagedClassName" . }}
   type: {{ include "ai-models.postgresqlManagedType" . }}
   instance:
     memory:
@@ -24,7 +24,7 @@ spec:
       {{- end }}
   {{- if eq (include "ai-models.postgresqlManagedType" .) "Cluster" }}
   cluster:
-    topology: Zonal
+    topology: {{ include "ai-models.postgresqlManagedTopology" . }}
     replication: ConsistencyAndAvailability
   {{- end }}
   databases:

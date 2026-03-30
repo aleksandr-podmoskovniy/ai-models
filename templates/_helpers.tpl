@@ -93,10 +93,10 @@ true
 {{- $postgresql := (index $moduleValues "postgresql") | default dict -}}
 {{- if eq (include "ai-models.postgresqlMode" .) "External" -}}
 {{- $external := (index $postgresql "external") | default dict -}}
-{{- default "ai_models" (index $external "database") -}}
+{{- default "ai-models" (index $external "database") -}}
 {{- else -}}
 {{- $managed := (index $postgresql "managed") | default dict -}}
-{{- default "ai_models" (index $managed "database") -}}
+{{- default "ai-models" (index $managed "database") -}}
 {{- end -}}
 {{- end -}}
 
@@ -116,10 +116,17 @@ true
 {{- $postgresql := (index $moduleValues "postgresql") | default dict -}}
 {{- if eq (include "ai-models.postgresqlMode" .) "External" -}}
 {{- $external := (index $postgresql "external") | default dict -}}
-{{- default "ai_models" (index $external "user") -}}
+{{- default "ai-models" (index $external "user") -}}
 {{- else -}}
-ai_models
+ai-models
 {{- end -}}
+{{- end -}}
+
+{{- define "ai-models.postgresqlManagedClassName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $postgresql := (index $moduleValues "postgresql") | default dict -}}
+{{- $managed := (index $postgresql "managed") | default dict -}}
+{{- default "default" (index $managed "postgresClassName") -}}
 {{- end -}}
 
 {{- define "ai-models.postgresqlPasswordSecretName" -}}
@@ -181,6 +188,14 @@ Cluster
 {{- else -}}
 Standalone
 {{- end -}}
+{{- end -}}
+
+{{- define "ai-models.postgresqlManagedTopology" -}}
+{{- $className := include "ai-models.postgresqlManagedClassName" . -}}
+{{- $postgresClass := lookup "managed-services.deckhouse.io/v1alpha1" "PostgresClass" "" $className -}}
+{{- $spec := (get (default (dict) $postgresClass) "spec") | default dict -}}
+{{- $topology := (get $spec "topology") | default dict -}}
+{{- default "Ignored" (get $topology "defaultTopology") -}}
 {{- end -}}
 
 {{- define "ai-models.postgresqlHost" -}}

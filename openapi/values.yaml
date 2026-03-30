@@ -27,7 +27,7 @@ properties:
         additionalProperties: false
         default:
           name: ai-models
-          database: ai_models
+          database: ai-models
           postgresClassName: default
           createPostgresClass: false
           storageClassName: ""
@@ -40,7 +40,7 @@ properties:
             default: ai-models
           database:
             type: string
-            default: ai_models
+            default: ai-models
           postgresClassName:
             type: string
             default: default
@@ -65,8 +65,8 @@ properties:
         default:
           host: ""
           port: 5432
-          database: ai_models
-          user: ai_models
+          database: ai-models
+          user: ai-models
           sslMode: Require
           existingSecret: ""
           existingSecretKey: password
@@ -79,10 +79,10 @@ properties:
             default: 5432
           database:
             type: string
-            default: ai_models
+            default: ai-models
           user:
             type: string
-            default: ai_models
+            default: ai-models
           sslMode:
             type: string
             default: Require
@@ -172,7 +172,7 @@ properties:
             mode: Managed
             managed:
               name: ai-models
-              database: ai_models
+              database: ai-models
               postgresClassName: default
               createPostgresClass: false
               storageClassName: ""
@@ -182,8 +182,8 @@ properties:
             external:
               host: ""
               port: 5432
-              database: ai_models
-              user: ai_models
+              database: ai-models
+              user: ai-models
               sslMode: Require
               existingSecret: ""
               existingSecretKey: password
@@ -240,8 +240,8 @@ properties:
         description: Runtime-only database wiring for ai-models metadata storage.
         default:
           mode: Managed
-          database: ai_models
-          user: ai_models
+          database: ai-models
+          user: ai-models
           port: 5432
           sslMode: require
           managed:

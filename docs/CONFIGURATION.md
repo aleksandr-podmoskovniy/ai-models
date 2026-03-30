@@ -19,6 +19,9 @@ logging, PostgreSQL wiring, and S3-compatible artifact storage.
 The default managed baseline is intentionally small: it reuses an existing
 cluster-wide `PostgresClass`, requests a 5Gi volume, and keeps the rest of the
 resource profile minimal for phase-1 metadata storage.
+The default database and user names are `ai-models`, and HA topology for the
+managed `Postgres` follows the selected `PostgresClass.defaultTopology` instead
+of hardcoding a module-specific value.
 
 `artifacts` config defines the S3-compatible backend for ai-models artifacts:
 bucket, path prefix, endpoint URL, region, TLS policy, addressing style, and

@@ -44,7 +44,7 @@ properties:
           database:
             type: string
             description: Logical database name for ai-models metadata.
-            default: ai_models
+            default: ai-models
           postgresClassName:
             type: string
             description: PostgresClass name used by the managed Postgres resource.
@@ -83,10 +83,10 @@ properties:
             default: 5432
           database:
             type: string
-            default: ai_models
+            default: ai-models
           user:
             type: string
-            default: ai_models
+            default: ai-models
           sslMode:
             type: string
             default: Require

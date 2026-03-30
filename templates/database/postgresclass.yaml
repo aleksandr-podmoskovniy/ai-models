@@ -14,7 +14,7 @@ spec:
       - TransZonal
       - Ignored
     allowedZones: []
-    defaultTopology: Zonal
+    defaultTopology: Ignored
   sizingPolicies:
     - cores:
         min: 1

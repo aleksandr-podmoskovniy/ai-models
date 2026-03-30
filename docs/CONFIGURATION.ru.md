@@ -19,6 +19,9 @@ weight: 60
 Базовый managed profile намеренно маленький: по умолчанию он использует уже
 существующий cluster-wide `PostgresClass`, запрашивает том на 5Gi и держит
 минимальный resource profile для phase-1 metadata storage.
+Имена database и user по умолчанию теперь `ai-models`, а HA topology для
+managed `Postgres` берётся из `PostgresClass.defaultTopology`, а не
+хардкодится на стороне модуля.
 
 `artifacts` определяет S3-compatible backend для артефактов ai-models: bucket,
 path prefix, endpoint URL, region, TLS policy, addressing style и credentials.
