@@ -44,6 +44,12 @@ render output. `kubeconform` continues to validate built-in Kubernetes objects
 strictly and skips these custom kinds because the repo does not vendor a local
 schema catalog for them.
 
+Because custom resource schemas are not vendored locally, `make helm-template`
+also runs repo-local semantic assertions for critical custom contracts. In
+particular, managed `Postgres` renders must carry `spec.users[].password` or
+`hashedPassword`, so regressions in CR-specific wiring are caught before cluster
+startup.
+
 ## Internal Backend Upstream Fetch And Build Shell
 
 Для phase-1 runtime внутренний backend тянется как внешний 3p source и живёт

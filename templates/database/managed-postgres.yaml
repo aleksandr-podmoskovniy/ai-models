@@ -1,5 +1,6 @@
 {{- if and (include "ai-models.isEnabled" .) (eq (include "ai-models.postgresqlMode" .) "Managed") (include "ai-models.hasAPI" (list . "managed-services.deckhouse.io/v1alpha1/Postgres")) }}
 {{- $managed := (index ((index ((index .Values "aiModels") | default dict) "postgresql") | default dict) "managed") | default dict }}
+{{- $password := include "ai-models.postgresqlManagedPassword" . }}
 ---
 apiVersion: managed-services.deckhouse.io/v1alpha1
 kind: Postgres
@@ -31,5 +32,6 @@ spec:
   users:
     - name: {{ include "ai-models.postgresqlUser" . }}
       role: rw
+      password: {{ $password | quote }}
       storeCredsToSecret: {{ include "ai-models.postgresqlSecretName" . }}
 {{- end }}

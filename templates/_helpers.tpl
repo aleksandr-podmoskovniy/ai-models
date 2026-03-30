@@ -144,6 +144,15 @@ password
 {{- end -}}
 {{- end -}}
 
+{{- define "ai-models.postgresqlManagedPassword" -}}
+{{- $secretName := include "ai-models.postgresqlSecretName" . -}}
+{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
+{{- $existingPassword := (get $existingData "password" | default "" | b64dec) -}}
+{{- $generatedPassword := printf "A1a%s" (randAlphaNum 37) -}}
+{{- coalesce $existingPassword $generatedPassword -}}
+{{- end -}}
+
 {{- define "ai-models.postgresqlSSLMode" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $postgresql := (index $moduleValues "postgresql") | default dict -}}

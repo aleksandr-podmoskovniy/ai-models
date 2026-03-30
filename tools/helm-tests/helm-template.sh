@@ -159,3 +159,5 @@ if [[ "${scenario_count}" -eq 0 ]]; then
   echo "no scenario fixtures found in ${SCENARIOS_DIR}" >&2
   exit 1
 fi
+
+python3 "${ROOT_DIR}/tools/helm-tests/validate-renders.py" "${RENDERS_DIR}"
