@@ -29,7 +29,7 @@ data:
     set -eu
 
     backend_store_uri="$(python3 /opt/ai-models/bin/render-db-uri.py)"
-    exec ai-models-backend db upgrade "${backend_store_uri}"
+    exec ai-models-backend-db-upgrade "${backend_store_uri}"
   render-db-uri.py: |
     import os
     from urllib.parse import quote_plus

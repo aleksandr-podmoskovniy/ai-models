@@ -24,6 +24,7 @@ RUN set -eux; \
     bash /work/images/backend/scripts/apt-install.sh ca-certificates git; \
     python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel; \
     bash /work/images/backend/scripts/install-full-from-source.sh /work/src/backend; \
+    install -m 0755 /work/images/backend/scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade; \
     printf '%s\n' \
       '#!/bin/sh' \
       'set -eu' \

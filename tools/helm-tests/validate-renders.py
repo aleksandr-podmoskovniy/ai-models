@@ -246,6 +246,26 @@ def validate_postgresclasses(path: Path) -> list[str]:
     return errors
 
 
+def validate_backend_db_upgrade_flow(path: Path) -> list[str]:
+    errors: list[str] = []
+    content = path.read_text(encoding="utf-8")
+
+    if "kind: ConfigMap" not in content or "upgrade-db.sh: |" not in content:
+        return errors
+
+    if 'exec ai-models-backend-db-upgrade "${backend_store_uri}"' not in content:
+        errors.append(
+            f"{path.name}: backend upgrade-db.sh must call the image-owned db upgrade wrapper"
+        )
+
+    if "from mlflow.store.db import utils as db_utils" in content:
+        errors.append(
+            f"{path.name}: backend ConfigMap must not embed Python db utils logic inline"
+        )
+
+    return errors
+
+
 def main() -> int:
     renders_dir = Path(sys.argv[1])
     errors: list[str] = []
@@ -253,6 +273,7 @@ def main() -> int:
     for render in sorted(renders_dir.glob("helm-template-*.yaml")):
         errors.extend(validate_postgres_users(render))
         errors.extend(validate_postgresclasses(render))
+        errors.extend(validate_backend_db_upgrade_flow(render))
 
     if errors:
         for error in errors:

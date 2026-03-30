@@ -107,6 +107,7 @@ shell:
     rm -rf /src/backend/mlflow/server/js/build
     cp -a /ui-build /src/backend/mlflow/server/js/build
     bash /scripts/install-full-from-source.sh /src/backend
+    install -m 0755 /scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade
     printf '%s\n' \
       '#!/bin/sh' \
       'set -eu' \

@@ -48,6 +48,8 @@ repo. Поэтому layout должен разделять:
 - `images/src-artifact/` — reusable source artifact fetch layer.
 
 Правила:
+- image-owned runtime wrappers и helper scripts backend должны жить под
+  `images/backend/`, а не inline в `ConfigMap` или других manifests;
 - controller source, module-local `go.mod` и image build files должны жить под
   `images/controller/`, а не в top-level `controllers/`;
 - Go hooks source, module-local `go.mod` и werf wiring для них должны жить под
