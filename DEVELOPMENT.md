@@ -116,6 +116,11 @@ Kubernetes ресурсах.
 `copy_custom_certificate` остаётся на стандартном helper из `module-sdk`, но
 hooks delivery теперь выровнен с `gpu-control-plane` и `virtualization`.
 
+Для external module bundle `Chart.yaml` сознательно не включается в образ
+bundle. Это позволяет Deckhouse `helm3lib` использовать internal synthesized
+chart path, который игнорирует каталоги `hooks/` и `images/` при `helm install`
+и не упирается в Helm per-file limit для Go hooks binaries.
+
 ## Правило по стадиям
 
 Репозиторий развивается поэтапно.
