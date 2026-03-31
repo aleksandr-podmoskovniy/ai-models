@@ -94,6 +94,20 @@ in-cluster import Jobs и break-glass operations, а browser users идут че
 `artifacts.insecure: true` остаётся только временным troubleshooting path, а не
 целевым steady-state режимом.
 
+HF import path также оставляет в MLflow осмысленную metadata для production UX:
+
+- run получает HF-related params и tags;
+- registered model и model version получают description и tags;
+- в run artifacts логируются `hf/model-info.json`,
+  `hf/snapshot-manifest.json`, а также доступные `config.json`,
+  `generation_config.json`, `tokenizer_config.json` и `model-card.md`.
+
+Это не делает MLflow UI браузером сырых объектов в S3: интерфейс всё ещё
+показывает только то, что importer явно залогировал как MLflow metadata и
+artifacts. Для multimodal task types schema в UI по-прежнему зависит от
+upstream `mlflow.transformers` support и может оставаться пустой без
+task-specific signature.
+
 Текущий phase-1 runtime profile намеренно консервативен:
 каждый backend pod запускает один MLflow web worker, а MLflow server job
 execution отключён. High availability backend достигается через Deckhouse

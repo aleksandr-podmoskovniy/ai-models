@@ -93,6 +93,20 @@ directly to S3. The backend and import Jobs reuse the same merged trust bundle
 for Dex OIDC and S3 CA overrides, so `artifacts.insecure: true` is only a
 temporary troubleshooting path and not the intended steady-state mode.
 
+The HF import path now also leaves production-grade metadata in MLflow:
+
+- the source run gets HF-related params and tags;
+- the registered model and model version get descriptions and tags;
+- run artifacts include `hf/model-info.json`, `hf/snapshot-manifest.json`, and,
+  when available, `config.json`, `generation_config.json`, `tokenizer_config.json`,
+  and `model-card.md`.
+
+This does not turn the MLflow UI into a raw S3 browser: the UI still shows only
+the metadata and artifacts that the importer logs explicitly. For multimodal
+task types, the schema section in the UI still depends on upstream
+`mlflow.transformers` support and may remain empty without a task-specific
+signature.
+
 The current phase-1 backend runtime profile is intentionally conservative:
 each backend pod runs a single MLflow web worker, and MLflow server job
 execution is disabled. High availability for the backend is achieved through
