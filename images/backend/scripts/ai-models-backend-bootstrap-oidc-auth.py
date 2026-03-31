@@ -33,7 +33,14 @@ import argparse
 import os
 import sys
 
-from ai_models_backend_runtime import env, render_db_uri_from_env
+import psycopg2
+from psycopg2 import sql
+
+from ai_models_backend_runtime import (
+    env,
+    oidc_auth_schema_from_env,
+    render_oidc_users_db_uri_from_env,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -46,7 +53,8 @@ def main() -> int:
     build_parser().parse_args()
     username = env("AI_MODELS_AUTH_MACHINE_USERNAME", "").strip()
     password = env("AI_MODELS_AUTH_MACHINE_PASSWORD", "").strip()
-    users_db_uri = env("OIDC_USERS_DB_URI", "").strip() or render_db_uri_from_env()
+    users_db_uri = env("OIDC_USERS_DB_URI", "").strip() or render_oidc_users_db_uri_from_env()
+    oidc_schema = oidc_auth_schema_from_env()
 
     if not username:
         print("AI_MODELS_AUTH_MACHINE_USERNAME is required.", file=sys.stderr)
@@ -54,6 +62,24 @@ def main() -> int:
     if not password:
         print("AI_MODELS_AUTH_MACHINE_PASSWORD is required.", file=sys.stderr)
         return 1
+
+    connection = psycopg2.connect(
+        host=env("AI_MODELS_DATABASE_HOST"),
+        port=env("AI_MODELS_DATABASE_PORT"),
+        dbname=env("AI_MODELS_DATABASE_NAME"),
+        user=env("AI_MODELS_DATABASE_USER"),
+        password=env("AI_MODELS_DATABASE_PASSWORD"),
+        sslmode=env("AI_MODELS_DATABASE_SSLMODE", "require"),
+    )
+    try:
+        connection.autocommit = True
+        with connection.cursor() as cursor:
+            cursor.execute(
+                sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(oidc_schema))
+            )
+    finally:
+        connection.close()
+
     os.environ["OIDC_USERS_DB_URI"] = users_db_uri
 
     from mlflow_oidc_auth.store import store

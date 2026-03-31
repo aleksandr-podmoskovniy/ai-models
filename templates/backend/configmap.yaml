@@ -13,12 +13,13 @@ data:
     set -eu
 
     backend_store_uri="$(ai-models-backend-runtime render-db-uri)"
+    oidc_users_db_uri="$(ai-models-backend-runtime render-oidc-users-db-uri)"
     backend_log_level="$(printf '%s' "${AI_MODELS_LOG_LEVEL}" | tr '[:upper:]' '[:lower:]')"
 
     export GUNICORN_CMD_ARGS="--log-level ${backend_log_level}"
     export MLFLOW_ENABLE_WORKSPACES="true"
     export SECRET_KEY="${AI_MODELS_AUTH_SESSION_SECRET_KEY}"
-    export OIDC_USERS_DB_URI="${backend_store_uri}"
+    export OIDC_USERS_DB_URI="${oidc_users_db_uri}"
     export OIDC_ALEMBIC_VERSION_TABLE="{{ include "ai-models.backendAuthOIDCAlembicVersionTable" . }}"
     export OIDC_DISCOVERY_URL="{{ include "ai-models.dexDiscoveryURL" . }}"
     export OIDC_CLIENT_ID="{{ include "ai-models.dexClientID" . }}"
