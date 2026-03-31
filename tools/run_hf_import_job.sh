@@ -60,6 +60,15 @@ sanitize_name() {
   printf '%s' "$1" | sed -E 's/[^A-Za-z0-9._-]+/--/g; s/^-+//; s/-+$//'
 }
 
+yaml_quote() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+print(json.dumps(sys.argv[1]))
+PY
+}
+
 namespace="d8-ai-models"
 job_name=""
 hf_model_id=""
@@ -148,6 +157,26 @@ s3_ignore_tls="${deployment_values[1]:-false}"
 aws_region="${deployment_values[2]:-us-east-1}"
 artifacts_secret_name="${deployment_values[3]:-ai-models-artifacts}"
 
+tracking_uri_yaml="$(yaml_quote "http://ai-models.${namespace}.svc")"
+experiment_name_yaml="$(yaml_quote "${experiment_name}")"
+workspace_yaml="$(yaml_quote "${workspace}")"
+hf_model_id_yaml="$(yaml_quote "${hf_model_id}")"
+task_yaml="$(yaml_quote "${task}")"
+revision_yaml="$(yaml_quote "${revision}")"
+registered_model_name_yaml="$(yaml_quote "${registered_model_name}")"
+artifact_name_yaml="$(yaml_quote "${artifact_name}")"
+workdir_yaml="$(yaml_quote "/work")"
+snapshot_dir_yaml="$(yaml_quote "/work/snapshot")"
+s3_endpoint_url_yaml="$(yaml_quote "${s3_endpoint_url}")"
+s3_ignore_tls_yaml="$(yaml_quote "${s3_ignore_tls}")"
+aws_region_yaml="$(yaml_quote "${aws_region}")"
+aws_config_file_yaml="$(yaml_quote "/etc/ai-models/aws/config")"
+home_yaml="$(yaml_quote "/work")"
+tmpdir_yaml="$(yaml_quote "/work/tmp")"
+hf_home_yaml="$(yaml_quote "/work/hf-home")"
+hf_cache_yaml="$(yaml_quote "/work/hf-cache")"
+transformers_cache_yaml="$(yaml_quote "/work/transformers-cache")"
+
 image_pull_secret_block=""
 if kubectl -n "${namespace}" get secret ai-models-module-registry >/dev/null 2>&1; then
   image_pull_secret_block="$(cat <<'EOF'
@@ -202,29 +231,29 @@ ${image_pull_secret_block}
           command: ["ai-models-backend-hf-import"]
           env:
             - name: AI_MODELS_IMPORT_TRACKING_URI
-              value: http://ai-models.${namespace}.svc
+              value: ${tracking_uri_yaml}
             - name: AI_MODELS_IMPORT_EXPERIMENT_NAME
-              value: ${experiment_name}
+              value: ${experiment_name_yaml}
             - name: AI_MODELS_IMPORT_WORKSPACE
-              value: ${workspace}
+              value: ${workspace_yaml}
             - name: AI_MODELS_IMPORT_HF_MODEL_ID
-              value: ${hf_model_id}
+              value: ${hf_model_id_yaml}
             - name: AI_MODELS_IMPORT_TASK
-              value: ${task}
+              value: ${task_yaml}
             - name: AI_MODELS_IMPORT_HF_REVISION
-              value: ${revision}
+              value: ${revision_yaml}
             - name: AI_MODELS_IMPORT_REGISTERED_MODEL_NAME
-              value: ${registered_model_name}
+              value: ${registered_model_name_yaml}
             - name: AI_MODELS_IMPORT_ARTIFACT_NAME
-              value: ${artifact_name}
+              value: ${artifact_name_yaml}
             - name: AI_MODELS_IMPORT_WORKDIR
-              value: /work
+              value: ${workdir_yaml}
             - name: AI_MODELS_IMPORT_SNAPSHOT_DIR
-              value: /work/snapshot
+              value: ${snapshot_dir_yaml}
             - name: AI_MODELS_S3_ENDPOINT_URL
-              value: ${s3_endpoint_url}
+              value: ${s3_endpoint_url_yaml}
             - name: AI_MODELS_S3_IGNORE_TLS
-              value: ${s3_ignore_tls}
+              value: ${s3_ignore_tls_yaml}
             - name: MLFLOW_TRACKING_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -246,23 +275,23 @@ ${image_pull_secret_block}
                   name: ${artifacts_secret_name}
                   key: secretKey
             - name: AWS_REGION
-              value: ${aws_region}
+              value: ${aws_region_yaml}
             - name: AWS_DEFAULT_REGION
-              value: ${aws_region}
+              value: ${aws_region_yaml}
             - name: AWS_EC2_METADATA_DISABLED
               value: "true"
             - name: AWS_CONFIG_FILE
-              value: /etc/ai-models/aws/config
+              value: ${aws_config_file_yaml}
             - name: HOME
-              value: /work
+              value: ${home_yaml}
             - name: TMPDIR
-              value: /work/tmp
+              value: ${tmpdir_yaml}
             - name: HF_HOME
-              value: /work/hf-home
+              value: ${hf_home_yaml}
             - name: HUGGINGFACE_HUB_CACHE
-              value: /work/hf-cache
+              value: ${hf_cache_yaml}
             - name: TRANSFORMERS_CACHE
-              value: /work/transformers-cache
+              value: ${transformers_cache_yaml}
 ${hf_token_env_block}
           volumeMounts:
             - name: work

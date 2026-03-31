@@ -32,6 +32,7 @@ This is the phase-1 runtime entrypoint for both:
 from __future__ import annotations
 
 import argparse
+from importlib import metadata as importlib_metadata
 import os
 import re
 import sys
@@ -50,6 +51,52 @@ def default_registered_model_name(hf_model_id: str) -> str:
 def default_snapshot_dir(hf_model_id: str) -> str:
     base = env("AI_MODELS_IMPORT_WORKDIR", os.path.join(env("HOME", "/tmp"), "ai-models-import"))
     return os.path.join(base, default_registered_model_name(hf_model_id))
+
+
+def optional_pinned_requirement(distribution: str, module: str | None = None) -> str | None:
+    try:
+        version = importlib_metadata.version(distribution)
+    except importlib_metadata.PackageNotFoundError:
+        if not module:
+            return None
+        try:
+            imported = __import__(module)
+        except Exception:
+            return None
+        version = getattr(imported, "__version__", None)
+        if not version:
+            return None
+
+    return f"{distribution}=={version}"
+
+
+def build_checkpoint_pip_requirements(task: str) -> list[str]:
+    requirements: list[str] = []
+
+    for distribution, module in (
+        ("mlflow", None),
+        ("transformers", None),
+        ("huggingface-hub", "huggingface_hub"),
+        ("safetensors", None),
+        ("sentencepiece", None),
+        ("pillow", "PIL"),
+    ):
+        requirement = optional_pinned_requirement(distribution, module)
+        if requirement and requirement not in requirements:
+            requirements.append(requirement)
+
+    # Local-checkpoint imports intentionally avoid loading the full model into memory.
+    # MLflow falls back to inferring both torch and tensorflow requirements when it
+    # cannot determine the execution engine from a local path, which breaks in our
+    # lightweight import image where tensorflow is not installed. Declare the serving
+    # framework requirements explicitly instead of relying on that auto-inference.
+    requirements.append("torch")
+    if "image" in task or "vision" in task:
+        requirements.append("torchvision")
+    requirements.append("accelerate")
+
+    return requirements
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -177,6 +224,7 @@ def main() -> int:
             transformers_model=checkpoint_dir,
             task=args.task,
             name=args.artifact_name,
+            pip_requirements=build_checkpoint_pip_requirements(args.task),
         )
         model_uri = model_info.model_uri
 

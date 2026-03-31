@@ -15,6 +15,10 @@
   - `python3 -m py_compile images/backend/scripts/ai-models-backend-hf-import.py`
   - `python3 -m py_compile tools/upload_hf_model.py`
 - артефакт: единый import flow через `snapshot_download -> log_model(local checkpoint) -> register_model`.
+  Дополнение по эксплуатации:
+  - для local checkpoint path helper должен передавать explicit `pip_requirements`,
+    чтобы MLflow не падал на auto-inference отсутствующего `tensorflow` в
+    lightweight import image.
 
 ## Slice 2. Встроить import runtime в backend image
 - цель: сделать import runtime частью module-owned executable layer, а не внешним ad-hoc env;
@@ -40,6 +44,8 @@
   Дополнение по эксплуатации:
   - helper должен оставаться совместимым со штатным macOS `/bin/bash` 3.2, а не
     только с GNU bash 4+.
+  - helper должен рендерить Kubernetes `env.value` как строки, а не как YAML
+    bool/null scalar values.
 
 ## Rollback point
 - откатить изменения только в `images/backend/*`, `tools/*`, `README*.md` и
