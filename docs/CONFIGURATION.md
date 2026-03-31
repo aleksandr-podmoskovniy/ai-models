@@ -8,7 +8,8 @@ weight: 60
 
 The current `ai-models` configuration contract is intentionally short.
 Only stable ai-models-specific settings are exposed at the module level:
-logging, PostgreSQL wiring, and S3-compatible artifact storage.
+logging, Deckhouse SSO settings, PostgreSQL wiring, and S3-compatible artifact
+storage.
 
 `postgresql.mode` supports two phase-1 paths:
 
@@ -45,16 +46,31 @@ configuration and internal module wiring. The current runtime expects:
   (`CertManager` or `CustomCertificate`);
 - the `managed-postgres` module when `postgresql.mode=Managed`.
 
-Backend authentication is now provided by upstream-native MLflow basic auth
-plus MLflow workspaces. The module renders an internal auth Secret with:
+Browser login goes through Deckhouse Dex OIDC SSO inside MLflow.
+The module automatically wires:
 
-- the bootstrap admin username;
-- a stable generated admin password;
-- a stable `MLFLOW_FLASK_SERVER_SECRET_KEY` required by the upstream auth app.
+- a `DexClient` in `d8-ai-models` with redirect URI `https://<public-host>/callback`;
+- the public Dex discovery URL `https://dex.<cluster-domain>/.well-known/openid-configuration`;
+- MLflow OIDC login through `mlflow-oidc-auth`;
+- upstream-native MLflow workspaces.
+
+The `auth.sso.allowedGroups` and `auth.sso.adminGroups` settings define which
+Deckhouse groups are allowed to enter ai-models and which of them become MLflow
+administrators after SSO login. The default is intentionally conservative:
+only the Deckhouse `admins` group is allowed and promoted to MLflow admins.
+
+The module always renders an internal auth Secret with:
+
+- the internal machine username in `machineUsername`;
+- a stable generated machine password in `machinePassword`;
+- a stable session secret used by MLflow auth runtimes.
+
+This Secret is now machine-only for `ServiceMonitor`, in-cluster import Jobs,
+and break-glass operations while browser users go through Dex SSO.
 
 The backend service is therefore no longer protected only at ingress level.
-Direct access to the raw backend still requires MLflow credentials, and logical
-segmentation happens through native MLflow workspaces.
+Direct access to the raw backend still requires MLflow machine credentials, and
+logical segmentation continues to happen through native MLflow workspaces.
 
 Large machine-oriented imports use direct artifact access instead of server-side
 artifact proxying. The backend runs with `--no-serve-artifacts`, and in-cluster
@@ -71,7 +87,8 @@ The backend also keeps MLflow security middleware enabled. The module derives
 MLflow `allowed-hosts` and same-origin CORS settings from the public ingress
 domain and preserves the private-network/service access patterns needed for
 in-cluster access. Health probes use the upstream unauthenticated `/health`
-endpoint, and `ServiceMonitor` scrapes `/metrics` via MLflow basic auth.
+endpoint, and `ServiceMonitor` scrapes `/metrics` via the internal machine
+account.
 
 The module also provisions an internal Secret with a stable
 `MLFLOW_CRYPTO_KEK_PASSPHRASE` value for upstream MLflow crypto-backed runtime

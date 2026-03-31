@@ -5,6 +5,28 @@
 - Официальная документация MLflow по workspaces подтверждает, что это отдельный
   capability backend, а не замена platform auth boundary:
   - https://mlflow.org/docs/latest/self-hosting/workspaces/
+- Официальная документация MLflow по SSO подтверждает, что правильный path для
+  user identity внутри backend — это app-native OIDC login flow, а не просто
+  reverse proxy перед UI:
+  - https://mlflow.org/docs/latest/self-hosting/security/sso/
+- Deckhouse reference `istio` показывает другой паттерн:
+  - `DexAuthenticator` + ingress external auth + allowed groups;
+  - это хороший UI gate, но не app-native authz model внутри backend.
+- Для `ai-models` важно не смешивать:
+  - cluster-level SSO gate;
+  - app-native user identity;
+  - workspace membership sync.
+- Официальная документация MLflow по basic auth подтверждает, что auth baseline
+  конфигурируется через `basic_auth.ini` / `MLFLOW_AUTH_CONFIG_PATH`, а users /
+  permissions дальше уже управляются через Python/REST API (`AuthServiceClient`):
+  - https://mlflow.org/docs/latest/self-hosting/security/basic-http-auth/
+- Официальная документация MLflow по workspaces подтверждает, что:
+  - workspace selection есть в Python API (`mlflow.set_workspace()`,
+    `mlflow.list_workspaces()`);
+  - workspace permissions управляются через workspace API;
+  - сами workspaces не являются hard isolation boundary:
+  - https://mlflow.org/docs/latest/self-hosting/workspaces/
+  - https://mlflow.org/docs/latest/self-hosting/workspaces/getting-started/
 - Для больших HF-моделей важно не путать:
   - “не тащить data plane через ноутбук”;
   - “вообще не иметь локального spool/cache на import worker”.

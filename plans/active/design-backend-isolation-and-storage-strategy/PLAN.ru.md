@@ -8,14 +8,16 @@
 
 ## Slice 1. Зафиксировать текущие repo boundaries
 - проверить, как сейчас устроены auth ingress, Dex, backend runtime и import path;
+- отдельно зафиксировать Deckhouse reference pattern на `istio`/Kiali и его ограничения;
 - зафиксировать, что именно уже wired, а что нет.
 
 ## Slice 2. Сверить upstream MLflow / HF / KServe
-- MLflow: workspaces, authz, lifecycle удаления, artifact cleanup;
+- MLflow: SSO/OIDC, workspaces, authz, lifecycle удаления, artifact cleanup;
 - Hugging Face: efficient download / snapshot semantics;
 - KServe: model storage backends и serving sources.
 
 ## Slice 3. Свести решения
+- целевая схема `SSO + native workspaces + namespace/group -> workspace sync`;
 - phase-1 feasible;
 - phase-2 target;
 - что не делать без отдельной task/implementation.

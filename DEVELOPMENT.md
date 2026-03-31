@@ -110,6 +110,12 @@ Phase-1 runtime модуля ожидает платформенные prerequis
 - global HTTPS mode `CertManager` или `CustomCertificate`;
 - модуль `managed-postgres`, если используется `aiModels.postgresql.mode=Managed`.
 
+Для browser SSO дополнительно нужны:
+
+- модуль `user-authn`;
+- API `deckhouse.io/v1/DexClient`;
+- публичный Dex endpoint через стандартный Deckhouse host `dex.<cluster-domain>`.
+
 Во время локального `helm template` custom resources рендерятся только если
 соответствующие API доступны в `.Capabilities` или явно переданы через
 `global.discovery.apiVersions`, поэтому базовый repo render остаётся на built-in

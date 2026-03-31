@@ -1,0 +1,14 @@
+global:
+  enabledModules:
+    - ai-models
+    - cert-manager
+    - managed-postgres
+    - user-authn
+aiModels:
+  auth:
+    sso:
+      allowedGroups:
+        - admins
+        - ai-models-users
+      adminGroups:
+        - admins

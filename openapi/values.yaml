@@ -139,6 +139,48 @@ properties:
       usePathStyle:
         type: boolean
         default: true
+  auth:
+    type: object
+    description: Stable authentication settings exposed by the ai-models module.
+    additionalProperties: false
+    default:
+      sso:
+        providerDisplayName: Login with DKP SSO
+        automaticLoginRedirect: true
+        allowedGroups:
+          - admins
+        adminGroups:
+          - admins
+    properties:
+      sso:
+        type: object
+        additionalProperties: false
+        default:
+          providerDisplayName: Login with DKP SSO
+          automaticLoginRedirect: true
+          allowedGroups:
+            - admins
+          adminGroups:
+            - admins
+        properties:
+          providerDisplayName:
+            type: string
+            default: Login with DKP SSO
+          automaticLoginRedirect:
+            type: boolean
+            default: true
+          allowedGroups:
+            type: array
+            items:
+              type: string
+            default:
+              - admins
+          adminGroups:
+            type: array
+            items:
+              type: string
+            default:
+              - admins
   registry:
     type: object
     description: Registry credentials injected by Deckhouse runtime.
@@ -278,11 +320,20 @@ properties:
         additionalProperties: true
       auth:
         type: object
-        description: Runtime-only authentication settings derived from upstream-native MLflow auth and module runtime wiring.
+        description: Runtime-only authentication settings derived from Deckhouse Dex OIDC SSO, native MLflow workspaces and module runtime wiring.
         default:
-          mode: Native
           adminSecretName: ai-models-backend-auth
           workspacesEnabled: true
+          dexClientName: ai-models
+          dexClientSecretName: dex-client-ai-models
+          sso:
+            enabled: true
+            providerDisplayName: Login with DKP SSO
+            automaticLoginRedirect: true
+            allowedGroups:
+              - admins
+            adminGroups:
+              - admins
         additionalProperties: true
     additionalProperties: true
 additionalProperties: false

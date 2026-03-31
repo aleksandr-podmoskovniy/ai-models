@@ -107,10 +107,12 @@ shell:
     rm -rf /src/backend/mlflow/server/js/build
     cp -a /ui-build /src/backend/mlflow/server/js/build
     bash /scripts/install-full-from-source.sh /src/backend
+    install -m 0755 /scripts/ai_models_backend_runtime.py /usr/local/bin/ai_models_backend_runtime.py
+    install -m 0755 /scripts/ai_models_backend_runtime.py /usr/local/bin/ai-models-backend-runtime
     install -m 0755 /scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade
-    install -m 0755 /scripts/ai-models-backend-render-db-uri.py /usr/local/bin/ai-models-backend-render-db-uri
-    install -m 0755 /scripts/ai-models-backend-render-auth-config.py /usr/local/bin/ai-models-backend-render-auth-config
+    install -m 0755 /scripts/ai-models-backend-bootstrap-oidc-auth.py /usr/local/bin/ai-models-backend-bootstrap-oidc-auth
     install -m 0755 /scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-hf-import
+    python3 -m pip install --no-cache-dir "mlflow-oidc-auth==6.7.1"
     python3 -m pip install --no-cache-dir \
       "transformers<5" \
       "huggingface-hub>=0.10.0" \

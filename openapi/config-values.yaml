@@ -4,9 +4,10 @@ description: |
 
   The module exposes only stable settings that are specific to ai-models runtime.
   High availability mode, HTTPS policy, and ingress class are taken from global
-  Deckhouse configuration and internal module wiring, while backend
-  authentication and workspace isolation are handled by upstream-native MLflow
-  runtime.
+  Deckhouse configuration and internal module wiring. Browser authentication is
+  handled through Deckhouse Dex OIDC SSO inside MLflow while preserving
+  upstream-native MLflow workspaces and an internal machine account for
+  monitoring and in-cluster jobs.
 properties:
   logLevel:
     type: string
@@ -151,4 +152,36 @@ properties:
         type: boolean
         description: Use path-style S3 requests.
         default: true
+  auth:
+    type: object
+    description: Deckhouse SSO settings for browser access to ai-models.
+    additionalProperties: false
+    properties:
+      sso:
+        type: object
+        description: Deckhouse Dex SSO settings used for browser login to ai-models.
+        additionalProperties: false
+        properties:
+          providerDisplayName:
+            type: string
+            description: Display name shown on the MLflow OIDC login screen.
+            default: Login with DKP SSO
+          automaticLoginRedirect:
+            type: boolean
+            description: Redirect browser users directly to Dex instead of showing the intermediate MLflow auth page.
+            default: true
+          allowedGroups:
+            type: array
+            description: Groups allowed to log in via Deckhouse Dex.
+            items:
+              type: string
+            default:
+              - admins
+          adminGroups:
+            type: array
+            description: Groups that should become MLflow administrators after SSO login.
+            items:
+              type: string
+            default:
+              - admins
 additionalProperties: false

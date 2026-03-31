@@ -14,17 +14,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
+from __future__ import annotations
+
+import argparse
 
 from mlflow.store.db import utils as db_utils
+from ai_models_backend_runtime import render_db_uri_from_env
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Initialize and upgrade the ai-models MLflow metadata database."
+    )
+    parser.add_argument(
+        "database_uri",
+        nargs="?",
+        help="Optional explicit SQLAlchemy database URI. Defaults to AI_MODELS_DATABASE_* env vars.",
+    )
+    return parser
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("usage: ai-models-backend-db-upgrade <database-uri>", file=sys.stderr)
-        return 2
-
-    backend_store_uri = sys.argv[1]
+    args = build_parser().parse_args()
+    backend_store_uri = args.database_uri or render_db_uri_from_env()
     engine = db_utils.create_sqlalchemy_engine_with_retry(backend_store_uri)
     try:
         db_utils._safe_initialize_tables(engine)

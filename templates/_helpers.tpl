@@ -38,6 +38,14 @@ ai-models-backend-crypto
 ai-models-backend-auth
 {{- end -}}
 
+{{- define "ai-models.dexClientName" -}}
+ai-models
+{{- end -}}
+
+{{- define "ai-models.dexClientSecretName" -}}
+{{- printf "dex-client-%s" (include "ai-models.dexClientName" .) -}}
+{{- end -}}
+
 {{- define "ai-models.registrySecretName" -}}
 {{- printf "%s-module-registry" .Chart.Name -}}
 {{- end -}}
@@ -87,6 +95,84 @@ true
 
 {{- define "ai-models.backendMetricsDir" -}}
 /tmp/ai-models-metrics
+{{- end -}}
+
+{{- define "ai-models.authSSOProviderDisplayName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $auth := (index $moduleValues "auth") | default dict -}}
+{{- $sso := (index $auth "sso") | default dict -}}
+{{- default "Login with DKP SSO" (index $sso "providerDisplayName") -}}
+{{- end -}}
+
+{{- define "ai-models.authSSOAutomaticLoginRedirect" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $auth := (index $moduleValues "auth") | default dict -}}
+{{- $sso := (index $auth "sso") | default dict -}}
+{{- if hasKey $sso "automaticLoginRedirect" -}}
+{{- ternary "true" "false" (index $sso "automaticLoginRedirect") -}}
+{{- else -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.authSSOAllowedGroupsCSV" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $auth := (index $moduleValues "auth") | default dict -}}
+{{- $sso := (index $auth "sso") | default dict -}}
+{{- $groups := (index $sso "allowedGroups") | default (list "admins") -}}
+{{- $result := list -}}
+{{- range $group := $groups -}}
+  {{- $clean := $group | toString | trim -}}
+  {{- if $clean -}}
+    {{- $result = append $result $clean -}}
+  {{- end -}}
+{{- end -}}
+{{- join "," $result -}}
+{{- end -}}
+
+{{- define "ai-models.authSSOAdminGroupsCSV" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $auth := (index $moduleValues "auth") | default dict -}}
+{{- $sso := (index $auth "sso") | default dict -}}
+{{- $groups := (index $sso "adminGroups") | default (list "admins") -}}
+{{- $result := list -}}
+{{- range $group := $groups -}}
+  {{- $clean := $group | toString | trim -}}
+  {{- if $clean -}}
+    {{- $result = append $result $clean -}}
+  {{- end -}}
+{{- end -}}
+{{- join "," $result -}}
+{{- end -}}
+
+{{- define "ai-models.authSSODexClientAllowedGroupsYAML" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $auth := (index $moduleValues "auth") | default dict -}}
+{{- $sso := (index $auth "sso") | default dict -}}
+{{- $allowed := (index $sso "allowedGroups") | default (list "admins") -}}
+{{- $admins := (index $sso "adminGroups") | default (list "admins") -}}
+{{- $seen := dict -}}
+{{- $result := list -}}
+{{- range $group := concat $allowed $admins -}}
+  {{- $clean := $group | toString | trim -}}
+  {{- if and $clean (not (hasKey $seen $clean)) -}}
+    {{- $_ := set $seen $clean true -}}
+    {{- $result = append $result $clean -}}
+  {{- end -}}
+{{- end -}}
+{{- toYaml $result -}}
+{{- end -}}
+
+{{- define "ai-models.dexClientID" -}}
+{{- printf "dex-client-%s@%s" (include "ai-models.dexClientName" .) (include "ai-models.namespace" .) -}}
+{{- end -}}
+
+{{- define "ai-models.dexDiscoveryURL" -}}
+{{- printf "https://%s/.well-known/openid-configuration" (include "helm_lib_module_public_domain" (list . "dex")) -}}
+{{- end -}}
+
+{{- define "ai-models.dexRedirectURI" -}}
+{{- printf "https://%s/callback" (include "ai-models.publicHost" .) -}}
 {{- end -}}
 
 {{- define "ai-models.backendAllowedHosts" -}}
@@ -154,17 +240,23 @@ true
 {{- end -}}
 {{- end -}}
 
-{{- define "ai-models.backendAuthAdminUsername" -}}
-admin
-{{- end -}}
-
-{{- define "ai-models.backendAuthAdminPassword" -}}
+{{- define "ai-models.backendAuthMachineUsername" -}}
 {{- $secretName := include "ai-models.backendAuthSecretName" . -}}
 {{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
 {{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
-{{- $existingPassword := (get $existingData "adminPassword" | default "" | b64dec) -}}
+{{- $existingMachineUsername := (get $existingData "machineUsername" | default "" | b64dec) -}}
+{{- $legacyAdminUsername := (get $existingData "adminUsername" | default "" | b64dec) -}}
+{{- coalesce $existingMachineUsername $legacyAdminUsername "ai-models-internal" -}}
+{{- end -}}
+
+{{- define "ai-models.backendAuthMachinePassword" -}}
+{{- $secretName := include "ai-models.backendAuthSecretName" . -}}
+{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
+{{- $existingMachinePassword := (get $existingData "machinePassword" | default "" | b64dec) -}}
+{{- $legacyAdminPassword := (get $existingData "adminPassword" | default "" | b64dec) -}}
 {{- $generatedPassword := printf "A1a%s" (randAlphaNum 29) -}}
-{{- coalesce $existingPassword $generatedPassword -}}
+{{- coalesce $existingMachinePassword $legacyAdminPassword $generatedPassword -}}
 {{- end -}}
 
 {{- define "ai-models.backendAuthFlaskSecretKey" -}}
@@ -457,6 +549,15 @@ true
   {{- end -}}
   {{- if not (or (include "ai-models.artifactsHasInlineCredentials" . | trim) (include "ai-models.artifactsHasSecretReference" . | trim)) -}}
     {{- fail "ai-models.artifacts requires either credentialsSecretName or inline accessKey and secretKey" -}}
+  {{- end -}}
+  {{- if not (has "user-authn" $enabledModules) -}}
+    {{- fail "ai-models requires the user-authn module for browser SSO" -}}
+  {{- end -}}
+  {{- if not (include "ai-models.hasAPI" (list . "deckhouse.io/v1/DexClient")) -}}
+    {{- fail "ai-models requires the deckhouse.io/v1 DexClient API" -}}
+  {{- end -}}
+  {{- if not (include "ai-models.authSSODexClientAllowedGroupsYAML" . | trim) -}}
+    {{- fail "ai-models.auth.sso.allowedGroups/adminGroups must contain at least one non-empty group" -}}
   {{- end -}}
 {{- end -}}
 {{- end -}}

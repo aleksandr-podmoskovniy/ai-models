@@ -253,9 +253,13 @@ def validate_backend_db_upgrade_flow(path: Path) -> list[str]:
     if "kind: ConfigMap" not in content or "upgrade-db.sh: |" not in content:
         return errors
 
-    if 'exec ai-models-backend-db-upgrade "${backend_store_uri}"' not in content:
+    if "exec ai-models-backend-db-upgrade" not in content:
         errors.append(
             f"{path.name}: backend upgrade-db.sh must call the image-owned db upgrade wrapper"
+        )
+    if 'exec ai-models-backend-db-upgrade "${backend_store_uri}"' in content:
+        errors.append(
+            f"{path.name}: backend upgrade-db.sh must not keep the legacy explicit DB URI wrapper call"
         )
 
     if "from mlflow.store.db import utils as db_utils" in content:
@@ -275,10 +279,6 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
             errors.append(
                 f"{path.name}: backend start-backend.sh must pin server workers to 1 for phase-1"
             )
-        if '--app-name="basic-auth"' not in content:
-            errors.append(
-                f"{path.name}: backend start-backend.sh must use the upstream MLflow basic-auth app"
-            )
         if '--enable-workspaces' not in content:
             errors.append(
                 f"{path.name}: backend start-backend.sh must enable MLflow workspaces"
@@ -291,6 +291,42 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
             errors.append(
                 f"{path.name}: backend start-backend.sh must not keep proxied artifact uploads enabled"
             )
+        if 'app-name="oidc-auth"' not in content:
+            errors.append(
+                f"{path.name}: backend renders must start MLflow with the oidc-auth app"
+            )
+        if 'export OIDC_DISCOVERY_URL="' not in content:
+            errors.append(
+                f"{path.name}: backend renders must configure OIDC discovery metadata"
+            )
+        if 'export OIDC_CLIENT_ID="' not in content:
+            errors.append(
+                f"{path.name}: backend renders must configure the Dex client ID"
+            )
+        if 'export OIDC_SCOPE="openid,email,profile,groups"' not in content:
+            errors.append(
+                f"{path.name}: backend renders must request groups in the OIDC scope"
+            )
+        if 'export OIDC_USERS_DB_URI="${backend_store_uri}"' not in content:
+            errors.append(
+                f"{path.name}: backend renders must point the OIDC auth store to the MLflow database URI"
+            )
+        if "basic-auth" in content:
+            errors.append(
+                f"{path.name}: backend renders must not keep the legacy basic-auth branch"
+            )
+        if "ai-models-backend-render-auth-config" in content:
+            errors.append(
+                f"{path.name}: backend renders must not materialize legacy basic-auth config"
+            )
+        if "ai-models-backend-render-db-uri" in content:
+            errors.append(
+                f"{path.name}: backend renders must not keep the legacy standalone DB URI renderer"
+            )
+        if 'backend_store_uri="$(ai-models-backend-runtime render-db-uri)"' not in content:
+            errors.append(
+                f"{path.name}: backend renders must derive the DB URI via the shared runtime helper"
+            )
 
     if "kind: Deployment" in content and "name: ai-models" in content:
         if 'name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION' not in content or 'value: "false"' not in content:
@@ -299,15 +335,35 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
             )
         if 'name: MLFLOW_FLASK_SERVER_SECRET_KEY' not in content:
             errors.append(
-                f"{path.name}: backend deployment must set MLFLOW_FLASK_SERVER_SECRET_KEY for MLflow basic-auth"
+                f"{path.name}: backend deployment must set MLFLOW_FLASK_SERVER_SECRET_KEY for MLflow auth runtimes"
             )
-        if 'name: AI_MODELS_AUTH_ADMIN_PASSWORD' not in content:
+        if 'name: AI_MODELS_AUTH_MACHINE_USERNAME' not in content:
             errors.append(
-                f"{path.name}: backend deployment must mount internal MLflow admin credentials"
+                f"{path.name}: backend deployment must mount the internal MLflow machine username"
+            )
+        if 'name: AI_MODELS_AUTH_MACHINE_PASSWORD' not in content:
+            errors.append(
+                f"{path.name}: backend deployment must mount internal MLflow machine credentials"
+            )
+        if 'name: AI_MODELS_AUTH_ADMIN_USERNAME' in content or 'name: AI_MODELS_AUTH_ADMIN_PASSWORD' in content:
+            errors.append(
+                f"{path.name}: backend deployment must not keep legacy AI_MODELS_AUTH_ADMIN_* env vars"
             )
         if 'path: /health' not in content:
             errors.append(
                 f"{path.name}: backend probes must use the unauthenticated /health endpoint"
+            )
+        if 'name: OIDC_CLIENT_SECRET' not in content:
+            errors.append(
+                f"{path.name}: backend deployment must mount the Dex client secret"
+            )
+        if 'name: AI_MODELS_AUTH_SESSION_SECRET_KEY' not in content:
+            errors.append(
+                f"{path.name}: backend deployment must mount the OIDC session secret"
+            )
+        if 'name: auth-bootstrap' not in content:
+            errors.append(
+                f"{path.name}: backend deployment must bootstrap the internal machine user before backend startup"
             )
 
     return errors
@@ -343,16 +399,32 @@ def validate_backend_auth_baseline(path: Path) -> list[str]:
         errors.append(
             f"{path.name}: rendered output must include the internal ai-models backend auth Secret"
         )
+    if "machineUsername:" not in content or "machinePassword:" not in content:
+        errors.append(
+            f"{path.name}: backend auth Secret must expose machineUsername and machinePassword"
+        )
+    if "adminUsername:" in content or "adminPassword:" in content:
+        errors.append(
+            f"{path.name}: backend auth Secret must not keep legacy adminUsername/adminPassword keys"
+        )
 
     if "kind: ServiceMonitor" in content and "name: ai-models" in content:
         if "basicAuth:" not in content:
             errors.append(
-                f"{path.name}: ServiceMonitor must authenticate against native MLflow auth"
+                f"{path.name}: ServiceMonitor must authenticate through the internal machine account"
+            )
+        if "key: machineUsername" not in content or "key: machinePassword" not in content:
+            errors.append(
+                f"{path.name}: ServiceMonitor must use machineUsername/machinePassword from the internal auth Secret"
             )
 
     if "kind: DexAuthenticator" in content:
         errors.append(
-            f"{path.name}: DexAuthenticator must not be rendered when native MLflow auth is the phase-1 baseline"
+            f"{path.name}: DexAuthenticator must not be rendered when MLflow OIDC SSO is the phase-1 baseline"
+        )
+    if "kind: DexClient" not in content:
+        errors.append(
+            f"{path.name}: rendered output must include a DexClient for browser SSO"
         )
 
     return errors

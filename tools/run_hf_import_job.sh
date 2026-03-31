@@ -226,12 +226,12 @@ ${image_pull_secret_block}
               valueFrom:
                 secretKeyRef:
                   name: ai-models-backend-auth
-                  key: adminUsername
+                  key: machineUsername
             - name: MLFLOW_TRACKING_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: ai-models-backend-auth
-                  key: adminPassword
+                  key: machinePassword
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:

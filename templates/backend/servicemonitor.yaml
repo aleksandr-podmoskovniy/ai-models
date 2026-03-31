@@ -18,10 +18,10 @@ spec:
       basicAuth:
         username:
           name: {{ include "ai-models.backendAuthSecretName" . }}
-          key: adminUsername
+          key: machineUsername
         password:
           name: {{ include "ai-models.backendAuthSecretName" . }}
-          key: adminPassword
+          key: machinePassword
   namespaceSelector:
     matchNames:
       - {{ include "ai-models.namespace" . }}

@@ -1,0 +1,24 @@
+{{- if and (include "ai-models.isEnabled" .) (include "ai-models.hasAPI" (list . "deckhouse.io/v1/DexClient")) }}
+{{- $dexClientName := include "ai-models.dexClientName" . -}}
+{{- $existingDexClient := lookup "deckhouse.io/v1" "DexClient" (include "ai-models.namespace" .) $dexClientName -}}
+{{- $existingMetadata := get (default (dict) $existingDexClient) "metadata" | default (dict) -}}
+{{- $existingAnnotations := get $existingMetadata "annotations" | default (dict) -}}
+{{- $releaseName := .Release.Name | default "" -}}
+{{- $releaseNamespace := .Release.Namespace | default "" -}}
+{{- $isOwnedByThisRelease := and (eq (get $existingAnnotations "meta.helm.sh/release-name" | default "") $releaseName) (eq (get $existingAnnotations "meta.helm.sh/release-namespace" | default "") $releaseNamespace) -}}
+{{- $canManageDexClient := or (empty $existingDexClient) $isOwnedByThisRelease -}}
+{{- if $canManageDexClient }}
+---
+apiVersion: deckhouse.io/v1
+kind: DexClient
+metadata:
+  name: {{ $dexClientName }}
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "auth")) | nindent 2 }}
+spec:
+  redirectURIs:
+    - {{ include "ai-models.dexRedirectURI" . | quote }}
+  allowedGroups:
+{{ include "ai-models.authSSODexClientAllowedGroupsYAML" . | indent 4 }}
+{{- end }}
+{{- end }}

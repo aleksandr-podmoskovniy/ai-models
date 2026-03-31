@@ -37,9 +37,10 @@ fi
 backend_cli="$(command -v ai-models-backend || command -v mlflow)"
 python3 -c "import mlflow; print(mlflow.__version__)"
 python3 -c "from mlflow import *"
-python3 -c "import mlflow.server.auth; print('basic-auth ok')"
+python3 -c "import mlflow_oidc_auth.app; print('oidc-auth ok')"
 python3 -c "import transformers, huggingface_hub; print(transformers.__version__)"
 "${backend_cli}" server --help >/dev/null
-ai-models-backend-render-db-uri >/dev/null 2>&1 || true
-ai-models-backend-render-auth-config --help >/dev/null 2>&1 || true
+ai-models-backend-runtime --help >/dev/null
+ai-models-backend-bootstrap-oidc-auth --help >/dev/null
+ai-models-backend-db-upgrade --help >/dev/null
 ai-models-backend-hf-import --help >/dev/null

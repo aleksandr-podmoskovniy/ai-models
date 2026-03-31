@@ -75,6 +75,56 @@ spec:
             runAsGroup: 64535
             seccompProfile:
               type: RuntimeDefault
+        - name: auth-bootstrap
+          image: {{ include "helm_lib_module_image" (list . "backend") }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - ai-models-backend-bootstrap-oidc-auth
+          env:
+            - name: AI_MODELS_DATABASE_HOST
+              value: {{ include "ai-models.postgresqlHost" . | quote }}
+            - name: AI_MODELS_DATABASE_PORT
+              value: {{ include "ai-models.postgresqlPort" . | quote }}
+            - name: AI_MODELS_DATABASE_NAME
+              value: {{ include "ai-models.postgresqlDatabase" . | quote }}
+            - name: AI_MODELS_DATABASE_USER
+              value: {{ include "ai-models.postgresqlUser" . | quote }}
+            - name: AI_MODELS_DATABASE_SSLMODE
+              value: {{ include "ai-models.postgresqlSSLMode" . | quote }}
+            - name: AI_MODELS_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.postgresqlPasswordSecretName" . }}
+                  key: {{ include "ai-models.postgresqlPasswordSecretKey" . }}
+            - name: AI_MODELS_AUTH_MACHINE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.backendAuthSecretName" . }}
+                  key: machineUsername
+            - name: AI_MODELS_AUTH_MACHINE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.backendAuthSecretName" . }}
+                  key: machinePassword
+            - name: HOME
+              value: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 64535
+            runAsGroup: 64535
+            seccompProfile:
+              type: RuntimeDefault
       containers:
         - name: backend
           image: {{ include "helm_lib_module_image" (list . "backend") }}
@@ -108,21 +158,21 @@ spec:
               value: {{ include "ai-models.artifactsEndpoint" . | quote }}
             - name: AI_MODELS_S3_IGNORE_TLS
               value: {{ include "ai-models.artifactsIgnoreTLS" . | quote }}
-            - name: AI_MODELS_AUTH_ADMIN_USERNAME
+            - name: AI_MODELS_AUTH_SESSION_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "ai-models.backendAuthSecretName" . }}
-                  key: adminUsername
-            - name: AI_MODELS_AUTH_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "ai-models.backendAuthSecretName" . }}
-                  key: adminPassword
+                  key: flaskServerSecretKey
             - name: MLFLOW_FLASK_SERVER_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "ai-models.backendAuthSecretName" . }}
                   key: flaskServerSecretKey
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.dexClientSecretName" . }}
+                  key: clientSecret
             - name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION
               value: "false"
             - name: MLFLOW_CRYPTO_KEK_PASSPHRASE

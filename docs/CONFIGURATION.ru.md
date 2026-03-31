@@ -8,7 +8,8 @@ weight: 60
 
 Текущий конфигурационный контракт `ai-models` намеренно короткий.
 На уровне модуля наружу выставляются только стабильные ai-models-specific настройки:
-логирование, wiring для PostgreSQL и S3-compatible artifact storage.
+логирование, настройки Deckhouse SSO, wiring для PostgreSQL и S3-compatible artifact
+storage.
 
 `postgresql.mode` поддерживает два phase-1 сценария:
 
@@ -45,16 +46,32 @@ internal module wiring.
   (`CertManager` или `CustomCertificate`);
 - модуль `managed-postgres`, если `postgresql.mode=Managed`.
 
-Аутентификация backend теперь идёт через upstream-native MLflow basic auth и
-MLflow workspaces. Модуль сам создаёт внутренний auth Secret со:
+Browser login теперь идёт через Deckhouse Dex OIDC SSO внутри самого MLflow.
+Модуль автоматически настраивает:
 
-- bootstrap admin username;
-- стабильным сгенерированным admin password;
-- стабильным `MLFLOW_FLASK_SERVER_SECRET_KEY`, который требует upstream auth app.
+- `DexClient` в `d8-ai-models` с redirect URI `https://<public-host>/callback`;
+- public Dex discovery URL `https://dex.<cluster-domain>/.well-known/openid-configuration`;
+- вход в MLflow через `mlflow-oidc-auth`;
+- upstream-native MLflow workspaces.
+
+Настройки `auth.sso.allowedGroups` и `auth.sso.adminGroups` определяют, какие
+Deckhouse группы вообще могут заходить в ai-models и какие из них становятся
+MLflow administrators после SSO login. Базовый default намеренно
+консервативен: внутрь допускается только группа Deckhouse `admins`, и она же
+становится MLflow admin group.
+
+Модуль всегда создаёт внутренний auth Secret со:
+
+- internal machine username в ключе `machineUsername`;
+- стабильным сгенерированным machine password в ключе `machinePassword`;
+- стабильным session secret для MLflow auth runtimes.
+
+Этот Secret теперь остаётся только machine-only путём для `ServiceMonitor`,
+in-cluster import Jobs и break-glass operations, а browser users идут через Dex SSO.
 
 Из-за этого raw backend service больше не защищён только на ingress-уровне.
-Даже при прямом доступе к service нужны MLflow credentials, а логическая
-сегментация идёт через native MLflow workspaces.
+Даже при прямом доступе к service нужны MLflow machine credentials, а логическая
+сегментация по-прежнему идёт через native MLflow workspaces.
 
 Большие machine-oriented import flows теперь используют direct artifact access
 вместо server-side artifact proxying. Backend запускается с
@@ -72,7 +89,7 @@ Backend также оставляет включённым upstream security mid
 ingress domain и при этом сохраняет private-network/service паттерны, нужные
 для внутрикластерного доступа. Health probes используют upstream
 неаутентифицированный `/health`, а `ServiceMonitor` ходит в `/metrics` через
-MLflow basic auth.
+внутренний machine account.
 
 Модуль также создаёт внутренний Secret со стабильным значением
 `MLFLOW_CRYPTO_KEK_PASSPHRASE` для upstream crypto-backed runtime features

@@ -39,17 +39,7 @@ from pathlib import Path
 
 import mlflow
 from huggingface_hub import snapshot_download
-
-
-def env(name: str, default: str = "") -> str:
-    return os.environ.get(name, default)
-
-
-def env_bool(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.lower() in {"1", "true", "yes", "on"}
+from ai_models_backend_runtime import apply_s3_environment_bridge, env, env_bool
 
 
 def default_registered_model_name(hf_model_id: str) -> str:
@@ -60,17 +50,6 @@ def default_registered_model_name(hf_model_id: str) -> str:
 def default_snapshot_dir(hf_model_id: str) -> str:
     base = env("AI_MODELS_IMPORT_WORKDIR", os.path.join(env("HOME", "/tmp"), "ai-models-import"))
     return os.path.join(base, default_registered_model_name(hf_model_id))
-
-
-def apply_s3_environment_bridge() -> None:
-    endpoint = env("AI_MODELS_S3_ENDPOINT_URL", "")
-    ignore_tls = env("AI_MODELS_S3_IGNORE_TLS", "")
-
-    if endpoint and not env("MLFLOW_S3_ENDPOINT_URL", ""):
-        os.environ["MLFLOW_S3_ENDPOINT_URL"] = endpoint
-    if ignore_tls and not env("MLFLOW_S3_IGNORE_TLS", ""):
-        os.environ["MLFLOW_S3_IGNORE_TLS"] = ignore_tls
-
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(

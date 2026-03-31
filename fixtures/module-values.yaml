@@ -3,6 +3,7 @@ global:
     - ai-models
     - cert-manager
     - managed-postgres
+    - user-authn
   modules:
     publicDomainTemplate: "%s.platform.local"
     https:

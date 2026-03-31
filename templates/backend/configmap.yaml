@@ -12,16 +12,25 @@ data:
     #!/bin/sh
     set -eu
 
-    backend_store_uri="$(ai-models-backend-render-db-uri)"
+    backend_store_uri="$(ai-models-backend-runtime render-db-uri)"
     backend_log_level="$(printf '%s' "${AI_MODELS_LOG_LEVEL}" | tr '[:upper:]' '[:lower:]')"
-    auth_config_path="/tmp/basic_auth.ini"
 
     export GUNICORN_CMD_ARGS="--log-level ${backend_log_level}"
-    export MLFLOW_AUTH_CONFIG_PATH="${auth_config_path}"
-    printf '%s' "${backend_store_uri}" | ai-models-backend-render-auth-config "${auth_config_path}"
+    export MLFLOW_ENABLE_WORKSPACES="true"
+    export SECRET_KEY="${AI_MODELS_AUTH_SESSION_SECRET_KEY}"
+    export OIDC_USERS_DB_URI="${backend_store_uri}"
+    export OIDC_DISCOVERY_URL="{{ include "ai-models.dexDiscoveryURL" . }}"
+    export OIDC_CLIENT_ID="{{ include "ai-models.dexClientID" . }}"
+    export OIDC_REDIRECT_URI="{{ include "ai-models.dexRedirectURI" . }}"
+    export OIDC_SCOPE="openid,email,profile,groups"
+    export OIDC_GROUPS_ATTRIBUTE="groups"
+    export OIDC_PROVIDER_DISPLAY_NAME="{{ include "ai-models.authSSOProviderDisplayName" . }}"
+    export OIDC_GROUP_NAME="{{ include "ai-models.authSSOAllowedGroupsCSV" . }}"
+    export OIDC_ADMIN_GROUP_NAME="{{ include "ai-models.authSSOAdminGroupsCSV" . }}"
+    export AUTOMATIC_LOGIN_REDIRECT="{{ include "ai-models.authSSOAutomaticLoginRedirect" . }}"
 
     exec ai-models-backend server \
-      --app-name="basic-auth" \
+      --app-name="oidc-auth" \
       --backend-store-uri="${backend_store_uri}" \
       --registry-store-uri="${backend_store_uri}" \
       --workspace-store-uri="${backend_store_uri}" \
@@ -38,8 +47,7 @@ data:
     #!/bin/sh
     set -eu
 
-    backend_store_uri="$(ai-models-backend-render-db-uri)"
-    exec ai-models-backend-db-upgrade "${backend_store_uri}"
+    exec ai-models-backend-db-upgrade
   aws-config: |
     [default]
     region = {{ include "ai-models.artifactsRegion" . }}
