@@ -311,6 +311,10 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
             errors.append(
                 f"{path.name}: backend renders must point the OIDC auth store to the MLflow database URI"
             )
+        if 'export OIDC_ALEMBIC_VERSION_TABLE="mlflow_oidc_auth_alembic_version"' not in content:
+            errors.append(
+                f"{path.name}: backend renders must isolate MLflow OIDC auth migrations with a dedicated Alembic version table"
+            )
         if "basic-auth" in content:
             errors.append(
                 f"{path.name}: backend renders must not keep the legacy basic-auth branch"
@@ -364,6 +368,10 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
         if 'name: auth-bootstrap' not in content:
             errors.append(
                 f"{path.name}: backend deployment must bootstrap the internal machine user before backend startup"
+            )
+        if 'name: OIDC_ALEMBIC_VERSION_TABLE' not in content or 'value: "mlflow_oidc_auth_alembic_version"' not in content:
+            errors.append(
+                f"{path.name}: auth-bootstrap must use the dedicated MLflow OIDC Alembic version table"
             )
 
     return errors

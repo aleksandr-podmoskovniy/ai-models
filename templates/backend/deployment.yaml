@@ -106,6 +106,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "ai-models.backendAuthSecretName" . }}
                   key: machinePassword
+            - name: OIDC_ALEMBIC_VERSION_TABLE
+              value: {{ include "ai-models.backendAuthOIDCAlembicVersionTable" . | quote }}
             - name: HOME
               value: /tmp
           resources:

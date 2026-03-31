@@ -34,6 +34,11 @@ external DKP module на живом кластере.
       ingress получают `Invalid Host header`, потому что upstream security
       middleware остаётся в default `localhost-only` mode без явных
       `allowed-hosts` и `cors-allowed-origins` для публичного домена модуля.
+    - после перевода browser-login на `mlflow-oidc-auth` новый rollout падает в
+      init container `auth-bootstrap`: auth plugin использует собственные
+      alembic migrations и по умолчанию тот же `alembic_version`, что и MLflow
+      tracking/workspace store; при общем PostgreSQL это даёт collision на
+      `Can't locate revision identified by '<mlflow-revision>'`.
 
 ### Slice 2. Починить ближайший blocker в модуле
 - Цель: устранить следующую реальную причину падения, если она находится в
@@ -54,6 +59,8 @@ external DKP module на живом кластере.
     завышает footprint без необходимости;
   - backend security profile, который допускает public ingress host и
     same-origin browser access без отключения upstream security middleware.
+  - OIDC auth store, который может жить в том же PostgreSQL instance без
+    collision с MLflow alembic state.
 
 ### Slice 3. Подтвердить новое состояние
 - Цель: сверить repo state и сформулировать следующий cluster retry step.

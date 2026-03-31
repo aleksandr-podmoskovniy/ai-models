@@ -38,6 +38,10 @@ ai-models-backend-crypto
 ai-models-backend-auth
 {{- end -}}
 
+{{- define "ai-models.backendAuthOIDCAlembicVersionTable" -}}
+mlflow_oidc_auth_alembic_version
+{{- end -}}
+
 {{- define "ai-models.dexClientName" -}}
 ai-models
 {{- end -}}
