@@ -31,7 +31,7 @@ BACKEND_NODE_MODULES_VOLUME ?= ai-models-backend-js-node-modules
 BACKEND_UI_MAX_OLD_SPACE_SIZE ?= 4096
 OIDC_AUTH_UPSTREAM_METADATA ?= $(ROOT)/images/backend/oidc-auth.lock
 
-.PHONY: ensure-bin-dir ensure-golangci-lint ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools fmt generate test lint-dmt lint-docs lint-shell lint helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
+.PHONY: ensure-bin-dir ensure-golangci-lint ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools fmt generate test lint-dmt lint-docs lint-shell lint helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
 
 ensure-bin-dir:
 	@mkdir -p $(BIN_DIR)
@@ -109,6 +109,18 @@ backend-oidc-auth-patches-check:
 	bash ./images/backend/scripts/fetch-oidc-auth-source.sh --metadata "$(OIDC_AUTH_UPSTREAM_METADATA)" --dest "$$tmp_dir/src" $(if $(OIDC_AUTH_SOURCE_DIR),--source "$(OIDC_AUTH_SOURCE_DIR)",) >/dev/null; \
 	bash ./images/backend/scripts/apply-patches.sh --check "$$tmp_dir/src" ./images/backend/oidc-auth-patches
 
+backend-oidc-auth-install-layout-check:
+	@tmp_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	echo "==> oidc-auth install layout"; \
+	mkdir -p "$$tmp_dir/scripts" "$$tmp_dir/oidc-auth-patches" "$$tmp_dir/metadata"; \
+	cp ./images/backend/scripts/install-oidc-auth-from-source.sh "$$tmp_dir/scripts/"; \
+	cp ./images/backend/scripts/fetch-oidc-auth-source.sh "$$tmp_dir/scripts/"; \
+	cp ./images/backend/scripts/apply-patches.sh "$$tmp_dir/scripts/"; \
+	cp ./images/backend/oidc-auth.lock "$$tmp_dir/metadata/"; \
+	cp ./images/backend/oidc-auth-patches/*.patch "$$tmp_dir/oidc-auth-patches/"; \
+	( cd "$$tmp_dir" && OIDC_AUTH_METADATA_FILE="$$tmp_dir/metadata/oidc-auth.lock" OIDC_AUTH_PATCHES_DIR="$$tmp_dir/oidc-auth-patches" OIDC_AUTH_SKIP_PIP_INSTALL=true bash "$$tmp_dir/scripts/install-oidc-auth-from-source.sh" >/dev/null )
+
 lint: lint-dmt lint-docs lint-shell
 
 helm-template:
@@ -120,9 +132,9 @@ kubeconform:
 render-docs:
 	@python3 ./tools/render-docs.py
 
-verify: lint test helm-template kubeconform backend-oidc-auth-patches-check
+verify: lint test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check
 
-verify-ci: lint test helm-template kubeconform backend-oidc-auth-patches-check
+verify-ci: lint test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check
 
 backend-fetch-source:
 	@bash ./images/backend/scripts/fetch-source.sh --metadata "$(BACKEND_UPSTREAM_METADATA)" --dest "$(BACKEND_SOURCE_CACHE_DIR)" $(if $(BACKEND_SOURCE_DIR),--source "$(BACKEND_SOURCE_DIR)",)

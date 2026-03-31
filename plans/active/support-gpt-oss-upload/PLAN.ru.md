@@ -37,6 +37,9 @@
   - `make verify`
 - артефакт: operator helper для одноразового HF import Job, который затем сможет
   быть переиспользован будущим controller-owned Job flow.
+  Дополнение по эксплуатации:
+  - helper должен оставаться совместимым со штатным macOS `/bin/bash` 3.2, а не
+    только с GNU bash 4+.
 
 ## Rollback point
 - откатить изменения только в `images/backend/*`, `tools/*`, `README*.md` и

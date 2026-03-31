@@ -126,7 +126,10 @@ if [[ -z "${backend_image}" ]]; then
   exit 1
 fi
 
-readarray -t deployment_values < <(
+deployment_values=()
+while IFS= read -r value; do
+  deployment_values+=("${value}")
+done < <(
   kubectl -n "${namespace}" get deployment ai-models -o json | python3 -c '
 import json, sys
 doc = json.load(sys.stdin)

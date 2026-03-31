@@ -21,6 +21,8 @@ usage() {
 Usage: install-oidc-auth-from-source.sh
 
 Fetch the pinned mlflow-oidc-auth source, apply the local patch queue, and install the patched package.
+
+Set `OIDC_AUTH_SKIP_PIP_INSTALL=true` to stop after fetch/apply validation.
 EOF
 }
 
@@ -31,8 +33,31 @@ fi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 backend_dir="$(cd -- "${script_dir}/.." && pwd)"
-patches_dir="${backend_dir}/oidc-auth-patches"
-metadata_file="${backend_dir}/oidc-auth.lock"
+patches_dir="${OIDC_AUTH_PATCHES_DIR:-}"
+metadata_file="${OIDC_AUTH_METADATA_FILE:-}"
+
+if [[ -z "${patches_dir}" ]]; then
+  if [[ -d "${backend_dir}/oidc-auth-patches" ]]; then
+    patches_dir="${backend_dir}/oidc-auth-patches"
+  elif [[ -d /oidc-auth-patches ]]; then
+    patches_dir="/oidc-auth-patches"
+  else
+    echo "Failed to locate the mlflow-oidc-auth patch bundle." >&2
+    exit 1
+  fi
+fi
+
+if [[ -z "${metadata_file}" ]]; then
+  if [[ -f "${backend_dir}/oidc-auth.lock" ]]; then
+    metadata_file="${backend_dir}/oidc-auth.lock"
+  elif [[ -f /metadata/oidc-auth.lock ]]; then
+    metadata_file="/metadata/oidc-auth.lock"
+  else
+    echo "Failed to locate the mlflow-oidc-auth metadata lock file." >&2
+    exit 1
+  fi
+fi
+
 workdir="$(mktemp -d)"
 src_dir="${workdir}/src"
 
@@ -46,5 +71,9 @@ bash "${script_dir}/fetch-oidc-auth-source.sh" \
   --dest "${src_dir}"
 
 bash "${script_dir}/apply-patches.sh" "${src_dir}" "${patches_dir}"
+
+if [[ "${OIDC_AUTH_SKIP_PIP_INSTALL:-false}" == "true" ]]; then
+  exit 0
+fi
 
 python3 -m pip install --no-cache-dir "${src_dir}"
