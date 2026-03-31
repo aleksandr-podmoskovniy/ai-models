@@ -293,7 +293,7 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
             )
         if 'app-name="oidc-auth"' not in content:
             errors.append(
-                f"{path.name}: backend renders must start MLflow with the oidc-auth app"
+                f"{path.name}: backend renders must start MLflow with the patched upstream oidc-auth app"
             )
         if 'export OIDC_DISCOVERY_URL="' not in content:
             errors.append(
@@ -306,6 +306,14 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
         if 'export OIDC_SCOPE="openid email profile groups"' not in content:
             errors.append(
                 f"{path.name}: backend renders must request groups in the OIDC scope using a space-delimited OAuth scope string"
+            )
+        if 'export DEFAULT_LANDING_PAGE_IS_PERMISSIONS="false"' not in content:
+            errors.append(
+                f"{path.name}: backend renders must land browser SSO in the workspace-aware MLflow UI instead of the OIDC permissions UI"
+            )
+        if 'export OIDC_GEN_AI_GATEWAY_ENABLED="true"' not in content:
+            errors.append(
+                f"{path.name}: backend renders must explicitly enable the upstream OIDC Gateway UI surface for the current inspection flow"
             )
         if 'auth_store_uri="$(ai-models-backend-runtime render-auth-db-uri)"' not in content:
             errors.append(
@@ -520,6 +528,27 @@ def validate_backend_security_profile(path: Path) -> list[str]:
     return errors
 
 
+def validate_backend_ingress_oidc_cookie_policy(path: Path) -> list[str]:
+    errors: list[str] = []
+    content = path.read_text(encoding="utf-8")
+
+    if "kind: Ingress" not in content or "name: ai-models" not in content:
+        return errors
+
+    if 'nginx.ingress.kubernetes.io/configuration-snippet: |' not in content:
+        errors.append(
+            f"{path.name}: ai-models ingress must render a configuration-snippet for runtime ingress adjustments"
+        )
+        return errors
+
+    if "proxy_cookie_flags session secure samesite=none;" not in content:
+        errors.append(
+            f"{path.name}: ai-models ingress must rewrite the MLflow OIDC session cookie to Secure; SameSite=None for Dex callback flows"
+        )
+
+    return errors
+
+
 def main() -> int:
     renders_dir = Path(sys.argv[1])
     errors: list[str] = []
@@ -533,6 +562,7 @@ def main() -> int:
         errors.extend(validate_backend_crypto_baseline(render))
         errors.extend(validate_backend_auth_baseline(render))
         errors.extend(validate_backend_security_profile(render))
+        errors.extend(validate_backend_ingress_oidc_cookie_policy(render))
 
     if errors:
         for error in errors:

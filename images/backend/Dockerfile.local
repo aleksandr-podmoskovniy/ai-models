@@ -29,7 +29,7 @@ RUN set -eux; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-bootstrap-oidc-auth.py /usr/local/bin/ai-models-backend-bootstrap-oidc-auth; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-hf-import; \
-    python3 -m pip install --no-cache-dir "mlflow-oidc-auth==6.7.1"; \
+    bash /work/images/backend/scripts/install-oidc-auth-from-source.sh; \
     python3 -m pip install --no-cache-dir \
       "transformers<5" \
       "huggingface-hub>=0.10.0" \

@@ -49,11 +49,13 @@ if [[ ! -d "${source_root}" ]]; then
   echo "Backend source root does not exist: ${source_root}" >&2
   exit 1
 fi
+source_root="$(cd -- "${source_root}" && pwd)"
 
 if [[ ! -d "${patches_dir}" ]]; then
   echo "Patch directory does not exist: ${patches_dir}" >&2
   exit 1
 fi
+patches_dir="$(cd -- "${patches_dir}" && pwd)"
 
 shopt -s nullglob
 patches=("${patches_dir}"/*.patch)

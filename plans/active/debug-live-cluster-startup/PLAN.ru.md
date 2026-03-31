@@ -44,6 +44,35 @@ external DKP module на живом кластере.
       должен указывать не в tracking/workspace DB, а в dedicated auth DB;
       при `managed-postgres` модуль может создавать её сам, а при `External`
       existing PostgreSQL должен её предоставлять.
+    - после перевода browser login на in-app OIDC callback/user creation уже
+      проходят, но browser session не доезжает до последующего
+      `GET /api/2.0/mlflow/users/current`: внешний ingress отдаёт
+      `session=...; samesite=lax` без `secure`, а для cross-site Dex callback
+      нужен session cookie policy уровня `Secure; SameSite=None`; это удобнее
+      и чище чинить на ingress boundary, не патча сам `mlflow-oidc-auth`.
+    - после исправления session cookie следующий blocker уже в landing path:
+      `mlflow-oidc-auth` по умолчанию после callback редиректит в
+      `/oidc/ui/user`, а этот permissions UI не является phase-1 home для
+      workspaces-enabled MLflow; browser SSO должен попадать в основной
+      MLflow UI/root, где upstream workspace selector/default-workspace flow
+      уже поддержан.
+    - upstream `mlflow-oidc-auth` management UI содержит отдельный GenAI
+      Gateway surface (`ai-endpoints`, `ai-secrets`, `ai-models` tabs). По
+      умолчанию он включён и на `/oidc/ui/user` тянет gateway endpoint
+      permissions. Для phase-1 это не platform contract, но по явному запросу
+      оператора его можно временно держать включённым как inspection mode,
+      понимая, что следующие проблемы там уже будут считаться отдельными
+      integration blocker'ами, а не скрытой фичей.
+    - текущий новый blocker уже не в Dex/TLS/session, а в самом
+      `mlflow-oidc-auth` permissions UI: его FastAPI routes ходят в
+      workspace-aware MLflow stores без request workspace context, поэтому
+      страницы `Experiments`, `Prompts`, `Models` и соседние падают на
+      `Active workspace is required`.
+    - долгосрочно более чистый fix для этого — держать не local runtime wrapper,
+      а controlled patch queue именно для `mlflow-oidc-auth`: проблема находится
+      в plugin FastAPI app, а не в MLflow core, поэтому её лучше чинить в
+      patched plugin source с pinned upstream tag, pinned resolved commit и
+      явной repo-level patch-queue validation story.
 
 ### Slice 2. Починить ближайший blocker в модуле
 - Цель: устранить следующую реальную причину падения, если она находится в
@@ -52,6 +81,7 @@ external DKP module на живом кластере.
   - `templates/_helpers.tpl`
   - `templates/backend/configmap.yaml`
   - `templates/backend/deployment.yaml`
+  - `templates/backend/ingress.yaml`
   - `docs/CONFIGURATION*.md`
   - `tools/helm-tests/validate-renders.py`
 - Проверки:
@@ -66,6 +96,12 @@ external DKP module на живом кластере.
     same-origin browser access без отключения upstream security middleware.
   - OIDC auth store, который использует отдельную auth DB в том же PostgreSQL
     instance и не делит database namespace с MLflow tracking/workspace store.
+  - понятный operator-facing режим: либо phase-1 baseline без Gateway UI
+    subtree, либо явный inspection mode с включённым upstream Gateway surface.
+  - workspace-aware browser permissions UI, реализованный через controlled patch
+    queue для `mlflow-oidc-auth`, а не через local runtime wrapper package.
+  - repo-level verify loop, который проверяет применимость `mlflow-oidc-auth`
+    patch queue к pinned upstream revision до image build/runtime.
 
 ### Slice 3. Подтвердить новое состояние
 - Цель: сверить repo state и сформулировать следующий cluster retry step.

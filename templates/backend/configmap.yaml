@@ -42,7 +42,9 @@ data:
     export OIDC_PROVIDER_DISPLAY_NAME="{{ include "ai-models.authSSOProviderDisplayName" . }}"
     export OIDC_GROUP_NAME="{{ include "ai-models.authSSOAllowedGroupsCSV" . }}"
     export OIDC_ADMIN_GROUP_NAME="{{ include "ai-models.authSSOAdminGroupsCSV" . }}"
+    export OIDC_GEN_AI_GATEWAY_ENABLED="true"
     export AUTOMATIC_LOGIN_REDIRECT="{{ include "ai-models.authSSOAutomaticLoginRedirect" . }}"
+    export DEFAULT_LANDING_PAGE_IS_PERMISSIONS="false"
 
     exec ai-models-backend server \
       --app-name="oidc-auth" \

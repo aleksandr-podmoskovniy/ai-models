@@ -13,6 +13,16 @@ git:
   stageDependencies:
     install:
     - '**/*'
+- add: /images/backend/oidc-auth-patches
+  to: /oidc-auth-patches
+  stageDependencies:
+    install:
+    - '**/*'
+- add: /images/backend/oidc-auth.lock
+  to: /metadata/oidc-auth.lock
+  stageDependencies:
+    install:
+    - '**/*'
 - add: /images/backend/upstream.lock
   to: /metadata/upstream.lock
   stageDependencies:
@@ -36,6 +46,16 @@ git:
   stageDependencies:
     install:
     - '**/*'
+- add: /images/backend/oidc-auth-patches
+  to: /oidc-auth-patches
+  stageDependencies:
+    install:
+    - '**/*'
+- add: /images/backend/oidc-auth.lock
+  to: /metadata/oidc-auth.lock
+  stageDependencies:
+    install:
+    - '**/*'
 import:
 - image: backend-source-artifact
   add: /src/backend
@@ -55,6 +75,16 @@ final: false
 git:
 - add: /images/backend/scripts
   to: /scripts
+  stageDependencies:
+    install:
+    - '**/*'
+- add: /images/backend/oidc-auth-patches
+  to: /oidc-auth-patches
+  stageDependencies:
+    install:
+    - '**/*'
+- add: /images/backend/oidc-auth.lock
+  to: /metadata/oidc-auth.lock
   stageDependencies:
     install:
     - '**/*'
@@ -89,6 +119,16 @@ git:
   stageDependencies:
     install:
     - '**/*'
+- add: /images/backend/oidc-auth-patches
+  to: /oidc-auth-patches
+  stageDependencies:
+    install:
+    - '**/*'
+- add: /images/backend/oidc-auth.lock
+  to: /metadata/oidc-auth.lock
+  stageDependencies:
+    install:
+    - '**/*'
 import:
 - image: backend-source-artifact
   add: /src/backend
@@ -112,7 +152,7 @@ shell:
     install -m 0755 /scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade
     install -m 0755 /scripts/ai-models-backend-bootstrap-oidc-auth.py /usr/local/bin/ai-models-backend-bootstrap-oidc-auth
     install -m 0755 /scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-hf-import
-    python3 -m pip install --no-cache-dir "mlflow-oidc-auth==6.7.1"
+    bash /scripts/install-oidc-auth-from-source.sh
     python3 -m pip install --no-cache-dir \
       "transformers<5" \
       "huggingface-hub>=0.10.0" \

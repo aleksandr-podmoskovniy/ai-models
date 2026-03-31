@@ -13,6 +13,8 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "256m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_cookie_flags session secure samesite=none;
     {{- if gt (include "ai-models.backendReplicas" . | int) 1 }}
     nginx.ingress.kubernetes.io/affinity: cookie
     nginx.ingress.kubernetes.io/affinity-mode: persistent

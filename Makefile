@@ -29,8 +29,9 @@ BACKEND_WORKTREE_DIR ?= $(ROOT)/.cache/backend-worktree
 BACKEND_DIST_DIR ?= $(ROOT)/.cache/backend-dist
 BACKEND_NODE_MODULES_VOLUME ?= ai-models-backend-js-node-modules
 BACKEND_UI_MAX_OLD_SPACE_SIZE ?= 4096
+OIDC_AUTH_UPSTREAM_METADATA ?= $(ROOT)/images/backend/oidc-auth.lock
 
-.PHONY: ensure-bin-dir ensure-golangci-lint ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools fmt generate test lint-dmt lint-docs lint-shell lint helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
+.PHONY: ensure-bin-dir ensure-golangci-lint ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools fmt generate test lint-dmt lint-docs lint-shell lint helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
 
 ensure-bin-dir:
 	@mkdir -p $(BIN_DIR)
@@ -101,6 +102,13 @@ lint-shell:
 		bash -n $$files; \
 	fi
 
+backend-oidc-auth-patches-check:
+	@tmp_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	echo "==> oidc-auth patch queue"; \
+	bash ./images/backend/scripts/fetch-oidc-auth-source.sh --metadata "$(OIDC_AUTH_UPSTREAM_METADATA)" --dest "$$tmp_dir/src" $(if $(OIDC_AUTH_SOURCE_DIR),--source "$(OIDC_AUTH_SOURCE_DIR)",) >/dev/null; \
+	bash ./images/backend/scripts/apply-patches.sh --check "$$tmp_dir/src" ./images/backend/oidc-auth-patches
+
 lint: lint-dmt lint-docs lint-shell
 
 helm-template:
@@ -112,9 +120,9 @@ kubeconform:
 render-docs:
 	@python3 ./tools/render-docs.py
 
-verify: lint test helm-template kubeconform
+verify: lint test helm-template kubeconform backend-oidc-auth-patches-check
 
-verify-ci: lint test helm-template kubeconform
+verify-ci: lint test helm-template kubeconform backend-oidc-auth-patches-check
 
 backend-fetch-source:
 	@bash ./images/backend/scripts/fetch-source.sh --metadata "$(BACKEND_UPSTREAM_METADATA)" --dest "$(BACKEND_SOURCE_CACHE_DIR)" $(if $(BACKEND_SOURCE_DIR),--source "$(BACKEND_SOURCE_DIR)",)

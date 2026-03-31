@@ -37,7 +37,7 @@ fi
 backend_cli="$(command -v ai-models-backend || command -v mlflow)"
 python3 -c "import mlflow; print(mlflow.__version__)"
 python3 -c "from mlflow import *"
-python3 -c "import mlflow_oidc_auth.app; print('oidc-auth ok')"
+python3 -c "import inspect, mlflow_oidc_auth.app as app; src = inspect.getsource(app); assert 'WorkspaceContextMiddleware' in src; print('oidc-auth workspace middleware ok')"
 python3 -c "import transformers, huggingface_hub; print(transformers.__version__)"
 "${backend_cli}" server --help >/dev/null
 ai-models-backend-runtime --help >/dev/null

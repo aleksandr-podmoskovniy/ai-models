@@ -53,6 +53,10 @@ repo. Поэтому layout должен разделять:
 Правила:
 - image-owned runtime wrappers и helper scripts backend должны жить под
   `images/backend/`, а не inline в `ConfigMap` или других manifests;
+- controlled patching 3p-зависимостей должно оставаться локальным для своей
+  границы:
+  - `images/backend/patches/` — только для MLflow core engine;
+  - `images/backend/oidc-auth-patches/` — только для `mlflow-oidc-auth`;
 - controller source, module-local `go.mod` и image build files должны жить под
   `images/controller/`, а не в top-level `controllers/`;
 - Go hooks source, module-local `go.mod` и werf wiring для них должны жить под
