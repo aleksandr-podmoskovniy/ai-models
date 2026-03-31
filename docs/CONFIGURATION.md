@@ -93,6 +93,12 @@ directly to S3. The backend and import Jobs reuse the same merged trust bundle
 for Dex OIDC and S3 CA overrides, so `artifacts.insecure: true` is only a
 temporary troubleshooting path and not the intended steady-state mode.
 
+Destructive cleanup is also explicit and machine-oriented. Deleting a model
+version in raw MLflow does not cascade to the linked `logged model`, `run`, or
+S3 artifacts, so ai-models provides `tools/run_model_cleanup_job.sh` and the
+image-owned `ai-models-backend-model-cleanup` entrypoint to orchestrate that
+cleanup as a one-shot in-cluster Job.
+
 The HF import path now also leaves production-grade metadata in MLflow:
 
 - the source run gets HF-related params and tags;

@@ -21,6 +21,9 @@ What is already part of the repository:
 Phase-1 operational model import:
 - use `tools/run_hf_import_job.sh` for large Hugging Face models so that data flows
   inside the cluster instead of through a laptop;
+- use `tools/run_model_cleanup_job.sh` for destructive cleanup of old model
+  versions so that the registry entry, linked logged model, source run, and S3
+  artifacts are deleted together;
 - keep `tools/upload_hf_model.py` as a thin local wrapper for small models and quick checks;
 - future `Model` / `ClusterModel` UX is expected to reuse the same backend-owned
   import entrypoint via controller-created Jobs.

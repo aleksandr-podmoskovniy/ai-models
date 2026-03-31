@@ -31,7 +31,7 @@ BACKEND_NODE_MODULES_VOLUME ?= ai-models-backend-js-node-modules
 BACKEND_UI_MAX_OLD_SPACE_SIZE ?= 4096
 OIDC_AUTH_UPSTREAM_METADATA ?= $(ROOT)/images/backend/oidc-auth.lock
 
-.PHONY: ensure-bin-dir ensure-golangci-lint ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools fmt generate test lint-dmt lint-docs lint-shell lint helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
+.PHONY: ensure-bin-dir ensure-golangci-lint ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools fmt generate test lint-dmt lint-docs lint-shell lint helper-shell-check helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
 
 ensure-bin-dir:
 	@mkdir -p $(BIN_DIR)
@@ -102,6 +102,13 @@ lint-shell:
 		bash -n $$files; \
 	fi
 
+helper-shell-check:
+	@echo "==> operator helper shell syntax"
+	@bash -n \
+		./tools/libai_models_job.sh \
+		./tools/run_hf_import_job.sh \
+		./tools/run_model_cleanup_job.sh
+
 backend-oidc-auth-patches-check:
 	@tmp_dir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmp_dir"' EXIT; \
@@ -133,6 +140,12 @@ backend-oidc-auth-werf-layout-check:
 		END { if (!(has_image && has_to)) { print "final backend image in images/backend/werf.inc.yaml must import backend-oidc-auth-ui-build to /oidc-auth-ui" > "/dev/stderr"; exit 1 } }' \
 		./images/backend/werf.inc.yaml
 
+backend-runtime-entrypoints-check:
+	@echo "==> backend runtime entrypoints"; \
+	rg -q 'ai-models-backend-model-cleanup' ./images/backend/werf.inc.yaml; \
+	rg -q 'ai-models-backend-model-cleanup' ./images/backend/Dockerfile.local; \
+	rg -q 'ai-models-backend-model-cleanup --help' ./images/backend/scripts/smoke-runtime.sh
+
 lint: lint-dmt lint-docs lint-shell
 
 helm-template:
@@ -144,9 +157,9 @@ kubeconform:
 render-docs:
 	@python3 ./tools/render-docs.py
 
-verify: lint test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check
+verify: lint helper-shell-check test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check
 
-verify-ci: lint test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check
+verify-ci: lint helper-shell-check test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check
 
 backend-fetch-source:
 	@bash ./images/backend/scripts/fetch-source.sh --metadata "$(BACKEND_UPSTREAM_METADATA)" --dest "$(BACKEND_SOURCE_CACHE_DIR)" $(if $(BACKEND_SOURCE_DIR),--source "$(BACKEND_SOURCE_DIR)",)

@@ -94,6 +94,12 @@ in-cluster import Jobs и break-glass operations, а browser users идут че
 `artifacts.insecure: true` остаётся только временным troubleshooting path, а не
 целевым steady-state режимом.
 
+Destructive cleanup тоже остаётся явным machine-oriented workflow. Обычное
+удаление model version в raw MLflow не каскадит в связанный `logged model`,
+`run` и S3 artifacts, поэтому ai-models даёт `tools/run_model_cleanup_job.sh`
+и image-owned entrypoint `ai-models-backend-model-cleanup`, который запускается
+как one-shot in-cluster Job и делает этот cleanup согласованно.
+
 HF import path также оставляет в MLflow осмысленную metadata для production UX:
 
 - run получает HF-related params и tags;

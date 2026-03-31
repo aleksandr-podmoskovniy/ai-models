@@ -17,9 +17,11 @@
 from __future__ import annotations
 
 import argparse
+import configparser
 import os
 from pathlib import Path
 from urllib.parse import quote_plus
+from urllib.parse import urlparse
 
 SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 MERGED_S3_CA_BUNDLE = Path("/tmp/ai-models-s3-ca-bundle.crt")
@@ -118,6 +120,112 @@ def apply_s3_environment_bridge() -> None:
     if ignore_tls and not env("MLFLOW_S3_IGNORE_TLS", ""):
         os.environ["MLFLOW_S3_IGNORE_TLS"] = ignore_tls
     apply_s3_ca_trust()
+
+
+def parse_s3_uri(uri: str) -> tuple[str, str]:
+    parsed = urlparse(uri)
+    if parsed.scheme != "s3":
+        raise ValueError(f"unsupported artifact URI scheme for cleanup: {uri}")
+    if not parsed.netloc:
+        raise ValueError(f"S3 artifact URI must include a bucket: {uri}")
+    return parsed.netloc, parsed.path.lstrip("/")
+
+
+def resolve_s3_addressing_style() -> str | None:
+    explicit = env("AI_MODELS_S3_ADDRESSING_STYLE", "").strip().lower()
+    if explicit in {"path", "virtual", "auto"}:
+        return explicit
+
+    config_path = env("AWS_CONFIG_FILE", "").strip()
+    if not config_path:
+        return None
+
+    path = Path(config_path)
+    if not path.is_file():
+        return None
+
+    parser = configparser.RawConfigParser()
+    try:
+        parser.read(path, encoding="utf-8")
+    except Exception:
+        return None
+
+    if not parser.has_option("default", "s3"):
+        return None
+
+    s3_block = parser.get("default", "s3", fallback="")
+    for raw_line in s3_block.splitlines():
+        line = raw_line.strip()
+        if not line or not line.startswith("addressing_style"):
+            continue
+        _, _, value = line.partition("=")
+        style = value.strip().lower()
+        if style in {"path", "virtual", "auto"}:
+            return style
+
+    return None
+
+
+def build_s3_client():
+    import boto3
+    from botocore.config import Config
+
+    apply_s3_environment_bridge()
+
+    session = boto3.session.Session(
+        region_name=env("AWS_REGION", env("AWS_DEFAULT_REGION", "us-east-1"))
+    )
+    client_kwargs: dict[str, object] = {}
+
+    endpoint = env("AI_MODELS_S3_ENDPOINT_URL", "").strip()
+    if endpoint:
+        client_kwargs["endpoint_url"] = endpoint
+
+    if env_bool("AI_MODELS_S3_IGNORE_TLS", False):
+        client_kwargs["verify"] = False
+
+    addressing_style = resolve_s3_addressing_style()
+    if addressing_style:
+        client_kwargs["config"] = Config(s3={"addressing_style": addressing_style})
+
+    return session.client("s3", **client_kwargs)
+
+
+def delete_s3_prefix(uri: str) -> dict[str, int | str]:
+    bucket, prefix = parse_s3_uri(uri)
+    s3 = build_s3_client()
+    paginator = s3.get_paginator("list_objects_v2")
+
+    before = 0
+    keys: list[str] = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        contents = page.get("Contents", [])
+        before += len(contents)
+        keys.extend(obj["Key"] for obj in contents if "Key" in obj)
+
+    deleted = 0
+    for index in range(0, len(keys), 1000):
+        batch = [{"Key": key} for key in keys[index : index + 1000]]
+        response = s3.delete_objects(
+            Bucket=bucket,
+            Delete={"Objects": batch, "Quiet": True},
+        )
+        errors = response.get("Errors", [])
+        if errors:
+            raise RuntimeError(f"failed to delete S3 objects under {uri}: {errors}")
+        deleted += len(batch)
+
+    after = 0
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        after += len(page.get("Contents", []))
+
+    return {
+        "bucket": bucket,
+        "prefix": prefix,
+        "keys_before": before,
+        "keys_deleted": deleted,
+        "keys_after": after,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:

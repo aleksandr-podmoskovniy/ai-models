@@ -45,3 +45,4 @@ ai-models-backend-runtime --help >/dev/null
 ai-models-backend-bootstrap-oidc-auth --help >/dev/null
 ai-models-backend-db-upgrade --help >/dev/null
 ai-models-backend-hf-import --help >/dev/null
+ai-models-backend-model-cleanup --help >/dev/null

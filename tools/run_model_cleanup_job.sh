@@ -22,85 +22,50 @@ source "${script_dir}/libai_models_job.sh"
 
 usage() {
   cat <<'EOF'
-Usage: run_hf_import_job.sh --hf-model-id <repo> --task <task> [options]
+Usage: run_model_cleanup_job.sh --registered-model-name <name> --version <version> [options]
 
-Render or apply a one-shot in-cluster Job that imports a Hugging Face snapshot
-into ai-models / MLflow using the currently deployed backend image.
+Render or apply a one-shot in-cluster Job that deletes an MLflow model version
+together with the linked logged model, source run, and S3 artifact prefixes
+using the currently deployed backend image.
 
 Examples:
-  tools/run_hf_import_job.sh \
-    --hf-model-id openai/gpt-oss-20b \
-    --task text-generation \
-    --registered-model-name openai-gpt-oss-20b
+  tools/run_model_cleanup_job.sh \
+    --registered-model-name google-gemma-3-4b-it \
+    --version 1
 
-  tools/run_hf_import_job.sh \
-    --hf-model-id openai/gpt-oss-20b \
-    --task text-generation \
-    --registered-model-name openai-gpt-oss-20b \
+  tools/run_model_cleanup_job.sh \
+    --registered-model-name google-gemma-3-4b-it \
+    --version 1 \
     --print-only
 
 Options:
   --namespace <ns>                    Default: d8-ai-models
-  --job-name <name>                   Default: ai-models-hf-import-<timestamp>
-  --hf-model-id <repo>                Required
-  --task <task>                       Required
+  --job-name <name>                   Default: ai-models-model-cleanup-<timestamp>
   --workspace <name>                  Default: default
-  --registered-model-name <name>      Default: sanitized hf-model-id
-  --experiment-name <name>            Default: Default
-  --artifact-name <name>              Default: model
-  --revision <rev>                    Optional HF revision
-  --hf-token-secret <name>            Optional Secret name in target namespace
-  --hf-token-key <key>                Default: token
-  --cpu-request <value>               Default: 250m
-  --memory-request <value>            Default: 512Mi
-  --memory-limit <value>              Default: 1Gi
-  --ephemeral-storage-request <val>   Default: 80Gi
-  --ephemeral-storage-limit <val>     Default: 120Gi
+  --registered-model-name <name>      Required
+  --version <version>                 Required
   --print-only                        Only print the manifest
+  --dry-run                           Resolve cleanup target only; do not delete anything
 EOF
-}
-
-sanitize_name() {
-  printf '%s' "$1" | sed -E 's/[^A-Za-z0-9._-]+/--/g; s/^-+//; s/-+$//'
 }
 
 namespace="d8-ai-models"
 job_name=""
-hf_model_id=""
-task=""
 workspace="default"
 registered_model_name=""
-experiment_name="Default"
-artifact_name="model"
-revision=""
-hf_token_secret=""
-hf_token_key="token"
-cpu_request="250m"
-memory_request="512Mi"
-memory_limit="1Gi"
-ephemeral_storage_request="80Gi"
-ephemeral_storage_limit="120Gi"
+version=""
 print_only="false"
+dry_run="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --namespace) namespace="$2"; shift 2 ;;
     --job-name) job_name="$2"; shift 2 ;;
-    --hf-model-id) hf_model_id="$2"; shift 2 ;;
-    --task) task="$2"; shift 2 ;;
     --workspace) workspace="$2"; shift 2 ;;
     --registered-model-name) registered_model_name="$2"; shift 2 ;;
-    --experiment-name) experiment_name="$2"; shift 2 ;;
-    --artifact-name) artifact_name="$2"; shift 2 ;;
-    --revision) revision="$2"; shift 2 ;;
-    --hf-token-secret) hf_token_secret="$2"; shift 2 ;;
-    --hf-token-key) hf_token_key="$2"; shift 2 ;;
-    --cpu-request) cpu_request="$2"; shift 2 ;;
-    --memory-request) memory_request="$2"; shift 2 ;;
-    --memory-limit) memory_limit="$2"; shift 2 ;;
-    --ephemeral-storage-request) ephemeral_storage_request="$2"; shift 2 ;;
-    --ephemeral-storage-limit) ephemeral_storage_limit="$2"; shift 2 ;;
+    --version) version="$2"; shift 2 ;;
     --print-only) print_only="true"; shift ;;
+    --dry-run) dry_run="true"; shift ;;
     -h|--help) usage; exit 0 ;;
     *)
       echo "Unknown argument: $1" >&2
@@ -110,54 +75,29 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "${hf_model_id}" || -z "${task}" ]]; then
-  echo "--hf-model-id and --task are required." >&2
+if [[ -z "${registered_model_name}" || -z "${version}" ]]; then
+  echo "--registered-model-name and --version are required." >&2
   usage >&2
   exit 1
 fi
 
-if [[ -z "${registered_model_name}" ]]; then
-  registered_model_name="$(sanitize_name "${hf_model_id}")"
-fi
-
 if [[ -z "${job_name}" ]]; then
-  job_name="ai-models-hf-import-$(date +%s)"
+  job_name="ai-models-model-cleanup-$(date +%s)"
 fi
 
 load_deployed_backend_runtime "${namespace}"
 
 tracking_uri_yaml="$(yaml_quote "http://ai-models.${namespace}.svc")"
-experiment_name_yaml="$(yaml_quote "${experiment_name}")"
 workspace_yaml="$(yaml_quote "${workspace}")"
-hf_model_id_yaml="$(yaml_quote "${hf_model_id}")"
-task_yaml="$(yaml_quote "${task}")"
-revision_yaml="$(yaml_quote "${revision}")"
 registered_model_name_yaml="$(yaml_quote "${registered_model_name}")"
-artifact_name_yaml="$(yaml_quote "${artifact_name}")"
-workdir_yaml="$(yaml_quote "/work")"
-snapshot_dir_yaml="$(yaml_quote "/work/snapshot")"
+version_yaml="$(yaml_quote "${version}")"
 s3_endpoint_url_yaml="$(yaml_quote "${s3_endpoint_url}")"
 s3_ignore_tls_yaml="$(yaml_quote "${s3_ignore_tls}")"
 aws_region_yaml="$(yaml_quote "${aws_region}")"
 aws_config_file_yaml="$(yaml_quote "/etc/ai-models/aws/config")"
 home_yaml="$(yaml_quote "/work")"
 tmpdir_yaml="$(yaml_quote "/work/tmp")"
-hf_home_yaml="$(yaml_quote "/work/hf-home")"
-hf_cache_yaml="$(yaml_quote "/work/hf-cache")"
-transformers_cache_yaml="$(yaml_quote "/work/transformers-cache")"
 s3_ca_file_yaml="$(yaml_quote "/etc/ai-models/artifacts-ca/ca.crt")"
-
-hf_token_env_block=""
-if [[ -n "${hf_token_secret}" ]]; then
-  hf_token_env_block="$(cat <<EOF
-            - name: HF_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: ${hf_token_secret}
-                  key: ${hf_token_key}
-EOF
-)"
-fi
 
 artifacts_ca_env_block=""
 artifacts_ca_volume_mount_block=""
@@ -182,6 +122,15 @@ EOF
 )"
 fi
 
+dry_run_env_block=""
+if [[ "${dry_run}" == "true" ]]; then
+  dry_run_env_block="$(cat <<'EOF'
+            - name: AI_MODELS_CLEANUP_DRY_RUN
+              value: "true"
+EOF
+)"
+fi
+
 manifest="$(cat <<EOF
 apiVersion: batch/v1
 kind: Job
@@ -189,7 +138,7 @@ metadata:
   name: ${job_name}
   namespace: ${namespace}
   labels:
-    app.kubernetes.io/name: ai-models-hf-import
+    app.kubernetes.io/name: ai-models-model-cleanup
     app.kubernetes.io/part-of: ai-models
 spec:
   backoffLimit: 0
@@ -197,7 +146,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: ai-models-hf-import
+        app.kubernetes.io/name: ai-models-model-cleanup
         app.kubernetes.io/part-of: ai-models
     spec:
 ${image_pull_secret_block}
@@ -209,36 +158,25 @@ ${image_pull_secret_block}
         runAsGroup: 64535
         fsGroup: 64535
       containers:
-        - name: hf-import
+        - name: model-cleanup
           image: ${backend_image}
           imagePullPolicy: IfNotPresent
-          command: ["ai-models-backend-hf-import"]
+          command: ["ai-models-backend-model-cleanup"]
           env:
-            - name: AI_MODELS_IMPORT_TRACKING_URI
+            - name: AI_MODELS_CLEANUP_TRACKING_URI
               value: ${tracking_uri_yaml}
-            - name: AI_MODELS_IMPORT_EXPERIMENT_NAME
-              value: ${experiment_name_yaml}
-            - name: AI_MODELS_IMPORT_WORKSPACE
+            - name: AI_MODELS_CLEANUP_WORKSPACE
               value: ${workspace_yaml}
-            - name: AI_MODELS_IMPORT_HF_MODEL_ID
-              value: ${hf_model_id_yaml}
-            - name: AI_MODELS_IMPORT_TASK
-              value: ${task_yaml}
-            - name: AI_MODELS_IMPORT_HF_REVISION
-              value: ${revision_yaml}
-            - name: AI_MODELS_IMPORT_REGISTERED_MODEL_NAME
+            - name: AI_MODELS_CLEANUP_REGISTERED_MODEL_NAME
               value: ${registered_model_name_yaml}
-            - name: AI_MODELS_IMPORT_ARTIFACT_NAME
-              value: ${artifact_name_yaml}
-            - name: AI_MODELS_IMPORT_WORKDIR
-              value: ${workdir_yaml}
-            - name: AI_MODELS_IMPORT_SNAPSHOT_DIR
-              value: ${snapshot_dir_yaml}
+            - name: AI_MODELS_CLEANUP_VERSION
+              value: ${version_yaml}
             - name: AI_MODELS_S3_ENDPOINT_URL
               value: ${s3_endpoint_url_yaml}
             - name: AI_MODELS_S3_IGNORE_TLS
               value: ${s3_ignore_tls_yaml}
 ${artifacts_ca_env_block}
+${dry_run_env_block}
             - name: MLFLOW_TRACKING_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -271,13 +209,6 @@ ${artifacts_ca_env_block}
               value: ${home_yaml}
             - name: TMPDIR
               value: ${tmpdir_yaml}
-            - name: HF_HOME
-              value: ${hf_home_yaml}
-            - name: HUGGINGFACE_HUB_CACHE
-              value: ${hf_cache_yaml}
-            - name: TRANSFORMERS_CACHE
-              value: ${transformers_cache_yaml}
-${hf_token_env_block}
           volumeMounts:
             - name: work
               mountPath: /work
@@ -287,12 +218,10 @@ ${hf_token_env_block}
 ${artifacts_ca_volume_mount_block}
           resources:
             requests:
-              cpu: ${cpu_request}
-              memory: ${memory_request}
-              ephemeral-storage: ${ephemeral_storage_request}
+              cpu: 100m
+              memory: 256Mi
             limits:
-              memory: ${memory_limit}
-              ephemeral-storage: ${ephemeral_storage_limit}
+              memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

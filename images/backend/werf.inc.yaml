@@ -189,6 +189,7 @@ shell:
     install -m 0755 /scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade
     install -m 0755 /scripts/ai-models-backend-bootstrap-oidc-auth.py /usr/local/bin/ai-models-backend-bootstrap-oidc-auth
     install -m 0755 /scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-hf-import
+    install -m 0755 /scripts/ai-models-backend-model-cleanup.py /usr/local/bin/ai-models-backend-model-cleanup
     OIDC_AUTH_PREBUILT_UI_DIR=/oidc-auth-ui bash /scripts/install-oidc-auth-from-source.sh
     python3 -m pip install --no-cache-dir \
       "transformers<5" \
