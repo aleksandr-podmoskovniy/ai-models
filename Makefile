@@ -31,7 +31,7 @@ BACKEND_NODE_MODULES_VOLUME ?= ai-models-backend-js-node-modules
 BACKEND_UI_MAX_OLD_SPACE_SIZE ?= 4096
 OIDC_AUTH_UPSTREAM_METADATA ?= $(ROOT)/images/backend/oidc-auth.lock
 
-.PHONY: ensure-bin-dir ensure-golangci-lint ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools fmt generate test lint-dmt lint-docs lint-shell lint helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
+.PHONY: ensure-bin-dir ensure-golangci-lint ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools fmt generate test lint-dmt lint-docs lint-shell lint helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
 
 ensure-bin-dir:
 	@mkdir -p $(BIN_DIR)
@@ -123,6 +123,16 @@ backend-oidc-auth-install-layout-check:
 	printf '%s\n' '<!doctype html><html><body>oidc-auth-ui</body></html>' >"$$tmp_dir/oidc-auth-ui/index.html"; \
 	( cd "$$tmp_dir" && OIDC_AUTH_METADATA_FILE="$$tmp_dir/metadata/oidc-auth.lock" OIDC_AUTH_PATCHES_DIR="$$tmp_dir/oidc-auth-patches" OIDC_AUTH_PREBUILT_UI_DIR="$$tmp_dir/oidc-auth-ui" OIDC_AUTH_SKIP_PIP_INSTALL=true bash "$$tmp_dir/scripts/install-oidc-auth-from-source.sh" >/dev/null )
 
+backend-oidc-auth-werf-layout-check:
+	@echo "==> oidc-auth werf layout"; \
+	awk 'BEGIN { in_backend=0; has_image=0; has_to=0 } \
+		/^---$$/ { if (in_backend) exit; next } \
+		/^image: backend$$/ { in_backend=1; next } \
+		in_backend && /image: backend-oidc-auth-ui-build/ { has_image=1 } \
+		in_backend && /to: \/oidc-auth-ui/ { has_to=1 } \
+		END { if (!(has_image && has_to)) { print "final backend image in images/backend/werf.inc.yaml must import backend-oidc-auth-ui-build to /oidc-auth-ui" > "/dev/stderr"; exit 1 } }' \
+		./images/backend/werf.inc.yaml
+
 lint: lint-dmt lint-docs lint-shell
 
 helm-template:
@@ -134,9 +144,9 @@ kubeconform:
 render-docs:
 	@python3 ./tools/render-docs.py
 
-verify: lint test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check
+verify: lint test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check
 
-verify-ci: lint test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check
+verify-ci: lint test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check
 
 backend-fetch-source:
 	@bash ./images/backend/scripts/fetch-source.sh --metadata "$(BACKEND_UPSTREAM_METADATA)" --dest "$(BACKEND_SOURCE_CACHE_DIR)" $(if $(BACKEND_SOURCE_DIR),--source "$(BACKEND_SOURCE_DIR)",)

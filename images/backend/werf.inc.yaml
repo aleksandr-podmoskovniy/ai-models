@@ -171,6 +171,10 @@ import:
   add: /src/backend/mlflow/server/js/build
   to: /ui-build
   before: install
+- image: backend-oidc-auth-ui-build
+  add: /src/oidc-auth/mlflow_oidc_auth/ui
+  to: /oidc-auth-ui
+  before: install
 shell:
   install:
   - |
