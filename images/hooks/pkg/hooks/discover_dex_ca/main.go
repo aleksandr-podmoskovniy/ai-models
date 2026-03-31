@@ -20,77 +20,66 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flant/addon-operator/pkg/module_manager/go_hook"
-	"github.com/flant/addon-operator/sdk"
-	"github.com/flant/shell-operator/pkg/kube_events_manager/types"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
-	sdkobjectpatch "github.com/deckhouse/module-sdk/pkg/object-patch"
+	"github.com/deckhouse/module-sdk/pkg"
+	"github.com/deckhouse/module-sdk/pkg/registry"
 )
 
-const dexCAValuesPath = "aiModels.internal.discoveredDexCA"
+const (
+	dexIngressSecretSnapshot = "dex-ingress-secret"
+	dexCAValuesPath          = "aiModels.internal.discoveredDexCA"
+	dexIngressSecretFilter   = `{
+		"name": .metadata.name,
+		"data": (.data."ca.crt" // .data."tls.crt")
+	}`
+)
 
 type dexCASecret struct {
 	Name string `json:"name"`
 	Data []byte `json:"data"`
 }
 
-func applyDexCAFilter(obj *unstructured.Unstructured) (go_hook.FilterResult, error) {
-	secret := &v1.Secret{}
-	if err := sdk.FromUnstructured(obj, secret); err != nil {
-		return nil, fmt.Errorf("cannot convert kubernetes secret to secret: %w", err)
-	}
+var _ = registry.RegisterFunc(discoverDexCAConfig, discoverDexCA)
 
-	cert := secret.Data["ca.crt"]
-	if len(cert) == 0 {
-		cert = secret.Data["tls.crt"]
-	}
-
-	return dexCASecret{
-		Name: obj.GetName(),
-		Data: cert,
-	}, nil
+var discoverDexCAConfig = &pkg.HookConfig{
+	OnBeforeHelm: &pkg.OrderedConfig{Order: 15},
+	Kubernetes: []pkg.KubernetesConfig{
+		{
+			Name:       dexIngressSecretSnapshot,
+			APIVersion: "v1",
+			Kind:       "Secret",
+			JqFilter:   dexIngressSecretFilter,
+			NamespaceSelector: &pkg.NamespaceSelector{
+				NameSelector: &pkg.NameSelector{
+					MatchNames: []string{"d8-user-authn"},
+				},
+			},
+			NameSelector: &pkg.NameSelector{
+				MatchNames: []string{"ingress-tls", "ingress-tls-customcertificate"},
+			},
+		},
+	},
 }
 
 func preferredDexCASecrets(globalHTTPSMode string) []string {
 	if globalHTTPSMode == "CustomCertificate" {
 		return []string{"ingress-tls-customcertificate", "ingress-tls"}
 	}
+
 	return []string{"ingress-tls", "ingress-tls-customcertificate"}
 }
 
-var _ = sdk.RegisterFunc(&go_hook.HookConfig{
-	OnBeforeHelm: &go_hook.OrderedConfig{Order: 15},
-	Kubernetes: []go_hook.KubernetesConfig{
-		{
-			Name:       "dexIngressSecret",
-			ApiVersion: "v1",
-			Kind:       "Secret",
-			NamespaceSelector: &types.NamespaceSelector{
-				NameSelector: &types.NameSelector{
-					MatchNames: []string{"d8-user-authn"},
-				},
-			},
-			NameSelector: &types.NameSelector{
-				MatchNames: []string{"ingress-tls", "ingress-tls-customcertificate"},
-			},
-			FilterFunc: applyDexCAFilter,
-		},
-	},
-}, discoverDexCA)
-
-func discoverDexCA(_ context.Context, input *go_hook.HookInput) error {
-	secrets := input.Snapshots.Get("dexIngressSecret")
-	if len(secrets) == 0 {
+func discoverDexCA(_ context.Context, input *pkg.HookInput) error {
+	snapshots := input.Snapshots.Get(dexIngressSecretSnapshot)
+	if len(snapshots) == 0 {
 		input.Values.Remove(dexCAValuesPath)
 		return nil
 	}
 
-	secretsByName := make(map[string][]byte, len(secrets))
-	for secret, err := range sdkobjectpatch.SnapshotIter[dexCASecret](secrets) {
-		if err != nil {
-			return fmt.Errorf("cannot iterate over dex ingress secret snapshot: %w", err)
+	secretsByName := make(map[string][]byte, len(snapshots))
+	for _, snapshot := range snapshots {
+		var secret dexCASecret
+		if err := snapshot.UnmarshalTo(&secret); err != nil {
+			return fmt.Errorf("unmarshal dex ingress secret snapshot: %w", err)
 		}
 		if len(secret.Data) == 0 {
 			continue
