@@ -113,13 +113,15 @@ backend-oidc-auth-install-layout-check:
 	@tmp_dir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmp_dir"' EXIT; \
 	echo "==> oidc-auth install layout"; \
-	mkdir -p "$$tmp_dir/scripts" "$$tmp_dir/oidc-auth-patches" "$$tmp_dir/metadata"; \
+	mkdir -p "$$tmp_dir/scripts" "$$tmp_dir/oidc-auth-patches" "$$tmp_dir/metadata" "$$tmp_dir/oidc-auth-ui"; \
 	cp ./images/backend/scripts/install-oidc-auth-from-source.sh "$$tmp_dir/scripts/"; \
 	cp ./images/backend/scripts/fetch-oidc-auth-source.sh "$$tmp_dir/scripts/"; \
 	cp ./images/backend/scripts/apply-patches.sh "$$tmp_dir/scripts/"; \
+	cp ./images/backend/scripts/build-oidc-auth-ui.sh "$$tmp_dir/scripts/"; \
 	cp ./images/backend/oidc-auth.lock "$$tmp_dir/metadata/"; \
 	cp ./images/backend/oidc-auth-patches/*.patch "$$tmp_dir/oidc-auth-patches/"; \
-	( cd "$$tmp_dir" && OIDC_AUTH_METADATA_FILE="$$tmp_dir/metadata/oidc-auth.lock" OIDC_AUTH_PATCHES_DIR="$$tmp_dir/oidc-auth-patches" OIDC_AUTH_SKIP_PIP_INSTALL=true bash "$$tmp_dir/scripts/install-oidc-auth-from-source.sh" >/dev/null )
+	printf '%s\n' '<!doctype html><html><body>oidc-auth-ui</body></html>' >"$$tmp_dir/oidc-auth-ui/index.html"; \
+	( cd "$$tmp_dir" && OIDC_AUTH_METADATA_FILE="$$tmp_dir/metadata/oidc-auth.lock" OIDC_AUTH_PATCHES_DIR="$$tmp_dir/oidc-auth-patches" OIDC_AUTH_PREBUILT_UI_DIR="$$tmp_dir/oidc-auth-ui" OIDC_AUTH_SKIP_PIP_INSTALL=true bash "$$tmp_dir/scripts/install-oidc-auth-from-source.sh" >/dev/null )
 
 lint: lint-dmt lint-docs lint-shell
 

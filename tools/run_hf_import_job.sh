@@ -150,12 +150,23 @@ for key in ("AI_MODELS_S3_ENDPOINT_URL", "AI_MODELS_S3_IGNORE_TLS", "AWS_REGION"
     print(env.get(key, {}).get("value", ""))
 secret_ref = env.get("AWS_ACCESS_KEY_ID", {}).get("valueFrom", {}).get("secretKeyRef", {})
 print(secret_ref.get("name", "ai-models-artifacts"))
+volumes = {volume.get("name", ""): volume for volume in doc["spec"]["template"]["spec"].get("volumes", [])}
+artifacts_ca_secret_name = ""
+for mount in container.get("volumeMounts", []):
+    if mount.get("mountPath") not in ("/etc/ai-models/artifacts-ca", "/etc/ai-models/platform-ca"):
+        continue
+    volume = volumes.get(mount.get("name", ""), {})
+    artifacts_ca_secret_name = volume.get("secret", {}).get("secretName", "")
+    if artifacts_ca_secret_name:
+        break
+print(artifacts_ca_secret_name)
 '
 )
 s3_endpoint_url="${deployment_values[0]:-}"
 s3_ignore_tls="${deployment_values[1]:-false}"
 aws_region="${deployment_values[2]:-us-east-1}"
 artifacts_secret_name="${deployment_values[3]:-ai-models-artifacts}"
+artifacts_ca_secret_name="${deployment_values[4]:-}"
 
 tracking_uri_yaml="$(yaml_quote "http://ai-models.${namespace}.svc")"
 experiment_name_yaml="$(yaml_quote "${experiment_name}")"
@@ -176,6 +187,7 @@ tmpdir_yaml="$(yaml_quote "/work/tmp")"
 hf_home_yaml="$(yaml_quote "/work/hf-home")"
 hf_cache_yaml="$(yaml_quote "/work/hf-cache")"
 transformers_cache_yaml="$(yaml_quote "/work/transformers-cache")"
+s3_ca_file_yaml="$(yaml_quote "/etc/ai-models/artifacts-ca/ca.crt")"
 
 image_pull_secret_block=""
 if kubectl -n "${namespace}" get secret ai-models-module-registry >/dev/null 2>&1; then
@@ -194,6 +206,29 @@ if [[ -n "${hf_token_secret}" ]]; then
                 secretKeyRef:
                   name: ${hf_token_secret}
                   key: ${hf_token_key}
+EOF
+)"
+fi
+
+artifacts_ca_env_block=""
+artifacts_ca_volume_mount_block=""
+artifacts_ca_volume_block=""
+if [[ -n "${artifacts_ca_secret_name}" ]]; then
+  artifacts_ca_env_block="$(cat <<EOF
+            - name: AI_MODELS_S3_CA_FILE
+              value: ${s3_ca_file_yaml}
+EOF
+)"
+  artifacts_ca_volume_mount_block="$(cat <<'EOF'
+            - name: artifacts-ca
+              mountPath: /etc/ai-models/artifacts-ca
+              readOnly: true
+EOF
+)"
+  artifacts_ca_volume_block="$(cat <<EOF
+        - name: artifacts-ca
+          secret:
+            secretName: ${artifacts_ca_secret_name}
 EOF
 )"
 fi
@@ -254,6 +289,7 @@ ${image_pull_secret_block}
               value: ${s3_endpoint_url_yaml}
             - name: AI_MODELS_S3_IGNORE_TLS
               value: ${s3_ignore_tls_yaml}
+${artifacts_ca_env_block}
             - name: MLFLOW_TRACKING_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -299,6 +335,7 @@ ${hf_token_env_block}
             - name: runtime-config
               mountPath: /etc/ai-models/aws/config
               subPath: aws-config
+${artifacts_ca_volume_mount_block}
           resources:
             requests:
               cpu: ${cpu_request}
@@ -322,6 +359,7 @@ ${hf_token_env_block}
           configMap:
             name: ai-models-runtime
             defaultMode: 0755
+${artifacts_ca_volume_block}
 EOF
 )"
 

@@ -38,8 +38,8 @@ ai-models-backend-crypto
 ai-models-backend-auth
 {{- end -}}
 
-{{- define "ai-models.backendOIDCCASecretName" -}}
-ai-models-backend-oidc-ca
+{{- define "ai-models.backendTrustCASecretName" -}}
+ai-models-backend-trust-ca
 {{- end -}}
 
 {{- define "ai-models.backendAuthOIDCAlembicVersionTable" -}}
@@ -52,8 +52,24 @@ alembic_version_auth
 {{- default "" (index $internal "discoveredDexCA") -}}
 {{- end -}}
 
-{{- define "ai-models.hasDiscoveredDexCA" -}}
-{{- if (include "ai-models.discoveredDexCA" . | trim) -}}
+{{- define "ai-models.globalCustomCertificateCA" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $customCertificateData := (index $internal "customCertificateData") | default dict -}}
+{{- default "" (index $customCertificateData "ca.crt") -}}
+{{- end -}}
+
+{{- define "ai-models.platformTrustCA" -}}
+{{- $discoveredDexCA := include "ai-models.discoveredDexCA" . | trim -}}
+{{- if $discoveredDexCA -}}
+{{- $discoveredDexCA -}}
+{{- else -}}
+{{- include "ai-models.globalCustomCertificateCA" . | trim -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.hasPlatformTrustCA" -}}
+{{- if (include "ai-models.platformTrustCA" . | trim) -}}
 true
 {{- end -}}
 {{- end -}}
@@ -265,8 +281,7 @@ true
 {{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
 {{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
 {{- $existingMachineUsername := (get $existingData "machineUsername" | default "" | b64dec) -}}
-{{- $legacyAdminUsername := (get $existingData "adminUsername" | default "" | b64dec) -}}
-{{- coalesce $existingMachineUsername $legacyAdminUsername "ai-models-internal" -}}
+{{- coalesce $existingMachineUsername "ai-models-internal" -}}
 {{- end -}}
 
 {{- define "ai-models.backendAuthMachinePassword" -}}
@@ -274,9 +289,8 @@ true
 {{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
 {{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
 {{- $existingMachinePassword := (get $existingData "machinePassword" | default "" | b64dec) -}}
-{{- $legacyAdminPassword := (get $existingData "adminPassword" | default "" | b64dec) -}}
 {{- $generatedPassword := printf "A1a%s" (randAlphaNum 29) -}}
-{{- coalesce $existingMachinePassword $legacyAdminPassword $generatedPassword -}}
+{{- coalesce $existingMachinePassword $generatedPassword -}}
 {{- end -}}
 
 {{- define "ai-models.backendAuthFlaskSecretKey" -}}
@@ -474,6 +488,12 @@ Standalone
 {{- default "" (index $artifacts "credentialsSecretName") -}}
 {{- end -}}
 
+{{- define "ai-models.artifactsCASecretName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
+{{- default "" (index $artifacts "caSecretName") -}}
+{{- end -}}
+
 {{- define "ai-models.artifactsHasInlineCredentials" -}}
 {{- $accessKey := include "ai-models.artifactsInlineAccessKey" . | trim -}}
 {{- $secretKey := include "ai-models.artifactsInlineSecretKey" . | trim -}}
@@ -485,6 +505,20 @@ true
 {{- define "ai-models.artifactsHasSecretReference" -}}
 {{- if (include "ai-models.artifactsCredentialsSecretName" . | trim) -}}
 true
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.artifactsMountedCASecretName" -}}
+{{- $explicit := include "ai-models.artifactsCASecretName" . | trim -}}
+{{- if $explicit -}}
+{{- $explicit -}}
+{{- else -}}
+  {{- $credentialsSecretName := include "ai-models.artifactsCredentialsSecretName" . | trim -}}
+  {{- if $credentialsSecretName -}}
+{{- $credentialsSecretName -}}
+  {{- else if (include "ai-models.hasPlatformTrustCA" . | trim) -}}
+{{- include "ai-models.backendTrustCASecretName" . -}}
+  {{- end -}}
 {{- end -}}
 {{- end -}}
 

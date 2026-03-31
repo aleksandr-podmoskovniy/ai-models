@@ -69,6 +69,35 @@ shell:
     bash /scripts/build-ui.sh /src/backend
 
 ---
+image: backend-oidc-auth-ui-build
+from: node:22.19.0-bookworm-slim@sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90
+final: false
+git:
+- add: /images/backend/scripts
+  to: /scripts
+  stageDependencies:
+    install:
+    - '**/*'
+- add: /images/backend/oidc-auth-patches
+  to: /oidc-auth-patches
+  stageDependencies:
+    install:
+    - '**/*'
+- add: /images/backend/oidc-auth.lock
+  to: /metadata/oidc-auth.lock
+  stageDependencies:
+    install:
+    - '**/*'
+shell:
+  install:
+  - |
+    set -euo pipefail
+    bash /scripts/apt-install.sh ca-certificates git
+    bash /scripts/fetch-oidc-auth-source.sh --metadata /metadata/oidc-auth.lock --dest /src/oidc-auth
+    bash /scripts/apply-patches.sh /src/oidc-auth /oidc-auth-patches
+    bash /scripts/build-oidc-auth-ui.sh /src/oidc-auth
+
+---
 image: backend-release-wheel
 from: python:3.10-slim-bullseye@sha256:f1fb49e4d5501ac93d0ca519fb7ee6250842245aba8612926a46a0832a1ed089
 final: false
@@ -96,6 +125,10 @@ import:
 - image: backend-ui-build
   add: /src/backend/mlflow/server/js/build
   to: /ui-build
+  before: install
+- image: backend-oidc-auth-ui-build
+  add: /src/oidc-auth/mlflow_oidc_auth/ui
+  to: /oidc-auth-ui
   before: install
 shell:
   install:
@@ -152,7 +185,7 @@ shell:
     install -m 0755 /scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade
     install -m 0755 /scripts/ai-models-backend-bootstrap-oidc-auth.py /usr/local/bin/ai-models-backend-bootstrap-oidc-auth
     install -m 0755 /scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-hf-import
-    bash /scripts/install-oidc-auth-from-source.sh
+    OIDC_AUTH_PREBUILT_UI_DIR=/oidc-auth-ui bash /scripts/install-oidc-auth-from-source.sh
     python3 -m pip install --no-cache-dir \
       "transformers<5" \
       "huggingface-hub>=0.10.0" \
@@ -167,4 +200,4 @@ shell:
       >/usr/local/bin/ai-models-backend
     chmod +x /usr/local/bin/ai-models-backend
     bash /scripts/smoke-runtime.sh
-    rm -rf /root/.cache /src/backend /scripts /ui-build
+    rm -rf /root/.cache /src/backend /scripts /ui-build /oidc-auth-ui

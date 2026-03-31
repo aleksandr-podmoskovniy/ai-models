@@ -132,6 +132,13 @@ properties:
           Existing Secret in `d8-ai-models` with `accessKey` and `secretKey`.
           Prefer this path in production. Inline credentials remain available for bootstrap.
         default: ""
+      caSecretName:
+        type: string
+        description: |
+          Optional existing Secret in `d8-ai-models` with key `ca.crt` used to trust
+          a custom CA for the S3-compatible endpoint. When empty, ai-models reuses
+          `credentialsSecretName` if that Secret also contains `ca.crt`.
+        default: ""
       accessKey:
         type: string
         description: |

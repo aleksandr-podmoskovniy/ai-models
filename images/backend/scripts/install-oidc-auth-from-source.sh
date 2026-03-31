@@ -35,6 +35,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 backend_dir="$(cd -- "${script_dir}/.." && pwd)"
 patches_dir="${OIDC_AUTH_PATCHES_DIR:-}"
 metadata_file="${OIDC_AUTH_METADATA_FILE:-}"
+prebuilt_ui_dir="${OIDC_AUTH_PREBUILT_UI_DIR:-}"
 
 if [[ -z "${patches_dir}" ]]; then
   if [[ -d "${backend_dir}/oidc-auth-patches" ]]; then
@@ -58,6 +59,10 @@ if [[ -z "${metadata_file}" ]]; then
   fi
 fi
 
+if [[ -z "${prebuilt_ui_dir}" && -d /oidc-auth-ui ]]; then
+  prebuilt_ui_dir="/oidc-auth-ui"
+fi
+
 workdir="$(mktemp -d)"
 src_dir="${workdir}/src"
 
@@ -71,6 +76,22 @@ bash "${script_dir}/fetch-oidc-auth-source.sh" \
   --dest "${src_dir}"
 
 bash "${script_dir}/apply-patches.sh" "${src_dir}" "${patches_dir}"
+
+ui_dir="${src_dir}/mlflow_oidc_auth/ui"
+if [[ -n "${prebuilt_ui_dir}" ]]; then
+  if [[ ! -d "${prebuilt_ui_dir}" ]]; then
+    echo "The provided OIDC auth UI directory does not exist: ${prebuilt_ui_dir}" >&2
+    exit 1
+  fi
+  rm -rf "${ui_dir}"
+  mkdir -p "$(dirname "${ui_dir}")"
+  cp -a "${prebuilt_ui_dir}" "${ui_dir}"
+fi
+
+if [[ ! -f "${ui_dir}/index.html" ]]; then
+  echo "Patched mlflow-oidc-auth source is missing prebuilt UI assets at ${ui_dir}" >&2
+  exit 1
+fi
 
 if [[ "${OIDC_AUTH_SKIP_PIP_INSTALL:-false}" == "true" ]]; then
   exit 0

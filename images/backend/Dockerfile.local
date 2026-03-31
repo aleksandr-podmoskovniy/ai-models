@@ -11,6 +11,17 @@ RUN set -eux; \
     bash /work/images/backend/scripts/build-distributions.sh /work/src/backend /work/dist; \
     bash /work/images/backend/scripts/smoke-release-install.sh /work/dist
 
+FROM ${BACKEND_NODE_IMAGE} AS oidc-auth-ui-build
+WORKDIR /work
+COPY images/backend/scripts /work/images/backend/scripts
+COPY images/backend/oidc-auth-patches /work/images/backend/oidc-auth-patches
+COPY images/backend/oidc-auth.lock /work/images/backend/oidc-auth.lock
+RUN set -eux; \
+    bash /work/images/backend/scripts/apt-install.sh ca-certificates git; \
+    bash /work/images/backend/scripts/fetch-oidc-auth-source.sh --metadata /work/images/backend/oidc-auth.lock --dest /work/src/oidc-auth; \
+    bash /work/images/backend/scripts/apply-patches.sh /work/src/oidc-auth /work/images/backend/oidc-auth-patches; \
+    bash /work/images/backend/scripts/build-oidc-auth-ui.sh /work/src/oidc-auth
+
 FROM ${BACKEND_PYTHON_IMAGE} AS runtime
 WORKDIR /work
 ARG BACKEND_BASE_EXTRAS=extras,auth,azure,db,gateway,genai
@@ -19,6 +30,7 @@ ENV BACKEND_BASE_EXTRAS=${BACKEND_BASE_EXTRAS}
 ENV BACKEND_OVERLAY_EXTRAS=${BACKEND_OVERLAY_EXTRAS}
 COPY .cache/backend-worktree /work/src/backend
 COPY images/backend/scripts /work/images/backend/scripts
+COPY --from=oidc-auth-ui-build /work/src/oidc-auth/mlflow_oidc_auth/ui /work/oidc-auth-ui
 RUN set -eux; \
     test -f /work/src/backend/mlflow/server/js/build/index.html; \
     bash /work/images/backend/scripts/apt-install.sh ca-certificates git; \
@@ -29,7 +41,7 @@ RUN set -eux; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-bootstrap-oidc-auth.py /usr/local/bin/ai-models-backend-bootstrap-oidc-auth; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-hf-import; \
-    bash /work/images/backend/scripts/install-oidc-auth-from-source.sh; \
+    OIDC_AUTH_PREBUILT_UI_DIR=/work/oidc-auth-ui bash /work/images/backend/scripts/install-oidc-auth-from-source.sh; \
     python3 -m pip install --no-cache-dir \
       "transformers<5" \
       "huggingface-hub>=0.10.0" \
@@ -44,6 +56,6 @@ RUN set -eux; \
       >/usr/local/bin/ai-models-backend; \
     chmod +x /usr/local/bin/ai-models-backend; \
     bash /work/images/backend/scripts/smoke-runtime.sh; \
-    rm -rf /root/.cache /work/src/backend /work/images
+    rm -rf /root/.cache /work/src/backend /work/images /work/oidc-auth-ui
 ENTRYPOINT ["ai-models-backend"]
 CMD ["server", "--help"]

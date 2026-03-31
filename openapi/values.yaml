@@ -107,6 +107,7 @@ properties:
       endpoint: ""
       region: us-east-1
       credentialsSecretName: ""
+      caSecretName: ""
       accessKey: ""
       secretKey: ""
       insecure: false
@@ -125,6 +126,9 @@ properties:
         type: string
         default: us-east-1
       credentialsSecretName:
+        type: string
+        default: ""
+      caSecretName:
         type: string
         default: ""
       accessKey:
@@ -238,6 +242,7 @@ properties:
             endpoint: ""
             region: us-east-1
             credentialsSecretName: ""
+            caSecretName: ""
             accessKey: ""
             secretKey: ""
             insecure: false

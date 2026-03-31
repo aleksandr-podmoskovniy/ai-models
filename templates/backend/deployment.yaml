@@ -20,7 +20,7 @@ spec:
         app.kubernetes.io/component: backend
       annotations:
         checksum/runtime-config: {{ include "ai-models/templates/backend/configmap.yaml" . | sha256sum }}
-        checksum/oidc-ca-secret: {{ include "ai-models.discoveredDexCA" . | sha256sum }}
+        checksum/platform-ca-secret: {{ include "ai-models.platformTrustCA" . | sha256sum }}
     spec:
       {{- if (include "ai-models.hasRegistrySecret" .) }}
       imagePullSecrets:
@@ -167,6 +167,10 @@ spec:
               value: {{ include "ai-models.artifactsEndpoint" . | quote }}
             - name: AI_MODELS_S3_IGNORE_TLS
               value: {{ include "ai-models.artifactsIgnoreTLS" . | quote }}
+            {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+            - name: AI_MODELS_S3_CA_FILE
+              value: /etc/ai-models/artifacts-ca/ca.crt
+            {{- end }}
             - name: AI_MODELS_AUTH_SESSION_SECRET_KEY
               valueFrom:
                 secretKeyRef:
@@ -250,9 +254,14 @@ spec:
             - name: runtime-config
               mountPath: /etc/ai-models/aws/config
               subPath: aws-config
-            {{- if (include "ai-models.hasDiscoveredDexCA" .) }}
-            - name: oidc-ca
-              mountPath: /etc/ai-models/oidc-ca
+            {{- if (include "ai-models.hasPlatformTrustCA" .) }}
+            - name: platform-ca
+              mountPath: /etc/ai-models/platform-ca
+              readOnly: true
+            {{- end }}
+            {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+            - name: artifacts-ca
+              mountPath: /etc/ai-models/artifacts-ca
               readOnly: true
             {{- end }}
             - name: tmp
@@ -272,11 +281,16 @@ spec:
           configMap:
             name: {{ include "ai-models.configMapName" . }}
             defaultMode: 0755
-        {{- if (include "ai-models.hasDiscoveredDexCA" .) }}
-        - name: oidc-ca
+      {{- if (include "ai-models.hasPlatformTrustCA" .) }}
+        - name: platform-ca
           secret:
-            secretName: {{ include "ai-models.backendOIDCCASecretName" . }}
-        {{- end }}
+            secretName: {{ include "ai-models.backendTrustCASecretName" . }}
+      {{- end }}
+      {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+        - name: artifacts-ca
+          secret:
+            secretName: {{ include "ai-models.artifactsMountedCASecretName" . }}
+      {{- end }}
         - name: tmp
           emptyDir: {}
 {{- end }}

@@ -18,7 +18,11 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 from urllib.parse import quote_plus
+
+SYSTEM_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
+MERGED_S3_CA_BUNDLE = Path("/tmp/ai-models-s3-ca-bundle.crt")
 
 
 def env(name: str, default: str = "") -> str:
@@ -58,6 +62,53 @@ def render_auth_db_uri_from_env() -> str:
     )
 
 
+def apply_s3_ca_trust() -> None:
+    ca_file = env("AI_MODELS_S3_CA_FILE", "").strip()
+    if not ca_file:
+        return
+
+    ca_path = Path(ca_file)
+    if not ca_path.is_file() or ca_path.stat().st_size == 0:
+        return
+
+    source_paths: list[Path] = []
+    seen_sources: set[str] = set()
+
+    def add_source(path: Path) -> None:
+        try:
+            resolved = str(path.resolve())
+        except OSError:
+            return
+        if resolved in seen_sources:
+            return
+        if not path.is_file() or path.stat().st_size == 0:
+            return
+        seen_sources.add(resolved)
+        source_paths.append(path)
+
+    add_source(SYSTEM_CA_BUNDLE)
+    for env_name in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "AWS_CA_BUNDLE"):
+        current = env(env_name, "").strip()
+        if current:
+            add_source(Path(current))
+    add_source(ca_path)
+
+    if not source_paths:
+        return
+
+    MERGED_S3_CA_BUNDLE.parent.mkdir(parents=True, exist_ok=True)
+    with MERGED_S3_CA_BUNDLE.open("wb") as merged:
+        for source in source_paths:
+            merged.write(source.read_bytes().rstrip(b"\n"))
+            merged.write(b"\n")
+
+    merged_path = str(MERGED_S3_CA_BUNDLE)
+    os.environ["AWS_CA_BUNDLE"] = merged_path
+    os.environ["SSL_CERT_FILE"] = merged_path
+    os.environ["REQUESTS_CA_BUNDLE"] = merged_path
+    os.environ["CURL_CA_BUNDLE"] = merged_path
+
+
 def apply_s3_environment_bridge() -> None:
     endpoint = env("AI_MODELS_S3_ENDPOINT_URL", "")
     ignore_tls = env("AI_MODELS_S3_IGNORE_TLS", "")
@@ -66,6 +117,7 @@ def apply_s3_environment_bridge() -> None:
         os.environ["MLFLOW_S3_ENDPOINT_URL"] = endpoint
     if ignore_tls and not env("MLFLOW_S3_IGNORE_TLS", ""):
         os.environ["MLFLOW_S3_IGNORE_TLS"] = ignore_tls
+    apply_s3_ca_trust()
 
 
 def build_parser() -> argparse.ArgumentParser:

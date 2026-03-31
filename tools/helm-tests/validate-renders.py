@@ -395,40 +395,75 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
     return errors
 
 
-def validate_backend_oidc_ca_trust(path: Path) -> list[str]:
+def validate_backend_platform_ca_trust(path: Path) -> list[str]:
     errors: list[str] = []
     content = path.read_text(encoding="utf-8")
 
-    if "name: ai-models-backend-oidc-ca" not in content:
+    if "name: ai-models-backend-trust-ca" not in content:
         return errors
 
     if "ca.crt:" not in content:
         errors.append(
-            f"{path.name}: OIDC CA Secret must render ca.crt data"
+            f"{path.name}: platform trust CA Secret must render ca.crt data"
         )
-    if 'oidc_ca_file="/etc/ai-models/oidc-ca/ca.crt"' not in content:
+    if 'platform_ca_file="/etc/ai-models/platform-ca/ca.crt"' not in content:
         errors.append(
-            f"{path.name}: backend launcher must read the mounted OIDC CA file"
+            f"{path.name}: backend launcher must read the mounted platform CA file"
         )
-    if 'cat /etc/ssl/certs/ca-certificates.crt "${oidc_ca_file}" > "${oidc_ca_bundle}"' not in content:
+    if 'append_tls_trust "${platform_ca_file}"' not in content:
         errors.append(
-            f"{path.name}: backend launcher must merge the discovered Dex CA with the system trust bundle"
+            f"{path.name}: backend launcher must merge the shared platform CA into the trust bundle"
         )
-    if 'export SSL_CERT_FILE="${oidc_ca_bundle}"' not in content:
+    if 'export SSL_CERT_FILE="${tls_trust_bundle}"' not in content:
         errors.append(
-            f"{path.name}: backend launcher must export SSL_CERT_FILE for OIDC TLS trust"
+            f"{path.name}: backend launcher must export SSL_CERT_FILE for platform CA trust"
         )
-    if 'export REQUESTS_CA_BUNDLE="${oidc_ca_bundle}"' not in content:
+    if 'export REQUESTS_CA_BUNDLE="${tls_trust_bundle}"' not in content:
         errors.append(
-            f"{path.name}: backend launcher must export REQUESTS_CA_BUNDLE for OIDC TLS trust"
+            f"{path.name}: backend launcher must export REQUESTS_CA_BUNDLE for platform CA trust"
         )
-    if 'export CURL_CA_BUNDLE="${oidc_ca_bundle}"' not in content:
+    if 'export CURL_CA_BUNDLE="${tls_trust_bundle}"' not in content:
         errors.append(
-            f"{path.name}: backend launcher must export CURL_CA_BUNDLE for OIDC TLS trust"
+            f"{path.name}: backend launcher must export CURL_CA_BUNDLE for platform CA trust"
         )
-    if 'name: oidc-ca' not in content or 'mountPath: /etc/ai-models/oidc-ca' not in content:
+    if 'name: platform-ca' not in content or 'mountPath: /etc/ai-models/platform-ca' not in content:
         errors.append(
-            f"{path.name}: backend deployment must mount the namespaced OIDC CA Secret"
+            f"{path.name}: backend deployment must mount the namespaced platform CA Secret"
+        )
+
+    return errors
+
+
+def validate_backend_artifacts_ca_trust(path: Path) -> list[str]:
+    errors: list[str] = []
+    content = path.read_text(encoding="utf-8")
+
+    if 'append_tls_trust "${s3_ca_file}"' not in content:
+        return errors
+
+    if 's3_ca_file="${AI_MODELS_S3_CA_FILE:-${platform_ca_file}}"' not in content:
+        errors.append(
+            f"{path.name}: backend launcher must default the S3 CA path to the shared platform CA when no explicit artifacts CA file is provided"
+        )
+
+    if 'name: AI_MODELS_S3_CA_FILE' not in content and 'mountPath: /etc/ai-models/artifacts-ca' not in content:
+        return errors
+
+    if 'name: AI_MODELS_S3_CA_FILE' not in content or 'value: /etc/ai-models/artifacts-ca/ca.crt' not in content:
+        errors.append(
+            f"{path.name}: backend/runtime renders must expose AI_MODELS_S3_CA_FILE for the custom S3 CA"
+        )
+    if 'mountPath: /etc/ai-models/artifacts-ca' not in content or 'name: artifacts-ca' not in content:
+        errors.append(
+            f"{path.name}: backend/runtime renders must mount the custom S3 CA Secret at /etc/ai-models/artifacts-ca"
+        )
+    if 'append_tls_trust "${s3_ca_file}"' not in content:
+        errors.append(
+            f"{path.name}: backend launcher must merge the S3 custom CA into the shared trust bundle"
+        )
+    if 'export AWS_CA_BUNDLE="${tls_trust_bundle}"' not in content:
+        errors.append(
+            f"{path.name}: backend launcher must export AWS_CA_BUNDLE for verified S3 access"
         )
 
     return errors
@@ -558,7 +593,8 @@ def main() -> int:
         errors.extend(validate_postgresclasses(render))
         errors.extend(validate_backend_db_upgrade_flow(render))
         errors.extend(validate_backend_runtime_profile(render))
-        errors.extend(validate_backend_oidc_ca_trust(render))
+        errors.extend(validate_backend_platform_ca_trust(render))
+        errors.extend(validate_backend_artifacts_ca_trust(render))
         errors.extend(validate_backend_crypto_baseline(render))
         errors.extend(validate_backend_auth_baseline(render))
         errors.extend(validate_backend_security_profile(render))

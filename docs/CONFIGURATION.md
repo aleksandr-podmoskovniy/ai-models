@@ -40,6 +40,13 @@ Artifact credentials can be provided in two ways:
 - via inline `accessKey` and `secretKey` in ModuleConfig, in which case the
   module renders an internal Secret in `d8-ai-models`.
 
+Custom S3 CAs are configured separately through `artifacts.caSecretName`.
+That Secret must live in `d8-ai-models` and expose `ca.crt`. When
+`caSecretName` is empty, ai-models first reuses `credentialsSecretName` if the
+same Secret also contains `ca.crt`, and otherwise falls back to the shared
+platform CA that is already discovered for Dex or copied from the global
+`CustomCertificate` HTTPS path.
+
 `bucket`, `pathPrefix`, `endpoint`, `region`, and addressing/TLS flags are not
 treated as secrets. They remain part of the normal module configuration surface.
 
@@ -56,7 +63,8 @@ The module automatically wires:
 
 - a `DexClient` in `d8-ai-models` with redirect URI `https://<public-host>/callback`;
 - the public Dex discovery URL `https://dex.<cluster-domain>/.well-known/openid-configuration`;
-- automatic Dex CA discovery and namespaced trust wiring for MLflow OIDC TLS;
+- automatic platform CA trust wiring from Dex discovery or the global HTTPS
+  `CustomCertificate` path for MLflow OIDC and S3 TLS;
 - MLflow OIDC login through `mlflow-oidc-auth`;
 - upstream-native MLflow workspaces.
 
@@ -81,7 +89,9 @@ logical segmentation continues to happen through native MLflow workspaces.
 Large machine-oriented imports use direct artifact access instead of server-side
 artifact proxying. The backend runs with `--no-serve-artifacts`, and in-cluster
 import Jobs authenticate to MLflow metadata APIs while uploading artifacts
-directly to S3.
+directly to S3. The backend and import Jobs reuse the same merged trust bundle
+for Dex OIDC and S3 CA overrides, so `artifacts.insecure: true` is only a
+temporary troubleshooting path and not the intended steady-state mode.
 
 The current phase-1 backend runtime profile is intentionally conservative:
 each backend pod runs a single MLflow web worker, and MLflow server job

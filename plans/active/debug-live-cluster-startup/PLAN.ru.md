@@ -73,6 +73,12 @@ external DKP module на живом кластере.
       в plugin FastAPI app, а не в MLflow core, поэтому её лучше чинить в
       patched plugin source с pinned upstream tag, pinned resolved commit и
       явной repo-level patch-queue validation story.
+    - после перехода на source-installed patched `mlflow-oidc-auth` новый
+      blocker оказался уже в packaging path: upstream git checkout содержит
+      `web-react/`, но не содержит prebuilt `mlflow_oidc_auth/ui`; если ставить
+      plugin прямо из source без отдельного frontend build, все `/oidc/ui/*`
+      маршруты возвращают `500 Internal Server Error` из-за отсутствия UI
+      assets.
 
 ### Slice 2. Починить ближайший blocker в модуле
 - Цель: устранить следующую реальную причину падения, если она находится в
@@ -102,6 +108,8 @@ external DKP module на живом кластере.
     queue для `mlflow-oidc-auth`, а не через local runtime wrapper package.
   - repo-level verify loop, который проверяет применимость `mlflow-oidc-auth`
     patch queue к pinned upstream revision до image build/runtime.
+  - image build path, который prebuild'ит upstream `mlflow-oidc-auth` React UI
+    и fail-fast'ится, если installed package снова окажется без `ui/index.html`.
 
 ### Slice 3. Подтвердить новое состояние
 - Цель: сверить repo state и сформулировать следующий cluster retry step.

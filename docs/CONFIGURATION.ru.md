@@ -38,6 +38,13 @@ path prefix, endpoint URL, region, TLS policy, addressing style и credentials.
 - через inline `accessKey` и `secretKey` в ModuleConfig, после чего модуль сам
   создаёт внутренний Secret в `d8-ai-models`.
 
+Custom CA для S3-compatible endpoint задаётся отдельно через
+`artifacts.caSecretName`. Этот Secret должен находиться в `d8-ai-models` и
+содержать ключ `ca.crt`. Если `caSecretName` пустой, ai-models сначала
+автоматически reuse'ит `credentialsSecretName`, если тот же Secret также
+содержит `ca.crt`, а иначе fallback'ится на общий platform CA, который уже
+discovered для Dex или скопирован из global HTTPS `CustomCertificate` path.
+
 `bucket`, `pathPrefix`, `endpoint`, `region` и флаги addressing/TLS не считаются
 секретами и остаются обычной частью module configuration contract.
 
@@ -55,7 +62,8 @@ Browser login теперь идёт через Deckhouse Dex OIDC SSO внутр
 
 - `DexClient` в `d8-ai-models` с redirect URI `https://<public-host>/callback`;
 - public Dex discovery URL `https://dex.<cluster-domain>/.well-known/openid-configuration`;
-- автоматическое обнаружение CA Dex и namespaced trust wiring для TLS OIDC;
+- автоматическое platform CA trust wiring из discovered Dex CA или global HTTPS
+  `CustomCertificate` path для TLS OIDC и S3;
 - вход в MLflow через `mlflow-oidc-auth`;
 - upstream-native MLflow workspaces.
 
@@ -81,7 +89,10 @@ in-cluster import Jobs и break-glass operations, а browser users идут че
 Большие machine-oriented import flows теперь используют direct artifact access
 вместо server-side artifact proxying. Backend запускается с
 `--no-serve-artifacts`, а in-cluster import Jobs ходят в MLflow metadata APIs,
-но пишут artifacts напрямую в S3.
+но пишут artifacts напрямую в S3. Backend и import Jobs используют один и тот
+же merged trust bundle для Dex OIDC и S3 CA overrides, поэтому
+`artifacts.insecure: true` остаётся только временным troubleshooting path, а не
+целевым steady-state режимом.
 
 Текущий phase-1 runtime profile намеренно консервативен:
 каждый backend pod запускает один MLflow web worker, а MLflow server job

@@ -1,0 +1,3 @@
+aiModels:
+  artifacts:
+    caSecretName: s3-custom-ca

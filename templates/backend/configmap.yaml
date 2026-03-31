@@ -15,18 +15,38 @@ data:
     backend_store_uri="$(ai-models-backend-runtime render-db-uri)"
     auth_store_uri="$(ai-models-backend-runtime render-auth-db-uri)"
     backend_log_level="$(printf '%s' "${AI_MODELS_LOG_LEVEL}" | tr '[:upper:]' '[:lower:]')"
-    oidc_ca_file="/etc/ai-models/oidc-ca/ca.crt"
-    oidc_ca_bundle="/tmp/ai-models-oidc-ca-bundle.crt"
+    platform_ca_file="/etc/ai-models/platform-ca/ca.crt"
+    s3_ca_file="${AI_MODELS_S3_CA_FILE:-${platform_ca_file}}"
+    tls_trust_bundle="/tmp/ai-models-trust-bundle.crt"
+    tls_trust_initialized="false"
 
-    if [ -s "${oidc_ca_file}" ]; then
-      if [ -s /etc/ssl/certs/ca-certificates.crt ]; then
-        cat /etc/ssl/certs/ca-certificates.crt "${oidc_ca_file}" > "${oidc_ca_bundle}"
-      else
-        cp "${oidc_ca_file}" "${oidc_ca_bundle}"
+    append_tls_trust() {
+      ca_file="$1"
+      if [ -z "${ca_file}" ] || [ ! -s "${ca_file}" ]; then
+        return 0
       fi
-      export SSL_CERT_FILE="${oidc_ca_bundle}"
-      export REQUESTS_CA_BUNDLE="${oidc_ca_bundle}"
-      export CURL_CA_BUNDLE="${oidc_ca_bundle}"
+
+      if [ "${tls_trust_initialized}" = "false" ]; then
+        if [ -s /etc/ssl/certs/ca-certificates.crt ]; then
+          cp /etc/ssl/certs/ca-certificates.crt "${tls_trust_bundle}"
+        else
+          : > "${tls_trust_bundle}"
+        fi
+        tls_trust_initialized="true"
+      fi
+
+      printf '\n' >> "${tls_trust_bundle}"
+      cat "${ca_file}" >> "${tls_trust_bundle}"
+    }
+
+    append_tls_trust "${platform_ca_file}"
+    append_tls_trust "${s3_ca_file}"
+
+    if [ "${tls_trust_initialized}" = "true" ]; then
+      export SSL_CERT_FILE="${tls_trust_bundle}"
+      export REQUESTS_CA_BUNDLE="${tls_trust_bundle}"
+      export CURL_CA_BUNDLE="${tls_trust_bundle}"
+      export AWS_CA_BUNDLE="${tls_trust_bundle}"
     fi
 
     export GUNICORN_CMD_ARGS="--log-level ${backend_log_level}"
