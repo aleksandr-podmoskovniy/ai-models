@@ -39,11 +39,11 @@ external DKP module на живом кластере.
       alembic migrations и по умолчанию тот же `alembic_version`, что и MLflow
       tracking/workspace store; при общем PostgreSQL это даёт collision на
       `Can't locate revision identified by '<mlflow-revision>'`.
-    - после выделения отдельной `OIDC_ALEMBIC_VERSION_TABLE` выяснилось, что в
-      `public` уже лежит legacy auth store (`users`, `groups`, permission tables,
-      `alembic_version_auth`), поэтому новый auth bootstrap всё равно
-      конфликтует по таблицам; auth store нужно окончательно вынести в
-      отдельную PostgreSQL schema.
+    - с точки зрения upstream-looking contract более чистый путь — отдельная
+      logical auth database в том же PostgreSQL instance: `OIDC_USERS_DB_URI`
+      должен указывать не в tracking/workspace DB, а в dedicated auth DB;
+      при `managed-postgres` модуль может создавать её сам, а при `External`
+      existing PostgreSQL должен её предоставлять.
 
 ### Slice 2. Починить ближайший blocker в модуле
 - Цель: устранить следующую реальную причину падения, если она находится в
@@ -64,8 +64,8 @@ external DKP module на живом кластере.
     завышает footprint без необходимости;
   - backend security profile, который допускает public ingress host и
     same-origin browser access без отключения upstream security middleware.
-  - OIDC auth store, который может жить в том же PostgreSQL instance без
-    collision ни с MLflow alembic state, ни с legacy auth tables в `public`.
+  - OIDC auth store, который использует отдельную auth DB в том же PostgreSQL
+    instance и не делит database namespace с MLflow tracking/workspace store.
 
 ### Slice 3. Подтвердить новое состояние
 - Цель: сверить repo state и сформулировать следующий cluster retry step.

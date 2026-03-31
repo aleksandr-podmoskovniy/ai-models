@@ -23,6 +23,11 @@ resource profile minimal for phase-1 metadata storage.
 The default database and user names are `ai-models`, and HA topology for the
 managed `Postgres` follows the selected `PostgresClass.defaultTopology` instead
 of hardcoding a module-specific value.
+For browser SSO and MLflow permissions, ai-models also uses a separate logical
+auth database in the same PostgreSQL instance. In `Managed` mode the module
+creates that second database automatically using the `<database>-auth` naming
+pattern. In `External` mode the existing PostgreSQL instance must already
+provide that second database.
 
 `artifacts` config defines the S3-compatible backend for ai-models artifacts:
 bucket, path prefix, endpoint URL, region, TLS policy, addressing style, and

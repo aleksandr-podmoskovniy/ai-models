@@ -29,6 +29,7 @@ spec:
   {{- end }}
   databases:
     - name: {{ include "ai-models.postgresqlDatabase" . }}
+    - name: {{ include "ai-models.postgresqlAuthDatabase" . }}
   users:
     - name: {{ include "ai-models.postgresqlUser" . }}
       role: rw

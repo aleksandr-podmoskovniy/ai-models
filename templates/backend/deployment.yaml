@@ -42,6 +42,8 @@ spec:
               value: {{ include "ai-models.postgresqlPort" . | quote }}
             - name: AI_MODELS_DATABASE_NAME
               value: {{ include "ai-models.postgresqlDatabase" . | quote }}
+            - name: AI_MODELS_AUTH_DATABASE_NAME
+              value: {{ include "ai-models.postgresqlAuthDatabase" . | quote }}
             - name: AI_MODELS_DATABASE_USER
               value: {{ include "ai-models.postgresqlUser" . | quote }}
             - name: AI_MODELS_DATABASE_SSLMODE
@@ -87,6 +89,8 @@ spec:
               value: {{ include "ai-models.postgresqlPort" . | quote }}
             - name: AI_MODELS_DATABASE_NAME
               value: {{ include "ai-models.postgresqlDatabase" . | quote }}
+            - name: AI_MODELS_AUTH_DATABASE_NAME
+              value: {{ include "ai-models.postgresqlAuthDatabase" . | quote }}
             - name: AI_MODELS_DATABASE_USER
               value: {{ include "ai-models.postgresqlUser" . | quote }}
             - name: AI_MODELS_DATABASE_SSLMODE
@@ -106,8 +110,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "ai-models.backendAuthSecretName" . }}
                   key: machinePassword
-            - name: AI_MODELS_AUTH_OIDC_SCHEMA
-              value: {{ include "ai-models.backendAuthOIDCSchema" . | quote }}
             - name: OIDC_ALEMBIC_VERSION_TABLE
               value: {{ include "ai-models.backendAuthOIDCAlembicVersionTable" . | quote }}
             - name: HOME
@@ -149,6 +151,8 @@ spec:
               value: {{ include "ai-models.postgresqlPort" . | quote }}
             - name: AI_MODELS_DATABASE_NAME
               value: {{ include "ai-models.postgresqlDatabase" . | quote }}
+            - name: AI_MODELS_AUTH_DATABASE_NAME
+              value: {{ include "ai-models.postgresqlAuthDatabase" . | quote }}
             - name: AI_MODELS_DATABASE_USER
               value: {{ include "ai-models.postgresqlUser" . | quote }}
             - name: AI_MODELS_DATABASE_SSLMODE
@@ -177,8 +181,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "ai-models.dexClientSecretName" . }}
                   key: clientSecret
-            - name: AI_MODELS_AUTH_OIDC_SCHEMA
-              value: {{ include "ai-models.backendAuthOIDCSchema" . | quote }}
             - name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION
               value: "false"
             - name: MLFLOW_CRYPTO_KEK_PASSPHRASE

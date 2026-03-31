@@ -307,13 +307,13 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
             errors.append(
                 f"{path.name}: backend renders must request groups in the OIDC scope"
             )
-        if 'oidc_users_db_uri="$(ai-models-backend-runtime render-oidc-users-db-uri)"' not in content:
+        if 'auth_store_uri="$(ai-models-backend-runtime render-auth-db-uri)"' not in content:
             errors.append(
                 f"{path.name}: backend renders must derive the OIDC auth store URI via the shared runtime helper"
             )
-        if 'export OIDC_USERS_DB_URI="${oidc_users_db_uri}"' not in content:
+        if 'export OIDC_USERS_DB_URI="${auth_store_uri}"' not in content:
             errors.append(
-                f"{path.name}: backend renders must point OIDC auth to its dedicated URI"
+                f"{path.name}: backend renders must point the OIDC auth store to the separate auth database URI"
             )
         if 'export OIDC_ALEMBIC_VERSION_TABLE="alembic_version_auth"' not in content:
             errors.append(
@@ -335,11 +335,10 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
             errors.append(
                 f"{path.name}: backend renders must derive the DB URI via the shared runtime helper"
             )
-        if "render-oidc-users-db-uri" not in content:
+        if "render-auth-db-uri" not in content:
             errors.append(
-                f"{path.name}: backend renders must derive the OIDC auth DB URI via the shared runtime helper"
+                f"{path.name}: backend renders must derive the auth DB URI via the shared runtime helper"
             )
-
     if "kind: Deployment" in content and "name: ai-models" in content:
         if 'name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION' not in content or 'value: "false"' not in content:
             errors.append(
@@ -356,6 +355,10 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
         if 'name: AI_MODELS_AUTH_MACHINE_PASSWORD' not in content:
             errors.append(
                 f"{path.name}: backend deployment must mount internal MLflow machine credentials"
+            )
+        if 'name: AI_MODELS_AUTH_DATABASE_NAME' not in content:
+            errors.append(
+                f"{path.name}: backend deployment must mount the separate auth database name"
             )
         if 'name: AI_MODELS_AUTH_ADMIN_USERNAME' in content or 'name: AI_MODELS_AUTH_ADMIN_PASSWORD' in content:
             errors.append(
@@ -381,11 +384,6 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
             errors.append(
                 f"{path.name}: auth-bootstrap must use the dedicated MLflow OIDC Alembic version table"
             )
-        if 'name: AI_MODELS_AUTH_OIDC_SCHEMA' not in content or 'value: "ai_models_oidc_auth"' not in content:
-            errors.append(
-                f"{path.name}: backend deployment must pass a dedicated schema for the MLflow OIDC auth store"
-            )
-
     return errors
 
 

@@ -42,10 +42,6 @@ ai-models-backend-auth
 alembic_version_auth
 {{- end -}}
 
-{{- define "ai-models.backendAuthOIDCSchema" -}}
-ai_models_oidc_auth
-{{- end -}}
-
 {{- define "ai-models.dexClientName" -}}
 ai-models
 {{- end -}}
@@ -292,6 +288,14 @@ true
 {{- $managed := (index $postgresql "managed") | default dict -}}
 {{- default "ai-models" (index $managed "database") -}}
 {{- end -}}
+{{- end -}}
+
+{{- define "ai-models.postgresqlAuthDatabase" -}}
+{{- $base := include "ai-models.postgresqlDatabase" . | trim -}}
+{{- if gt (len $base) 58 -}}
+  {{- $base = (trimSuffix "-" (trunc 58 $base)) -}}
+{{- end -}}
+{{- printf "%s-auth" $base -}}
 {{- end -}}
 
 {{- define "ai-models.postgresqlPort" -}}

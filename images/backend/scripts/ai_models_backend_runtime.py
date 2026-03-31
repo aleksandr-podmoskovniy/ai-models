@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
+from urllib.parse import quote_plus
 
 
 def env(name: str, default: str = "") -> str:
@@ -45,26 +45,16 @@ def render_db_uri_from_env() -> str:
     )
 
 
-def oidc_auth_schema_from_env() -> str:
-    return env("AI_MODELS_AUTH_OIDC_SCHEMA", "ai_models_oidc_auth").strip() or "ai_models_oidc_auth"
+def render_auth_db_uri_from_env() -> str:
+    password = quote_plus(os.environ["AI_MODELS_DATABASE_PASSWORD"])
+    user = quote_plus(os.environ["AI_MODELS_DATABASE_USER"])
+    host = os.environ["AI_MODELS_DATABASE_HOST"]
+    port = os.environ["AI_MODELS_DATABASE_PORT"]
+    database = os.environ.get("AI_MODELS_AUTH_DATABASE_NAME") or f"{os.environ['AI_MODELS_DATABASE_NAME']}-auth"
+    sslmode = os.environ["AI_MODELS_DATABASE_SSLMODE"]
 
-
-def render_oidc_users_db_uri_from_env() -> str:
-    base_uri = render_db_uri_from_env()
-    schema = oidc_auth_schema_from_env()
-
-    parsed = urlsplit(base_uri)
-    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    query["options"] = f"-csearch_path={schema},public"
-
-    return urlunsplit(
-        (
-            parsed.scheme,
-            parsed.netloc,
-            parsed.path,
-            urlencode(query),
-            parsed.fragment,
-        )
+    return (
+        f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}?sslmode={sslmode}"
     )
 
 
@@ -88,8 +78,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Render the SQLAlchemy PostgreSQL URI from AI_MODELS_DATABASE_* env vars.",
     )
     subparsers.add_parser(
-        "render-oidc-users-db-uri",
-        help="Render the SQLAlchemy PostgreSQL URI for the MLflow OIDC auth store with a dedicated schema search_path.",
+        "render-auth-db-uri",
+        help="Render the SQLAlchemy PostgreSQL URI for the separate MLflow OIDC auth database.",
     )
     return parser
 
@@ -100,8 +90,8 @@ def main() -> int:
     if args.command == "render-db-uri":
         print(render_db_uri_from_env())
         return 0
-    if args.command == "render-oidc-users-db-uri":
-        print(render_oidc_users_db_uri_from_env())
+    if args.command == "render-auth-db-uri":
+        print(render_auth_db_uri_from_env())
         return 0
 
     raise RuntimeError(f"unsupported command: {args.command}")

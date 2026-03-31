@@ -23,6 +23,10 @@ storage.
 Имена database и user по умолчанию теперь `ai-models`, а HA topology для
 managed `Postgres` берётся из `PostgresClass.defaultTopology`, а не
 хардкодится на стороне модуля.
+Для browser SSO и MLflow permissions модуль также использует отдельную logical
+auth database в том же PostgreSQL instance. В режиме `Managed` модуль создаёт
+эту вторую БД автоматически по шаблону `<database>-auth`. В режиме `External`
+existing PostgreSQL должен уже содержать такую вторую БД.
 
 `artifacts` определяет S3-compatible backend для артефактов ai-models: bucket,
 path prefix, endpoint URL, region, TLS policy, addressing style и credentials.
