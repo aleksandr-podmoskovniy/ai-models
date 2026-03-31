@@ -303,9 +303,9 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
             errors.append(
                 f"{path.name}: backend renders must configure the Dex client ID"
             )
-        if 'export OIDC_SCOPE="openid,email,profile,groups"' not in content:
+        if 'export OIDC_SCOPE="openid email profile groups"' not in content:
             errors.append(
-                f"{path.name}: backend renders must request groups in the OIDC scope"
+                f"{path.name}: backend renders must request groups in the OIDC scope using a space-delimited OAuth scope string"
             )
         if 'auth_store_uri="$(ai-models-backend-runtime render-auth-db-uri)"' not in content:
             errors.append(

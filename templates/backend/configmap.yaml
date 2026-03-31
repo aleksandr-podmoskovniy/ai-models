@@ -37,7 +37,7 @@ data:
     export OIDC_DISCOVERY_URL="{{ include "ai-models.dexDiscoveryURL" . }}"
     export OIDC_CLIENT_ID="{{ include "ai-models.dexClientID" . }}"
     export OIDC_REDIRECT_URI="{{ include "ai-models.dexRedirectURI" . }}"
-    export OIDC_SCOPE="openid,email,profile,groups"
+    export OIDC_SCOPE="openid email profile groups"
     export OIDC_GROUPS_ATTRIBUTE="groups"
     export OIDC_PROVIDER_DISPLAY_NAME="{{ include "ai-models.authSSOProviderDisplayName" . }}"
     export OIDC_GROUP_NAME="{{ include "ai-models.authSSOAllowedGroupsCSV" . }}"
