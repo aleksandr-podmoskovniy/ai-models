@@ -15,6 +15,19 @@ data:
     backend_store_uri="$(ai-models-backend-runtime render-db-uri)"
     auth_store_uri="$(ai-models-backend-runtime render-auth-db-uri)"
     backend_log_level="$(printf '%s' "${AI_MODELS_LOG_LEVEL}" | tr '[:upper:]' '[:lower:]')"
+    oidc_ca_file="/etc/ai-models/oidc-ca/ca.crt"
+    oidc_ca_bundle="/tmp/ai-models-oidc-ca-bundle.crt"
+
+    if [ -s "${oidc_ca_file}" ]; then
+      if [ -s /etc/ssl/certs/ca-certificates.crt ]; then
+        cat /etc/ssl/certs/ca-certificates.crt "${oidc_ca_file}" > "${oidc_ca_bundle}"
+      else
+        cp "${oidc_ca_file}" "${oidc_ca_bundle}"
+      fi
+      export SSL_CERT_FILE="${oidc_ca_bundle}"
+      export REQUESTS_CA_BUNDLE="${oidc_ca_bundle}"
+      export CURL_CA_BUNDLE="${oidc_ca_bundle}"
+    fi
 
     export GUNICORN_CMD_ARGS="--log-level ${backend_log_level}"
     export MLFLOW_ENABLE_WORKSPACES="true"

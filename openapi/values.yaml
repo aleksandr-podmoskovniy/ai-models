@@ -205,6 +205,9 @@ properties:
             type: string
           ca.crt:
             type: string
+      discoveredDexCA:
+        type: string
+        description: CA certificate discovered from Deckhouse Dex public ingress and used by MLflow OIDC runtime.
       moduleConfig:
         type: object
         description: Normalized module configuration consumed by runtime components.

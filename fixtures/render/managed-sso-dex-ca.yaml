@@ -1,0 +1,6 @@
+aiModels:
+  internal:
+    discoveredDexCA: |
+      -----BEGIN CERTIFICATE-----
+      TESTDEXCA
+      -----END CERTIFICATE-----

@@ -20,6 +20,7 @@ spec:
         app.kubernetes.io/component: backend
       annotations:
         checksum/runtime-config: {{ include "ai-models/templates/backend/configmap.yaml" . | sha256sum }}
+        checksum/oidc-ca-secret: {{ include "ai-models.discoveredDexCA" . | sha256sum }}
     spec:
       {{- if (include "ai-models.hasRegistrySecret" .) }}
       imagePullSecrets:
@@ -249,6 +250,11 @@ spec:
             - name: runtime-config
               mountPath: /etc/ai-models/aws/config
               subPath: aws-config
+            {{- if (include "ai-models.hasDiscoveredDexCA" .) }}
+            - name: oidc-ca
+              mountPath: /etc/ai-models/oidc-ca
+              readOnly: true
+            {{- end }}
             - name: tmp
               mountPath: /tmp
           securityContext:
@@ -266,6 +272,11 @@ spec:
           configMap:
             name: {{ include "ai-models.configMapName" . }}
             defaultMode: 0755
+        {{- if (include "ai-models.hasDiscoveredDexCA" .) }}
+        - name: oidc-ca
+          secret:
+            secretName: {{ include "ai-models.backendOIDCCASecretName" . }}
+        {{- end }}
         - name: tmp
           emptyDir: {}
 {{- end }}

@@ -387,6 +387,45 @@ def validate_backend_runtime_profile(path: Path) -> list[str]:
     return errors
 
 
+def validate_backend_oidc_ca_trust(path: Path) -> list[str]:
+    errors: list[str] = []
+    content = path.read_text(encoding="utf-8")
+
+    if "name: ai-models-backend-oidc-ca" not in content:
+        return errors
+
+    if "ca.crt:" not in content:
+        errors.append(
+            f"{path.name}: OIDC CA Secret must render ca.crt data"
+        )
+    if 'oidc_ca_file="/etc/ai-models/oidc-ca/ca.crt"' not in content:
+        errors.append(
+            f"{path.name}: backend launcher must read the mounted OIDC CA file"
+        )
+    if 'cat /etc/ssl/certs/ca-certificates.crt "${oidc_ca_file}" > "${oidc_ca_bundle}"' not in content:
+        errors.append(
+            f"{path.name}: backend launcher must merge the discovered Dex CA with the system trust bundle"
+        )
+    if 'export SSL_CERT_FILE="${oidc_ca_bundle}"' not in content:
+        errors.append(
+            f"{path.name}: backend launcher must export SSL_CERT_FILE for OIDC TLS trust"
+        )
+    if 'export REQUESTS_CA_BUNDLE="${oidc_ca_bundle}"' not in content:
+        errors.append(
+            f"{path.name}: backend launcher must export REQUESTS_CA_BUNDLE for OIDC TLS trust"
+        )
+    if 'export CURL_CA_BUNDLE="${oidc_ca_bundle}"' not in content:
+        errors.append(
+            f"{path.name}: backend launcher must export CURL_CA_BUNDLE for OIDC TLS trust"
+        )
+    if 'name: oidc-ca' not in content or 'mountPath: /etc/ai-models/oidc-ca' not in content:
+        errors.append(
+            f"{path.name}: backend deployment must mount the namespaced OIDC CA Secret"
+        )
+
+    return errors
+
+
 def validate_backend_crypto_baseline(path: Path) -> list[str]:
     errors: list[str] = []
     content = path.read_text(encoding="utf-8")
@@ -490,6 +529,7 @@ def main() -> int:
         errors.extend(validate_postgresclasses(render))
         errors.extend(validate_backend_db_upgrade_flow(render))
         errors.extend(validate_backend_runtime_profile(render))
+        errors.extend(validate_backend_oidc_ca_trust(render))
         errors.extend(validate_backend_crypto_baseline(render))
         errors.extend(validate_backend_auth_baseline(render))
         errors.extend(validate_backend_security_profile(render))

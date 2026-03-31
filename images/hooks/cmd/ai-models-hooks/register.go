@@ -19,4 +19,5 @@ package main
 import (
 	// Blank imports register hook init() handlers.
 	_ "hooks/pkg/hooks/copy_custom_certificate"
+	_ "hooks/pkg/hooks/discover_dex_ca"
 )

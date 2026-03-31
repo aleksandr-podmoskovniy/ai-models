@@ -55,6 +55,7 @@ Browser login теперь идёт через Deckhouse Dex OIDC SSO внутр
 
 - `DexClient` в `d8-ai-models` с redirect URI `https://<public-host>/callback`;
 - public Dex discovery URL `https://dex.<cluster-domain>/.well-known/openid-configuration`;
+- автоматическое обнаружение CA Dex и namespaced trust wiring для TLS OIDC;
 - вход в MLflow через `mlflow-oidc-auth`;
 - upstream-native MLflow workspaces.
 

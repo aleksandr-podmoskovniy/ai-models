@@ -38,8 +38,24 @@ ai-models-backend-crypto
 ai-models-backend-auth
 {{- end -}}
 
+{{- define "ai-models.backendOIDCCASecretName" -}}
+ai-models-backend-oidc-ca
+{{- end -}}
+
 {{- define "ai-models.backendAuthOIDCAlembicVersionTable" -}}
 alembic_version_auth
+{{- end -}}
+
+{{- define "ai-models.discoveredDexCA" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- default "" (index $internal "discoveredDexCA") -}}
+{{- end -}}
+
+{{- define "ai-models.hasDiscoveredDexCA" -}}
+{{- if (include "ai-models.discoveredDexCA" . | trim) -}}
+true
+{{- end -}}
 {{- end -}}
 
 {{- define "ai-models.dexClientName" -}}

@@ -56,6 +56,7 @@ The module automatically wires:
 
 - a `DexClient` in `d8-ai-models` with redirect URI `https://<public-host>/callback`;
 - the public Dex discovery URL `https://dex.<cluster-domain>/.well-known/openid-configuration`;
+- automatic Dex CA discovery and namespaced trust wiring for MLflow OIDC TLS;
 - MLflow OIDC login through `mlflow-oidc-auth`;
 - upstream-native MLflow workspaces.
 
