@@ -142,9 +142,9 @@ backend-oidc-auth-werf-layout-check:
 
 backend-runtime-entrypoints-check:
 	@echo "==> backend runtime entrypoints"; \
-	rg -q 'ai-models-backend-model-cleanup' ./images/backend/werf.inc.yaml; \
-	rg -q 'ai-models-backend-model-cleanup' ./images/backend/Dockerfile.local; \
-	rg -q 'ai-models-backend-model-cleanup --help' ./images/backend/scripts/smoke-runtime.sh
+	grep -Fq 'ai-models-backend-model-cleanup' ./images/backend/werf.inc.yaml; \
+	grep -Fq 'ai-models-backend-model-cleanup' ./images/backend/Dockerfile.local; \
+	grep -Fq 'ai-models-backend-model-cleanup --help' ./images/backend/scripts/smoke-runtime.sh
 
 lint: lint-dmt lint-docs lint-shell
 
