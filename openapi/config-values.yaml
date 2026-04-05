@@ -3,6 +3,9 @@ description: |
   User-facing configuration for the ai-models module.
 
   The module exposes only stable settings that are specific to ai-models runtime.
+  Runtime/materializer implementation details do not belong here and must stay
+  in internal values and templates, following the same split used by
+  virtualization.
   High availability mode, HTTPS policy, and ingress class are taken from global
   Deckhouse configuration and internal module wiring. Browser authentication is
   handled through Deckhouse Dex OIDC SSO inside MLflow while preserving
@@ -159,6 +162,50 @@ properties:
         type: boolean
         description: Use path-style S3 requests.
         default: true
+  publicationRegistry:
+    type: object
+    description: |
+      OCI registry used by phase-2 model publication workers.
+      This is still part of the stable module contract; concrete runtime
+      materializer adapter settings must stay out of `config-values`.
+    additionalProperties: false
+    properties:
+      repositoryPrefix:
+        type: string
+        description: |
+          OCI repository prefix used for published model artifacts.
+          Example: `registry.internal.example/ai-models`.
+        default: ""
+      credentialsSecretName:
+        type: string
+        description: |
+          Existing Secret in `d8-ai-models` with `username` and `password` for
+          publication workers.
+        default: ""
+      caSecretName:
+        type: string
+        description: |
+          Optional existing Secret in `d8-ai-models` with key `ca.crt` used to trust
+          a custom CA for the publication OCI registry. When empty, ai-models falls
+          back only to the shared platform CA that is already discovered for Dex or
+          copied from the global `CustomCertificate` HTTPS path.
+        default: ""
+      username:
+        type: string
+        description: |
+          Inline registry username used to render the internal publication registry Secret.
+          Intended mainly for bootstrap when a pre-created Secret is not used.
+        default: ""
+      password:
+        type: string
+        description: |
+          Inline registry password or token used to render the internal publication registry Secret.
+          Intended mainly for bootstrap when a pre-created Secret is not used.
+        default: ""
+      insecure:
+        type: boolean
+        description: Disable TLS verification for publication worker registry access.
+        default: false
   auth:
     type: object
     description: Deckhouse SSO settings for browser access to ai-models.

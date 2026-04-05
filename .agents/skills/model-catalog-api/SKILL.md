@@ -25,6 +25,10 @@ description: Ai-models-specific overlay for phase-2 and later work on Model and 
 3. Use `metav1.Condition` and stable reasons.
 4. Keep `Model` and `ClusterModel` semantically aligned.
 5. Keep internal backend details behind the public contract.
+6. Keep runtime/materialization internals behind the public contract.
+7. Treat `ModelPack` as the publication contract and keep concrete
+   implementation brands such as `KitOps` or `Modctl` behind adapters.
+8. If the task also touches controller boundaries, read `.agents/skills/controller-architecture-discipline/SKILL.md` before implementation.
 
 ## Output
 

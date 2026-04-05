@@ -15,45 +15,65 @@
 # limitations under the License.
 
 """
-Import a Hugging Face model snapshot into ai-models / MLflow without loading the
-full model into RAM as a transformers pipeline.
+Import a model source into ai-models / MLflow without loading the full model
+into RAM as a transformers pipeline.
+
+Supported source types:
+1. Hugging Face repository snapshot.
+2. HTTP(S) model archive containing a Hugging Face-compatible checkpoint
+   directory.
 
 The flow is:
-1. Download a Hugging Face snapshot to local disk.
+1. Download the source to local disk.
 2. Log it to MLflow as a local checkpoint.
 3. Optionally register a model version.
 
-This is the phase-1 runtime entrypoint for both:
-- local operator helpers;
-- in-cluster one-shot import Jobs;
-- future controller-owned import Jobs for Model / ClusterModel.
+This script intentionally keeps the historic `hf-import` filename for backward
+compatibility, but it also powers the generic controller-owned
+`ai-models-backend-source-import` entrypoint.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 from importlib import metadata as importlib_metadata
 import json
 import os
 import re
 import shutil
+import ssl
 import sys
+import tarfile
 from pathlib import Path
+import tempfile
 from typing import Any
+from urllib import error as urllib_error
+from urllib import request as urllib_request
+from urllib.parse import unquote, urlparse
+import zipfile
 
 import mlflow
 from huggingface_hub import HfApi, ModelCard, snapshot_download
 from ai_models_backend_runtime import apply_s3_environment_bridge, env, env_bool
 
 
-def default_registered_model_name(hf_model_id: str) -> str:
-    name = re.sub(r"[^A-Za-z0-9._-]+", "--", hf_model_id).strip("-")
-    return name or "hf-model"
+def default_registered_model_name(source_reference: str) -> str:
+    name = re.sub(r"[^A-Za-z0-9._-]+", "--", source_reference).strip("-")
+    return name or "model"
 
 
-def default_snapshot_dir(hf_model_id: str) -> str:
+def default_snapshot_dir(source_reference: str) -> str:
     base = env("AI_MODELS_IMPORT_WORKDIR", os.path.join(env("HOME", "/tmp"), "ai-models-import"))
-    return os.path.join(base, default_registered_model_name(hf_model_id))
+    return os.path.join(base, default_registered_model_name(source_reference))
+
+
+def default_http_archive_name(source_url: str) -> str:
+    parsed = urlparse(source_url)
+    name = Path(unquote(parsed.path)).name
+    if name:
+        return name
+    return "model-archive"
 
 
 def optional_pinned_requirement(distribution: str, module: str | None = None) -> str | None:
@@ -127,6 +147,18 @@ def human_size(num_bytes: int) -> str:
             return f"{size:.2f} {unit}"
         size /= 1024.0
     return f"{num_bytes} B"
+
+
+def first_csv_item(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    for item in value.split(","):
+        clean = item.strip()
+        if clean:
+            return clean
+
+    return None
 
 
 def load_json_file(path: Path) -> dict[str, Any] | None:
@@ -247,6 +279,114 @@ def fetch_hf_model_context(
         print(f"Warning: failed to load Hugging Face model card: {exc}", file=sys.stderr)
 
     return context, model_card, card_data
+
+
+def maybe_http_ssl_context(ca_bundle_base64: str) -> ssl.SSLContext | None:
+    if not ca_bundle_base64:
+        return None
+
+    try:
+        decoded = base64.b64decode(ca_bundle_base64)
+    except Exception as exc:
+        raise RuntimeError(f"failed to decode HTTP CA bundle: {exc}") from exc
+
+    if not decoded:
+        return None
+
+    with tempfile.NamedTemporaryFile(prefix="ai-models-http-ca-", suffix=".crt", delete=False) as handle:
+        handle.write(decoded)
+        ca_path = handle.name
+
+    return ssl.create_default_context(cafile=ca_path)
+
+
+def http_auth_headers_from_dir(auth_dir: str) -> dict[str, str]:
+    if not auth_dir:
+        return {}
+
+    root = Path(auth_dir)
+    if not root.is_dir():
+        raise RuntimeError(f"HTTP auth directory does not exist: {auth_dir}")
+
+    authorization = (root / "authorization")
+    if authorization.is_file():
+        return {"Authorization": authorization.read_text(encoding="utf-8").strip()}
+
+    username = (root / "username")
+    password = (root / "password")
+    if username.is_file() and password.is_file():
+        token = base64.b64encode(
+            f"{username.read_text(encoding='utf-8').strip()}:{password.read_text(encoding='utf-8').strip()}".encode(
+                "utf-8"
+            )
+        ).decode("utf-8")
+        return {"Authorization": f"Basic {token}"}
+
+    return {}
+
+
+def extract_model_archive(archive_path: str, destination_dir: str) -> str:
+    Path(destination_dir).mkdir(parents=True, exist_ok=True)
+
+    if zipfile.is_zipfile(archive_path):
+        with zipfile.ZipFile(archive_path) as archive:
+            archive.extractall(destination_dir)
+    elif tarfile.is_tarfile(archive_path):
+        with tarfile.open(archive_path) as archive:
+            archive.extractall(destination_dir)
+    else:
+        raise RuntimeError(
+            "HTTP source must point to a supported archive containing a model directory"
+        )
+
+    return normalize_extracted_model_root(destination_dir)
+
+
+def normalize_extracted_model_root(destination_dir: str) -> str:
+    root = Path(destination_dir)
+    if (root / "config.json").is_file():
+        return str(root)
+
+    entries = list(root.iterdir())
+    if len(entries) == 1 and entries[0].is_dir():
+        nested = entries[0]
+        if (nested / "config.json").is_file():
+            return str(nested)
+        return str(nested)
+
+    return str(root)
+
+
+def download_http_source(
+    source_url: str, snapshot_dir: str, ca_bundle_base64: str, auth_dir: str
+) -> tuple[str, dict[str, Any]]:
+    headers = {"User-Agent": "ai-models-backend-source-import/1.0"}
+    headers.update(http_auth_headers_from_dir(auth_dir))
+    request = urllib_request.Request(source_url, headers=headers, method="GET")
+    context = maybe_http_ssl_context(ca_bundle_base64)
+
+    archive_name = default_http_archive_name(source_url)
+    download_path = Path(snapshot_dir) / archive_name
+    download_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with urllib_request.urlopen(request, context=context) as response:
+        with download_path.open("wb") as handle:
+            shutil.copyfileobj(response, handle)
+
+        context_data = compact_mapping(
+            {
+                "url": source_url,
+                "resolved_revision": (response.headers.get("ETag") or "").strip('"'),
+                "content_type": response.headers.get("Content-Type"),
+                "content_length": response.headers.get("Content-Length"),
+            }
+        )
+
+    extracted_dir = Path(snapshot_dir) / "http-source"
+    checkpoint_dir = extract_model_archive(str(download_path), str(extracted_dir))
+    prune_snapshot_runtime_cache(checkpoint_dir)
+
+    return checkpoint_dir, context_data
 
 
 def build_run_params(
@@ -370,6 +510,352 @@ def build_model_version_description(
     return "\n".join(lines)
 
 
+def build_import_result(
+    hf_context: dict[str, Any],
+    task: str,
+    snapshot_manifest: dict[str, Any],
+    config_summary: dict[str, Any],
+    tracking_uri: str,
+    workspace: str,
+    registered_model_name: str,
+    registered_model_version: str,
+    model_uri: str,
+    artifact_uri: str,
+) -> dict[str, Any]:
+    return compact_mapping(
+        {
+            "source": compact_mapping(
+                {
+                    "type": "HuggingFace",
+                    "externalReference": hf_context.get("repo_id"),
+                    "resolvedRevision": hf_context.get("resolved_revision")
+                    or hf_context.get("requested_revision"),
+                }
+            ),
+            "artifact": compact_mapping(
+                {
+                    "kind": "ObjectStorage",
+                    "uri": artifact_uri,
+                    "mediaType": "application/x-mlflow-model",
+                    "sizeBytes": snapshot_manifest.get("total_bytes"),
+                }
+            ),
+            "resolved": compact_mapping(
+                {
+                    "task": task,
+                    "framework": hf_context.get("library_name") or "transformers",
+                    "family": config_summary.get("model_type"),
+                    "license": hf_context.get("license"),
+                    "architecture": first_csv_item(config_summary.get("architectures")),
+                    "format": "HuggingFaceCheckpoint",
+                    "contextWindowTokens": config_summary.get("max_position_embeddings"),
+                    "sourceRepoID": hf_context.get("repo_id"),
+                }
+            ),
+            "mlflow": compact_mapping(
+                {
+                    "trackingURI": tracking_uri,
+                    "workspace": workspace,
+                    "registeredModelName": registered_model_name,
+                    "version": registered_model_version,
+                    "modelURI": model_uri,
+                }
+            ),
+        }
+    )
+
+
+def build_http_run_params(
+    http_context: dict[str, Any], task: str, snapshot_manifest: dict[str, Any], config_summary: dict[str, Any]
+) -> dict[str, str]:
+    values = compact_mapping(
+        {
+            "ai_models.import.source": "http",
+            "http.url": http_context.get("url"),
+            "http.resolved_revision": http_context.get("resolved_revision"),
+            "http.content_type": http_context.get("content_type"),
+            "hf.task": task,
+            "snapshot.file_count": snapshot_manifest.get("file_count"),
+            "snapshot.total_bytes": snapshot_manifest.get("total_bytes"),
+            "config.model_type": config_summary.get("model_type"),
+            "config.architectures": config_summary.get("architectures"),
+            "config.torch_dtype": config_summary.get("torch_dtype"),
+        }
+    )
+    return {key: stringify_metadata_value(value) for key, value in values.items()}
+
+
+def build_http_common_tags(
+    http_context: dict[str, Any], task: str, snapshot_manifest: dict[str, Any], config_summary: dict[str, Any]
+) -> dict[str, str]:
+    values = compact_mapping(
+        {
+            "ai-models.import.source": "http",
+            "ai-models.import.storage-mode": "local-checkpoint",
+            "http.url": http_context.get("url"),
+            "http.resolved_revision": http_context.get("resolved_revision"),
+            "http.content_type": http_context.get("content_type"),
+            "hf.task": task,
+            "snapshot.file_count": snapshot_manifest.get("file_count"),
+            "snapshot.total_bytes": snapshot_manifest.get("total_bytes"),
+            "config.model_type": config_summary.get("model_type"),
+            "config.architectures": config_summary.get("architectures"),
+        }
+    )
+    return {key: stringify_metadata_value(value) for key, value in values.items()}
+
+
+def build_http_model_metadata(
+    http_context: dict[str, Any], task: str, snapshot_manifest: dict[str, Any], config_summary: dict[str, Any]
+) -> dict[str, Any]:
+    return {
+        "import_source": "http",
+        "http": compact_mapping(http_context),
+        "task": task,
+        "snapshot": compact_mapping(
+            {
+                "file_count": snapshot_manifest.get("file_count"),
+                "total_bytes": snapshot_manifest.get("total_bytes"),
+                "total_size_human": snapshot_manifest.get("total_size_human"),
+            }
+        ),
+        "config_summary": config_summary,
+    }
+
+
+def build_http_registered_model_description(
+    http_context: dict[str, Any], task: str, config_summary: dict[str, Any]
+) -> str:
+    lines = [f"Imported from HTTP source `{http_context.get('url')}`."]
+    facts = compact_mapping(
+        {
+            "Task": task,
+            "Revision": http_context.get("resolved_revision"),
+            "Model type": config_summary.get("model_type"),
+            "Architectures": config_summary.get("architectures"),
+        }
+    )
+    lines.extend(f"- {key}: `{value}`" for key, value in facts.items())
+    return "\n".join(lines)
+
+
+def build_http_import_run_name(http_context: dict[str, Any]) -> str:
+    source_url = http_context.get("url", "http-model")
+    revision = http_context.get("resolved_revision")
+    if revision:
+        return f"http-import:{default_registered_model_name(source_url)}@{revision[:12]}"
+    return f"http-import:{default_registered_model_name(source_url)}"
+
+
+def build_http_model_version_description(
+    http_context: dict[str, Any], snapshot_manifest: dict[str, Any]
+) -> str:
+    lines = [f"Imported from HTTP source `{http_context.get('url')}`."]
+    facts = compact_mapping(
+        {
+            "Revision": http_context.get("resolved_revision"),
+            "Snapshot files": snapshot_manifest.get("file_count"),
+            "Snapshot size": snapshot_manifest.get("total_size_human"),
+        }
+    )
+    lines.extend(f"- {key}: `{value}`" for key, value in facts.items())
+    return "\n".join(lines)
+
+
+def build_http_import_result(
+    http_context: dict[str, Any],
+    task: str,
+    snapshot_manifest: dict[str, Any],
+    config_summary: dict[str, Any],
+    tracking_uri: str,
+    workspace: str,
+    registered_model_name: str,
+    registered_model_version: str,
+    model_uri: str,
+    artifact_uri: str,
+) -> dict[str, Any]:
+    return compact_mapping(
+        {
+            "source": compact_mapping(
+                {
+                    "type": "HTTP",
+                    "externalReference": http_context.get("url"),
+                    "resolvedRevision": http_context.get("resolved_revision"),
+                }
+            ),
+            "artifact": compact_mapping(
+                {
+                    "kind": "ObjectStorage",
+                    "uri": artifact_uri,
+                    "mediaType": "application/x-mlflow-model",
+                    "sizeBytes": snapshot_manifest.get("total_bytes"),
+                }
+            ),
+            "resolved": compact_mapping(
+                {
+                    "task": task,
+                    "framework": "transformers",
+                    "family": config_summary.get("model_type"),
+                    "architecture": first_csv_item(config_summary.get("architectures")),
+                    "format": "HuggingFaceCheckpoint",
+                    "contextWindowTokens": config_summary.get("max_position_embeddings"),
+                }
+            ),
+            "mlflow": compact_mapping(
+                {
+                    "trackingURI": tracking_uri,
+                    "workspace": workspace,
+                    "registeredModelName": registered_model_name,
+                    "version": registered_model_version,
+                    "modelURI": model_uri,
+                }
+            ),
+        }
+    )
+
+
+def write_import_result(path: str, payload: dict[str, Any]) -> None:
+    if not path:
+        return
+
+    result_path = Path(path)
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def kube_api_base() -> str:
+    host = os.getenv("KUBERNETES_SERVICE_HOST", "").strip()
+    port = os.getenv("KUBERNETES_SERVICE_PORT", "").strip()
+    if not host or not port:
+        raise RuntimeError("in-cluster Kubernetes API environment is not available")
+    return f"https://{host}:{port}"
+
+
+def service_account_token() -> str:
+    token_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/token")
+    if not token_path.is_file():
+        raise RuntimeError("service account token is not mounted")
+    return token_path.read_text(encoding="utf-8").strip()
+
+
+def kubernetes_ssl_context() -> ssl.SSLContext:
+    ca_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+    if not ca_path.is_file():
+        raise RuntimeError("service account CA bundle is not mounted")
+    return ssl.create_default_context(cafile=str(ca_path))
+
+
+def update_result_configmap(name: str, namespace: str, mutate: Any) -> None:
+    if not name or not namespace:
+        return
+
+    url = f"{kube_api_base()}/api/v1/namespaces/{namespace}/configmaps/{name}"
+    headers = {
+        "Authorization": f"Bearer {service_account_token()}",
+        "Accept": "application/json",
+    }
+    context = kubernetes_ssl_context()
+
+    get_request = urllib_request.Request(url, headers=headers, method="GET")
+    with urllib_request.urlopen(get_request, context=context) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    data = payload.get("data") or {}
+    mutate(data)
+    payload["data"] = data
+
+    put_headers = dict(headers)
+    put_headers["Content-Type"] = "application/json"
+    put_request = urllib_request.Request(
+        url,
+        headers=put_headers,
+        data=json.dumps(payload).encode("utf-8"),
+        method="PUT",
+    )
+    with urllib_request.urlopen(put_request, context=context):
+        return
+
+
+def write_worker_result(configmap_name: str, configmap_namespace: str, payload: dict[str, Any]) -> None:
+    if not configmap_name or not configmap_namespace:
+        return
+
+    serialized = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    try:
+        update_result_configmap(
+            configmap_name,
+            configmap_namespace,
+            lambda data: data.update(
+                {
+                    "state": "Succeeded",
+                    "worker-result.json": serialized,
+                    "result.json": "",
+                    "worker-failure.txt": "",
+                    "message": "",
+                }
+            ),
+        )
+    except Exception as exc:
+        print(
+            f"Warning: failed to write worker result to ConfigMap {configmap_namespace}/{configmap_name}: {exc}",
+            file=sys.stderr,
+        )
+
+
+def write_worker_failure(configmap_name: str, configmap_namespace: str, message: str) -> None:
+    if not configmap_name or not configmap_namespace:
+        return
+
+    clean_message = message.strip()
+    if not clean_message:
+        clean_message = "source import failed"
+
+    try:
+        update_result_configmap(
+            configmap_name,
+            configmap_namespace,
+            lambda data: data.update(
+                {
+                    "state": "Failed",
+                    "worker-result.json": "",
+                    "result.json": "",
+                    "worker-failure.txt": clean_message,
+                    "message": clean_message,
+                }
+            ),
+        )
+    except Exception as exc:
+        print(
+            f"Warning: failed to write worker failure to ConfigMap {configmap_namespace}/{configmap_name}: {exc}",
+            file=sys.stderr,
+        )
+
+
+def write_worker_running(configmap_name: str, configmap_namespace: str) -> None:
+    if not configmap_name or not configmap_namespace:
+        return
+
+    try:
+        update_result_configmap(
+            configmap_name,
+            configmap_namespace,
+            lambda data: data.update(
+                {
+                    "state": "Running",
+                    "message": "",
+                }
+            ),
+        )
+    except Exception as exc:
+        print(
+            f"Warning: failed to mark worker as running in ConfigMap {configmap_namespace}/{configmap_name}: {exc}",
+            file=sys.stderr,
+        )
+
+
 def maybe_set_registered_model_metadata(
     client: mlflow.MlflowClient,
     registered_model_name: str,
@@ -453,7 +939,7 @@ def log_import_metadata_artifacts(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Download a Hugging Face snapshot, log it to ai-models / MLflow, and register it."
+        description="Download a model source, log it to ai-models / MLflow, and register it."
     )
 
     default_tracking_uri = env(
@@ -461,7 +947,14 @@ def build_parser() -> argparse.ArgumentParser:
         env("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000"),
     )
     default_experiment_name = env("AI_MODELS_IMPORT_EXPERIMENT_NAME", "Default")
+    default_source_type = env("AI_MODELS_IMPORT_SOURCE_TYPE", "HuggingFace")
     default_hf_model_id = env("AI_MODELS_IMPORT_HF_MODEL_ID", "")
+    default_http_url = env("AI_MODELS_IMPORT_HTTP_URL", "")
+    default_http_ca_bundle = env(
+        "AI_MODELS_IMPORT_HTTP_CA_BUNDLE_BASE64",
+        env("AI_MODELS_IMPORT_HTTP_CA_BUNDLE_B64", ""),
+    )
+    default_http_auth_dir = env("AI_MODELS_IMPORT_HTTP_AUTH_DIR", "")
     default_task = env("AI_MODELS_IMPORT_TASK", "")
     default_registered_model_name_value = env("AI_MODELS_IMPORT_REGISTERED_MODEL_NAME", "")
     default_artifact_name = env("AI_MODELS_IMPORT_ARTIFACT_NAME", "model")
@@ -481,10 +974,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="MLflow experiment name. Default: Default.",
     )
     parser.add_argument(
+        "--source-type",
+        default=default_source_type,
+        choices=("HuggingFace", "HTTP"),
+        help="Model source type. Supported values: HuggingFace, HTTP.",
+    )
+    parser.add_argument(
         "--hf-model-id",
-        required=not bool(default_hf_model_id),
         default=default_hf_model_id,
         help="Hugging Face model ID, for example openai/gpt-oss-20b.",
+    )
+    parser.add_argument(
+        "--http-url",
+        default=default_http_url,
+        help="HTTP or HTTPS URL of a model archive.",
+    )
+    parser.add_argument(
+        "--http-ca-bundle-base64",
+        default=default_http_ca_bundle,
+        help="Optional Base64-encoded CA bundle used to verify the HTTP source.",
+    )
+    parser.add_argument(
+        "--http-auth-dir",
+        default=default_http_auth_dir,
+        help="Optional directory with HTTP auth material. Supported files: authorization, or username+password.",
     )
     parser.add_argument(
         "--task",
@@ -528,18 +1041,37 @@ def build_parser() -> argparse.ArgumentParser:
         default=env_bool("AI_MODELS_IMPORT_SKIP_REGISTRATION", False),
         help="Only log the model artifacts, do not create a registered model version.",
     )
+    parser.add_argument(
+        "--result-path",
+        default=env("AI_MODELS_IMPORT_RESULT_PATH", ""),
+        help="Optional path where a compact JSON import result is written for controller-owned Jobs.",
+    )
+    parser.add_argument(
+        "--result-configmap-name",
+        default=env("AI_MODELS_IMPORT_RESULT_CONFIGMAP_NAME", ""),
+        help="Optional ConfigMap name used as durable worker result handoff.",
+    )
+    parser.add_argument(
+        "--result-configmap-namespace",
+        default=env("AI_MODELS_IMPORT_RESULT_CONFIGMAP_NAMESPACE", ""),
+        help="Optional ConfigMap namespace used as durable worker result handoff.",
+    )
     return parser
 
 
-def main() -> int:
-    args = build_parser().parse_args()
+def run(args: argparse.Namespace) -> int:
     apply_s3_environment_bridge()
+    write_worker_running(args.result_configmap_name, args.result_configmap_namespace)
 
+    source_type = (args.source_type or "").strip() or "HuggingFace"
     tracking_uri = args.tracking_uri
+    source_reference = args.hf_model_id if source_type == "HuggingFace" else args.http_url
+    if not source_reference:
+        raise RuntimeError(f"source reference is required for source type {source_type}")
     registered_model_name = args.registered_model_name or default_registered_model_name(
-        args.hf_model_id
+        source_reference
     )
-    snapshot_dir = args.snapshot_dir or default_snapshot_dir(args.hf_model_id)
+    snapshot_dir = args.snapshot_dir or default_snapshot_dir(source_reference)
     hf_token = env("HF_TOKEN", env("HUGGING_FACE_HUB_TOKEN", ""))
     await_registration_for = int(args.await_registration_for)
 
@@ -547,49 +1079,98 @@ def main() -> int:
 
     print(f"Tracking URI: {tracking_uri}")
     print(f"Experiment: {args.experiment_name}")
-    print(f"Hugging Face model: {args.hf_model_id}")
-    print(f"Task: {args.task}")
+    print(f"Source type: {source_type}")
     print(f"Registered model: {registered_model_name}")
     print(f"Artifact name: {args.artifact_name}")
     print(f"Workspace: {args.workspace}")
     print(f"Snapshot dir: {snapshot_dir}")
-    if args.revision:
+    if source_type == "HuggingFace":
+        print(f"Hugging Face model: {args.hf_model_id}")
+    else:
+        print(f"HTTP source: {args.http_url}")
+    if args.revision and source_type == "HuggingFace":
         print(f"Revision: {args.revision}")
     if hf_token:
         print("HF token: provided via environment")
 
-    print("Downloading Hugging Face snapshot to local disk...")
-    checkpoint_dir = snapshot_download(
-        repo_id=args.hf_model_id,
-        revision=args.revision or None,
-        local_dir=snapshot_dir,
-        token=hf_token or None,
-    )
-    prune_snapshot_runtime_cache(checkpoint_dir)
-    print(f"Snapshot path: {checkpoint_dir}")
+    hf_context: dict[str, Any] = {}
+    model_card: ModelCard | None = None
+    card_data: dict[str, Any] = {}
+    http_context: dict[str, Any] = {}
 
-    hf_context, model_card, card_data = fetch_hf_model_context(
-        args.hf_model_id,
-        args.revision,
-        hf_token,
-    )
+    if source_type == "HuggingFace":
+        print("Downloading Hugging Face snapshot to local disk...")
+        checkpoint_dir = snapshot_download(
+            repo_id=args.hf_model_id,
+            revision=args.revision or None,
+            local_dir=snapshot_dir,
+            token=hf_token or None,
+        )
+        prune_snapshot_runtime_cache(checkpoint_dir)
+        print(f"Snapshot path: {checkpoint_dir}")
+
+        hf_context, model_card, card_data = fetch_hf_model_context(
+            args.hf_model_id,
+            args.revision,
+            hf_token,
+        )
+        resolved_task = args.task or hf_context.get("pipeline_tag") or ""
+        if not resolved_task:
+            raise RuntimeError(
+                "task is required either via --task / AI_MODELS_IMPORT_TASK or from Hugging Face pipeline_tag metadata"
+            )
+    elif source_type == "HTTP":
+        print("Downloading HTTP model archive to local disk...")
+        checkpoint_dir, http_context = download_http_source(
+            args.http_url,
+            snapshot_dir,
+            args.http_ca_bundle_base64,
+            args.http_auth_dir,
+        )
+        print(f"Snapshot path: {checkpoint_dir}")
+        resolved_task = args.task or ""
+        if not resolved_task:
+            raise RuntimeError(
+                "task is required for HTTP source via --task / AI_MODELS_IMPORT_TASK"
+            )
+    else:
+        raise RuntimeError(f"unsupported source type: {source_type}")
+
+    print(f"Task: {resolved_task}")
+
     snapshot_manifest = build_snapshot_manifest(checkpoint_dir)
     config_summary = extract_config_summary(checkpoint_dir)
-    run_params = build_run_params(hf_context, args.task, snapshot_manifest, config_summary)
-    common_tags = build_common_tags(hf_context, args.task, snapshot_manifest, config_summary)
-    model_metadata = build_model_metadata(hf_context, args.task, snapshot_manifest, config_summary)
-    registered_model_description = build_registered_model_description(
-        hf_context,
-        args.task,
-        config_summary,
-    )
-    model_version_description = build_model_version_description(hf_context, snapshot_manifest)
+    if source_type == "HuggingFace":
+        run_params = build_run_params(hf_context, resolved_task, snapshot_manifest, config_summary)
+        common_tags = build_common_tags(hf_context, resolved_task, snapshot_manifest, config_summary)
+        model_metadata = build_model_metadata(hf_context, resolved_task, snapshot_manifest, config_summary)
+        registered_model_description = build_registered_model_description(
+            hf_context,
+            resolved_task,
+            config_summary,
+        )
+        model_version_description = build_model_version_description(hf_context, snapshot_manifest)
+    else:
+        run_params = build_http_run_params(http_context, resolved_task, snapshot_manifest, config_summary)
+        common_tags = build_http_common_tags(http_context, resolved_task, snapshot_manifest, config_summary)
+        model_metadata = build_http_model_metadata(http_context, resolved_task, snapshot_manifest, config_summary)
+        registered_model_description = build_http_registered_model_description(
+            http_context,
+            resolved_task,
+            config_summary,
+        )
+        model_version_description = build_http_model_version_description(http_context, snapshot_manifest)
 
     print(
         "Snapshot summary: "
         f"{snapshot_manifest['file_count']} files, {snapshot_manifest['total_size_human']}"
     )
-    if resolved_revision := hf_context.get("resolved_revision"):
+    resolved_revision = ""
+    if source_type == "HuggingFace":
+        resolved_revision = str(hf_context.get("resolved_revision") or "")
+    else:
+        resolved_revision = str(http_context.get("resolved_revision") or "")
+    if resolved_revision:
         print(f"Resolved revision: {resolved_revision}")
 
     mlflow.set_tracking_uri(tracking_uri)
@@ -597,25 +1178,37 @@ def main() -> int:
         mlflow.set_workspace(args.workspace)
     mlflow.set_experiment(args.experiment_name)
 
-    with mlflow.start_run(run_name=build_import_run_name(hf_context)) as run:
+    run_name = build_import_run_name(hf_context)
+    if source_type == "HTTP":
+        run_name = build_http_import_run_name(http_context)
+
+    with mlflow.start_run(run_name=run_name) as run:
         mlflow.log_params(run_params)
         mlflow.set_tags(common_tags)
-        log_import_metadata_artifacts(
-            hf_context=hf_context,
-            card_data=card_data,
-            model_card=model_card,
-            snapshot_manifest=snapshot_manifest,
-            config_summary=config_summary,
-            snapshot_dir=checkpoint_dir,
-        )
+        if source_type == "HuggingFace":
+            log_import_metadata_artifacts(
+                hf_context=hf_context,
+                card_data=card_data,
+                model_card=model_card,
+                snapshot_manifest=snapshot_manifest,
+                config_summary=config_summary,
+                snapshot_dir=checkpoint_dir,
+            )
+        else:
+            mlflow.log_dict(http_context, "http/source-info.json")
+            mlflow.log_dict(snapshot_manifest, "http/snapshot-manifest.json")
+            for artifact_name in ("config.json", "generation_config.json", "tokenizer_config.json"):
+                config_path = Path(checkpoint_dir) / artifact_name
+                if config_path.is_file():
+                    mlflow.log_artifact(str(config_path), artifact_path="http")
 
         model_info = mlflow.transformers.log_model(
             transformers_model=checkpoint_dir,
-            task=args.task,
+            task=resolved_task,
             name=args.artifact_name,
             model_card=model_card,
             metadata=model_metadata,
-            pip_requirements=build_checkpoint_pip_requirements(args.task),
+            pip_requirements=build_checkpoint_pip_requirements(resolved_task),
             params=run_params,
             tags=common_tags,
         )
@@ -651,9 +1244,72 @@ def main() -> int:
         )
         print(f"Registered model name: {registered.name}")
         print(f"Registered model version: {registered.version}")
+        artifact_uri = getattr(registered, "source", "") or ""
+        if not artifact_uri:
+            version_details = client.get_model_version(registered.name, registered.version)
+            artifact_uri = getattr(version_details, "source", "") or ""
+        if not artifact_uri:
+            raise RuntimeError("registered model version does not expose an artifact source URI")
+        result_payload = build_import_result(
+            hf_context=hf_context,
+            task=resolved_task,
+            snapshot_manifest=snapshot_manifest,
+            config_summary=config_summary,
+            tracking_uri=tracking_uri,
+            workspace=args.workspace,
+            registered_model_name=registered.name,
+            registered_model_version=registered.version,
+            model_uri=model_uri,
+            artifact_uri=artifact_uri,
+        )
+        if source_type == "HTTP":
+            result_payload = build_http_import_result(
+                http_context=http_context,
+                task=resolved_task,
+                snapshot_manifest=snapshot_manifest,
+                config_summary=config_summary,
+                tracking_uri=tracking_uri,
+                workspace=args.workspace,
+                registered_model_name=registered.name,
+                registered_model_version=registered.version,
+                model_uri=model_uri,
+                artifact_uri=artifact_uri,
+            )
+        write_import_result(
+            args.result_path,
+            result_payload,
+        )
+        write_worker_result(
+            args.result_configmap_name,
+            args.result_configmap_namespace,
+            result_payload,
+        )
         print("Done.")
 
     return 0
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+
+    try:
+        return run(args)
+    except urllib_error.HTTPError as exc:
+        write_worker_failure(
+            args.result_configmap_name,
+            args.result_configmap_namespace,
+            f"{exc.code} {exc.reason}",
+        )
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        write_worker_failure(
+            args.result_configmap_name,
+            args.result_configmap_namespace,
+            str(exc),
+        )
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

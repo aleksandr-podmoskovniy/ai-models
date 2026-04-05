@@ -9,3 +9,16 @@ Rules:
 - phase 1 may keep this directory documentation-only;
 - phase 2 introduces `Model`, `ClusterModel`, shared validation, defaults, and generated artifacts from this root;
 - controller runtime for those APIs must live under `images/controller/`.
+
+Current phase-2 baseline:
+- public API group: `ai-models.deckhouse.io`;
+- initial version: `v1alpha1`;
+- shared `Model` / `ClusterModel` types live under `api/core/v1alpha1/`;
+- upload-driven objects expose staging upload contract via `status.upload`;
+- published artifacts are described in `status.artifact` as the published OCI
+  artifact reference, digest, and media metadata;
+- delete lifecycle is represented through `phase=Deleting` and
+  `status.conditions`, while backend-specific cleanup handles stay internal to
+  controller-owned state;
+- generated deepcopy artifacts are refreshed with `go generate ./...` from this module root.
+- CRD schema markers are checked with `bash scripts/verify-crdgen.sh`.

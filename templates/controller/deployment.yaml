@@ -1,0 +1,87 @@
+{{- if (include "ai-models.isEnabled" .) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-models.controllerName" . }}
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "controller")) | nindent 2 }}
+spec:
+  replicas: {{ include "ai-models.controllerReplicas" . | int }}
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      {{- include "ai-models.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        {{- include "ai-models.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+    spec:
+      {{- if (include "ai-models.hasRegistrySecret" .) }}
+      imagePullSecrets:
+        - name: {{ include "ai-models.registrySecretName" . }}
+      {{- end }}
+      serviceAccountName: {{ include "ai-models.controllerServiceAccountName" . }}
+      {{- include "helm_lib_module_pod_security_context_run_as_user_deckhouse_with_writable_fs" . | nindent 6 }}
+      containers:
+        - name: controller
+          image: {{ include "helm_lib_module_image" (list . "controller") }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --metrics-bind-address=:{{ include "ai-models.controllerMetricsPort" . }}
+            - --health-probe-bind-address=:{{ include "ai-models.controllerHealthPort" . }}
+            - --leader-elect=true
+            - --leader-election-id={{ include "ai-models.controllerLeaderElectionID" . }}
+            - --leader-election-namespace=$(POD_NAMESPACE)
+            - --cleanup-job-image={{ include "helm_lib_module_image" (list . "backend") }}
+            - --cleanup-job-namespace=$(POD_NAMESPACE)
+            - --cleanup-job-service-account={{ include "ai-models.controllerServiceAccountName" . }}
+            - --publication-worker-image={{ include "helm_lib_module_image" (list . "backend") }}
+            - --publication-worker-namespace=$(POD_NAMESPACE)
+            - --publication-worker-service-account={{ include "ai-models.controllerServiceAccountName" . }}
+            - --publication-oci-repository-prefix={{ include "ai-models.publicationRegistryRepositoryPrefix" . }}
+            - --publication-oci-insecure={{ include "ai-models.publicationRegistryInsecure" . }}
+            - --publication-oci-credentials-secret-name={{ include "ai-models.publicationRegistryResolvedSecretName" . }}
+            {{- if (include "ai-models.publicationRegistryMountedCASecretName" . | trim) }}
+            - --publication-oci-ca-secret-name={{ include "ai-models.publicationRegistryMountedCASecretName" . }}
+            {{- end }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: metrics
+              containerPort: {{ include "ai-models.controllerMetricsPort" . | int }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ include "ai-models.controllerHealthPort" . | int }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 64535
+            runAsGroup: 64535
+            seccompProfile:
+              type: RuntimeDefault
+{{- end }}

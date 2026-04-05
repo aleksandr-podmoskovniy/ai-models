@@ -1,0 +1,437 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  labels:
+    heritage: deckhouse
+    module: ai-models
+  name: clustermodels.ai-models.deckhouse.io
+spec:
+  group: ai-models.deckhouse.io
+  names:
+    categories:
+    - ai-models
+    kind: ClusterModel
+    listKind: ClusterModelList
+    plural: clustermodels
+    singular: clustermodel
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.source.type
+      name: Source
+      type: string
+    - jsonPath: .status.artifact.uri
+      name: ArtifactURI
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ClusterModel is the cluster-scoped public catalog object for curated shared
+          published models. Unlike Model, access policy for ClusterModel is expected to
+          be explicit rather than inferred from the object's namespace.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ModelSpec is the shared desired state for both Model and
+              ClusterModel.
+            properties:
+              access:
+                properties:
+                  groups:
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  namespaces:
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  serviceAccounts:
+                    items:
+                      description: |-
+                        ServiceAccountReference identifies a pull consumer.
+                        For namespaced Model, empty Namespace resolves to the object's namespace.
+                        For ClusterModel, Namespace should be explicit.
+                      properties:
+                        name:
+                          minLength: 1
+                          type: string
+                        namespace:
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                type: object
+                x-kubernetes-validations:
+                - message: at least one access subject must be specified
+                  rule: (has(self.namespaces) && size(self.namespaces) > 0) || (has(self.serviceAccounts)
+                    && size(self.serviceAccounts) > 0) || (has(self.groups) && size(self.groups)
+                    > 0)
+              description:
+                type: string
+              displayName:
+                type: string
+              package:
+                default:
+                  layout: HuggingFaceCheckpoint
+                  type: ModelPack
+                properties:
+                  layout:
+                    default: HuggingFaceCheckpoint
+                    enum:
+                    - HuggingFaceCheckpoint
+                    type: string
+                  type:
+                    default: ModelPack
+                    enum:
+                    - ModelPack
+                    type: string
+                type: object
+              publish:
+                properties:
+                  repositoryClass:
+                    type: string
+                type: object
+              runtimeHints:
+                properties:
+                  engines:
+                    items:
+                      enum:
+                      - KServe
+                      - KubeRay
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  task:
+                    type: string
+                type: object
+              source:
+                properties:
+                  http:
+                    properties:
+                      authSecretRef:
+                        description: For namespaced Model, empty Namespace resolves
+                          to the object's namespace.
+                        properties:
+                          name:
+                            minLength: 1
+                            type: string
+                          namespace:
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      caBundle:
+                        format: byte
+                        type: string
+                      url:
+                        minLength: 1
+                        pattern: ^http[s]?:\/\/(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+$
+                        type: string
+                    required:
+                    - url
+                    type: object
+                  huggingFace:
+                    properties:
+                      allowGated:
+                        type: boolean
+                      authSecretRef:
+                        description: |-
+                          SecretReference identifies a Secret used by a source integration.
+                          For namespaced Model, empty Namespace resolves to the object's namespace.
+                        properties:
+                          name:
+                            minLength: 1
+                            type: string
+                          namespace:
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      repoID:
+                        minLength: 1
+                        type: string
+                      revision:
+                        type: string
+                    required:
+                    - repoID
+                    type: object
+                  type:
+                    enum:
+                    - HuggingFace
+                    - Upload
+                    - HTTP
+                    type: string
+                  upload:
+                    properties:
+                      expectedFormat:
+                        default: HuggingFaceDirectory
+                        enum:
+                        - ModelKit
+                        - HuggingFaceDirectory
+                        type: string
+                      expectedSizeBytes:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                    type: object
+                required:
+                - type
+                type: object
+                x-kubernetes-validations:
+                - message: huggingFace is required when type is HuggingFace and other
+                    source variants must be empty
+                  rule: 'self.type == ''HuggingFace'' ? has(self.huggingFace) && !has(self.upload)
+                    && !has(self.http) : true'
+                - message: upload is required when type is Upload and other source
+                    variants must be empty
+                  rule: 'self.type == ''Upload'' ? has(self.upload) && !has(self.huggingFace)
+                    && !has(self.http) : true'
+                - message: http is required when type is HTTP and other source variants
+                    must be empty
+                  rule: 'self.type == ''HTTP'' ? has(self.http) && !has(self.huggingFace)
+                    && !has(self.upload) : true'
+            required:
+            - source
+            type: object
+            x-kubernetes-validations:
+            - message: spec.source is immutable
+              rule: self.source == oldSelf.source
+            - message: spec.package is immutable
+              rule: self.package == oldSelf.package
+            - message: spec.publish is immutable
+              rule: self.publish == oldSelf.publish
+            - message: spec.runtimeHints is immutable
+              rule: self.runtimeHints == oldSelf.runtimeHints
+          status:
+            description: |-
+              ModelStatus is the shared observed state for both Model and ClusterModel.
+              It intentionally exposes only public-contract-facing state.
+            properties:
+              artifact:
+                properties:
+                  digest:
+                    type: string
+                  kind:
+                    enum:
+                    - OCI
+                    type: string
+                  mediaType:
+                    type: string
+                  sizeBytes:
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  uri:
+                    type: string
+                type: object
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                enum:
+                - Pending
+                - WaitForUpload
+                - Publishing
+                - Ready
+                - Failed
+                - Deleting
+                type: string
+              resolved:
+                properties:
+                  architecture:
+                    type: string
+                  compatibleAcceleratorVendors:
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  compatiblePrecisions:
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  compatibleRuntimes:
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  contextWindowTokens:
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  family:
+                    type: string
+                  format:
+                    type: string
+                  framework:
+                    type: string
+                  license:
+                    type: string
+                  minimumLaunch:
+                    properties:
+                      acceleratorCount:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      acceleratorMemoryGiB:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      placementType:
+                        type: string
+                      sharingMode:
+                        type: string
+                    type: object
+                  parameterCount:
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  quantization:
+                    type: string
+                  sourceRepoID:
+                    type: string
+                  supportedEndpointTypes:
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  task:
+                    type: string
+                type: object
+              source:
+                properties:
+                  resolvedRevision:
+                    type: string
+                  resolvedType:
+                    enum:
+                    - HuggingFace
+                    - Upload
+                    - HTTP
+                    type: string
+                type: object
+              upload:
+                properties:
+                  command:
+                    type: string
+                  expiresAt:
+                    format: date-time
+                    type: string
+                  repository:
+                    type: string
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: spec.access is required for ClusterModel
+          rule: has(self.spec.access)
+        - message: spec.access.serviceAccounts.namespace is required for ClusterModel
+          rule: '!has(self.spec.access) || !has(self.spec.access.serviceAccounts)
+            || self.spec.access.serviceAccounts.all(sa, has(sa.namespace) && size(sa.namespace)
+            > 0)'
+        - message: spec.source.huggingFace.authSecretRef.namespace is required for
+            ClusterModel
+          rule: self.spec.source.type != 'HuggingFace' || !has(self.spec.source.huggingFace)
+            || !has(self.spec.source.huggingFace.authSecretRef) || (has(self.spec.source.huggingFace.authSecretRef.namespace)
+            && size(self.spec.source.huggingFace.authSecretRef.namespace) > 0)
+        - message: spec.source.http.authSecretRef.namespace is required for ClusterModel
+          rule: self.spec.source.type != 'HTTP' || !has(self.spec.source.http) ||
+            !has(self.spec.source.http.authSecretRef) || (has(self.spec.source.http.authSecretRef.namespace)
+            && size(self.spec.source.http.authSecretRef.namespace) > 0)
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -18,6 +18,18 @@ ai-models
 ai-models
 {{- end -}}
 
+{{- define "ai-models.controllerName" -}}
+ai-models-controller
+{{- end -}}
+
+{{- define "ai-models.controllerServiceAccountName" -}}
+{{- include "ai-models.controllerName" . -}}
+{{- end -}}
+
+{{- define "ai-models.controllerMetricsServiceName" -}}
+{{- printf "%s-metrics" (include "ai-models.controllerName" .) -}}
+{{- end -}}
+
 {{- define "ai-models.configMapName" -}}
 ai-models-runtime
 {{- end -}}
@@ -28,6 +40,10 @@ ai-models-postgresql
 
 {{- define "ai-models.artifactsManagedSecretName" -}}
 ai-models-artifacts
+{{- end -}}
+
+{{- define "ai-models.publicationRegistryManagedSecretName" -}}
+ai-models-publication-registry
 {{- end -}}
 
 {{- define "ai-models.backendCryptoSecretName" -}}
@@ -127,6 +143,22 @@ true
 
 {{- define "ai-models.backendPort" -}}
 5000
+{{- end -}}
+
+{{- define "ai-models.backendInternalURL" -}}
+{{- printf "http://%s.%s.svc.%s" (include "ai-models.serviceName" .) (include "ai-models.namespace" .) (include "ai-models.clusterDomain" .) -}}
+{{- end -}}
+
+{{- define "ai-models.controllerMetricsPort" -}}
+8080
+{{- end -}}
+
+{{- define "ai-models.controllerHealthPort" -}}
+8081
+{{- end -}}
+
+{{- define "ai-models.controllerLeaderElectionID" -}}
+ai-models-controller.deckhouse.io
 {{- end -}}
 
 {{- define "ai-models.backendMetricsDir" -}}
@@ -269,6 +301,14 @@ true
 {{- end -}}
 
 {{- define "ai-models.backendReplicas" -}}
+{{- if (include "helm_lib_ha_enabled" .) -}}
+2
+{{- else -}}
+1
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.controllerReplicas" -}}
 {{- if (include "helm_lib_ha_enabled" .) -}}
 2
 {{- else -}}
@@ -561,6 +601,80 @@ false
 {{- end -}}
 {{- end -}}
 
+{{- define "ai-models.publicationRegistryRepositoryPrefix" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
+{{- trimAll "/" (default "" (index $publicationRegistry "repositoryPrefix")) -}}
+{{- end -}}
+
+{{- define "ai-models.publicationRegistryInlineUsername" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
+{{- default "" (index $publicationRegistry "username") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationRegistryInlinePassword" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
+{{- default "" (index $publicationRegistry "password") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationRegistryCredentialsSecretName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
+{{- default "" (index $publicationRegistry "credentialsSecretName") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationRegistryCASecretName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
+{{- default "" (index $publicationRegistry "caSecretName") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationRegistryHasInlineCredentials" -}}
+{{- $username := include "ai-models.publicationRegistryInlineUsername" . | trim -}}
+{{- $password := include "ai-models.publicationRegistryInlinePassword" . | trim -}}
+{{- if and $username $password -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.publicationRegistryHasSecretReference" -}}
+{{- if (include "ai-models.publicationRegistryCredentialsSecretName" . | trim) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.publicationRegistryMountedCASecretName" -}}
+{{- $explicit := include "ai-models.publicationRegistryCASecretName" . | trim -}}
+{{- if $explicit -}}
+{{- $explicit -}}
+{{- else -}}
+  {{- if (include "ai-models.hasPlatformTrustCA" . | trim) -}}
+{{- include "ai-models.backendTrustCASecretName" . -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.publicationRegistryResolvedSecretName" -}}
+{{- $external := include "ai-models.publicationRegistryCredentialsSecretName" . | trim -}}
+{{- if $external -}}
+{{- $external -}}
+{{- else -}}
+{{- include "ai-models.publicationRegistryManagedSecretName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.publicationRegistryInsecure" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
+{{- if and (hasKey $publicationRegistry "insecure") (index $publicationRegistry "insecure") -}}
+true
+{{- else -}}
+false
+{{- end -}}
+{{- end -}}
+
 {{- define "ai-models.hasAPI" -}}
 {{- $context := index . 0 -}}
 {{- $apiVersion := index . 1 -}}
@@ -611,6 +725,21 @@ true
   {{- end -}}
   {{- if not (or (include "ai-models.artifactsHasInlineCredentials" . | trim) (include "ai-models.artifactsHasSecretReference" . | trim)) -}}
     {{- fail "ai-models.artifacts requires either credentialsSecretName or inline accessKey and secretKey" -}}
+  {{- end -}}
+  {{- if not (include "ai-models.publicationRegistryRepositoryPrefix" . | trim) -}}
+    {{- fail "ai-models.publicationRegistry.repositoryPrefix is required" -}}
+  {{- end -}}
+  {{- if and (include "ai-models.publicationRegistryInlineUsername" . | trim) (not (include "ai-models.publicationRegistryInlinePassword" . | trim)) -}}
+    {{- fail "ai-models.publicationRegistry.password is required when ai-models.publicationRegistry.username is set" -}}
+  {{- end -}}
+  {{- if and (include "ai-models.publicationRegistryInlinePassword" . | trim) (not (include "ai-models.publicationRegistryInlineUsername" . | trim)) -}}
+    {{- fail "ai-models.publicationRegistry.username is required when ai-models.publicationRegistry.password is set" -}}
+  {{- end -}}
+  {{- if and (include "ai-models.publicationRegistryHasInlineCredentials" . | trim) (include "ai-models.publicationRegistryHasSecretReference" . | trim) -}}
+    {{- fail "ai-models.publicationRegistry.credentialsSecretName cannot be used together with inline username/password" -}}
+  {{- end -}}
+  {{- if not (or (include "ai-models.publicationRegistryHasInlineCredentials" . | trim) (include "ai-models.publicationRegistryHasSecretReference" . | trim)) -}}
+    {{- fail "ai-models.publicationRegistry requires either credentialsSecretName or inline username and password" -}}
   {{- end -}}
   {{- if not (has "user-authn" $enabledModules) -}}
     {{- fail "ai-models requires the user-authn module for browser SSO" -}}

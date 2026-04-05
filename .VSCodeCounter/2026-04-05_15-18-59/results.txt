@@ -1,0 +1,157 @@
+Date : 2026-04-05 15:18:59
+Directory : /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller
+Total : 98 files,  10220 codes, 1358 comments, 1658 blanks, all 13236 lines
+
+Languages
++------------------+------------+------------+------------+------------+------------+
+| language         | files      | code       | comment    | blank      | total      |
++------------------+------------+------------+------------+------------+------------+
+| Go               |         90 |      9,360 |      1,358 |      1,415 |     12,133 |
+| Markdown         |          5 |        600 |          0 |        236 |        836 |
+| Go Checksum File |          1 |        139 |          0 |          1 |        140 |
+| Go Module File   |          1 |         63 |          0 |          5 |         68 |
+| YAML             |          1 |         58 |          0 |          1 |         59 |
++------------------+------------+------------+------------+------------+------------+
+
+Directories
++------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                                                           | files      | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                                                              |         98 |     10,220 |      1,358 |      1,658 |     13,236 |
+| . (Files)                                                                                                                                      |          5 |        786 |          0 |        222 |      1,008 |
+| cmd                                                                                                                                            |          2 |        192 |         30 |         28 |        250 |
+| cmd/ai-models-controller                                                                                                                       |          2 |        192 |         30 |         28 |        250 |
+| internal                                                                                                                                       |         91 |      9,242 |      1,328 |      1,408 |     11,978 |
+| internal/adapters                                                                                                                              |         29 |      2,598 |        435 |        409 |      3,442 |
+| internal/adapters/k8s                                                                                                                          |         29 |      2,598 |        435 |        409 |      3,442 |
+| internal/adapters/k8s/cleanupjob                                                                                                               |          2 |        175 |         30 |         26 |        231 |
+| internal/adapters/k8s/ociregistry                                                                                                              |          2 |         78 |         30 |         19 |        127 |
+| internal/adapters/k8s/ownedresource                                                                                                            |          2 |        102 |         30 |         20 |        152 |
+| internal/adapters/k8s/sourceworker                                                                                                             |         10 |      1,219 |        150 |        179 |      1,548 |
+| internal/adapters/k8s/uploadsession                                                                                                            |         11 |        951 |        165 |        149 |      1,265 |
+| internal/adapters/k8s/workloadpod                                                                                                              |          2 |         73 |         30 |         16 |        119 |
+| internal/app                                                                                                                                   |          2 |        207 |         30 |         28 |        265 |
+| internal/application                                                                                                                           |         12 |      1,028 |        150 |         98 |      1,276 |
+| internal/application/deletion                                                                                                                  |          5 |        367 |         60 |         38 |        465 |
+| internal/application/publication                                                                                                               |          7 |        661 |         90 |         60 |        811 |
+| internal/artifactbackend                                                                                                                       |          4 |        191 |         68 |         48 |        307 |
+| internal/controllers                                                                                                                           |         23 |      3,055 |        345 |        511 |      3,911 |
+| internal/controllers/catalogcleanup                                                                                                            |          5 |        547 |         75 |        103 |        725 |
+| internal/controllers/catalogstatus                                                                                                             |          5 |        634 |         75 |         98 |        807 |
+| internal/controllers/publicationops                                                                                                            |         13 |      1,874 |        195 |        310 |      2,379 |
+| internal/domain                                                                                                                                |          8 |        965 |        105 |        102 |      1,172 |
+| internal/domain/publication                                                                                                                    |          8 |        965 |        105 |        102 |      1,172 |
+| internal/ports                                                                                                                                 |          4 |        435 |         60 |         54 |        549 |
+| internal/ports/publication                                                                                                                     |          4 |        435 |         60 |         54 |        549 |
+| internal/publication                                                                                                                           |          2 |        172 |         30 |         38 |        240 |
+| internal/support                                                                                                                               |          7 |        591 |        105 |        120 |        816 |
+| internal/support/cleanuphandle                                                                                                                 |          2 |        142 |         30 |         38 |        210 |
+| internal/support/modelobject                                                                                                                   |          2 |        140 |         30 |         22 |        192 |
+| internal/support/resourcenames                                                                                                                 |          2 |        210 |         30 |         44 |        284 |
+| internal/support/testkit                                                                                                                       |          1 |         99 |         15 |         16 |        130 |
++------------------------------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++------------------------------------------------------------------------------------------------------------------------------------------------+------------------+------------+------------+------------+------------+
+| filename                                                                                                                                       | language         | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------------------------------------------------------------------------+------------------+------------+------------+------------+------------+
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/README.md                                                            | Markdown         |         88 |          0 |          6 |         94 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/STRUCTURE.ru.md                                                      | Markdown         |        438 |          0 |        209 |        647 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/cmd/ai-models-controller/main.go                                     | Go               |          5 |         15 |          4 |         24 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/cmd/ai-models-controller/run.go                                      | Go               |        187 |         15 |         24 |        226 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/go.mod                                                               | Go Module File   |         63 |          0 |          5 |         68 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/go.sum                                                               | Go Checksum File |        139 |          0 |          1 |        140 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/cleanupjob/job.go                              | Go               |        132 |         15 |         19 |        166 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/cleanupjob/job_test.go                         | Go               |         43 |         15 |          7 |         65 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/ociregistry/render.go                          | Go               |         60 |         15 |         12 |         87 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/ociregistry/render_test.go                     | Go               |         18 |         15 |          7 |         40 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/ownedresource/create_or_get.go                 | Go               |         41 |         15 |          7 |         63 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/ownedresource/create_or_get_test.go            | Go               |         61 |         15 |         13 |         89 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/auth_secret.go                    | Go               |        134 |         15 |         19 |        168 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/auth_secret_test.go               | Go               |         88 |         15 |         13 |        116 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/build.go                          | Go               |        182 |         15 |         21 |        218 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/build_test.go                     | Go               |        162 |         15 |         36 |        213 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/runtime_test.go                   | Go               |         57 |         15 |         11 |         83 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/service.go                        | Go               |        137 |         15 |         30 |        182 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/service_test.go                   | Go               |        148 |         15 |         21 |        184 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/test_helpers_test.go              | Go               |         46 |         15 |          5 |         66 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/validation.go                     | Go               |         65 |         15 |          9 |         89 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/validation_test.go                | Go               |        200 |         15 |         14 |        229 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/options.go                       | Go               |         53 |         15 |         10 |         78 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/pod.go                           | Go               |        119 |         15 |         12 |        146 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/replay_test.go                   | Go               |        145 |         15 |         21 |        181 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/request.go                       | Go               |         22 |         15 |          5 |         42 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/resources.go                     | Go               |        110 |         15 |         11 |        136 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/runtime_test.go                  | Go               |         60 |         15 |         11 |         86 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/service.go                       | Go               |        143 |         15 |         26 |        184 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/service_test.go                  | Go               |        118 |         15 |         20 |        153 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/status.go                        | Go               |         90 |         15 |         16 |        121 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/status_test.go                   | Go               |         40 |         15 |         10 |         65 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/test_helpers_test.go             | Go               |         51 |         15 |          7 |         73 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/workloadpod/render.go                          | Go               |         27 |         15 |          6 |         48 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/workloadpod/render_test.go                     | Go               |         46 |         15 |         10 |         71 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/app/app.go                                                  | Go               |        144 |         15 |         18 |        177 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/app/app_test.go                                             | Go               |         63 |         15 |         10 |         88 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/deletion/BRANCH_MATRIX.ru.md                    | Markdown         |         24 |          0 |          7 |         31 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/deletion/ensure_cleanup_finalizer.go            | Go               |         25 |         15 |          6 |         46 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/deletion/ensure_cleanup_finalizer_test.go       | Go               |         86 |         15 |          6 |        107 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/deletion/finalize_delete.go                     | Go               |         84 |         15 |         12 |        111 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/deletion/finalize_delete_test.go                | Go               |        148 |         15 |          7 |        170 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/BRANCH_MATRIX.ru.md                 | Markdown         |         25 |          0 |          7 |         32 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/issue_upload_session.go             | Go               |         66 |         15 |          9 |         90 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/issue_upload_session_test.go        | Go               |        140 |         15 |          7 |        162 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/plan_source_worker.go               | Go               |        119 |         15 |         14 |        148 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/plan_source_worker_test.go          | Go               |        188 |         15 |          8 |        211 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/start_publication.go                | Go               |         40 |         15 |          8 |         63 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/start_publication_test.go           | Go               |         83 |         15 |          7 |        105 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/artifactbackend/contract.go                                 | Go               |         50 |         21 |         13 |         84 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/artifactbackend/contract_test.go                            | Go               |         64 |         15 |         14 |         93 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/artifactbackend/location.go                                 | Go               |         35 |         17 |          9 |         61 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/artifactbackend/location_test.go                            | Go               |         42 |         15 |         12 |         69 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogcleanup/io.go                            | Go               |        162 |         15 |         14 |        191 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogcleanup/options.go                       | Go               |         42 |         15 |         12 |         69 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogcleanup/reconciler.go                    | Go               |         36 |         15 |         10 |         61 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogcleanup/reconciler_test.go               | Go               |        183 |         15 |         45 |        243 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogcleanup/test_helpers_test.go             | Go               |        124 |         15 |         22 |        161 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/io.go                             | Go               |         96 |         15 |         14 |        125 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/options.go                        | Go               |         57 |         15 |         17 |         89 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/reconciler.go                     | Go               |        155 |         15 |         20 |        190 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/reconciler_test.go                | Go               |        203 |         15 |         31 |        249 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/test_helpers_test.go              | Go               |        123 |         15 |         16 |        154 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/configmap_protocol.go            | Go               |        259 |         15 |         45 |        319 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/configmap_protocol_test.go       | Go               |        385 |         15 |         38 |        438 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/options.go                       | Go               |         92 |         15 |         17 |        124 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/reconcile_core_test.go           | Go               |        113 |         15 |         28 |        156 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/reconcile_source_worker_test.go  | Go               |        182 |         15 |         46 |        243 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/reconcile_upload_session_test.go | Go               |        190 |         15 |         35 |        240 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/reconciler.go                    | Go               |        130 |         15 |         16 |        161 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/source.go                        | Go               |        107 |         15 |         14 |        136 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/store.go                         | Go               |         90 |         15 |         14 |        119 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/store_test.go                    | Go               |         44 |         15 |          9 |         68 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/test_helpers_test.go             | Go               |        163 |         15 |         29 |        207 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/upload.go                        | Go               |         84 |         15 |         11 |        110 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/worker_result.go                 | Go               |         35 |         15 |          8 |         58 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/BRANCH_MATRIX.ru.md                      | Markdown         |         25 |          0 |          7 |         32 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/conditions.go                            | Go               |        206 |         15 |         20 |        241 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/operation.go                             | Go               |         47 |         15 |         11 |         73 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/operation_test.go                        | Go               |         88 |         15 |         11 |        114 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/runtime_decisions.go                     | Go               |        127 |         15 |         11 |        153 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/runtime_decisions_test.go                | Go               |        199 |         15 |         12 |        226 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/status.go                                | Go               |         74 |         15 |          9 |         98 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/status_test.go                           | Go               |        199 |         15 |         21 |        235 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publication/operation_contract.go                     | Go               |         80 |         15 |         14 |        109 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publication/operation_contract_test.go                | Go               |        231 |         15 |         13 |        259 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publication/ports.go                                  | Go               |         74 |         15 |         17 |        106 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publication/ports_test.go                             | Go               |         50 |         15 |         10 |         75 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/publication/snapshot.go                                     | Go               |        119 |         15 |         28 |        162 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/publication/snapshot_test.go                                | Go               |         53 |         15 |         10 |         78 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/support/cleanuphandle/handle.go                             | Go               |        102 |         15 |         27 |        144 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/support/cleanuphandle/handle_test.go                        | Go               |         40 |         15 |         11 |         66 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/support/modelobject/modelobject.go                          | Go               |         78 |         15 |          9 |        102 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/support/modelobject/modelobject_test.go                     | Go               |         62 |         15 |         13 |         90 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/support/resourcenames/names.go                              | Go               |         99 |         15 |         22 |        136 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/support/resourcenames/names_test.go                         | Go               |        111 |         15 |         22 |        148 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/support/testkit/testkit.go                                  | Go               |         99 |         15 |         16 |        130 |
+| /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/werf.inc.yaml                                                        | YAML             |         58 |          0 |          1 |         59 |
+| Total                                                                                                                                          |                  |     10,220 |      1,358 |      1,658 |     13,236 |
++------------------------------------------------------------------------------------------------------------------------------------------------+------------------+------------+------------+------------+------------+

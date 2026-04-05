@@ -18,6 +18,7 @@ repo. Поэтому layout должен разделять:
 Подкаталоги:
 - `templates/module/` — namespace, registry secret и прочая module-wide обвязка;
 - `templates/backend/` — runtime manifests внутреннего backend;
+- `templates/controller/` — runtime manifests phase-2 controller shell;
 - `templates/database/` — declarative managed-postgres resources.
 
 Опционально:
@@ -28,6 +29,17 @@ repo. Поэтому layout должен разделять:
 - не складывать всё в корень `templates/`;
 - не размещать controller code или generated API artifacts в `templates/`;
 - runtime manifests backend должны жить вместе, чтобы checksum/include paths были локальны и понятны.
+- manifests phase-2 controller должны жить в отдельном `templates/controller/`,
+  а не смешиваться с backend shell;
+
+### `crds/`
+
+`crds/` хранит generated install artifacts для module-owned CRD rollout.
+
+Правила:
+- generated CRD schema для `Model` / `ClusterModel` живёт в корневом `crds/`;
+- CRD не рендерятся из `templates/`;
+- module hooks доставляют их в cluster lifecycle через ensure-CRDs path.
 
 ### `api/`
 
@@ -39,6 +51,19 @@ repo. Поэтому layout должен разделять:
 - общие defaults, validation и generated artifacts.
 
 Сырые сущности внутреннего backend engine сюда не попадают.
+
+### `openapi/`
+
+`openapi/` разделяется так же, как в virtualization:
+
+- `openapi/config-values.yaml` — только стабильный user-facing module contract;
+- `openapi/values.yaml` — internal/computed/runtime wiring.
+
+Правила:
+- не выносить runtime/materializer adapter specifics в `config-values.yaml`;
+- не делать public contract заложником текущей implementation brand;
+- derived/internal values должны жить в `values.yaml`, templates/helpers и
+  image/runtime code, а не в user-facing config surface.
 
 ### `images/`
 

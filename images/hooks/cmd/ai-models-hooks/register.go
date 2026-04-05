@@ -17,7 +17,13 @@ limitations under the License.
 package main
 
 import (
+	ensurecrds "github.com/deckhouse/module-sdk/common-hooks/ensure_crds"
+
 	// Blank imports register hook init() handlers.
 	_ "hooks/pkg/hooks/copy_custom_certificate"
 	_ "hooks/pkg/hooks/discover_dex_ca"
 )
+
+func init() {
+	ensurecrds.RegisterEnsureCRDsHookEM("crds/*.yaml")
+}

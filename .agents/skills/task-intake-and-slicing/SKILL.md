@@ -25,12 +25,19 @@ description: Use first for any non-trivial request. Converts a human request int
 2. Restate the user request in platform terms.
 3. Write explicit scope and non-goals.
 4. Write acceptance criteria that can actually be checked.
-5. Split the work into slices with concrete file areas.
-6. Add validation commands per slice.
-7. Add one rollback point.
-8. Decide orchestration mode: `solo`, `light`, or `full`.
-9. If the task is not `solo`, name the read-only subagents that should review it before implementation.
-10. Save the result in `plans/active/<slug>/TASK.ru.md` and `plans/active/<slug>/PLAN.ru.md`.
+5. If the task touches controller/runtime architecture, include explicit architecture acceptance criteria:
+   - use case / port / adapter split
+   - max LOC if relevant
+   - complexity/quality-gate expectations
+   - test evidence shape
+6. Split the work into slices with concrete file areas.
+7. Add validation commands per slice.
+8. Add one rollback point.
+9. Decide orchestration mode: `solo`, `light`, or `full`.
+10. If the task is not `solo`, name the read-only subagents that should review it before implementation.
+11. If the task defines durable project discipline, encode it in repo-local skills or skill references instead of leaving it only in the current bundle.
+12. Avoid duplicate active slugs for the same workstream, reuse the current canonical active bundle when the request is a continuation, and archive stale/finished bundles when active context drifts.
+13. Save the result in `plans/active/<slug>/TASK.ru.md` and `plans/active/<slug>/PLAN.ru.md`.
 
 ## Output
 

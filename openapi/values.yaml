@@ -143,6 +143,36 @@ properties:
       usePathStyle:
         type: boolean
         default: true
+  publicationRegistry:
+    type: object
+    description: Stable OCI publication registry settings exposed by ai-models.
+    additionalProperties: false
+    default:
+      repositoryPrefix: ""
+      credentialsSecretName: ""
+      caSecretName: ""
+      username: ""
+      password: ""
+      insecure: false
+    properties:
+      repositoryPrefix:
+        type: string
+        default: ""
+      credentialsSecretName:
+        type: string
+        default: ""
+      caSecretName:
+        type: string
+        default: ""
+      username:
+        type: string
+        default: ""
+      password:
+        type: string
+        default: ""
+      insecure:
+        type: boolean
+        default: false
   auth:
     type: object
     description: Stable authentication settings exposed by the ai-models module.
@@ -196,7 +226,10 @@ properties:
     additionalProperties: false
   internal:
     type: object
-    description: Internal runtime values used by templates.
+    description: |
+      Internal runtime values used by templates.
+      Following the virtualization-style split, runtime/materializer adapter
+      wiring belongs here rather than in `config-values.yaml`.
     default: {}
     properties:
       customCertificateData:
@@ -247,6 +280,13 @@ properties:
             secretKey: ""
             insecure: false
             usePathStyle: true
+          publicationRegistry:
+            repositoryPrefix: ""
+            credentialsSecretName: ""
+            caSecretName: ""
+            username: ""
+            password: ""
+            insecure: false
         additionalProperties: true
       conditions:
         type: array

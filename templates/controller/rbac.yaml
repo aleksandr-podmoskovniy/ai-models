@@ -1,0 +1,53 @@
+{{- if (include "ai-models.isEnabled" .) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "ai-models.controllerName" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "controller")) | nindent 2 }}
+rules:
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: ["ai-models.deckhouse.io"]
+    resources: ["models", "clustermodels"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["ai-models.deckhouse.io"]
+    resources: ["models/status", "clustermodels/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["ai-models.deckhouse.io"]
+    resources: ["models/finalizers", "clustermodels/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "ai-models.controllerName" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "controller")) | nindent 2 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "ai-models.controllerName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ai-models.controllerServiceAccountName" . }}
+    namespace: {{ include "ai-models.namespace" . }}
+{{- end }}

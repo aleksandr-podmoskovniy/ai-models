@@ -1,0 +1,2 @@
+# Existing debt accepted temporarily until the corrective refactor lands.
+# Format: <relative-file-path>|<function-symbol>

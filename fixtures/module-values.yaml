@@ -17,6 +17,7 @@ global:
     digests:
       aiModels:
         backend: sha256:1111111111111111111111111111111111111111111111111111111111111111
+        controller: sha256:2222222222222222222222222222222222222222222222222222222222222222
   discovery:
     clusterDomain: cluster.local
   clusterConfiguration:
@@ -29,3 +30,7 @@ aiModels:
     endpoint: https://s3.internal.local
     accessKey: ai-models-storage
     secretKey: ai-models-storage-secret
+  publicationRegistry:
+    repositoryPrefix: registry.internal.local/ai-models
+    username: ai-models-publisher
+    password: ai-models-publisher-secret

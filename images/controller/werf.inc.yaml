@@ -1,0 +1,58 @@
+---
+image: controller-src-artifact
+final: false
+fromImage: builder/src
+git:
+  - add: /images/controller
+    to: /src/images/controller
+    stageDependencies:
+      install:
+        - "**/*"
+  - add: /api
+    to: /src/api
+    stageDependencies:
+      install:
+        - "**/*"
+---
+image: controller-build-artifact
+final: false
+fromImage: builder/golang-bookworm-1.25
+import:
+  - image: controller-src-artifact
+    add: /src
+    to: /app
+    before: install
+{{- if eq (env "WERF_ENABLE_HOST_GO_PKG_CACHE" "true") "true" }}
+mount:
+  - fromPath: "~/go-pkg-cache"
+    to: /go/pkg
+{{- end }}
+secrets:
+  - id: GOPROXY
+    value: "{{ .GOPROXY }}"
+shell:
+  install:
+    - export GOPROXY=$(cat /run/secrets/GOPROXY)
+    - cd /app/images/controller
+    - go mod download
+  setup:
+    - cd /app/images/controller
+    - export GOOS=linux
+    - export GOARCH=amd64
+    - export CGO_ENABLED=0
+    - go build -ldflags="-s -w" -a -o /out/ai-models-controller ./cmd/ai-models-controller
+---
+image: controller
+final: true
+fromImage: base/distroless
+import:
+  - image: controller-build-artifact
+    add: /out/ai-models-controller
+    to: /app/ai-models-controller
+    after: install
+imageSpec:
+  config:
+    user: 64535
+    workingDir: /app
+    entrypoint:
+      - /app/ai-models-controller

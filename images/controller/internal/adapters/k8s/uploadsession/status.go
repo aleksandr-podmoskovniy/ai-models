@@ -1,0 +1,120 @@
+/*
+Copyright 2026 Flant JSC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package uploadsession
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+type Session struct {
+	Pod          *corev1.Pod
+	Service      *corev1.Service
+	Secret       *corev1.Secret
+	UploadStatus modelsv1alpha1.ModelUploadStatus
+}
+
+func IsComplete(session *Session) bool {
+	return session != nil && session.Pod != nil && session.Pod.Status.Phase == corev1.PodSucceeded
+}
+
+func IsFailed(session *Session) bool {
+	return session != nil && session.Pod != nil && session.Pod.Status.Phase == corev1.PodFailed
+}
+
+func sessionFromResources(pod *corev1.Pod, service *corev1.Service, secret *corev1.Secret) (*Session, error) {
+	token := strings.TrimSpace(string(secret.Data["token"]))
+	if token == "" {
+		return nil, errors.New("upload session token secret is empty")
+	}
+	expiresAt, err := expiresAtFromSecret(secret)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildCreatedSession(pod, service, secret, token, expiresAt), nil
+}
+
+func buildCreatedSession(
+	pod *corev1.Pod,
+	service *corev1.Service,
+	secret *corev1.Secret,
+	token string,
+	expiresAt metav1.Time,
+) *Session {
+	return &Session{
+		Pod:          pod,
+		Service:      service,
+		Secret:       secret,
+		UploadStatus: buildUploadStatus(pod, service, token, expiresAt),
+	}
+}
+
+func buildUploadStatus(
+	pod *corev1.Pod,
+	service *corev1.Service,
+	token string,
+	expiresAt metav1.Time,
+) modelsv1alpha1.ModelUploadStatus {
+	return modelsv1alpha1.ModelUploadStatus{
+		ExpiresAt:  &expiresAt,
+		Repository: artifactURIFromPod(pod),
+		Command:    buildUploadCommand(service.Namespace, service.Name, token),
+	}
+}
+
+func artifactURIFromPod(pod *corev1.Pod) string {
+	if pod == nil || len(pod.Spec.Containers) == 0 {
+		return ""
+	}
+
+	args := pod.Spec.Containers[0].Args
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "--artifact-uri" {
+			return strings.TrimSpace(args[i+1])
+		}
+	}
+
+	return ""
+}
+
+func expiresAtFromSecret(secret *corev1.Secret) (metav1.Time, error) {
+	raw := strings.TrimSpace(secret.Annotations["ai-models.deckhouse.io/upload-expires-at"])
+	if raw == "" {
+		return metav1.Time{}, errors.New("upload session expiry annotation is missing")
+	}
+	value, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return metav1.Time{}, fmt.Errorf("parse upload session expiry: %w", err)
+	}
+	return metav1.NewTime(value.UTC()), nil
+}
+
+func buildUploadCommand(namespace, serviceName, token string) string {
+	return fmt.Sprintf(
+		"MODEL_FILE=${MODEL_FILE:?set MODEL_FILE to the local archive path}; kubectl -n %s port-forward service/%s 18444:8444 >/tmp/ai-model-upload-port-forward.log 2>&1 & PF_PID=$!; trap 'kill $PF_PID' EXIT; until curl -fsS http://127.0.0.1:18444/healthz >/dev/null; do sleep 1; done; curl -fsS -X PUT -H 'Authorization: Bearer %s' --data-binary @\"$MODEL_FILE\" http://127.0.0.1:18444/upload",
+		namespace,
+		serviceName,
+		token,
+	)
+}

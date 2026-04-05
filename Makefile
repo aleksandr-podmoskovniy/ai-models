@@ -2,18 +2,23 @@ SHELL := /bin/bash
 
 ROOT := $(CURDIR)
 BIN_DIR := $(ROOT)/.bin
+COVERAGE_DIR := $(ROOT)/artifacts/coverage
 export PATH := $(BIN_DIR):$(PATH)
 
 GO ?= $(shell command -v go 2>/dev/null || { test -x /opt/homebrew/bin/go && echo /opt/homebrew/bin/go; } || { test -x /usr/local/go/bin/go && echo /usr/local/go/bin/go; })
 GOFMT ?= $(dir $(GO))gofmt
 GOFLAGS ?= -count=1
 GOLANGCI_LINT_VERSION ?= 2.6.2
+GOCYCLO_VERSION ?= 0.6.0
+DEADCODE_VERSION ?= 0.43.0
 DMT_VERSION ?= 0.1.68
 MODULE_SDK_VERSION ?= 0.10.3
 OPERATOR_SDK_VERSION ?= 1.42.2
 HELM_DESIRED_VERSION ?= 3.20.1
 
 GOLANGCI_LINT ?= $(BIN_DIR)/golangci-lint
+GOCYCLO ?= $(BIN_DIR)/gocyclo
+DEADCODE ?= $(BIN_DIR)/deadcode
 DMT ?= $(BIN_DIR)/dmt
 MODULE_SDK ?= $(BIN_DIR)/module-sdk
 OPERATOR_SDK ?= $(BIN_DIR)/operator-sdk
@@ -31,13 +36,19 @@ BACKEND_NODE_MODULES_VOLUME ?= ai-models-backend-js-node-modules
 BACKEND_UI_MAX_OLD_SPACE_SIZE ?= 4096
 OIDC_AUTH_UPSTREAM_METADATA ?= $(ROOT)/images/backend/oidc-auth.lock
 
-.PHONY: ensure-bin-dir ensure-golangci-lint ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools fmt generate test lint-dmt lint-docs lint-shell lint helper-shell-check helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
+.PHONY: ensure-bin-dir ensure-golangci-lint ensure-gocyclo ensure-deadcode ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools coverage-dir api-test controller-test hooks-test controller-coverage-artifacts fmt generate test lint-dmt lint-docs lint-shell lint-controller-complexity lint-controller-size lint-thin-reconcilers test-controller-coverage deadcode check-controller-branch-matrix lint helper-shell-check helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
 
 ensure-bin-dir:
 	@mkdir -p $(BIN_DIR)
 
 ensure-golangci-lint: ensure-bin-dir
 	@INSTALL_DIR=$(BIN_DIR) GOLANGCI_LINT_VERSION=$(GOLANGCI_LINT_VERSION) ./tools/install-golangci-lint.sh
+
+ensure-gocyclo: ensure-bin-dir
+	@INSTALL_DIR=$(BIN_DIR) GOCYCLO_VERSION=$(GOCYCLO_VERSION) ./tools/install-gocyclo.sh
+
+ensure-deadcode: ensure-bin-dir
+	@INSTALL_DIR=$(BIN_DIR) DEADCODE_VERSION=$(DEADCODE_VERSION) ./tools/install-deadcode.sh
 
 ensure-dmt: ensure-bin-dir
 	@INSTALL_DIR=$(BIN_DIR) DMT_VERSION=$(DMT_VERSION) ./tools/install-dmt.sh
@@ -48,9 +59,12 @@ ensure-module-sdk: ensure-bin-dir
 ensure-operator-sdk: ensure-bin-dir
 	@INSTALL_DIR=$(BIN_DIR) OPERATOR_SDK_VERSION=$(OPERATOR_SDK_VERSION) ./tools/install-operator-sdk.sh
 
-ensure-tools: ensure-golangci-lint ensure-dmt ensure-module-sdk ensure-operator-sdk
+ensure-tools: ensure-golangci-lint ensure-gocyclo ensure-deadcode ensure-dmt ensure-module-sdk ensure-operator-sdk
 
-ensure-ci-tools: ensure-dmt
+ensure-ci-tools: ensure-gocyclo ensure-deadcode ensure-dmt
+
+coverage-dir:
+	@mkdir -p $(COVERAGE_DIR)
 
 fmt:
 	@files="$$(find . -type f -name '*.go' -not -path '*/.cache/*' -not -path '*/vendor/*' | sort)"; \
@@ -73,17 +87,19 @@ generate:
 		done <<< "$$mods"; \
 	fi
 
-test:
-	@mods="$$(find . -name go.mod -not -path '*/.cache/*' -not -path '*/vendor/*' -exec dirname {} \; | sort)"; \
-	if [[ -z "$$mods" ]]; then \
-		echo "==> no Go modules to test yet"; \
-	else \
-		while IFS= read -r dir; do \
-			[[ -n "$$dir" ]] || continue; \
-			echo "==> go test ($$dir)"; \
-			( cd "$$dir" && $(GO) test $(GOFLAGS) ./... ); \
-		done <<< "$$mods"; \
-	fi
+api-test: coverage-dir
+	@echo "==> go test (api)"
+	@cd api && $(GO) test $(GOFLAGS) -coverprofile $(COVERAGE_DIR)/api.out ./...
+
+controller-test: coverage-dir
+	@echo "==> go test (images/controller)"
+	@cd images/controller && $(GO) test $(GOFLAGS) -coverprofile $(COVERAGE_DIR)/controller.out ./...
+
+hooks-test: coverage-dir
+	@echo "==> go test (images/hooks)"
+	@cd images/hooks && $(GO) test $(GOFLAGS) -coverprofile $(COVERAGE_DIR)/hooks.out ./...
+
+test: api-test controller-test hooks-test
 
 lint-dmt: ensure-dmt
 	@echo "==> dmt lint"
@@ -101,6 +117,27 @@ lint-shell:
 	else \
 		bash -n $$files; \
 	fi
+
+lint-controller-complexity: ensure-gocyclo
+	@ROOT=$(ROOT) BIN_DIR=$(BIN_DIR) GOCYCLO=$(GOCYCLO) ./tools/check-controller-complexity.sh
+
+lint-controller-size:
+	@ROOT=$(ROOT) ./tools/check-controller-loc.sh
+
+lint-thin-reconcilers:
+	@ROOT=$(ROOT) ./tools/check-thin-reconcilers.sh
+
+test-controller-coverage: controller-coverage-artifacts
+	@ROOT=$(ROOT) COVERAGE_DIR=$(COVERAGE_DIR) GO=$(GO) ./tools/test-controller-coverage.sh
+
+controller-coverage-artifacts: coverage-dir
+	@ROOT=$(ROOT) COVERAGE_DIR=$(COVERAGE_DIR) ./tools/collect-controller-coverage.sh
+
+deadcode: ensure-deadcode
+	@ROOT=$(ROOT) BIN_DIR=$(BIN_DIR) DEADCODE=$(DEADCODE) ./tools/check-controller-deadcode.sh
+
+check-controller-branch-matrix:
+	@ROOT=$(ROOT) ./tools/check-controller-branch-matrix.sh
 
 helper-shell-check:
 	@echo "==> operator helper shell syntax"
@@ -157,9 +194,9 @@ kubeconform:
 render-docs:
 	@python3 ./tools/render-docs.py
 
-verify: lint helper-shell-check test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check
+verify: lint lint-controller-complexity lint-controller-size lint-thin-reconcilers helper-shell-check test-controller-coverage check-controller-branch-matrix deadcode test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check
 
-verify-ci: lint helper-shell-check test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check
+verify-ci: lint lint-controller-complexity lint-controller-size lint-thin-reconcilers helper-shell-check test-controller-coverage check-controller-branch-matrix deadcode test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check
 
 backend-fetch-source:
 	@bash ./images/backend/scripts/fetch-source.sh --metadata "$(BACKEND_UPSTREAM_METADATA)" --dest "$(BACKEND_SOURCE_CACHE_DIR)" $(if $(BACKEND_SOURCE_DIR),--source "$(BACKEND_SOURCE_DIR)",)

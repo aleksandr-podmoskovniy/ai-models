@@ -1,0 +1,189 @@
+# Controller Discipline Reference
+
+## Purpose
+
+This reference holds the durable controller architecture rules for `ai-models`.
+It exists so the project memory does not depend on a specific active planning
+bundle staying under `plans/active`.
+
+Read this reference when the task touches `images/controller/internal/*`,
+especially publication, upload, materialization, cleanup, status projection,
+and finalizer flow.
+
+## Target split
+
+Keep controller code split into these layers:
+
+- `domain`
+  - publication states
+  - transitions
+  - invariants
+  - status/condition mapping rules
+- `application`
+  - use cases such as:
+    - `AcceptSource`
+    - `StartPublication`
+    - `ObserveWorker`
+    - `ProjectStatus`
+    - `FinalizeDelete`
+- `ports`
+  - worker runtime
+  - ModelPack artifact publisher
+  - cleanup executor
+  - clock
+  - token/session issuer
+- `adapters`
+  - Kubernetes reconcilers
+  - ConfigMap/Secret/Pod/Service materializers
+  - concrete `ModelPack` implementations such as `KitOps` or `Modctl`
+
+## Thin reconciler rule
+
+Reconcilers are Kubernetes adapters only.
+
+Allowed in a reconciler:
+
+- fetch object(s)
+- add or remove finalizer
+- call one application use case
+- persist returned mutations
+- requeue using explicit use-case result
+
+Do not keep the following in reconciler files:
+
+- lifecycle branching trees
+- publication state machine logic
+- inline `Pod` / `Service` / `Secret` / `ConfigMap` construction
+- status reason decision trees
+- serialization format details for worker result handoff
+
+## First corrective cuts
+
+Cut the current controller in this order:
+
+1. `controllers/catalogstatus`
+2. `controllers/publicationops`
+3. `adapters/k8s/uploadsession`
+
+Do not add new feature logic to these packages before checking whether the
+current slice should instead reduce their responsibility first.
+
+## Current concrete package map
+
+Keep the remaining controller runtime tree readable:
+
+- `internal/controllers/*`
+  - only concrete reconcilers and their thin persistence/observation shells
+- `internal/adapters/k8s/*`
+  - only concrete Pod/Service/Secret/Job builders and CRUD/service adapters
+- `internal/support/*`
+  - only real shared helpers such as model-object helpers, cleanup-handle
+    persistence helpers, and canonical owner-based resource naming / owner
+    labels policy
+
+Do not reintroduce a flat top-level patchwork where controller reconcilers,
+Kubernetes resource builders and shared helpers all sit side by side.
+
+Do not recreate package-local `names.go` wrappers for Pod/Service/Secret/Job/
+ConfigMap names unless they add a real new boundary. Canonical resource naming
+belongs in `internal/support/resourcenames`.
+
+Do not mirror shared publication runtime input through adapter-local `Request`
+or `OwnerRef` wrapper types unless the adapter truly needs a different contract.
+Concrete adapters should consume `publication.OperationContext` directly and keep
+only adapter-specific planning helpers.
+
+Do not keep a separate `runtime.go` proxy over the same concrete adapter object
+when that file only forwards to `Service`/CRUD methods and wraps the same
+handle/delete closure. In that case the adapter should implement the shared port
+itself and keep internal CRUD as unexported helper methods on the same object.
+
+Do not repeat the same controlled K8s object create/reuse shell
+(`SetControllerReference -> Create -> AlreadyExists -> Get`) across multiple
+adapter packages. If the flow is the same and only the concrete object shape is
+different, keep one shared helper under `internal/adapters/k8s/*`.
+
+Do not repeat the same workload `Pod` shell (`EmptyDir` workspace, `/tmp`
+mount, registry CA volumes/mounts) across multiple adapters. If the structure
+is the same and only command/env/extra mounts differ, keep one shared helper
+under `internal/adapters/k8s/*`.
+
+Do not promote a controller-local persisted protocol helper into `internal/ports`
+until there is a real second adapter behind that seam. If only one controller
+package owns the `ConfigMap`/`Secret`/`Job` storage protocol, keep that
+boundary local to the concrete controller package instead of inventing a fake
+shared port.
+
+When the package map changes materially, update the repo-local inventory in
+`images/controller/STRUCTURE.ru.md`. New files should be defendable by:
+
+- purpose;
+- why the file belongs in that package;
+- why the responsibility does not belong to a neighboring layer.
+
+## Quality gates
+
+The controller must satisfy repo-level gates wired into `make verify`.
+
+Relevant files:
+
+- `Makefile`
+- `tools/install-gocyclo.sh`
+- `tools/check-controller-complexity.sh`
+- `tools/check-controller-loc.sh`
+- `tools/check-thin-reconcilers.sh`
+- `tools/test-controller-coverage.sh`
+- `tools/check-controller-branch-matrix.sh`
+
+Current thresholds:
+
+- `gocyclo <= 15`
+- non-test controller file length `<= 350` lines unless explicitly allowlisted
+- thin reconciler rule enforced unless explicitly allowlisted
+
+Temporary debt must be explicit through allowlists under `tools/`, not hidden in
+the code or in chat context.
+
+## Test evidence
+
+Lifecycle code is not validated by happy-path adapter tests alone.
+
+Required evidence shape for controller slices:
+
+- state transition matrix
+- negative branches
+- idempotency
+- reconcile replay / retry behavior
+- deletion and finalizer races
+- malformed worker result paths
+
+Shared fixture discipline:
+
+- shared controller test scheme/object/fake-client fixtures belong under
+  `internal/support/testkit`
+- package-local `test_helpers_test.go` may keep only adapter-local builders,
+  canned runtime payloads, and assertions
+- adapter-heavy controller tests should be split by decision family rather than
+  accreting into one large `reconciler_test.go`
+- helper files must not become a second hidden business-logic layer
+- shared ports should be implemented in the concrete adapter package that owns
+  the underlying CRUD/build behavior, not in a controller-side shim
+
+If the change mostly moves logic between packages, tests still need to prove
+that the decision surface is preserved.
+
+## Runtime direction
+
+Controller work must stay aligned with the current model lifecycle direction:
+
+- source-first public contract
+- controller-owned publication
+- `ModelPack` as the published artifact contract
+- pluggable packaging/materialization adapters; current implementation may use
+  `KitOps`, but contract must not depend on one concrete implementation brand
+- `OCI` published artifact
+- runtime consumption through local materialization, not direct backend
+  semantics
+
+Use task-local bundles for slice-specific implementation detail, but keep these
+rules stable here.
