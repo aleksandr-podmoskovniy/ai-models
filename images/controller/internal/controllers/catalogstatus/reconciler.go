@@ -18,15 +18,18 @@ package catalogstatus
 
 import (
 	"context"
+	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publication"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publication"
+	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const statusPollInterval = time.Second
 
 func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var object modelsv1alpha1.Model
@@ -101,7 +104,7 @@ func (r *baseReconciler) acceptSource(
 	if err := r.updateStatus(ctx, object, current, desired); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{RequeueAfter: r.options.RequeueAfter}, nil
+	return ctrl.Result{RequeueAfter: statusPollInterval}, nil
 }
 
 func (r *baseReconciler) projectOperationStatus(
@@ -133,7 +136,7 @@ func (r *baseReconciler) projectOperationStatus(
 		return ctrl.Result{}, err
 	}
 	if projection.Requeue {
-		return ctrl.Result{RequeueAfter: r.options.RequeueAfter}, nil
+		return ctrl.Result{RequeueAfter: statusPollInterval}, nil
 	}
 	return ctrl.Result{}, nil
 }

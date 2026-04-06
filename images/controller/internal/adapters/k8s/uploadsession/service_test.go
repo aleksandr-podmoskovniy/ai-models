@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -61,30 +62,43 @@ func TestServiceGetOrCreateCreatesOwnedUploadSessionResources(t *testing.T) {
 	request.OperationName = operation.Name
 	request.OperationNamespace = operation.Namespace
 
-	session, created, err := service.getOrCreateSession(context.Background(), operation, request)
+	handle, created, err := service.GetOrCreate(context.Background(), operation, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}
 	if !created {
 		t.Fatal("expected upload session resources to be created")
 	}
-	if session.Pod == nil || session.Service == nil || session.Secret == nil {
-		t.Fatalf("expected full upload session, got %#v", session)
+	if handle == nil || handle.WorkerName == "" {
+		t.Fatalf("expected upload session handle, got %#v", handle)
 	}
-	if len(session.Pod.OwnerReferences) != 1 || len(session.Service.OwnerReferences) != 1 || len(session.Secret.OwnerReferences) != 1 {
-		t.Fatal("expected controller owner references on upload session supplements")
+	if !strings.Contains(handle.UploadStatus.Command, "port-forward service/") {
+		t.Fatalf("unexpected upload command %q", handle.UploadStatus.Command)
 	}
-	if !strings.Contains(session.UploadStatus.Command, "port-forward service/"+session.Service.Name) {
-		t.Fatalf("unexpected upload command %q", session.UploadStatus.Command)
-	}
-	if session.UploadStatus.ExpiresAt == nil {
+	if handle.UploadStatus.ExpiresAt == nil {
 		t.Fatal("expected upload session expiration")
 	}
 
-	for _, object := range []client.Object{session.Pod, session.Service, session.Secret} {
+	serviceName, err := resourcenames.UploadSessionServiceName(request.Request.Owner.UID)
+	if err != nil {
+		t.Fatalf("UploadSessionServiceName() error = %v", err)
+	}
+	secretName, err := resourcenames.UploadSessionSecretName(request.Request.Owner.UID)
+	if err != nil {
+		t.Fatalf("UploadSessionSecretName() error = %v", err)
+	}
+
+	for _, object := range []client.Object{
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: handle.WorkerName, Namespace: "d8-ai-models"}},
+		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: "d8-ai-models"}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: "d8-ai-models"}},
+	} {
 		stored := object.DeepCopyObject().(client.Object)
 		if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(object), stored); err != nil {
 			t.Fatalf("Get(%T) error = %v", object, err)
+		}
+		if len(stored.GetOwnerReferences()) != 1 {
+			t.Fatalf("expected controller owner references on %T", object)
 		}
 	}
 }

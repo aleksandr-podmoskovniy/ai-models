@@ -19,7 +19,7 @@ package artifactbackend
 import (
 	"testing"
 
-	"github.com/deckhouse/ai-models/controller/internal/publication"
+	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"k8s.io/apimachinery/pkg/types"
 )
 

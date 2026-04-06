@@ -258,6 +258,36 @@
     repo gate does not require them
   - `go test ./...` in `images/controller` continues to pass after the package
     rewrite
+- Slice 35 реализован bounded tooling/structure cut:
+  - removed the ambiguous `internal/app` name and replaced it with the explicit
+    composition-root package `internal/bootstrap`
+  - renamed `app.go` / `app_test.go` to `bootstrap.go` / `bootstrap_test.go`
+    so the tree no longer keeps a second “app” concept beside
+    `internal/application`
+  - controller deadcode verification is now explicit and controller-first
+    through `deadcode-controller`, `deadcode-hooks` and an updated
+    `tools/check-controller-deadcode.sh`
+  - repo-local skills and review rules now treat ambiguous package naming and
+    misleading verify output as concrete findings instead of documentation-only
+    nits
+- Slice 36 реализован bounded evidence cleanup cut:
+  - removed scattered package-local `BRANCH_MATRIX.ru.md` files from
+    `internal/domain/publication`, `internal/application/publication` and
+    `internal/application/deletion`
+  - replaced them with one controller-level evidence source of truth in
+    `images/controller/TEST_EVIDENCE.ru.md`
+  - replaced the verify hook from `check-controller-branch-matrix` to
+    `check-controller-test-evidence`, so the gate now enforces complete
+    controller evidence coverage without keeping local markdown files inside
+    half the packages
+- Slice 37 реализован bounded naming/structure cut:
+  - removed the generic repeated `publication` package naming across
+    `internal/`, `application/`, `domain/`, and `ports/`
+  - introduced explicit role-based names:
+    `publishedsnapshot`, `publishplan`, `publishstate`, `publishop`
+  - rewired all controller imports and tests to the new package map
+  - synced controller README / structure inventory / test-evidence inventory
+    and repo-local skills so the new naming becomes the durable project rule
   - controller tree now stands at `5933` non-test Go LOC and `6782` test Go
     LOC
 - Slice 19 реализован bounded test-architecture cleanup cut:
@@ -310,32 +340,32 @@
 - Coverage и branch-matrix gates пока future-facing для ещё не созданных
   `domain` / `application` packages; их нужно ужесточать по мере реального
   разрезания controller runtime.
-- `controllers/publicationops` всё ещё самый жирный concrete package: ConfigMap
+- `controllers/publishrunner` всё ещё самый жирный concrete package: ConfigMap
   protocol, store wiring и runtime wiring сидят рядом и должны быть разрезаны
   дальше.
 - `StartPublication` и source-type-to-execution-mode mapping всё ещё живут в
-  `application/publication`; этот slice сознательно не тащит их в domain.
-- `catalogstatus` projection всё ещё зависит от `publicationops` reconcile,
-  если corrupted terminal state уже лежит в operation и `publicationops`
+  `application/publishplan`; этот slice сознательно не тащит их в domain.
+- `catalogstatus` projection всё ещё зависит от `publishrunner` reconcile,
+  если corrupted terminal state уже лежит в operation и `publishrunner`
   ещё не успел перевести его обратно в `Failed`.
-- В replay coverage `publicationops` всё ещё не закрыты более широкие
+- В replay coverage `publishrunner` всё ещё не закрыты более широкие
   worker/session recreation races и codec/store split пока не вынесен за
   пределы adapter package.
 - `catalogcleanup` всё ещё не выделяет explicit ports для cleanup runtime/store;
   это сознательно deferred, чтобы не смешивать следующий seam-cut с текущим
   bounded slice.
-- `controllers/publicationops` tests are no longer a single monolith, but
+- `controllers/publishrunner` tests are no longer a single monolith, but
   package-level adapter coverage is still relatively heavy and must keep
   following decision-family split instead of drifting back into one mega-file.
 - `STRUCTURE.ru.md` itself is now another maintained artifact; if future
   package changes land without updating it, the document will drift and lose
   value.
-- `controllers/publicationops` всё ещё самый жирный production package; теперь
+- `controllers/publishrunner` всё ещё самый жирный production package; теперь
   это уже не проблема file-level patchwork, а remaining package-level
   orchestration complexity around source/upload/store/runtime seams.
 - shared `OperationStore` turned out to be a fake seam: there is still no
   second store adapter behind the persisted operation `ConfigMap` protocol, so
-  keeping that interface under `internal/ports/publication` was architecture
+  keeping that interface under `internal/ports/publishop` was architecture
   debt rather than useful hexagonal reuse.
 
 ## Latest slice
@@ -382,7 +412,43 @@
   decision-application shell into one helper, and shrank
   `publicationops/test_helpers_test.go` down to one canonical scenario-fixture
   layer instead of a shadow API of aliases and overlapping builders.
-- Controller tree now stands at `5896` non-test Go LOC and `6132` test Go LOC;
+- Slice 31 removed `RequeueAfter` from `catalogstatus.Options`, moved the
+  status polling cadence into the reconcile path where the lifecycle policy
+  actually belongs, and renamed adapter tests from `runtime_test.go` to
+  `service_roundtrip_test.go` after the earlier removal of the dedicated
+  `runtime.go` layer.
+- Slice 32 removed the same controller-option smell from
+  `publicationops.Options`, localized source-worker result polling into the
+  source branch itself, and deleted the extra `publicationops/store.go`
+  sublayer so persisted operation mutation now lives directly in the thin
+  reconcile shell around the single real `ConfigMap` protocol boundary.
+- Slice 33 removed `adapters/k8s/cleanupjob` completely. Cleanup Job
+  materialization now lives inside `controllers/catalogcleanup`, which is the
+  only place that actually owns the delete-flow. This shrinks the K8s adapter
+  tree and removes one more fake seam from the controller runtime.
+- Slice 34 reduced the heaviest remaining `publicationops` protocol seam
+  without splitting it into new fake layers: the protocol file now uses one
+  local helper shell for repeated JSON decode/store behavior, and the protocol
+  test file was rewritten from a long list of one-off checks into a smaller set
+  of maintained protocol families.
+- Slice 38 renamed the remaining generic concrete controller package from
+  `controllers/publicationops` to `controllers/publishrunner` and rewired the
+  live import graph, bootstrap wiring, controller README, structure inventory,
+  and bundle notes so only historical slice logs keep the old name.
+- Slice 39 refreshed `images/controller/STRUCTURE.ru.md` into a full live
+  file-level inventory, especially for controller/adapters test files, so the
+  next reviewer pass can challenge each remaining file directly instead of
+  working against vague grouped rationale.
+- Slice 40 cut three real duplication seams at once: reconcile-only status
+  guard logic moved out of `publishrunner/configmap_protocol.go`, adapter-local
+  `NewRuntime` proxy constructors disappeared, and `ownedresource` became one
+  honest create/reuse+delete lifecycle helper instead of a narrowly named
+  create-only file plus open-coded delete branches.
+- Slice 41 removed the last asymmetric runtime surface between worker and
+  session adapters: both now expose one `GetOrCreate` contract, and tests were
+  rewired off private `getOrCreate*` helpers onto the same public adapter
+  methods that production code uses.
+- Controller tree now stands at `5790` non-test Go LOC and `6060` test Go LOC;
   this slice traded a small LOC increase for a stronger package boundary:
   repeated controlled K8s object IO is now one canonical helper instead of
   three open-coded create/reuse branches spread across worker and upload

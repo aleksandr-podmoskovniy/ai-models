@@ -69,17 +69,26 @@ feature slices.
   - `gocyclo`
   - custom controller size check
   - controller test coverage gate
-  - lifecycle branch-matrix artifact check
+  - controller test-evidence inventory check
   - deadcode install/check shell
   - explicit coverage-dir/module test targets
 
 ### Current reduction baseline
 
 - after the latest cleanup cuts, `images/controller` now has:
-  - `5896` non-test Go LOC;
-  - `6132` test Go LOC.
+  - `5790` non-test Go LOC;
+  - `6060` test Go LOC.
 - Current bounded reduction slice should:
+  - remove ambiguous package names such as `internal/app` beside
+    `internal/application`;
+  - remove generic repeated package names such as `publication` across
+    `internal/`, `application/`, `domain/`, and `ports/` when those packages
+    actually own different responsibilities;
   - keep objective deadcode tooling active;
+  - keep controller deadcode as an explicit, first-class verify signal rather
+    than implicit output behind hooks tooling;
+  - replace scattered package-local `BRANCH_MATRIX.ru.md` files with one
+    controller-level evidence source of truth;
   - rewrite remaining concrete package layout to `controllers/`,
     `adapters/k8s/`, `support/`;
   - delete shared helper duplication during the move instead of carrying

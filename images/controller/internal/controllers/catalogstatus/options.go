@@ -19,7 +19,6 @@ package catalogstatus
 import (
 	"errors"
 	"strings"
-	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -28,7 +27,6 @@ import (
 
 type Options struct {
 	OperationNamespace string
-	RequeueAfter       time.Duration
 }
 
 type baseReconciler struct {
@@ -47,7 +45,6 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 		return nil
 	}
 
-	options = normalizeOptions(options)
 	if err := options.Validate(); err != nil {
 		return err
 	}
@@ -77,12 +74,4 @@ func (o Options) Validate() error {
 	}
 
 	return nil
-}
-
-func normalizeOptions(options Options) Options {
-	if options.RequeueAfter <= 0 {
-		options.RequeueAfter = 5 * time.Second
-	}
-
-	return options
 }

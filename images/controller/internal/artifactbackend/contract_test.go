@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/publication"
+	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 

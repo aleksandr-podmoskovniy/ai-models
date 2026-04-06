@@ -21,9 +21,9 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/controllers/publicationops"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publication"
-	"github.com/deckhouse/ai-models/controller/internal/publication"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/publishrunner"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -58,7 +58,7 @@ func TestModelReconcilerCreatesPublicationOperation(t *testing.T) {
 		t.Fatalf("expected publication operation configmap to be created: %v", err)
 	}
 
-	request, err := publicationops.RequestFromConfigMap(&operation)
+	request, err := publishrunner.RequestFromConfigMap(&operation)
 	if err != nil {
 		t.Fatalf("RequestFromConfigMap() error = %v", err)
 	}
@@ -100,7 +100,7 @@ func TestClusterModelReconcilerCreatesClusterScopedOperationRequest(t *testing.T
 		t.Fatalf("expected publication operation configmap to be created: %v", err)
 	}
 
-	request, err := publicationops.RequestFromConfigMap(&operation)
+	request, err := publishrunner.RequestFromConfigMap(&operation)
 	if err != nil {
 		t.Fatalf("RequestFromConfigMap() error = %v", err)
 	}
@@ -158,7 +158,7 @@ func TestModelReconcilerMarksFailureFromFailedOperation(t *testing.T) {
 	t.Parallel()
 
 	model := testModel()
-	operation, err := publicationops.NewConfigMap("d8-ai-models", publicationports.Request{
+	operation, err := publishrunner.NewConfigMap("d8-ai-models", publicationports.Request{
 		Owner: publicationports.Owner{
 			Kind:      modelsv1alpha1.ModelKind,
 			Name:      model.Name,
@@ -175,7 +175,7 @@ func TestModelReconcilerMarksFailureFromFailedOperation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConfigMap() error = %v", err)
 	}
-	if err := publicationops.SetFailed(operation, "hf import failed"); err != nil {
+	if err := publishrunner.SetFailed(operation, "hf import failed"); err != nil {
 		t.Fatalf("SetFailed() error = %v", err)
 	}
 
@@ -199,7 +199,7 @@ func TestModelReconcilerProjectsWaitForUploadStatus(t *testing.T) {
 	t.Parallel()
 
 	model := testUploadModel()
-	operation, err := publicationops.NewConfigMap("d8-ai-models", publicationports.Request{
+	operation, err := publishrunner.NewConfigMap("d8-ai-models", publicationports.Request{
 		Owner: publicationports.Owner{
 			Kind:      modelsv1alpha1.ModelKind,
 			Name:      model.Name,
@@ -216,11 +216,11 @@ func TestModelReconcilerProjectsWaitForUploadStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConfigMap() error = %v", err)
 	}
-	if err := publicationops.SetRunning(operation, "ai-model-upload-550e8400-e29b-41d4-a716-44665544"); err != nil {
+	if err := publishrunner.SetRunning(operation, "ai-model-upload-550e8400-e29b-41d4-a716-44665544"); err != nil {
 		t.Fatalf("SetRunning() error = %v", err)
 	}
 	expiresAt := metav1.Now()
-	if err := publicationops.SetUploadReady(operation, modelsv1alpha1.ModelUploadStatus{
+	if err := publishrunner.SetUploadReady(operation, modelsv1alpha1.ModelUploadStatus{
 		ExpiresAt:  &expiresAt,
 		Repository: "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/550e8400-e29b-41d4-a716-446655440111:published",
 		Command:    "curl -T file",

@@ -22,8 +22,8 @@ import (
 	"errors"
 	"fmt"
 
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publication"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publication"
+	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

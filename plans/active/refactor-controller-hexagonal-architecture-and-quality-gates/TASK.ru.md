@@ -103,14 +103,14 @@ runtime slice-by-slice:
   - port/adapter map;
   - first-cut file split plan;
   - quality gates for `make verify`;
-  - test strategy and branch matrix requirements.
+  - test strategy and centralized controller test-evidence requirements.
 - В плане явно зафиксированы hard acceptance criteria для будущих slices:
   - use case / port / adapter split;
   - max LOC per file;
   - max cyclomatic complexity per function;
   - thin reconciler rule;
   - package-level coverage thresholds;
-  - lifecycle branch-matrix artifact.
+  - lifecycle test-evidence inventory.
 - В repo добавлен automated deadcode check по controller module, wired в
   `Makefile` / `verify`, и он реально прогоняется на текущем controller tree.
 - Root test shell сохраняет coverage profiles по module targets в стиле

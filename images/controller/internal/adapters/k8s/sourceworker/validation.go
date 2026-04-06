@@ -20,8 +20,8 @@ import (
 	"errors"
 	"strings"
 
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publication"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publication"
+	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
 )
 

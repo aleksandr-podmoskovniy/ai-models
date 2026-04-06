@@ -30,11 +30,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/cleanupjob"
-	"github.com/deckhouse/ai-models/controller/internal/app"
+	"github.com/deckhouse/ai-models/controller/internal/bootstrap"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
-	"github.com/deckhouse/ai-models/controller/internal/controllers/publicationops"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/publishrunner"
 )
 
 const (
@@ -106,9 +105,9 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	application, err := app.New(logger, app.Options{
+	application, err := bootstrap.New(logger, bootstrap.Options{
 		CleanupJobs: catalogcleanup.Options{
-			CleanupJob: cleanupjob.Options{
+			CleanupJob: catalogcleanup.CleanupJobOptions{
 				Namespace:               cleanupJobNamespace,
 				Image:                   cleanupJobImage,
 				ServiceAccountName:      cleanupJobServiceAccount,
@@ -121,10 +120,9 @@ func run() int {
 		},
 		HFPublication: catalogstatus.Options{
 			OperationNamespace: publicationWorkerNamespace,
-			RequeueAfter:       5 * time.Second,
 		},
-		PublicationOps: publicationops.Options{
-			PublishPod: publicationops.PublishPodOptions{
+		PublishRunner: publishrunner.Options{
+			PublishPod: publishrunner.PublishPodOptions{
 				Namespace:               publicationWorkerNamespace,
 				Image:                   fallbackString(publicationWorkerImage, cleanupJobImage),
 				ServiceAccountName:      fallbackString(publicationWorkerServiceAccount, cleanupJobServiceAccount),
@@ -133,9 +131,8 @@ func run() int {
 				OCIRegistrySecretName:   publicationOCISecretName,
 				OCIRegistryCASecretName: publicationOCICASecretName,
 			},
-			RequeueAfter: 5 * time.Second,
 		},
-		Runtime: app.RuntimeOptions{
+		Runtime: bootstrap.RuntimeOptions{
 			MetricsBindAddress:      metricsBindAddress,
 			HealthProbeBindAddress:  healthProbeBindAddress,
 			LeaderElection:          leaderElect,

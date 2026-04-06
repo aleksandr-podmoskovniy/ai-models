@@ -38,7 +38,7 @@ Initial exceptions are allowed only through:
 
 - Package-level coverage threshold for controller packages touched by a slice:
   - initial floor: `>= 80%`
-- For pure orchestration adapters, branch-matrix evidence is mandatory even if
+- For pure orchestration adapters, controller test evidence is mandatory even if
   statement coverage is high.
 - Current implementation scopes these two gates to future
   `domain` / `application` packages, so they are already wired into `verify`
@@ -76,7 +76,7 @@ Add:
 - `lint-thin-reconcilers`
 - `test-controller-coverage`
 - `deadcode`
-- `check-controller-branch-matrix`
+- `check-controller-test-evidence`
 
 Wire them into:
 
@@ -93,7 +93,7 @@ Add scripts:
 - `tools/check-controller-complexity.sh`
 - `tools/check-controller-loc.sh`
 - `tools/check-thin-reconcilers.sh`
-- `tools/check-controller-branch-matrix.sh`
+- `tools/check-controller-test-evidence.sh`
 - `tools/check-controller-deadcode.sh`
 - `tools/collect-controller-coverage.sh`
 - `tools/test-controller-coverage.sh`

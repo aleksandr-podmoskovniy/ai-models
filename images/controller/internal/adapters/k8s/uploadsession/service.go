@@ -20,8 +20,8 @@ import (
 	"context"
 	"errors"
 
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publication"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publication"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -50,19 +50,6 @@ func NewService(client client.Client, scheme *runtime.Scheme, options Options) (
 	}
 
 	return &Service{client: client, scheme: scheme, options: options}, nil
-}
-
-func NewRuntime(client client.Client, scheme *runtime.Scheme, options Options) (publicationports.UploadSessionRuntime, error) {
-	return NewService(client, scheme, options)
-}
-
-func (s *Service) Get(ctx context.Context, ownerUID types.UID) (*publicationports.UploadSessionHandle, error) {
-	session, err := s.getSession(ctx, ownerUID)
-	if err != nil {
-		return nil, err
-	}
-
-	return uploadSessionHandleFromSession(s, session), nil
 }
 
 func (s *Service) getSession(ctx context.Context, ownerUID types.UID) (*Session, error) {
@@ -96,15 +83,6 @@ func (s *Service) getSession(ctx context.Context, ownerUID types.UID) (*Session,
 }
 
 func (s *Service) GetOrCreate(ctx context.Context, operation *corev1.ConfigMap, request publicationports.OperationContext) (*publicationports.UploadSessionHandle, bool, error) {
-	session, created, err := s.getOrCreateSession(ctx, operation, request)
-	if err != nil {
-		return nil, false, err
-	}
-
-	return uploadSessionHandleFromSession(s, session), created, nil
-}
-
-func (s *Service) getOrCreateSession(ctx context.Context, operation *corev1.ConfigMap, request publicationports.OperationContext) (*Session, bool, error) {
 	if operation == nil {
 		return nil, false, errors.New("upload session operation configmap must not be nil")
 	}
@@ -112,14 +90,24 @@ func (s *Service) getOrCreateSession(ctx context.Context, operation *corev1.Conf
 		return nil, false, errors.New("upload session operation namespace must match worker namespace")
 	}
 
-	request, plan, err := prepareRequest(operation, request)
+	request.OperationName = operation.Name
+	request.OperationNamespace = operation.Namespace
+
+	plan, err := requestPlan(request)
 	if err != nil {
 		return nil, false, err
 	}
 
 	session, err := s.getSession(ctx, request.Request.Owner.UID)
 	if err == nil {
-		return session, false, nil
+		return publicationports.NewUploadSessionHandle(
+			session.Pod.Name,
+			session.Pod.Status.Phase,
+			session.UploadStatus,
+			func(ctx context.Context) error {
+				return s.deleteSession(ctx, session)
+			},
+		), false, nil
 	}
 	if !apierrors.IsNotFound(err) {
 		return nil, false, err
@@ -138,46 +126,20 @@ func (s *Service) getOrCreateSession(ctx context.Context, operation *corev1.Conf
 		return nil, false, err
 	}
 
-	return buildCreatedSession(pod, service, secret, token, expiresAt), true, nil
+	session = buildCreatedSession(pod, service, secret, token, expiresAt)
+	return publicationports.NewUploadSessionHandle(
+		session.Pod.Name,
+		session.Pod.Status.Phase,
+		session.UploadStatus,
+		func(ctx context.Context) error {
+			return s.deleteSession(ctx, session)
+		},
+	), true, nil
 }
 
 func (s *Service) deleteSession(ctx context.Context, session *Session) error {
 	if session == nil {
 		return nil
 	}
-	for _, object := range []client.Object{session.Pod, session.Service, session.Secret} {
-		if object == nil {
-			continue
-		}
-		if err := client.IgnoreNotFound(s.client.Delete(ctx, object)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func prepareRequest(operation *corev1.ConfigMap, request publicationports.OperationContext) (publicationports.OperationContext, publicationapp.UploadSessionPlan, error) {
-	request.OperationName = operation.Name
-	request.OperationNamespace = operation.Namespace
-
-	plan, err := requestPlan(request)
-	if err != nil {
-		return publicationports.OperationContext{}, publicationapp.UploadSessionPlan{}, err
-	}
-	return request, plan, nil
-}
-
-func uploadSessionHandleFromSession(service *Service, session *Session) *publicationports.UploadSessionHandle {
-	if session == nil || session.Pod == nil {
-		return nil
-	}
-
-	return publicationports.NewUploadSessionHandle(
-		session.Pod.Name,
-		session.Pod.Status.Phase,
-		session.UploadStatus,
-		func(ctx context.Context) error {
-			return service.deleteSession(ctx, session)
-		},
-	)
+	return ownedresource.DeleteAll(ctx, s.client, session.Pod, session.Service, session.Secret)
 }

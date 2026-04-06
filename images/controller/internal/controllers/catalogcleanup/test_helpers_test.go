@@ -21,7 +21,6 @@ import (
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/cleanupjob"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
@@ -69,7 +68,7 @@ func newClusterModelReconciler(t *testing.T, objects ...client.Object) (*Cluster
 
 func testCleanupOptions() Options {
 	return Options{
-		CleanupJob: cleanupjob.Options{
+		CleanupJob: CleanupJobOptions{
 			Namespace:             "d8-ai-models",
 			Image:                 "backend:latest",
 			OCIRegistrySecretName: "ai-models-publication-registry",

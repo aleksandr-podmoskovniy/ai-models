@@ -20,8 +20,8 @@ import (
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publication"
-	"github.com/deckhouse/ai-models/controller/internal/publication"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"k8s.io/apimachinery/pkg/types"
 )
 

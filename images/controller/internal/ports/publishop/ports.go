@@ -1,0 +1,103 @@
+/*
+Copyright 2026 Flant JSC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package publishop
+
+import (
+	"context"
+
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+)
+
+type SourceWorkerRuntime interface {
+	GetOrCreate(ctx context.Context, operation *corev1.ConfigMap, request OperationContext) (*SourceWorkerHandle, bool, error)
+}
+
+type UploadSessionRuntime interface {
+	GetOrCreate(ctx context.Context, operation *corev1.ConfigMap, request OperationContext) (*UploadSessionHandle, bool, error)
+}
+
+type OperationContext struct {
+	Request            Request
+	OperationName      string
+	OperationNamespace string
+}
+
+type SourceWorkerHandle struct {
+	Name     string
+	Phase    corev1.PodPhase
+	deleteFn func(context.Context) error
+}
+
+func NewSourceWorkerHandle(name string, phase corev1.PodPhase, deleteFn func(context.Context) error) *SourceWorkerHandle {
+	return &SourceWorkerHandle{
+		Name:     name,
+		Phase:    phase,
+		deleteFn: deleteFn,
+	}
+}
+
+func (h *SourceWorkerHandle) Delete(ctx context.Context) error {
+	if h == nil || h.deleteFn == nil {
+		return nil
+	}
+	return h.deleteFn(ctx)
+}
+
+func (h *SourceWorkerHandle) IsComplete() bool {
+	return h != nil && h.Phase == corev1.PodSucceeded
+}
+
+func (h *SourceWorkerHandle) IsFailed() bool {
+	return h != nil && h.Phase == corev1.PodFailed
+}
+
+type UploadSessionHandle struct {
+	WorkerName   string
+	Phase        corev1.PodPhase
+	UploadStatus modelsv1alpha1.ModelUploadStatus
+	deleteFn     func(context.Context) error
+}
+
+func NewUploadSessionHandle(
+	workerName string,
+	phase corev1.PodPhase,
+	uploadStatus modelsv1alpha1.ModelUploadStatus,
+	deleteFn func(context.Context) error,
+) *UploadSessionHandle {
+	return &UploadSessionHandle{
+		WorkerName:   workerName,
+		Phase:        phase,
+		UploadStatus: uploadStatus,
+		deleteFn:     deleteFn,
+	}
+}
+
+func (h *UploadSessionHandle) Delete(ctx context.Context) error {
+	if h == nil || h.deleteFn == nil {
+		return nil
+	}
+	return h.deleteFn(ctx)
+}
+
+func (h *UploadSessionHandle) IsComplete() bool {
+	return h != nil && h.Phase == corev1.PodSucceeded
+}
+
+func (h *UploadSessionHandle) IsFailed() bool {
+	return h != nil && h.Phase == corev1.PodFailed
+}

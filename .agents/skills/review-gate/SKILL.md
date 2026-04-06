@@ -29,6 +29,10 @@ description: Use at the end of any substantial task. Reviews the diff against th
    - current change landed in the correct canonical active bundle and did not create a parallel source of truth
    - implementation drift not reflected in the current bundle
 6. If controller code changed, check whether controller quality gates and corrective architecture rules were respected.
+   - treat ambiguous package naming such as `app` vs `application` as a real
+     finding, not a cosmetic nit
+   - treat misleading verify output or controller checks hidden behind broader
+     shells as a real finding
 7. If the task was substantial or used delegation, confirm whether a final `reviewer` pass is still required.
 8. Return only concrete findings, missing checks, and residual risks.
 

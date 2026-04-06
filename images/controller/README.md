@@ -5,6 +5,8 @@
 
 Detailed folder/file inventory and rationale live in
 [STRUCTURE.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/STRUCTURE.ru.md).
+Controller-level decision/test evidence lives in
+[TEST_EVIDENCE.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/TEST_EVIDENCE.ru.md).
 
 Rules:
 - phase 2 controller code lives in the module rooted here;
@@ -14,7 +16,7 @@ Rules:
 - shared controller ports live under `internal/ports/*` and must not stay
   buried inside adapter-local packages;
 - concrete reconcilers live under `internal/controllers/*`;
-- concrete Pod/Service/Secret/Job builders and CRUD adapters live under
+- concrete Pod/Service/Secret builders and CRUD adapters live under
   `internal/adapters/k8s/*`;
 - shared helper code may live under `internal/support/*` only when it removes
   real duplication across controller/adapters and does not become a second
@@ -28,32 +30,37 @@ Current phase-2 slice implemented here:
   accepted `HuggingFace` and archive-based `HTTP` sources into backend-owned
   stored artifacts, while reserving `Upload` for a dedicated session workflow;
   the package also implements the shared source-worker runtime port directly,
-  consumes the shared `publication.OperationContext` without adapter-local
-  request mirrors, and does not keep a second runtime-proxy layer over the same
-  concrete adapter;
+  consumes the shared `publishop.OperationContext` without adapter-local
+  request mirrors, and does not keep a second runtime-proxy layer or
+  constructor path over the same concrete adapter;
 - `internal/adapters/k8s/uploadsession` for controller-owned upload session
   supplements:
   worker `Pod`, `Service`, short-lived auth `Secret`, and user-facing upload
   command projection for `spec.source.type=Upload`; the package also implements
   the shared upload-session runtime port directly, consumes the shared
-  `publication.OperationContext` without local request wrappers, and does not
-  keep a second runtime-proxy layer over the same concrete adapter;
-- `internal/adapters/k8s/cleanupjob` for controller-owned cleanup Job
-  materialization;
+  `publishop.OperationContext` without local request wrappers, and does not
+  keep a second runtime-proxy layer or constructor path over the same concrete
+  adapter;
 - `internal/adapters/k8s/ociregistry` for shared OCI registry auth/CA env and
-  volume rendering used by worker/session/cleanup adapters;
+  volume rendering used by worker/session/cleanup paths;
 - `internal/adapters/k8s/ownedresource` for the single canonical
-  `SetControllerReference -> Create -> AlreadyExists -> Get` shell reused by
-  controlled worker/session supplements;
+  owned-resource lifecycle shell reused by controlled worker/session
+  supplements: create/reuse plus ignore-not-found delete;
 - `internal/adapters/k8s/workloadpod` for the single canonical workspace
   `EmptyDir` + `/tmp` mount and registry-CA volume/mount shell reused by
   worker/upload pod adapters;
-- `internal/publication` for immutable publication snapshots used as controller
-  handoff between publish, cleanup, and runtime delivery steps;
-- `internal/ports/publication` for shared publication operation runtime
+- `internal/publishedsnapshot` for immutable published-artifact snapshots used
+  as controller handoff between publish, cleanup, and delete steps;
+- `internal/ports/publishop` for shared publication operation runtime
   contracts, operation contract primitives, and worker/session handles reused
   across adapters; controller-local persisted `ConfigMap` protocol stays in
-  `controllers/publicationops` until there is a real second store adapter;
+  `controllers/publishrunner` until there is a real second store adapter; both
+  concrete runtime adapters now use one `GetOrCreate` contract instead of
+  diverging by extra read-only methods;
+- `internal/domain/publishstate` for publication lifecycle state, condition and
+  observation decisions;
+- `internal/application/publishplan` for source-worker and upload-session
+  planning use cases;
 - `internal/support/cleanuphandle` for controller-owned backend-specific delete
   state
   that must not leak into public status;
@@ -67,13 +74,23 @@ Current phase-2 slice implemented here:
   option/resource builders, not duplicate the same scheme and model fixtures in
   every controller package;
 - `internal/controllers/catalogcleanup` for minimal delete-only finalizer
-  controller path for `Model` / `ClusterModel`;
-- `internal/controllers/publicationops` for controller-owned durable execution
-  boundary between source publication requests and backend-backed worker Pods;
+  controller path for `Model` / `ClusterModel`; it now owns cleanup Job
+  materialization directly because there is no second cleanup adapter and the
+  old `adapters/k8s/cleanupjob` package was only an unnecessary extra boundary;
+- `internal/controllers/publishrunner` for controller-owned durable execution
+  boundary between source publication requests and backend-backed worker Pods
+  and upload sessions;
 - `internal/controllers/catalogstatus` for thin `Model` / `ClusterModel`
   publication lifecycle ownership: operation request creation, public status
   projection, and cleanup handle persistence;
-- `internal/app` for manager/bootstrap wiring.
+- `internal/bootstrap` for manager/bootstrap wiring.
+
+Naming rule:
+- do not keep four different packages named `publication` across
+  `application/`, `domain/`, `ports/` and `internal/`; role-based names such
+  as `publishplan`, `publishstate`, `publishop`, and `publishedsnapshot` are
+  required so the tree stays explicit and closer to virtualization-style
+  ownership.
 
 Still intentionally out of scope:
 - live backend publication paths beyond

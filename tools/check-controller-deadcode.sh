@@ -21,22 +21,46 @@ BIN_DIR=${BIN_DIR:-"${ROOT}/.bin"}
 DEADCODE=${DEADCODE:-"${BIN_DIR}/deadcode"}
 CONTROLLER_DIR="${ROOT}/images/controller"
 HOOKS_DIR="${ROOT}/images/hooks"
+MODE=${MODE:-all}
 
 if [[ ! -x "${DEADCODE}" ]]; then
   echo "deadcode binary not found: ${DEADCODE}" >&2
   exit 1
 fi
 
-if [[ -d "${HOOKS_DIR}" ]]; then
+run_controller_deadcode() {
+  echo "==> deadcode (controller, required)"
+  (
+    cd "${CONTROLLER_DIR}" &&
+      "${DEADCODE}" -test ./cmd/... ./internal/...
+  )
+}
+
+run_hooks_deadcode() {
+  if [[ ! -d "${HOOKS_DIR}" ]]; then
+    return 0
+  fi
+
   echo "==> deadcode (hooks)"
   (
     cd "${HOOKS_DIR}" &&
       "${DEADCODE}" -test ./...
   )
-fi
+}
 
-echo "==> deadcode (controller)"
-(
-  cd "${CONTROLLER_DIR}" &&
-    "${DEADCODE}" -test ./cmd/... ./internal/...
-)
+case "${MODE}" in
+  controller)
+    run_controller_deadcode
+    ;;
+  hooks)
+    run_hooks_deadcode
+    ;;
+  all)
+    run_controller_deadcode
+    run_hooks_deadcode
+    ;;
+  *)
+    echo "unsupported deadcode mode: ${MODE}" >&2
+    exit 1
+    ;;
+esac

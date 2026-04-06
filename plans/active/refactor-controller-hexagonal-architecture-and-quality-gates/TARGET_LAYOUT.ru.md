@@ -16,7 +16,7 @@ Reconciler packages are adapters. They must not own business workflow assembly.
 ```text
 images/controller/internal/
   application/
-    publication/
+    publishplan/
       start_publication.go
       plan_source_worker.go
       issue_upload_session.go
@@ -24,29 +24,30 @@ images/controller/internal/
       ensure_cleanup_finalizer.go
       finalize_delete.go
   domain/
-    publication/
+    publishstate/
   ports/
-    publication/
+    publishop/
       operation_contract.go
       ports.go
   controllers/
     catalogstatus/
-    publicationops/
+    publishrunner/
     catalogcleanup/
   adapters/
     k8s/
-      cleanupjob/
       ociregistry/
+      ownedresource/
       sourceworker/
       uploadsession/
+      workloadpod/
   support/
     cleanuphandle/
     modelobject/
     resourcenames/
     testkit/
   artifactbackend/
-  publication/
-  app/
+  publishedsnapshot/
+  bootstrap/
 ```
 
 ## 3. What moves out of current packages
@@ -67,7 +68,7 @@ Must lose:
 - cleanup handle business decisions;
 - lifecycle status assembly.
 
-### `controllers/publicationops`
+### `controllers/publishrunner`
 
 Should keep only:
 
@@ -100,7 +101,7 @@ These packages should own:
   execution and handle shapes, without mirroring the shared contract through
   adapter-local `Request` / `OwnerRef` wrappers.
 
-They should not force `controllers/publicationops` to own adapter-specific
+They should not force `controllers/publishrunner` to own adapter-specific
 runtime wrappers.
 
 ## 4. Thin reconciler rule

@@ -722,6 +722,276 @@ Outcome:
 - `publicationops` lost one whole fake abstraction layer instead of just moving
   it between packages
 
+## Slice 31. Remove Misleading Controller Options/Test Names
+
+Completed bounded cut:
+
+- removed `RequeueAfter` from:
+  - `internal/controllers/catalogstatus/options.go`
+  - controller app wiring in `cmd/ai-models-controller/run.go`
+- moved status polling cadence into:
+  - `internal/controllers/catalogstatus/reconciler.go`
+- renamed misleading adapter tests:
+  - `internal/adapters/k8s/sourceworker/runtime_test.go` ->
+    `internal/adapters/k8s/sourceworker/service_roundtrip_test.go`
+  - `internal/adapters/k8s/uploadsession/runtime_test.go` ->
+    `internal/adapters/k8s/uploadsession/service_roundtrip_test.go`
+
+Outcome:
+
+- `catalogstatus.Options` is narrower and now contains only real controller
+  setup input instead of a hidden lifecycle policy knob
+- source/upload adapter tests no longer pretend there is a separate runtime
+  layer after the earlier `runtime.go` removal; they now describe what they
+  actually check: concrete service roundtrip on the shared adapter seam
+
+## Slice 32. Collapse PublicationOps Store/Polling Drift
+
+Completed bounded cut:
+
+- removed `RequeueAfter` from:
+  - `internal/controllers/publicationops/options.go`
+  - controller app wiring in `cmd/ai-models-controller/run.go`
+- moved source-worker result polling cadence into:
+  - `internal/controllers/publicationops/source.go`
+- deleted the extra persistence sublayer:
+  - `internal/controllers/publicationops/store.go`
+  - `internal/controllers/publicationops/store_test.go`
+- folded terminal/running persistence directly into:
+  - `internal/controllers/publicationops/reconciler.go`
+  - `internal/controllers/publicationops/reconcile_core_test.go`
+
+Outcome:
+
+- `publicationops.Options` now contains only real setup input, not hidden
+  lifecycle policy
+- `publicationops` no longer pretends to have a separate store layer beside
+  the one actual persisted protocol boundary in `configmap_protocol.go`
+
+## Slice 33. Remove Fake Cleanup Adapter Boundary
+
+Completed bounded cut:
+
+- moved cleanup Job build/inspect shell into:
+  - `internal/controllers/catalogcleanup/job.go`
+  - `internal/controllers/catalogcleanup/job_test.go`
+- deleted:
+  - `internal/adapters/k8s/cleanupjob/job.go`
+  - `internal/adapters/k8s/cleanupjob/job_test.go`
+- rewired:
+  - `internal/controllers/catalogcleanup/options.go`
+  - `internal/controllers/catalogcleanup/io.go`
+  - `internal/controllers/catalogcleanup/test_helpers_test.go`
+  - `internal/bootstrap/bootstrap_test.go`
+  - `cmd/ai-models-controller/run.go`
+
+Outcome:
+
+- cleanup Job is now owned where it is actually used: inside `catalogcleanup`
+- `internal/adapters/k8s` lost one fake package that had no second adapter and
+  only added another hop around one controller-local delete detail
+
+## Slice 34. Reduce PublicationOps Protocol Seam
+
+Completed bounded cut:
+
+- compacted `internal/controllers/publicationops/configmap_protocol.go`
+  around one local protocol-helper shell instead of repeated hand-written
+  decode/marshal boilerplate
+- kept that helper shell file-local; no new shared utility package or extra
+  protocol sublayer was introduced
+- rewrote `internal/controllers/publicationops/configmap_protocol_test.go`
+  from scattered file-oriented checks into protocol families:
+  required decoders, accessors/defaults, upload payload handling, persisted
+  status validation, and mutation helpers
+
+Outcome:
+
+- `configmap_protocol.go` remains one honest seam and now stays under the
+  controller LOC gate
+- `configmap_protocol_test.go` shrank materially while preserving the same
+  fail-closed protocol coverage shape
+
+## Slice 35. Remove Ambiguous Bootstrap Naming And Make Controller Deadcode Explicit
+
+Completed bounded cut:
+
+- renamed the composition root package from `internal/app` to
+  `internal/bootstrap`
+- renamed files to:
+  - `internal/bootstrap/bootstrap.go`
+  - `internal/bootstrap/bootstrap_test.go`
+- rewired:
+  - `cmd/ai-models-controller/run.go`
+  - controller README / STRUCTURE inventory / bundle notes
+- rewired deadcode verification so controller checks are first-class:
+  - `make deadcode-controller`
+  - `make deadcode-hooks`
+  - `make deadcode`
+  - `tools/check-controller-deadcode.sh`
+
+Outcome:
+
+- the tree no longer keeps the ambiguous `app` / `application` naming pair
+- controller deadcode is now explicit and controller-first in the verify shell
+- review guidance now treats ambiguous naming and misleading verification
+  output as real findings, not cosmetic issues
+
+## Slice 36. Remove Package-Local Branch Matrix Patchwork
+
+Completed bounded cut:
+
+- deleted package-local evidence files:
+  - `internal/domain/publication/BRANCH_MATRIX.ru.md`
+  - `internal/application/publication/BRANCH_MATRIX.ru.md`
+  - `internal/application/deletion/BRANCH_MATRIX.ru.md`
+- introduced one canonical controller-level evidence inventory:
+  - `images/controller/TEST_EVIDENCE.ru.md`
+- replaced the verify gate:
+  - `tools/check-controller-branch-matrix.sh`
+  - `check-controller-branch-matrix`
+  with:
+  - `tools/check-controller-test-evidence.sh`
+  - `check-controller-test-evidence`
+- rewired controller docs and repo-memory so local `BRANCH_MATRIX` files are no
+  longer treated as the expected pattern
+
+Outcome:
+
+- controller test evidence is now one explicit source of truth instead of a
+  half-adopted file-per-package convention
+- verify still enforces evidence coverage for every non-test
+  `internal/domain/*` and `internal/application/*` package
+- the tree is simpler because package folders no longer carry optional local
+  markdown policy files
+
+## Slice 37. Replace Generic Publication Package Names With Role-Based Names
+
+Completed bounded cut:
+
+- renamed:
+  - `internal/application/publication` -> `internal/application/publishplan`
+  - `internal/domain/publication` -> `internal/domain/publishstate`
+  - `internal/ports/publication` -> `internal/ports/publishop`
+  - `internal/publication` -> `internal/publishedsnapshot`
+- updated package names and imports across controller code to match the new
+  role-based structure
+- synced:
+  - `images/controller/README.md`
+  - `images/controller/STRUCTURE.ru.md`
+  - `images/controller/TEST_EVIDENCE.ru.md`
+  - repo-local skills and discipline docs
+
+Outcome:
+
+- the tree no longer repeats one vague `publication` name across four
+  unrelated responsibilities
+- naming is closer to virtualization-style ownership: package names now encode
+  what the layer actually owns, not just the broad feature area
+
+## Slice 38. Rename The Concrete Publication Controller To `publishrunner`
+
+Completed bounded cut:
+
+- renamed:
+  - `internal/controllers/publicationops` -> `internal/controllers/publishrunner`
+- rewired:
+  - `internal/bootstrap/bootstrap.go`
+  - `internal/bootstrap/bootstrap_test.go`
+  - `cmd/ai-models-controller/run.go`
+  - `internal/controllers/catalogstatus/io.go`
+  - `internal/controllers/catalogstatus/test_helpers_test.go`
+  - `internal/controllers/catalogstatus/reconciler_test.go`
+- synced:
+  - `images/controller/README.md`
+  - `images/controller/STRUCTURE.ru.md`
+  - `images/controller/TEST_EVIDENCE.ru.md`
+  - current bundle docs
+
+Outcome:
+
+- the last live generic `publicationops` package name is gone from the
+  controller tree
+- the concrete controller boundary now uses a role-based name that matches its
+  responsibility: durable publication run orchestration
+- old `publicationops` references remain only as historical notes in earlier
+  slice logs
+
+## Slice 39. Refresh Full File-Level Structure Rationale And Reviewer Baseline
+
+Completed bounded cut:
+
+- expanded `images/controller/STRUCTURE.ru.md` so remaining test groups are
+  documented file-by-file instead of grouped as vague package blobs
+- tightened file-level rationale for `publishrunner`, `sourceworker`,
+  `uploadsession`, controller tests, and domain/application evidence files
+- prepared the controller tree for another strict read-only reviewer pass by
+  making the current live structure defensible file-by-file, not only
+  package-by-package
+
+Outcome:
+
+- `STRUCTURE.ru.md` now describes every live controller file in the tree,
+  including test files and why they still exist
+- remaining reviewers can now flag unjustified files as concrete findings
+  instead of fighting stale or underspecified structure docs
+
+## Slice 40. Reduce Protocol And Adapter Constructor/Deletion Duplication
+
+Completed bounded cut:
+
+- reduced `internal/controllers/publishrunner/configmap_protocol.go` by moving
+  reconcile-only helpers (`validatePersistedStatus`, `operationStatusView`)
+  into the reconcile boundary where they are actually used
+- removed adapter-local `NewRuntime` proxy constructors from:
+  - `internal/adapters/k8s/sourceworker/service.go`
+  - `internal/adapters/k8s/uploadsession/service.go`
+- extended `internal/adapters/k8s/ownedresource` from create/reuse-only helper
+  into one honest controlled-resource lifecycle helper with shared
+  ignore-not-found delete
+- renamed:
+  - `internal/adapters/k8s/ownedresource/create_or_get.go`
+    -> `internal/adapters/k8s/ownedresource/lifecycle.go`
+  - `internal/adapters/k8s/ownedresource/create_or_get_test.go`
+    -> `internal/adapters/k8s/ownedresource/lifecycle_test.go`
+- rewired roundtrip tests and publishrunner bootstrap to instantiate concrete
+  services directly
+
+Outcome:
+
+- `publishrunner/configmap_protocol.go` is now materially smaller while keeping
+  one bounded persisted-protocol seam
+- source/upload adapters no longer keep a second constructor path beside the
+  real `Service`
+- create/reuse and delete shells now live together under one correctly named
+  K8s lifecycle helper instead of open-coded cleanup branches
+
+## Slice 41. Collapse Runtime Adapter Surface To One `GetOrCreate` Contract
+
+Completed bounded cut:
+
+- removed the extra source-worker runtime method from
+  `internal/ports/publishop/ports.go`; both runtime adapters now expose one
+  `GetOrCreate` contract
+- simplified `internal/controllers/publishrunner/source.go` to one source
+  worker entrypoint around `GetOrCreate`, removing the extra create-vs-observe
+  wrapper split
+- removed private test-only seams from:
+  - `internal/adapters/k8s/sourceworker/service.go`
+  - `internal/adapters/k8s/uploadsession/service.go`
+  by switching tests to the public adapter contract instead of internal
+  `getOrCreate*` helpers
+- dropped the unused public `Get` method from upload-session service and the
+  asymmetry-driving `Get` runtime method from source-worker service
+
+Outcome:
+
+- source/upload adapters now expose a simpler and more symmetric runtime
+  contract
+- `publishrunner/source.go` no longer needs a separate create wrapper just to
+  compensate for adapter surface asymmetry
+- tests now exercise the same public adapter contract that production code uses
+
 ## Rule for every implementation slice
 
 - one bounded cut at a time

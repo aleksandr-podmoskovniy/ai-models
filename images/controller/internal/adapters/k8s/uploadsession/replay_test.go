@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -87,15 +88,15 @@ func TestGetOrCreateReusesExistingSession(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	session, created, err := service.getOrCreateSession(context.Background(), operation, request)
+	handle, created, err := service.GetOrCreate(context.Background(), operation, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}
 	if created {
 		t.Fatal("expected existing upload session to be reused")
 	}
-	if session == nil || session.UploadStatus.Repository == "" || session.UploadStatus.ExpiresAt == nil {
-		t.Fatalf("unexpected reused session %#v", session)
+	if handle == nil || handle.UploadStatus.Repository == "" || handle.UploadStatus.ExpiresAt == nil {
+		t.Fatalf("unexpected reused session %#v", handle)
 	}
 }
 
@@ -149,24 +150,30 @@ func TestGetOrCreateRecoversFromPartialAlreadyExists(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	session, created, err := service.getOrCreateSession(context.Background(), operation, request)
+	handle, created, err := service.GetOrCreate(context.Background(), operation, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}
 	if !created {
 		t.Fatal("expected partial replay to create the missing pod")
 	}
-	if session.Pod == nil || session.Service == nil || session.Secret == nil {
-		t.Fatalf("unexpected session %#v", session)
+	if handle == nil || handle.WorkerName == "" {
+		t.Fatalf("unexpected session %#v", handle)
 	}
 
-	for _, object := range []client.Object{session.Pod, session.Service, session.Secret} {
+	for _, object := range []client.Object{
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: handle.WorkerName, Namespace: "d8-ai-models"}},
+		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: "d8-ai-models"}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: "d8-ai-models"}},
+	} {
 		stored := object.DeepCopyObject().(client.Object)
 		if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(object), stored); err != nil {
 			t.Fatalf("Get(%T) error = %v", object, err)
 		}
 	}
 }
+
+var _ publicationports.UploadSessionRuntime = (*Service)(nil)
 
 func uploadOptions() Options {
 	return Options{

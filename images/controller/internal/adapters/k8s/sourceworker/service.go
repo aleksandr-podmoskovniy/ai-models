@@ -21,10 +21,11 @@ import (
 	"errors"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publication"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,19 +55,6 @@ func NewService(client client.Client, scheme *runtime.Scheme, options Options) (
 	}, nil
 }
 
-func NewRuntime(client client.Client, scheme *runtime.Scheme, options Options) (publicationports.SourceWorkerRuntime, error) {
-	return NewService(client, scheme, options)
-}
-
-func (s *Service) Get(ctx context.Context, ownerUID types.UID) (*publicationports.SourceWorkerHandle, error) {
-	pod, err := s.getPod(ctx, ownerUID)
-	if err != nil {
-		return nil, err
-	}
-
-	return sourceWorkerHandleFromPod(s, pod), nil
-}
-
 func (s *Service) getPod(ctx context.Context, ownerUID types.UID) (*corev1.Pod, error) {
 	if s == nil {
 		return nil, errors.New("source publish pod service must not be nil")
@@ -86,15 +74,6 @@ func (s *Service) getPod(ctx context.Context, ownerUID types.UID) (*corev1.Pod, 
 }
 
 func (s *Service) GetOrCreate(ctx context.Context, operation *corev1.ConfigMap, request publicationports.OperationContext) (*publicationports.SourceWorkerHandle, bool, error) {
-	pod, created, err := s.getOrCreatePod(ctx, operation, request)
-	if err != nil {
-		return nil, false, err
-	}
-
-	return sourceWorkerHandleFromPod(s, pod), created, nil
-}
-
-func (s *Service) getOrCreatePod(ctx context.Context, operation *corev1.ConfigMap, request publicationports.OperationContext) (*corev1.Pod, bool, error) {
 	if s == nil {
 		return nil, false, errors.New("source publish pod service must not be nil")
 	}
@@ -107,7 +86,13 @@ func (s *Service) getOrCreatePod(ctx context.Context, operation *corev1.ConfigMa
 
 	pod, err := s.getPod(ctx, request.Request.Owner.UID)
 	if err == nil {
-		return pod, false, nil
+		return publicationports.NewSourceWorkerHandle(
+			pod.Name,
+			pod.Status.Phase,
+			func(ctx context.Context) error {
+				return s.deletePod(ctx, pod)
+			},
+		), false, nil
 	}
 	if !apierrors.IsNotFound(err) {
 		return nil, false, err
@@ -136,46 +121,41 @@ func (s *Service) getOrCreatePod(ctx context.Context, operation *corev1.ConfigMa
 		return nil, false, err
 	}
 
-	return pod, created, nil
+	return publicationports.NewSourceWorkerHandle(
+		pod.Name,
+		pod.Status.Phase,
+		func(ctx context.Context) error {
+			return s.deletePod(ctx, pod)
+		},
+	), created, nil
 }
 
 func (s *Service) deletePod(ctx context.Context, pod *corev1.Pod) error {
 	if s == nil || pod == nil {
 		return nil
 	}
-	if err := s.deleteProjectedAuthSecret(ctx, pod); err != nil {
+	secret, err := s.projectedAuthSecretForPod(pod)
+	if err != nil {
 		return err
 	}
-	return client.IgnoreNotFound(s.client.Delete(ctx, pod))
+	return ownedresource.DeleteAll(ctx, s.client, secret, pod)
 }
 
-func (s *Service) deleteProjectedAuthSecret(ctx context.Context, pod *corev1.Pod) error {
+func (s *Service) projectedAuthSecretForPod(pod *corev1.Pod) (*corev1.Secret, error) {
 	ownerUID, ok := resourcenames.OwnerUIDFromLabels(pod.Labels)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 
 	secretName, err := resourcenames.SourceWorkerAuthSecretName(ownerUID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	secret := &corev1.Secret{}
-	secret.Name = secretName
-	secret.Namespace = s.options.Namespace
-	return client.IgnoreNotFound(s.client.Delete(ctx, secret))
-}
-
-func sourceWorkerHandleFromPod(service *Service, pod *corev1.Pod) *publicationports.SourceWorkerHandle {
-	if pod == nil {
-		return nil
-	}
-
-	return publicationports.NewSourceWorkerHandle(
-		pod.Name,
-		pod.Status.Phase,
-		func(ctx context.Context) error {
-			return service.deletePod(ctx, pod)
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: s.options.Namespace,
 		},
-	)
+	}, nil
 }

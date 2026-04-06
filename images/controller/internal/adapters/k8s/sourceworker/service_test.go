@@ -65,12 +65,20 @@ func TestServiceGetOrCreateSetsControllerOwnerReference(t *testing.T) {
 	request.OperationName = ""
 	request.OperationNamespace = ""
 
-	pod, created, err := service.getOrCreatePod(context.Background(), operation, request)
+	handle, created, err := service.GetOrCreate(context.Background(), operation, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}
 	if !created {
 		t.Fatal("expected pod to be created")
+	}
+	if handle == nil {
+		t.Fatal("expected source worker handle")
+	}
+
+	pod := &corev1.Pod{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: handle.Name, Namespace: "d8-ai-models"}, pod); err != nil {
+		t.Fatalf("Get(stored pod) error = %v", err)
 	}
 	if len(pod.OwnerReferences) != 1 {
 		t.Fatalf("unexpected owner reference count %d", len(pod.OwnerReferences))
@@ -80,12 +88,8 @@ func TestServiceGetOrCreateSetsControllerOwnerReference(t *testing.T) {
 		t.Fatalf("unexpected owner reference %#v", owner)
 	}
 
-	stored := &corev1.Pod{}
-	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(pod), stored); err != nil {
-		t.Fatalf("Get(stored pod) error = %v", err)
-	}
-	if len(stored.OwnerReferences) != 1 {
-		t.Fatalf("unexpected stored owner reference count %d", len(stored.OwnerReferences))
+	if len(pod.OwnerReferences) != 1 {
+		t.Fatalf("unexpected stored owner reference count %d", len(pod.OwnerReferences))
 	}
 }
 
@@ -139,12 +143,20 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 	request.OperationName = ""
 	request.OperationNamespace = ""
 
-	pod, created, err := service.getOrCreatePod(context.Background(), operation, request)
+	handle, created, err := service.GetOrCreate(context.Background(), operation, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}
 	if !created {
 		t.Fatal("expected pod to be created")
+	}
+	if handle == nil {
+		t.Fatal("expected source worker handle")
+	}
+
+	pod := &corev1.Pod{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: handle.Name, Namespace: "d8-ai-models"}, pod); err != nil {
+		t.Fatalf("Get(stored pod) error = %v", err)
 	}
 
 	secretName, err := resourcenames.SourceWorkerAuthSecretName(request.Request.Owner.UID)
@@ -170,7 +182,7 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 		t.Fatalf("unexpected projected secret owner reference count %d", len(projected.OwnerReferences))
 	}
 
-	if err := service.deletePod(context.Background(), pod); err != nil {
+	if err := handle.Delete(context.Background()); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 	if err := kubeClient.Get(

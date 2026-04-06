@@ -17,8 +17,8 @@ limitations under the License.
 package uploadsession
 
 import (
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publication"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publication"
+	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 )
 
 func requestPlan(request publicationports.OperationContext) (publicationapp.UploadSessionPlan, error) {

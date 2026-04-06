@@ -62,7 +62,7 @@ Do not keep the following in reconciler files:
 Cut the current controller in this order:
 
 1. `controllers/catalogstatus`
-2. `controllers/publicationops`
+2. `controllers/publishrunner`
 3. `adapters/k8s/uploadsession`
 
 Do not add new feature logic to these packages before checking whether the
@@ -72,6 +72,8 @@ current slice should instead reduce their responsibility first.
 
 Keep the remaining controller runtime tree readable:
 
+- `internal/bootstrap/*`
+  - only controller composition root and manager wiring
 - `internal/controllers/*`
   - only concrete reconcilers and their thin persistence/observation shells
 - `internal/adapters/k8s/*`
@@ -84,13 +86,22 @@ Keep the remaining controller runtime tree readable:
 Do not reintroduce a flat top-level patchwork where controller reconcilers,
 Kubernetes resource builders and shared helpers all sit side by side.
 
+Do not keep an `internal/app` package next to `internal/application`. That
+pair is semantically ambiguous in a hexagonal tree. Composition root packages
+must be named by responsibility, for example `internal/bootstrap`.
+
+Do not keep four generic folders named around one vague word such as
+`publication` across `internal/`, `application/`, `domain/`, and `ports/`
+when each one actually owns a narrower responsibility. Use role-based names
+such as `publishedsnapshot`, `publishplan`, `publishstate`, and `publishop`.
+
 Do not recreate package-local `names.go` wrappers for Pod/Service/Secret/Job/
 ConfigMap names unless they add a real new boundary. Canonical resource naming
 belongs in `internal/support/resourcenames`.
 
 Do not mirror shared publication runtime input through adapter-local `Request`
 or `OwnerRef` wrapper types unless the adapter truly needs a different contract.
-Concrete adapters should consume `publication.OperationContext` directly and keep
+Concrete adapters should consume `publishop.OperationContext` directly and keep
 only adapter-specific planning helpers.
 
 Do not keep a separate `runtime.go` proxy over the same concrete adapter object
@@ -133,7 +144,7 @@ Relevant files:
 - `tools/check-controller-loc.sh`
 - `tools/check-thin-reconcilers.sh`
 - `tools/test-controller-coverage.sh`
-- `tools/check-controller-branch-matrix.sh`
+- `tools/check-controller-test-evidence.sh`
 
 Current thresholds:
 
@@ -143,6 +154,15 @@ Current thresholds:
 
 Temporary debt must be explicit through allowlists under `tools/`, not hidden in
 the code or in chat context.
+
+Controller verification must stay explicit in naming and ownership:
+
+- controller-specific deadcode checks must have a first-class target
+  (`deadcode-controller`)
+- if hooks and controller checks share one shell script, controller output
+  must run first and be labeled as required
+- review should treat misleading verification output as architecture/tooling
+  debt, not as a harmless wording issue
 
 ## Test evidence
 
@@ -168,6 +188,10 @@ Shared fixture discipline:
 - helper files must not become a second hidden business-logic layer
 - shared ports should be implemented in the concrete adapter package that owns
   the underlying CRUD/build behavior, not in a controller-side shim
+- keep controller test evidence centralized in
+  `images/controller/TEST_EVIDENCE.ru.md`; do not reintroduce scattered
+  package-local `BRANCH_MATRIX.ru.md` files that create uneven rules across the
+  tree
 
 If the change mostly moves logic between packages, tests still need to prove
 that the decision surface is preserved.

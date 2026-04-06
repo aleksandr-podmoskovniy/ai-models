@@ -1,6 +1,6 @@
 ---
 name: controller-architecture-discipline
-description: Use for ai-models controller implementation or refactor work when the task touches images/controller/internal. Encodes the current corrective discipline: hexagonal split, no new feature work on fat controller packages, thin reconcilers, quality-gate compliance, and branch-matrix testing.
+description: Use for ai-models controller implementation or refactor work when the task touches images/controller/internal. Encodes the current corrective discipline: hexagonal split, no new feature work on fat controller packages, thin reconcilers, quality-gate compliance, and centralized controller test evidence.
 ---
 
 # Controller architecture discipline
@@ -32,7 +32,8 @@ description: Use for ai-models controller implementation or refactor work when t
 6. Keep K8s object rendering and persistence semantics in adapter code.
 7. Follow the corrective cut order from `references/controller-discipline.md` unless the current task bundle explicitly justifies a different slice.
 8. Before closing a slice, make sure it still passes controller quality gates from `make verify`.
-9. Require branch/state-matrix testing for lifecycle logic; do not treat happy-path adapter tests as sufficient evidence.
+9. Require state-matrix testing for lifecycle logic plus centralized controller
+   test evidence; do not treat happy-path adapter tests as sufficient evidence.
 
 ## Hard rules
 

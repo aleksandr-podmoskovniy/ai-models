@@ -24,6 +24,15 @@
 - Почему не в bundle: bundle меняется по slice’ам, а структура tree должна
   иметь устойчивый source of truth рядом с кодом.
 
+### [TEST_EVIDENCE.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/TEST_EVIDENCE.ru.md)
+
+- Назначение: единый inventory decision-coverage для domain/application пакетов.
+- Почему здесь: evidence относится ко всему controller tree, а не к одному
+  package.
+- Почему не как `BRANCH_MATRIX.ru.md` в каждом пакете: локальные matrix-файлы
+  создавали лоскутное правило “где-то есть, где-то нет”. Один controller-level
+  документ проще, однозначнее и легче проверяется в `verify`.
+
 ### [go.mod](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/go.mod)
 
 - Назначение: отдельный module boundary для controller runtime.
@@ -53,101 +62,115 @@
 
 - Назначение: минимальный process entrypoint.
 - Почему здесь: это стандартный Go `cmd` main package.
-- Почему не в `internal/app`: `main` не является reusable application logic.
+- Почему не в `internal/bootstrap`: `main` не является reusable bootstrap logic.
 
 ### [cmd/ai-models-controller/run.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/cmd/ai-models-controller/run.go)
 
 - Назначение: CLI/env parsing и wiring runtime options.
-- Почему здесь: это outer shell вокруг `internal/app`.
-- Почему не в `internal/app`: app должен принимать уже нормализованные options,
+- Почему здесь: это outer shell вокруг `internal/bootstrap`.
+- Почему не в `internal/bootstrap`: bootstrap должен принимать уже нормализованные options,
   а не заниматься argv/env parsing.
 
-## 3. `internal/app/`
+## 3. `internal/bootstrap/`
 
-`internal/app` — bootstrap layer. Он собирает manager и controllers, но не
-содержит доменной логики publication/delete.
+`internal/bootstrap` — bootstrap layer. Он собирает manager и controllers, но
+не содержит доменной логики publication/delete.
 
-### [internal/app/app.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/app/app.go)
+- Почему не `internal/app`: рядом уже есть `internal/application`, и пара
+  `app/application` создаёт ложную двусмысленность в гексагональном дереве.
+  Composition root должен называться по ответственности, а не по общему слову.
+
+### [internal/bootstrap/bootstrap.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/bootstrap/bootstrap.go)
 
 - Назначение: composition root controller runtime.
 - Почему здесь: это application bootstrap, не adapter и не domain.
 - Почему не в `cmd/`: `cmd` должен оставаться тонким и не держать wiring дерева.
 
-### [internal/app/app_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/app/app_test.go)
+### [internal/bootstrap/bootstrap_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/bootstrap/bootstrap_test.go)
 
 - Назначение: проверка bootstrap contract.
-- Почему здесь: тестирует именно `internal/app`.
+- Почему здесь: тестирует именно `internal/bootstrap`.
 - Почему не в controller packages: это не lifecycle behavior, а runtime wiring.
 
-## 4. `internal/domain/publication/`
+## 4. `internal/domain/publishstate/`
 
 Это чистый domain слой publication lifecycle. Здесь нет Kubernetes API CRUD,
 нет `client.Client`, нет `ConfigMap` serialization.
 
-### [internal/domain/publication/BRANCH_MATRIX.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/BRANCH_MATRIX.ru.md)
+- Почему не `domain/publication`: generic имя `publication` уже использовалось
+  в нескольких соседних слоях и делало tree двусмысленным. Здесь хранится
+  именно lifecycle/state semantics, поэтому пакет должен называться
+  `publishstate`.
 
-- Назначение: decision matrix для publication domain.
-- Почему здесь: branch evidence должен жить рядом с decision package.
-- Почему не только в bundle: матрица нужна как локальная поддерживаемая память.
-
-### [internal/domain/publication/operation.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/operation.go)
+### [internal/domain/publishstate/operation.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publishstate/operation.go)
 
 - Назначение: publication phases и terminal semantics.
 - Почему здесь: это domain vocabulary.
 - Почему не в adapters: concrete adapters не должны определять lifecycle terms.
 
-### [internal/domain/publication/status.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/status.go)
+### [internal/domain/publishstate/status.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publishstate/status.go)
 
 - Назначение: projection rules `Observation -> ModelStatus`.
 - Почему здесь: это чистое доменное решение.
 - Почему не в `controllers/catalogstatus`: reconciler только читает и пишет,
   но не должен владеть rule table.
 
-### [internal/domain/publication/conditions.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/conditions.go)
+### [internal/domain/publishstate/conditions.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publishstate/conditions.go)
 
 - Назначение: canonical condition/status assembly.
 - Почему здесь: условия — часть domain semantics каталога.
 - Почему не в API package: это runtime decision logic, а не API type shape.
 
-### [internal/domain/publication/runtime_decisions.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/runtime_decisions.go)
+### [internal/domain/publishstate/runtime_decisions.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publishstate/runtime_decisions.go)
 
 - Назначение: интерпретация worker/session observation.
 - Почему здесь: это domain decision table.
-- Почему не в `publicationops`: adapter не должен решать бизнес-исход.
+- Почему не в `publishrunner`: adapter не должен решать бизнес-исход.
 
 ### Tests
 
-- [operation_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/operation_test.go)
-- [status_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/status_test.go)
-- [runtime_decisions_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publication/runtime_decisions_test.go)
+#### [operation_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publishstate/operation_test.go)
 
-Назначение: state/decision tests для domain слоя.
+- Назначение: проверяет phase vocabulary и terminal/equality semantics.
+
+#### [status_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publishstate/status_test.go)
+
+- Назначение: проверяет `Observation -> public status` projection и ready/fail
+  branches.
+
+#### [runtime_decisions_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/domain/publishstate/runtime_decisions_test.go)
+
+- Назначение: проверяет decision tables для source-worker и upload-session
+  observations.
+
+Decision evidence для пакета централизована в
+[TEST_EVIDENCE.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/TEST_EVIDENCE.ru.md),
+а не в локальном `BRANCH_MATRIX.ru.md`.
 
 ## 5. `internal/application/`
 
 `application` — use-case слой. Он связывает domain и input contract, но не
 строит Kubernetes resources.
 
-### `internal/application/publication/`
+### `internal/application/publishplan/`
 
-#### [BRANCH_MATRIX.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/BRANCH_MATRIX.ru.md)
+- Почему не `application/publication`: в application слое здесь не “вся
+  publication”, а именно planning/selecting use cases. Generic имя повторяло
+  домен и порты без добавления смысла.
 
-- Назначение: matrix для publication use cases.
-- Почему здесь: application decisions должны иметь локальную evidence map.
-
-#### [start_publication.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/start_publication.go)
+#### [start_publication.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publishplan/start_publication.go)
 
 - Назначение: выбрать execution mode для source.
 - Почему здесь: это orchestration use case между spec и runtime path.
 - Почему не в domain: зависит от текущего implementation path.
 
-#### [plan_source_worker.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/plan_source_worker.go)
+#### [plan_source_worker.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publishplan/plan_source_worker.go)
 
 - Назначение: нормализовать `HF`/`HTTP` в worker plan.
 - Почему здесь: это use-case planning, а не Kubernetes Pod rendering.
 - Почему не в `sourceworker`: adapter должен принимать уже спланированный input.
 
-#### [issue_upload_session.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/issue_upload_session.go)
+#### [issue_upload_session.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publishplan/issue_upload_session.go)
 
 - Назначение: валидация и planning upload session.
 - Почему здесь: это use-case policy.
@@ -155,18 +178,26 @@
 
 #### Tests
 
-- [start_publication_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/start_publication_test.go)
-- [plan_source_worker_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/plan_source_worker_test.go)
-- [issue_upload_session_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publication/issue_upload_session_test.go)
+#### [start_publication_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publishplan/start_publication_test.go)
 
-Назначение: decision tests use-case слоя.
+- Назначение: проверяет выбор execution mode и fail-closed behavior для source
+  kinds.
+
+#### [plan_source_worker_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publishplan/plan_source_worker_test.go)
+
+- Назначение: проверяет source worker plan normalization, auth secret mapping и
+  guarded failures.
+
+#### [issue_upload_session_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/publishplan/issue_upload_session_test.go)
+
+- Назначение: проверяет upload session issuance policy и rejection branches.
+
+Назначение блока: decision tests use-case слоя.
+Decision evidence для пакета централизована в
+[TEST_EVIDENCE.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/TEST_EVIDENCE.ru.md),
+а не в локальном `BRANCH_MATRIX.ru.md`.
 
 ### `internal/application/deletion/`
-
-#### [BRANCH_MATRIX.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/deletion/BRANCH_MATRIX.ru.md)
-
-- Назначение: matrix delete/finalizer policy.
-- Почему здесь: локальная evidence map для delete use cases.
 
 #### [ensure_cleanup_finalizer.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/deletion/ensure_cleanup_finalizer.go)
 
@@ -181,45 +212,70 @@
 
 #### Tests
 
-- [ensure_cleanup_finalizer_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/deletion/ensure_cleanup_finalizer_test.go)
-- [finalize_delete_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/deletion/finalize_delete_test.go)
+#### [ensure_cleanup_finalizer_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/deletion/ensure_cleanup_finalizer_test.go)
 
-## 6. `internal/ports/publication/`
+- Назначение: проверяет правила постановки и пропуска finalizer.
+
+#### [finalize_delete_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/application/deletion/finalize_delete_test.go)
+
+- Назначение: проверяет delete decision table по cleanup observation и failure
+  branches.
+
+Decision evidence для пакета централизована в
+[TEST_EVIDENCE.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/TEST_EVIDENCE.ru.md),
+а не в локальном `BRANCH_MATRIX.ru.md`.
+
+## 6. `internal/ports/publishop/`
 
 Порты — shared boundary между use cases/domain и concrete adapters.
 
-### [operation_contract.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publication/operation_contract.go)
+### [operation_contract.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publishop/operation_contract.go)
 
 - Назначение: shared operation contract primitives.
 - Почему здесь: это reusable port contract.
-- Почему не в `publicationops`: adapter не должен владеть shared contract.
+- Почему не в `publishrunner`: adapter не должен владеть shared contract.
+- Почему не `ports/publication`: пакет содержит не “всю publication”, а
+  operation/runtime contract для controller-owned execution boundary.
 
-### [ports.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publication/ports.go)
+### [ports.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publishop/ports.go)
 
 - Назначение: shared runtime interfaces и worker/session handles.
 - Почему здесь: это reusable seam between controller and concrete adapters.
 - Почему не в domain: это infrastructural contracts, а не business vocabulary.
+- Почему source worker и upload session теперь оба идут через `GetOrCreate`:
+  concrete runtime adapters не должны расходиться по surface area без реальной
+  поведенческой причины; раньше отдельный `Get` у `sourceworker` только держал
+  лишнюю асимметрию и подталкивал `publishrunner` к лишнему create-vs-observe
+  split.
 - Почему не держит `OperationStore`: persisted `ConfigMap` protocol сейчас не
   является сменным shared seam; это controller-local storage boundary внутри
-  `publicationops`, и выносить его в shared ports без второго адаптера было
+  `publishrunner`, и выносить его в shared ports без второго адаптера было
   ложной абстракцией.
 
 ### Tests
 
-- [operation_contract_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publication/operation_contract_test.go)
-- [ports_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publication/ports_test.go)
+#### [operation_contract_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publishop/operation_contract_test.go)
 
-## 7. `internal/publication/`
+- Назначение: проверяет operation contract primitives и ownership helpers.
 
-`publication` — immutable handoff model между publication, status и cleanup.
+#### [ports_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/publishop/ports_test.go)
 
-### [snapshot.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/publication/snapshot.go)
+- Назначение: проверяет runtime-port shapes и handle contracts.
+
+## 7. `internal/publishedsnapshot/`
+
+`publishedsnapshot` — immutable handoff model между publish, status и cleanup.
+
+### [snapshot.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/publishedsnapshot/snapshot.go)
 
 - Назначение: canonical published snapshot model.
 - Почему здесь: это cross-cutting controller handoff model.
 - Почему не в API: это internal runtime shape, не public CRD schema.
+- Почему не просто `internal/publication`: generic имя конфликтовало с
+  `application/`, `domain/` и `ports/` слоями; здесь хранится именно snapshot
+  published artifact/result.
 
-### [snapshot_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/publication/snapshot_test.go)
+### [snapshot_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/publishedsnapshot/snapshot_test.go)
 
 - Назначение: validates snapshot contract.
 
@@ -255,8 +311,11 @@ shell files.
 
 #### [options.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/options.go)
 
-- Назначение: setup/runtime options и thin reconciler types.
+- Назначение: только setup/runtime options и thin reconciler types.
 - Почему здесь: options принадлежат concrete controller.
+- Почему здесь нет `RequeueAfter`: polling cadence для status owner не является
+  module/runtime contract. Это локальная lifecycle policy и она должна жить
+  рядом с reconcile path, а не притворяться operator option.
 
 #### [reconciler.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/reconciler.go)
 
@@ -275,13 +334,16 @@ shell files.
 
 #### Tests
 
-- [reconciler_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/reconciler_test.go)
-- [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/test_helpers_test.go)
+#### [reconciler_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/reconciler_test.go)
 
-Почему `test_helpers_test.go` отдельно:
-- хранит adapter-local fixtures и operation result builders;
-- не размазывает этот шум по каждому test case;
-- при этом общие scheme/object fixtures уже вынесены в `support/testkit`.
+- Назначение: проверяет public status projection, request creation и corrupted
+  operation replay behavior.
+
+#### [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/test_helpers_test.go)
+
+- Назначение: держит adapter-local operation/status fixtures и result builders.
+- Почему отдельно: не размазывает этот шум по каждому test case, но и не
+  создаёт второй shared fixture layer поверх `support/testkit`.
 
 ### `internal/controllers/catalogcleanup/`
 
@@ -302,32 +364,60 @@ shell files.
 - Почему не split на `observation.go` и `persistence.go`: это снова был
   искусственный micro-split без отдельного reusable seam.
 
+#### [job.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogcleanup/job.go)
+
+- Назначение: controller-local build/inspect shell для cleanup `Job`.
+- Почему здесь: cleanup `Job` существует только как деталь delete-flow внутри
+  `catalogcleanup`; второго cleanup adapter нет, значит отдельный
+  `adapters/k8s/cleanupjob` был ложной границей.
+- Почему не в `internal/adapters/k8s`: там должны оставаться только реально
+  reusable K8s adapters, а не одноразовые builder packages под один controller.
+
 #### Tests
 
-- [reconciler_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogcleanup/reconciler_test.go)
-- [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogcleanup/test_helpers_test.go)
+#### [job_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogcleanup/job_test.go)
 
-### `internal/controllers/publicationops/`
+- Назначение: проверяет cleanup job rendering и label/owner wiring.
+
+#### [reconciler_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogcleanup/reconciler_test.go)
+
+- Назначение: проверяет finalizer lifecycle, malformed handle и failed cleanup
+  job branches.
+
+#### [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogcleanup/test_helpers_test.go)
+
+- Назначение: держит controller-local delete fixtures и cleanup job builders.
+
+### `internal/controllers/publishrunner/`
 
 Это concrete durable execution boundary вокруг operation `ConfigMap`. Здесь
 должны оставаться только три реальные ответственности: outer reconcile shell,
 persisted `ConfigMap` protocol и source/upload runtime orchestration.
 
-#### [options.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/options.go)
+- Почему не `publicationops`: `ops` слишком vague и не объясняет роль пакета.
+  Здесь controller именно запускает и ведёт durable publication run, поэтому
+  concrete controller boundary названа `publishrunner`.
+
+#### [options.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/options.go)
 
 - Назначение: controller options и setup.
+- Почему здесь нет `RequeueAfter`: polling ожидания `worker-result.json` — это
+  локальная lifecycle policy source-worker branch, а не внешний setup knob;
+  держать её в options было той же ошибкой, что и раньше в `catalogstatus`.
 
-#### [reconciler.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/reconciler.go)
+#### [reconciler.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/reconciler.go)
 
 - Назначение: thin outer reconcile shell.
+- Логика внутри: только object load, branch dispatch, minimal failure/result
+  persistence и controller-runtime `Result`.
 
-#### [configmap_protocol.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/configmap_protocol.go)
+#### [configmap_protocol.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/configmap_protocol.go)
 
 - Назначение: весь concrete `ConfigMap` protocol boundary:
   keys/constants, decode/encode, mutate persisted state, validate persisted
   status, view persisted status as domain operation view.
 - Почему здесь: это одна concrete storage protocol boundary для
-  `publicationops`.
+  `publishrunner`.
 - Почему не split на `constants.go`, `configmap_codec.go`,
   `configmap_mutation.go`, `status.go`: отдельной архитектурной выгоды от
   такого дробления не было; один bounded protocol file оказался честнее и
@@ -335,31 +425,35 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 - Почему внутри файла всё ещё есть create/read/mutate helpers: это один
   persisted protocol boundary; здесь важнее сохранить один honest seam, чем
   снова разнести его по нескольким псевдослоям.
+- Почему внутри файла теперь есть generic decode/store helpers: это не новый
+  слой, а локальный способ убрать ручной JSON/unmarshal/marshal boilerplate из
+  того же bounded protocol seam; helper’ы не переживают границу файла и не
+  превращаются в shared utility package.
 
-#### [store.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/store.go)
-
-- Назначение: controller-local persistence helpers для durable operation
-  `ConfigMap`.
-- Почему здесь: это тот же concrete persisted protocol boundary, но уже на
-  уровне `client.Update` и terminal/running apply shell.
-- Почему не в `internal/ports/publication`: второго store adapter нет; прежний
-  shared `OperationStore` был ложной абстракцией и удалён.
-- Почему не в `reconciler.go`: это concrete persistence detail, а не outer
-  reconcile shell.
-
-#### [source.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/source.go)
+#### [source.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/source.go)
 
 - Назначение: adapter path для source worker operation branch.
+- Логика внутри: один entrypoint вокруг `GetOrCreate`, local waiting policy и
+  apply source-worker terminal result to the persisted operation state.
+- Почему здесь больше нет отдельного create-vs-observe shell: после выравнивания
+  runtime contract по одному `GetOrCreate` separate wrapper перестал добавлять
+  смысл и только размазывал один и тот же branch по двум функциям.
+- Почему здесь есть `sourceWorkerResultPollInterval`: waiting for
+  `worker-result.json` — это concrete branch behavior именно source-worker
+  flow; переносить его обратно в setup options или shared port было бы ложной
+  абстракцией.
 
-#### [upload.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/upload.go)
+#### [upload.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/upload.go)
 
 - Назначение: adapter path для upload session branch.
+- Логика внутри: issue/reuse upload session, observe session state, map upload
+  terminal result and expiry/failure branches into the persisted operation.
 
-#### [worker_result.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/worker_result.go)
+#### [worker_result.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/worker_result.go)
 
 - Назначение: один shared helper для decode `worker-result.json` и перевода его
   в domain `PublicationSuccess`, плюс нормализация fallback failure message.
-- Почему здесь: это shared concrete helper именно для `publicationops` runtime
+- Почему здесь: это shared concrete helper именно для `publishrunner` runtime
   branches; он одинаково нужен `source` и `upload`, но не является ни domain,
   ни store, ни K8s adapter boundary.
 - Почему не дублировать в `source.go` и `upload.go`: эта duplication уже была
@@ -367,23 +461,31 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 
 #### Tests
 
-- [reconcile_core_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/reconcile_core_test.go)
-- [reconcile_source_worker_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/reconcile_source_worker_test.go)
-- [reconcile_upload_session_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/reconcile_upload_session_test.go)
-- [configmap_protocol_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/configmap_protocol_test.go)
-- [store_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/store_test.go)
-- [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publicationops/test_helpers_test.go)
+#### [reconcile_core_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/reconcile_core_test.go)
 
-Почему tests теперь split именно так:
-- `reconcile_core_test.go` держит invariant/fail-closed lifecycle without runtime
-  branch details
-- `reconcile_source_worker_test.go` держит source worker family
-- `reconcile_upload_session_test.go` держит upload session family
-- `configmap_protocol_test.go` теперь держит весь persisted protocol boundary,
-  включая codec/mutation/status validation, потому что это одна concrete seam
-- package-local `test_helpers_test.go` теперь держит только minimal bootstrap,
-  canonical scenario requests/results и не строит второй shadow API над
-  production contract
+- Назначение: invariant/fail-closed lifecycle cases without runtime-branch
+  specifics.
+
+#### [reconcile_source_worker_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/reconcile_source_worker_test.go)
+
+- Назначение: source-worker family including start, waiting and terminal-result
+  branches.
+
+#### [reconcile_upload_session_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/reconcile_upload_session_test.go)
+
+- Назначение: upload-session family including issue, ready/running, expiry and
+  terminal-result branches.
+
+#### [configmap_protocol_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/configmap_protocol_test.go)
+
+- Назначение: one concrete persisted-protocol boundary: decoder/accessor,
+  upload payload, mutation and status-validation families.
+
+#### [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/test_helpers_test.go)
+
+- Назначение: minimal bootstrap and canonical scenario fixtures.
+- Почему отдельно: он не строит второй shadow API над production contract, а
+  только стабилизирует test input shape for the package.
 
 Почему package всё ещё требует следующего круга reduction:
 - persisted `ConfigMap` protocol и source/upload branches пока живут рядом;
@@ -393,19 +495,7 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 
 ## 10. `internal/adapters/k8s/`
 
-Это concrete Kubernetes object/service builders и CRUD adapters.
-
-### `internal/adapters/k8s/cleanupjob/`
-
-#### [job.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/cleanupjob/job.go)
-
-- Назначение: build cleanup `Job` и inspect complete/failed state.
-- Почему здесь: concrete K8s Job adapter.
-- Почему не в `catalogcleanup`: controller не должен строить Job inline.
-
-#### [job_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/cleanupjob/job_test.go)
-
-- Назначение: verify cleanup job materialization.
+Это concrete reusable Kubernetes object/service builders и CRUD adapters.
 
 ### `internal/adapters/k8s/ociregistry/`
 
@@ -424,19 +514,21 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 
 Это shared concrete K8s object IO helper для controlled resources.
 
-#### [create_or_get.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/ownedresource/create_or_get.go)
+#### [lifecycle.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/ownedresource/lifecycle.go)
 
-- Назначение: один canonical helper для
-  `SetControllerReference -> Create -> AlreadyExists -> Get`.
+- Назначение: canonical K8s owned-resource lifecycle helpers:
+  `SetControllerReference -> Create -> AlreadyExists -> Get` и
+  `Delete(ignore-not-found)` для controlled objects.
 - Почему здесь: это общий K8s adapter lifecycle shell, а не business logic и не
   `support/*` helper.
 - Почему не в `sourceworker`/`uploadsession`: один и тот же controlled create
-  flow уже повторялся в нескольких adapter packages и не должен снова
+  и delete flow уже повторялся в нескольких adapter packages и не должен снова
   размножаться локально.
 
-#### [create_or_get_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/ownedresource/create_or_get_test.go)
+#### [lifecycle_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/ownedresource/lifecycle_test.go)
 
-- Назначение: verify create-vs-reuse behavior and owner reference wiring.
+- Назначение: verify create-vs-reuse, owner reference wiring и shared delete
+  behavior.
 
 ### `internal/adapters/k8s/workloadpod/`
 
@@ -465,7 +557,7 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 #### [validation.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/validation.go)
 
 - Назначение: validate concrete source-worker options и map shared
-  `publication.OperationContext` в application plan.
+  `publishop.OperationContext` в application plan.
 - Почему здесь: adapter должен валидировать свой own runtime input, но не
   дублировать shared request contract локальными `Request/OwnerRef` типами.
 
@@ -489,27 +581,46 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
   Pod/auth-secret CRUD.
 - Почему не держит свои `*NameFor()` helpers: resource naming — общий support
   concern, а не `sourceworker`-specific API.
-- Почему без отдельного `runtime.go`: отдельный runtime-proxy над тем же самым
-  concrete объектом не добавлял границы, а только дублировал handle wrapping и
-  раздувал adapter tree.
+- Почему без отдельного `runtime.go`, `NewRuntime` и отдельного `Get`: сам
+  `Service` уже является concrete runtime adapter, а второй constructor path и
+  лишний read-only runtime method только дублировали wiring и расходились по
+  surface area с `uploadsession` без новой границы.
 - Почему не open-code `SetControllerReference/Create/Get`: controlled create
   flow вынесен в `adapters/k8s/ownedresource`, чтобы такой K8s IO shell не
   дублировался между worker/session adapters.
+- Почему delete path тоже не open-code: shared ignore-not-found delete shell
+  теперь живёт там же, в `adapters/k8s/ownedresource`.
 
 #### Tests
 
-- [validation_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/validation_test.go)
-- [build_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/build_test.go)
-- [auth_secret_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/auth_secret_test.go)
-- [service_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/service_test.go)
-- [runtime_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/runtime_test.go)
-- [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/test_helpers_test.go)
+#### [validation_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/validation_test.go)
 
-Почему `test_helpers_test.go` здесь оправдан:
-- хранит один canonical `OperationContext` и options fixture для package-level
-  adapter tests;
-- убирает repeated inline request literals после отказа от local request types;
-- не прячет business logic, а только стабилизирует test input shape.
+- Назначение: проверяет concrete input validation and guarded failures.
+
+#### [build_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/build_test.go)
+
+- Назначение: проверяет worker pod rendering, command/env and mounted
+  supplements.
+
+#### [auth_secret_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/auth_secret_test.go)
+
+- Назначение: проверяет projected auth-secret material shape and key mapping.
+
+#### [service_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/service_test.go)
+
+- Назначение: проверяет service-level CRUD/reuse behavior and error mapping.
+
+#### [service_roundtrip_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/service_roundtrip_test.go)
+
+- Назначение: проверяет concrete adapter seam `GetOrCreate -> handle -> Delete`.
+- Почему отдельно: это adapter smoke contract, а не “runtime layer test”.
+
+#### [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/test_helpers_test.go)
+
+- Назначение: держит один canonical `OperationContext` и options fixture для
+  package-level adapter tests.
+- Почему отдельно: убирает repeated inline request literals после отказа от
+  local request types и не прячет business logic.
 
 ### `internal/adapters/k8s/uploadsession/`
 
@@ -522,7 +633,7 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 
 #### [request.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/request.go)
 
-- Назначение: validate shared `publication.OperationContext` и map его в upload
+- Назначение: validate shared `publishop.OperationContext` и map его в upload
   session plan.
 - Почему не через local request type: upload adapter больше не зеркалит shared
   port contract локальными `Request/OwnerRef`.
@@ -559,23 +670,44 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
   internal CRUD for session `Pod` / `Service` / `Secret`.
 - Почему не содержит package-local name helpers: session CRUD использует общий
   owner-based naming support и не должен раздувать adapter-local API.
-- Почему без отдельного `runtime.go`: отдельный runtime wrapper над тем же
-  concrete session adapter не приносил новой архитектурной границы и только
-  плодил proxy-layer.
+- Почему без отдельного `runtime.go`, `NewRuntime` и лишнего public `Get`:
+  concrete runtime adapter здесь уже сам `Service`, а дополнительные proxy
+  wrappers и read-only method без use site только плодили surface area без
+  новой границы.
+- Почему delete path не open-code: shared delete shell теперь живёт в
+  `adapters/k8s/ownedresource`, чтобы Pod/Service/Secret cleanup не
+  копировался по adapters.
 
 #### Tests
 
-- [service_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/service_test.go)
-- [replay_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/replay_test.go)
-- [status_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/status_test.go)
-- [runtime_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/runtime_test.go)
-- [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/test_helpers_test.go)
+#### [service_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/service_test.go)
 
-Почему `test_helpers_test.go` здесь оправдан:
-- хранит один canonical upload `OperationContext`, options fixture и tiny generic
-  helpers вместо repeated session request literals;
-- делает package tests поддерживаемыми после удаления local request wrappers;
-- остаётся чисто test-only layer и не тащит runtime decisions.
+- Назначение: проверяет CRUD/reuse behavior и error mapping для session
+  supplements.
+
+#### [replay_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/replay_test.go)
+
+- Назначение: проверяет replay and recreate branches around existing session
+  resources.
+
+#### [status_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/status_test.go)
+
+- Назначение: проверяет derived upload-status aggregation from created
+  resources.
+
+#### [service_roundtrip_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/service_roundtrip_test.go)
+
+- Назначение: проверяет concrete session adapter seam
+  `GetOrCreate -> derived upload status -> Delete`.
+- Почему отдельно: это smoke on adapter contract, а не отдельный “runtime
+  layer test”.
+
+#### [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/test_helpers_test.go)
+
+- Назначение: хранит canonical upload `OperationContext`, options fixture и
+  tiny generic helpers вместо repeated session request literals.
+- Почему отдельно: делает package tests поддерживаемыми после удаления local
+  request wrappers и остаётся чисто test-only layer.
 
 ## 11. `internal/support/`
 
@@ -611,8 +743,8 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 
 - Назначение: единый canonical policy для owner-based resource naming,
   owner-label rendering/extraction и label normalization.
-- Почему здесь: эти правила реально shared между `publicationops`,
-  `cleanupjob`, `sourceworker` и `uploadsession`.
+- Почему здесь: эти правила реально shared между `publishrunner`,
+  `catalogcleanup`, `sourceworker` и `uploadsession`.
 - Почему не в каждом adapter package: duplication уже была именно ошибкой;
   package-local `names.go` не несли отдельной архитектурной границы и только
   плодили лишние файлы.

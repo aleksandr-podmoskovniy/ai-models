@@ -18,12 +18,11 @@ package catalogstatus
 
 import (
 	"testing"
-	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/controllers/publicationops"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publication"
-	"github.com/deckhouse/ai-models/controller/internal/publication"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/publishrunner"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
@@ -43,10 +42,9 @@ func newModelReconciler(t *testing.T, objects ...client.Object) (*ModelReconcile
 
 	return &ModelReconciler{baseReconciler{
 		client: kubeClient,
-		options: normalizeOptions(Options{
+		options: Options{
 			OperationNamespace: "d8-ai-models",
-			RequeueAfter:       time.Second,
-		}),
+		},
 	}}, kubeClient
 }
 
@@ -63,10 +61,9 @@ func newClusterModelReconciler(t *testing.T, objects ...client.Object) (*Cluster
 
 	return &ClusterModelReconciler{baseReconciler{
 		client: kubeClient,
-		options: normalizeOptions(Options{
+		options: Options{
 			OperationNamespace: "d8-ai-models",
-			RequeueAfter:       time.Second,
-		}),
+		},
 	}}, kubeClient
 }
 
@@ -85,7 +82,7 @@ func testUploadModel() *modelsv1alpha1.Model {
 func succeededOperationForModel(t *testing.T, model *modelsv1alpha1.Model) *corev1.ConfigMap {
 	t.Helper()
 
-	operation, err := publicationops.NewConfigMap("d8-ai-models", publicationports.Request{
+	operation, err := publishrunner.NewConfigMap("d8-ai-models", publicationports.Request{
 		Owner: publicationports.Owner{
 			Kind:      modelsv1alpha1.ModelKind,
 			Name:      model.Name,
@@ -102,7 +99,7 @@ func succeededOperationForModel(t *testing.T, model *modelsv1alpha1.Model) *core
 	if err != nil {
 		t.Fatalf("NewConfigMap() error = %v", err)
 	}
-	if err := publicationops.SetSucceeded(operation, publicationports.Result{
+	if err := publishrunner.SetSucceeded(operation, publicationports.Result{
 		Snapshot: publication.Snapshot{
 			Identity: publication.Identity{
 				Scope:     publication.ScopeNamespaced,

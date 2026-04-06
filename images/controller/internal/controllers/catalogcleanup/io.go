@@ -20,7 +20,6 @@ import (
 	"context"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/cleanupjob"
 	deletionapp "github.com/deckhouse/ai-models/controller/internal/application/deletion"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
@@ -95,9 +94,9 @@ func (r *baseReconciler) observeCleanupJobState(
 		return deletionapp.CleanupJobStateMissing, nil
 	case err != nil:
 		return "", err
-	case cleanupjob.IsComplete(&job):
+	case isCleanupJobComplete(&job):
 		return deletionapp.CleanupJobStateComplete, nil
-	case cleanupjob.IsFailed(&job):
+	case isCleanupJobFailed(&job):
 		return deletionapp.CleanupJobStateFailed, nil
 	default:
 		return deletionapp.CleanupJobStateRunning, nil
@@ -132,7 +131,7 @@ func (r *baseReconciler) applyFinalizeDeleteDecision(
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		job, err := cleanupjob.BuildJob(cleanupjob.OwnerRef{
+		job, err := buildCleanupJob(cleanupJobOwner{
 			UID:       object.GetUID(),
 			Kind:      kind,
 			Name:      object.GetName(),

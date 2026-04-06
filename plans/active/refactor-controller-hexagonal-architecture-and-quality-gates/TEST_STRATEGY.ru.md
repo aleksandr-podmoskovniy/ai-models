@@ -11,16 +11,23 @@ Controller lifecycle code must be tested by behavior:
 - deletion/finalizer races
 - malformed worker/session result paths
 
-## 2. Mandatory branch-matrix artifacts
+## 2. Mandatory controller test evidence
 
-For each lifecycle package there must be a checked-in matrix table in the
-bundle or package docs covering at least:
+Controller lifecycle evidence must stay in one checked-in inventory:
+
+- `images/controller/TEST_EVIDENCE.ru.md`
+
+That inventory must cover every `internal/domain/*` and `internal/application/*`
+package that has non-test Go code, and for each package it must document at
+least:
 
 - input state
 - event / observation
 - expected next state
 - expected side effect
 - expected condition/reason
+
+Do not scatter package-local `BRANCH_MATRIX.ru.md` files through the tree.
 
 ## 3. Required scenarios
 

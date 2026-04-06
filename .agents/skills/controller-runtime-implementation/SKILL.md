@@ -34,14 +34,22 @@ description: Use for controller implementation work: reconciliation boundaries, 
 9. If the task continues an existing canonical phase-2 workstream, update that
    bundle instead of creating a sibling active bundle.
 10. Keep the concrete package map stable:
+   - bootstrap/composition root must use an explicit name such as
+     `internal/bootstrap`; do not keep an `internal/app` package beside
+     `internal/application`, because that naming collision makes the tree
+     ambiguous
    - reconcilers under `internal/controllers/*`
    - K8s object/service adapters under `internal/adapters/k8s/*`
    - shared helper code only under `internal/support/*`
+   - do not keep four different generic folders such as `publication` across
+     `application/`, `domain/`, `ports/`, and `internal/` when the actual
+     responsibilities are narrower; use role-based names such as
+     `publishplan`, `publishstate`, `publishop`, `publishedsnapshot`
    - shared ports must be implemented by concrete adapters, not by a temporary
      controller-side wrapper package
    - canonical owner-based resource naming and owner-label policy live only in
      `internal/support/resourcenames`, not in package-local `names.go` shims
-   - concrete adapters should consume shared `publication.OperationContext`
+   - concrete adapters should consume shared `publishop.OperationContext`
      directly; do not clone it into local `Request` / `OwnerRef` wrappers
      unless the adapter truly needs a different boundary
    - do not keep a second `runtime.go` proxy layer if the same concrete adapter
@@ -63,9 +71,17 @@ description: Use for controller implementation work: reconciliation boundaries, 
    - split adapter-heavy reconcile coverage by decision family; do not let a
      single `reconciler_test.go` become the package dumping ground
    - business decisions stay in domain/application tests, not in helper files
+   - keep one controller-level test evidence inventory in
+     `images/controller/TEST_EVIDENCE.ru.md`; do not scatter package-local
+     `BRANCH_MATRIX.ru.md` files through the tree
 12. If the controller package map changes or grows, sync
     `images/controller/STRUCTURE.ru.md` so every folder/file keeps an explicit
     rationale.
+13. Keep controller verification signals explicit:
+   - controller deadcode must be a first-class verify step, not hidden behind
+     hooks output
+   - if a verification shell checks multiple areas, controller-specific output
+     must run first and be named unambiguously
 
 ## Output
 

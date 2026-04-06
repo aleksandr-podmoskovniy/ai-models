@@ -23,9 +23,9 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publication"
+	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publication"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

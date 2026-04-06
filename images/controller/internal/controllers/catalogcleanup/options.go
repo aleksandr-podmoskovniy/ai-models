@@ -21,7 +21,6 @@ import (
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/cleanupjob"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,7 +29,7 @@ import (
 const Finalizer = "ai-models.deckhouse.io/model-cleanup"
 
 type Options struct {
-	CleanupJob   cleanupjob.Options
+	CleanupJob   CleanupJobOptions
 	RequeueAfter time.Duration
 }
 

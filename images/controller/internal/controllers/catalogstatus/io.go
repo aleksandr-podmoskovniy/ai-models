@@ -20,9 +20,9 @@ import (
 	"context"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/controllers/publicationops"
-	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publication"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publication"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/publishrunner"
+	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
@@ -42,7 +42,7 @@ func (r *baseReconciler) ensureOperation(ctx context.Context, request publicatio
 	var operation corev1.ConfigMap
 	switch err := r.client.Get(ctx, key, &operation); {
 	case apierrors.IsNotFound(err):
-		operation, err := publicationops.NewConfigMap(r.options.OperationNamespace, request)
+		operation, err := publishrunner.NewConfigMap(r.options.OperationNamespace, request)
 		if err != nil {
 			return nil, false, err
 		}
@@ -63,7 +63,7 @@ func cleanupHandlePresent(object client.Object) (bool, error) {
 }
 
 func observationFromConfigMap(operation *corev1.ConfigMap) (publicationdomain.Observation, error) {
-	status := publicationops.StatusFromConfigMap(operation)
+	status := publishrunner.StatusFromConfigMap(operation)
 	observation := publicationdomain.Observation{
 		Phase:   publicationdomain.OperationPhase(status.Phase),
 		Message: status.Message,
@@ -71,13 +71,13 @@ func observationFromConfigMap(operation *corev1.ConfigMap) (publicationdomain.Ob
 
 	switch status.Phase {
 	case publicationports.PhasePending, publicationports.PhaseRunning:
-		upload, err := publicationops.UploadStatusFromConfigMap(operation)
+		upload, err := publishrunner.UploadStatusFromConfigMap(operation)
 		if err != nil {
 			return publicationdomain.Observation{}, err
 		}
 		observation.Upload = upload
 	case publicationports.PhaseSucceeded:
-		result, err := publicationops.ResultFromConfigMap(operation)
+		result, err := publishrunner.ResultFromConfigMap(operation)
 		if err != nil {
 			return publicationdomain.Observation{}, err
 		}
