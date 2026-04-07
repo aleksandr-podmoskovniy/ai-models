@@ -68,7 +68,7 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 	if err != nil {
 		return nil, false, err
 	}
-	pod, createdPod, err := s.ensurePod(ctx, owner, request, plan, secret.Name)
+	pod, artifactURI, createdPod, err := s.ensurePod(ctx, owner, request, plan, secret.Name)
 	if err != nil {
 		return nil, false, err
 	}
@@ -77,7 +77,7 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 		pod.Name,
 		pod.Status.Phase,
 		workloadpod.TerminationMessage(pod, "upload"),
-		buildUploadStatus(pod, service, token, expiresAt),
+		buildUploadStatus(artifactURI, service, token, expiresAt),
 		func(ctx context.Context) error {
 			return s.deleteResources(ctx, pod, service, secret)
 		},

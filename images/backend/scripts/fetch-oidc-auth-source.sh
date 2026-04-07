@@ -74,6 +74,28 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 backend_dir="$(cd -- "${script_dir}/.." && pwd)"
 default_metadata="${backend_dir}/oidc-auth.lock"
 
+rewrite_repo_url() {
+  local original_url="$1"
+  local mirror="${SOURCE_REPO_GIT:-${SOURCE_REPO:-}}"
+
+  if [[ -z "${mirror}" ]]; then
+    printf '%s\n' "${original_url}"
+    return 0
+  fi
+
+  case "${original_url}" in
+    https://github.com/*)
+      printf '%s/%s\n' "${mirror%/}" "${original_url#https://github.com/}"
+      ;;
+    https://gitlab.com/*)
+      printf '%s/%s\n' "${mirror%/}" "${original_url#https://gitlab.com/}"
+      ;;
+    *)
+      printf '%s\n' "${original_url}"
+      ;;
+  esac
+}
+
 if [[ -z "${metadata_file}" && -f "${default_metadata}" ]]; then
   metadata_file="${default_metadata}"
 fi
@@ -89,6 +111,7 @@ fi
 repo_url="${repo_url:-https://github.com/mlflow-oidc/mlflow-oidc-auth.git}"
 ref="${ref:-v6.7.1}"
 dest="${dest:-${backend_dir}/../.cache/mlflow-oidc-auth-upstream}"
+repo_url="$(rewrite_repo_url "${repo_url}")"
 
 rm -rf "${dest}"
 mkdir -p "$(dirname "${dest}")"

@@ -56,7 +56,7 @@ Problem:
 Replacement landed:
 
 - `images/controller/kitops.lock`
-- `images/controller/tools/install-kitops.sh`
+- `images/controller/install-kitops.sh`
 - `internal/ports/modelpack/contract.go`
 - `internal/adapters/modelpack/kitops/adapter.go`
 

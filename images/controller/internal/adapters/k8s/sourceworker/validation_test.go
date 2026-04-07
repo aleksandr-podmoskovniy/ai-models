@@ -194,7 +194,7 @@ func TestOptionsValidateRejectsMissingRequiredFields(t *testing.T) {
 			options := testOptions()
 			tc.mutate(&options)
 
-			err := options.Validate()
+			err := validateOptions(options)
 			if err == nil {
 				t.Fatal("expected validation error")
 			}

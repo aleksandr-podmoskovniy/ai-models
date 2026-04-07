@@ -1,4 +1,6 @@
-apiVersion: v2
 name: ai-models
 version: 0.0.1
-type: application
+dependencies:
+  - name: deckhouse_lib_helm
+    version: 1.70.1
+    repository: https://deckhouse.github.io/lib-helm

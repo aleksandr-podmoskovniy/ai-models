@@ -68,6 +68,9 @@ func TestServiceGetOrCreateCreatesOwnedUploadSessionResources(t *testing.T) {
 	if !strings.Contains(handle.UploadStatus.Command, "X-AI-MODELS-FILENAME") {
 		t.Fatalf("expected upload filename header in command %q", handle.UploadStatus.Command)
 	}
+	if got, want := handle.UploadStatus.Repository, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/1111-2222:published"; got != want {
+		t.Fatalf("unexpected upload repository %q", got)
+	}
 	if handle.UploadStatus.ExpiresAt == nil {
 		t.Fatal("expected upload session expiration")
 	}
@@ -117,7 +120,7 @@ func TestBuildPodUsesUploadSessionRuntime(t *testing.T) {
 	request.Request.Spec.Source.Upload.ExpectedSizeBytes = ptrTo[int64](128)
 
 	options := testUploadOptions()
-	options.OCIRegistryCASecretName = "registry-ca"
+	options.Runtime.OCIRegistryCASecretName = "registry-ca"
 
 	pod, err := BuildPod(request, options, "ai-model-upload-auth-1111-2222")
 	if err != nil {

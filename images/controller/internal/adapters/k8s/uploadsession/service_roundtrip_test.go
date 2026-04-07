@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -39,11 +40,13 @@ func TestServiceRoundTripGetOrCreateAndDelete(t *testing.T) {
 		Build()
 
 	runtime, err := NewService(kubeClient, scheme, Options{
-		Namespace:             "d8-ai-models",
-		Image:                 "backend:latest",
-		ServiceAccountName:    "ai-models-controller",
-		OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-		OCIRegistrySecretName: "ai-models-publication-registry",
+		Runtime: workloadpod.RuntimeOptions{
+			Namespace:             "d8-ai-models",
+			Image:                 "backend:latest",
+			ServiceAccountName:    "ai-models-controller",
+			OCIRepositoryPrefix:   "registry.internal.local/ai-models",
+			OCIRegistrySecretName: "ai-models-publication-registry",
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)

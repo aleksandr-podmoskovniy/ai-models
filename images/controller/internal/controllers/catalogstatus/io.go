@@ -20,10 +20,7 @@ import (
 	"context"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
-	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
-	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
+	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishobserve"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -34,34 +31,6 @@ import (
 func cleanupHandlePresent(object client.Object) (bool, error) {
 	_, found, err := cleanuphandle.FromObject(object)
 	return found, err
-}
-
-func observationFromRuntimeResult(
-	request publicationports.Request,
-	rawResult string,
-) (publicationdomain.Observation, error) {
-	backendResult, err := artifactbackend.DecodeResult(rawResult)
-	if err != nil {
-		return publicationdomain.Observation{}, err
-	}
-
-	snapshot := publication.Snapshot{
-		Identity: request.Identity,
-		Source:   backendResult.Source,
-		Artifact: backendResult.Artifact,
-		Resolved: backendResult.Resolved,
-		Result: publication.Result{
-			State: "Published",
-			Ready: true,
-		},
-	}
-
-	handle := backendResult.CleanupHandle
-	return publicationdomain.Observation{
-		Phase:         publicationdomain.OperationPhaseSucceeded,
-		Snapshot:      &snapshot,
-		CleanupHandle: &handle,
-	}, nil
 }
 
 func (r *baseReconciler) ensureCleanupHandle(ctx context.Context, object client.Object, handle cleanuphandle.Handle) (bool, error) {
@@ -98,20 +67,24 @@ func (r *baseReconciler) updateStatus(
 	return r.client.Status().Update(ctx, object)
 }
 
-func (r *baseReconciler) projectObservation(
+func (r *baseReconciler) applyMutationPlan(
 	ctx context.Context,
 	object client.Object,
 	current *modelsv1alpha1.ModelStatus,
-	sourceType modelsv1alpha1.ModelSourceType,
-	observation publicationdomain.Observation,
+	plan publicationapp.CatalogStatusMutationPlan,
 	deleteFn func(context.Context) error,
 ) (ctrl.Result, error) {
-	projection, err := publicationdomain.ProjectStatus(*current, object.GetGeneration(), sourceType, observation)
-	if err != nil {
-		return r.failPublication(ctx, object, current, sourceType, err.Error())
+	if !plan.DeleteRuntime {
+		deleteFn = nil
 	}
-	if projection.CleanupHandle != nil {
-		updated, err := r.ensureCleanupHandle(ctx, object, *projection.CleanupHandle)
+	if plan.DeleteRuntimeBeforePersist && deleteFn != nil {
+		if err := deleteFn(ctx); err != nil {
+			return ctrl.Result{}, err
+		}
+		deleteFn = nil
+	}
+	if plan.CleanupHandle != nil {
+		updated, err := r.ensureCleanupHandle(ctx, object, *plan.CleanupHandle)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -119,7 +92,7 @@ func (r *baseReconciler) projectObservation(
 			return ctrl.Result{Requeue: true}, nil
 		}
 	}
-	if err := r.updateStatus(ctx, object, current, projection.Status); err != nil {
+	if err := r.updateStatus(ctx, object, current, plan.Status); err != nil {
 		return ctrl.Result{}, err
 	}
 	if deleteFn != nil {
@@ -127,26 +100,33 @@ func (r *baseReconciler) projectObservation(
 			return ctrl.Result{}, err
 		}
 	}
-	if projection.Requeue {
+	if plan.Requeue {
 		return ctrl.Result{RequeueAfter: statusPollInterval}, nil
 	}
 	return ctrl.Result{}, nil
 }
 
-func (r *baseReconciler) failAndDelete(
+func (r *baseReconciler) applyRuntimeObservation(
 	ctx context.Context,
 	object client.Object,
 	current *modelsv1alpha1.ModelStatus,
 	sourceType modelsv1alpha1.ModelSourceType,
-	message string,
+	decision publicationapp.RuntimeObservationDecision,
 	deleteFn func(context.Context) error,
 ) (ctrl.Result, error) {
-	if deleteFn != nil {
-		if err := deleteFn(ctx); err != nil {
-			return ctrl.Result{}, err
-		}
+	plan, err := publicationapp.PlanCatalogStatusMutation(publicationapp.CatalogStatusMutationInput{
+		Current: *current,
+		Runtime: publicationapp.CatalogStatusRuntimeResult{
+			Generation:    object.GetGeneration(),
+			SourceType:    sourceType,
+			Observation:   decision.Observation,
+			DeleteRuntime: decision.DeleteRuntime,
+		},
+	})
+	if err != nil {
+		return r.failPublication(ctx, object, current, sourceType, err.Error())
 	}
-	return r.failPublication(ctx, object, current, sourceType, message)
+	return r.applyMutationPlan(ctx, object, current, plan, deleteFn)
 }
 
 func (r *baseReconciler) failPublication(
@@ -156,15 +136,9 @@ func (r *baseReconciler) failPublication(
 	sourceType modelsv1alpha1.ModelSourceType,
 	message string,
 ) (ctrl.Result, error) {
-	projection, err := publicationdomain.ProjectStatus(*current, object.GetGeneration(), sourceType, publicationdomain.Observation{
-		Phase:   publicationdomain.OperationPhaseFailed,
-		Message: message,
-	})
+	plan, err := publicationapp.PlanFailedCatalogStatusMutation(*current, object.GetGeneration(), sourceType, message)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.updateStatus(ctx, object, current, projection.Status); err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{}, nil
+	return r.applyMutationPlan(ctx, object, current, plan, nil)
 }

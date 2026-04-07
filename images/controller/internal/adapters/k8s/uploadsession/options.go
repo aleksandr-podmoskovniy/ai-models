@@ -18,10 +18,9 @@ package uploadsession
 
 import (
 	"errors"
-	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 )
 
 const (
@@ -31,21 +30,12 @@ const (
 )
 
 type Options struct {
-	Namespace               string
-	Image                   string
-	ServiceAccountName      string
-	OCIRepositoryPrefix     string
-	OCIInsecure             bool
-	OCIRegistrySecretName   string
-	OCIRegistryCASecretName string
-	ImagePullPolicy         corev1.PullPolicy
-	TokenTTL                time.Duration
+	Runtime  workloadpod.RuntimeOptions
+	TokenTTL time.Duration
 }
 
 func normalizeOptions(options Options) Options {
-	if options.ImagePullPolicy == "" {
-		options.ImagePullPolicy = corev1.PullIfNotPresent
-	}
+	options.Runtime = workloadpod.NormalizeRuntimeOptions(options.Runtime)
 	if options.TokenTTL <= 0 {
 		options.TokenTTL = defaultTokenTTL
 	}
@@ -54,20 +44,8 @@ func normalizeOptions(options Options) Options {
 }
 
 func (o Options) Validate() error {
-	if strings.TrimSpace(o.Namespace) == "" {
-		return errors.New("upload session namespace must not be empty")
-	}
-	if strings.TrimSpace(o.Image) == "" {
-		return errors.New("upload session image must not be empty")
-	}
-	if strings.TrimSpace(o.ServiceAccountName) == "" {
-		return errors.New("upload session serviceAccountName must not be empty")
-	}
-	if strings.TrimSpace(o.OCIRepositoryPrefix) == "" {
-		return errors.New("upload session OCI repository prefix must not be empty")
-	}
-	if strings.TrimSpace(o.OCIRegistrySecretName) == "" {
-		return errors.New("upload session OCI registry secret name must not be empty")
+	if err := workloadpod.ValidateRuntimeOptions("upload session", o.Runtime); err != nil {
+		return err
 	}
 	if o.TokenTTL <= 0 {
 		return errors.New("upload session token ttl must be positive")

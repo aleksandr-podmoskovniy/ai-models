@@ -23,6 +23,7 @@ import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/sourceworker"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsession"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,19 +32,10 @@ import (
 )
 
 type Options struct {
-	PublishPod PublishPodOptions
+	Runtime PublicationRuntimeOptions
 }
 
-type PublishPodOptions struct {
-	Namespace               string
-	Image                   string
-	ServiceAccountName      string
-	OCIRepositoryPrefix     string
-	OCIInsecure             bool
-	OCIRegistrySecretName   string
-	OCIRegistryCASecretName string
-	ImagePullPolicy         corev1.PullPolicy
-}
+type PublicationRuntimeOptions = workloadpod.RuntimeOptions
 
 type baseReconciler struct {
 	client         client.Client
@@ -67,11 +59,11 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 		return err
 	}
 
-	sourceWorkers, err := sourceworker.NewService(mgr.GetClient(), mgr.GetScheme(), options.PublishPod.sourceWorkerOptions())
+	sourceWorkers, err := sourceworker.NewService(mgr.GetClient(), mgr.GetScheme(), sourceWorkerOptions(options.Runtime))
 	if err != nil {
 		return err
 	}
-	uploadSessions, err := uploadsession.NewService(mgr.GetClient(), mgr.GetScheme(), options.PublishPod.uploadSessionOptions())
+	uploadSessions, err := uploadsession.NewService(mgr.GetClient(), mgr.GetScheme(), uploadSessionOptions(options.Runtime))
 	if err != nil {
 		return err
 	}
@@ -97,39 +89,23 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 }
 
 func (o Options) Enabled() bool {
-	return strings.TrimSpace(o.PublishPod.Namespace) != "" &&
-		strings.TrimSpace(o.PublishPod.Image) != ""
+	return strings.TrimSpace(o.Runtime.Namespace) != "" &&
+		strings.TrimSpace(o.Runtime.Image) != ""
 }
 
 func (o Options) Validate() error {
 	if !o.Enabled() {
 		return nil
 	}
-	return o.PublishPod.sourceWorkerOptions().Validate()
+	return workloadpod.ValidateRuntimeOptions("publication runtime", o.Runtime)
 }
 
-func (o PublishPodOptions) sourceWorkerOptions() sourceworker.Options {
-	return sourceworker.Options{
-		Namespace:               o.Namespace,
-		Image:                   o.Image,
-		ServiceAccountName:      o.ServiceAccountName,
-		OCIRepositoryPrefix:     o.OCIRepositoryPrefix,
-		OCIInsecure:             o.OCIInsecure,
-		OCIRegistrySecretName:   o.OCIRegistrySecretName,
-		OCIRegistryCASecretName: o.OCIRegistryCASecretName,
-		ImagePullPolicy:         o.ImagePullPolicy,
-	}
+func sourceWorkerOptions(o PublicationRuntimeOptions) sourceworker.Options {
+	return sourceworker.Options(o)
 }
 
-func (o PublishPodOptions) uploadSessionOptions() uploadsession.Options {
+func uploadSessionOptions(o PublicationRuntimeOptions) uploadsession.Options {
 	return uploadsession.Options{
-		Namespace:               o.Namespace,
-		Image:                   o.Image,
-		ServiceAccountName:      o.ServiceAccountName,
-		OCIRepositoryPrefix:     o.OCIRepositoryPrefix,
-		OCIInsecure:             o.OCIInsecure,
-		OCIRegistrySecretName:   o.OCIRegistrySecretName,
-		OCIRegistryCASecretName: o.OCIRegistryCASecretName,
-		ImagePullPolicy:         o.ImagePullPolicy,
+		Runtime: o,
 	}
 }

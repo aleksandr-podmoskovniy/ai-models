@@ -20,6 +20,7 @@ import (
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"k8s.io/apimachinery/pkg/types"
@@ -54,12 +55,14 @@ func testUploadOperationContext() publicationports.OperationContext {
 
 func testUploadOptions() Options {
 	return Options{
-		Namespace:             "d8-ai-models",
-		Image:                 "backend:latest",
-		ServiceAccountName:    "ai-models-controller",
-		OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-		OCIRegistrySecretName: "ai-models-publication-registry",
-		TokenTTL:              15 * time.Minute,
+		Runtime: workloadpod.RuntimeOptions{
+			Namespace:             "d8-ai-models",
+			Image:                 "backend:latest",
+			ServiceAccountName:    "ai-models-controller",
+			OCIRepositoryPrefix:   "registry.internal.local/ai-models",
+			OCIRegistrySecretName: "ai-models-publication-registry",
+		},
+		TokenTTL: 15 * time.Minute,
 	}
 }
 

@@ -2,14 +2,15 @@
 
 ## 1. Architectural rule
 
-Controller runtime must be split by responsibility:
+Controller runtime must stay split by responsibility:
 
 - `domain`
 - `application`
 - `ports`
 - `adapters`
 
-Reconciler packages are adapters. They must not own business workflow assembly.
+Reconciler packages are adapters. They may persist state, but they must not own
+lifecycle policy or runtime result interpretation.
 
 ## 2. Target package layout
 
@@ -17,21 +18,15 @@ Reconciler packages are adapters. They must not own business workflow assembly.
 images/controller/internal/
   application/
     publishplan/
-      start_publication.go
-      plan_source_worker.go
-      issue_upload_session.go
+    publishobserve/
     deletion/
-      ensure_cleanup_finalizer.go
-      finalize_delete.go
   domain/
     publishstate/
   ports/
     publishop/
-      operation_contract.go
-      ports.go
+    modelpack/
   controllers/
     catalogstatus/
-    publishrunner/
     catalogcleanup/
   adapters/
     k8s/
@@ -40,82 +35,97 @@ images/controller/internal/
       sourceworker/
       uploadsession/
       workloadpod/
+    sourcefetch/
+    modelformat/
+    modelprofile/
+    modelpack/kitops/
+  artifactbackend/
+  publishedsnapshot/
   support/
     cleanuphandle/
     modelobject/
     resourcenames/
     testkit/
-  artifactbackend/
-  publishedsnapshot/
   bootstrap/
 ```
 
-## 3. What moves out of current packages
+## 3. Ownership expectations
+
+### `application/publishplan`
+
+Keeps:
+
+- execution-mode selection;
+- source-worker planning;
+- upload-session issuance policy.
+
+Must not grow into:
+
+- runtime observation;
+- backend result decoding;
+- public status projection.
+
+### `application/publishobserve`
+
+Keeps:
+
+- publication reconcile entry/skip gate;
+- runtime port orchestration through shared publication ports;
+- translation from runtime worker/session handles into domain observations;
+- status-mutation planning from domain observations into controller persistence
+  plans;
+- backend termination-result decoding into published snapshot + cleanup handle;
+- delete-vs-keep runtime decision after terminal observation.
+
+Must not grow into:
+
+- concrete Pod/Service/Secret rendering;
+- controller client reads/writes;
+- public status persistence.
 
 ### `controllers/catalogstatus`
 
-Should keep only:
+Keeps only:
 
-- reconcile read/write shell;
 - object loading;
-- call into application use cases;
-- final status patch.
+- application-use-case calls;
+- status / cleanup-handle persistence.
 
 Must lose:
 
-- inline state machine branching;
-- direct ConfigMap operation orchestration;
-- cleanup handle business decisions;
-- lifecycle status assembly.
+- inline reconcile entry/skip policy;
+- inline runtime source-vs-upload branching;
+- inline runtime result decoding;
+- upload expiry policy branching;
+- terminal error-message assembly beyond adapter fallback;
+- source-coupled legacy naming in options/wiring.
 
-### `controllers/publishrunner`
+### `adapters/k8s/sourceworker` and `adapters/k8s/uploadsession`
 
-Should keep only:
-
-- reconcile shell for operation object;
-- adapter calls into application use cases.
-
-Must lose:
-
-- worker/session lifecycle business branching;
-- artifact result interpretation as domain decision;
-- inline error-to-status policy mapping;
-- concrete runtime port implementations for source/upload adapters.
-
-### `adapters/k8s/uploadsession`
-
-Must split into:
-
-- domain/session policy
-- application/session issuance and observation
-- k8s object builders for `Pod` / `Service` / `Secret`
-
-It should not remain a 600+ LOC mixed service.
-
-### `adapters/k8s/sourceworker` / `adapters/k8s/uploadsession`
-
-These packages should own:
+Keep:
 
 - concrete K8s resource build and CRUD;
-- translation from shared publication runtime ports into concrete adapter
-  execution and handle shapes, without mirroring the shared contract through
-  adapter-local `Request` / `OwnerRef` wrappers.
+- translation from shared runtime ports into concrete Pod/Service/Secret
+  execution.
 
-They should not force `controllers/publishrunner` to own adapter-specific
-runtime wrappers.
+Must not own:
+
+- controller status policy;
+- public status projection;
+- second copies of shared request/owner/runtime option contracts.
 
 ## 4. Thin reconciler rule
 
 A reconciler file may do only:
 
 1. load object(s);
-2. call one application use case;
-3. persist resulting status/object changes;
+2. call runtime port(s) and one bounded application use case;
+3. persist returned status/object mutations;
 4. map infra errors to controller-runtime result.
 
 Reconciler must not:
 
 - build Pod/Service/Secret specs inline;
-- decode/interpret worker result payloads inline;
+- decode/interpret worker termination payloads inline;
 - implement lifecycle transition tables inline;
-- implement cleanup policy inline.
+- invent legacy brand/source-specific naming for shared runtime wiring.

@@ -88,7 +88,7 @@ func PlanSourceWorker(spec modelsv1alpha1.ModelSpec, ownerNamespace string) (Sou
 		return plan, nil
 	case modelsv1alpha1.ModelSourceTypeHTTP:
 		if strings.TrimSpace(spec.Source.URL) == "" {
-			return SourceWorkerPlan{}, errors.New("source publish pod http url must not be empty")
+			return SourceWorkerPlan{}, errors.New("source worker http url must not be empty")
 		}
 		authSecretRef, err := resolveSourceAuthSecretRef(
 			spec.Source.AuthSecretRef,
@@ -99,7 +99,7 @@ func PlanSourceWorker(spec modelsv1alpha1.ModelSpec, ownerNamespace string) (Sou
 			return SourceWorkerPlan{}, err
 		}
 		if plan.Task == "" {
-			return SourceWorkerPlan{}, errors.New("source publish pod http source requires spec.runtimeHints.task")
+			return SourceWorkerPlan{}, errors.New("source worker http source requires spec.runtimeHints.task")
 		}
 		plan.HTTP = &HTTPSourcePlan{
 			URL:           spec.Source.URL,
@@ -108,9 +108,9 @@ func PlanSourceWorker(spec modelsv1alpha1.ModelSpec, ownerNamespace string) (Sou
 		}
 		return plan, nil
 	case modelsv1alpha1.ModelSourceTypeUpload:
-		return SourceWorkerPlan{}, errors.New("source publish pod upload source must be implemented as a session, not a batch-style worker pod")
+		return SourceWorkerPlan{}, errors.New("source worker upload source must be implemented as a session, not a batch-style worker pod")
 	default:
-		return SourceWorkerPlan{}, fmt.Errorf("source publish pod does not support source type %q", sourceType)
+		return SourceWorkerPlan{}, fmt.Errorf("source worker does not support source type %q", sourceType)
 	}
 }
 
@@ -125,7 +125,7 @@ func resolveSourceAuthSecretRef(
 
 	name := strings.TrimSpace(ref.Name)
 	if name == "" {
-		return nil, fmt.Errorf("source publish pod %s authSecretRef name must not be empty", sourceKind)
+		return nil, fmt.Errorf("source worker %s authSecretRef name must not be empty", sourceKind)
 	}
 
 	namespace := strings.TrimSpace(ref.Namespace)
@@ -136,7 +136,7 @@ func resolveSourceAuthSecretRef(
 			namespace = resolvedOwnerNamespace
 		case namespace != resolvedOwnerNamespace:
 			return nil, fmt.Errorf(
-				"source publish pod %s authSecretRef namespace must match owner namespace %q",
+				"source worker %s authSecretRef namespace must match owner namespace %q",
 				sourceKind,
 				resolvedOwnerNamespace,
 			)
@@ -145,7 +145,7 @@ func resolveSourceAuthSecretRef(
 		namespace = resolvedOwnerNamespace
 	}
 	if namespace == "" {
-		return nil, fmt.Errorf("source publish pod %s authSecretRef namespace must not be empty", sourceKind)
+		return nil, fmt.Errorf("source worker %s authSecretRef namespace must not be empty", sourceKind)
 	}
 
 	return &SourceAuthSecretRef{

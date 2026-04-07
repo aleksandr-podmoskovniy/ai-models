@@ -123,7 +123,7 @@ Prefer first candidates:
   `ConfigMap`
 - dedicated runtime image стал self-contained phase-2 runtime image:
   - pinned `KitOps` lives in `images/controller/kitops.lock`
-  - install shell lives in `images/controller/tools/install-kitops.sh`
+  - install shell lives in `images/controller/install-kitops.sh`
 - publication worker Pods и cleanup Jobs переведены на runtime image
 - legacy phase-2 backend Python runtimes удалены из backend image/runtime tree
 
@@ -437,6 +437,241 @@ Prefer first candidates:
   промежуточного replay-only helper path
 - `uploadsession` больше не держит отдельный `request.go`; shared request
   mapping теперь живёт локально рядом с единственным live pod builder
+
+## Slice 12. Align module build and deploy shell with DKP patterns
+
+Цель:
+
+- убрать platform-shell drift против `gpu-control-plane` и `virtualization`
+  для phase-2 runtime path;
+- сделать distroless и `helm_lib` usage честными DKP module patterns, а не
+  локальной отсебятиной.
+
+Артефакты:
+
+- new `images/distroless/werf.inc.yaml`
+- tightened `images/controller/werf.inc.yaml`
+- tightened `Chart.yaml`
+- new `requirements.lock`
+- removed `templates/deckhouse-lib.tpl`
+- synced docs / bundle review
+
+Проверки:
+
+- `make helm-template`
+- `make kubeconform`
+- `werf build --dev --platform=linux/amd64 distroless controller controller-runtime`
+- `git diff --check`
+
+Ограничение:
+
+- backend image and its ConfigMap-driven runtime wrappers stay phase-1 shell in
+  this slice; no premature backend distroless conversion lands here.
+
+Статус: landed.
+
+Что вошло:
+
+- added module-local `images/distroless/werf.inc.yaml`, so controller runtime
+  images now follow the same relocation pattern as `gpu-control-plane` and
+  `virtualization` instead of consuming `base/distroless` directly;
+- `images/controller/werf.inc.yaml` now builds `controller` and
+  `controller-runtime` from the module-local `distroless` image;
+- root chart now declares `deckhouse_lib_helm` as a real dependency in
+  `Chart.yaml`, keeps the vendored archive in `charts/`, and no longer relies
+  on a repo-local helper fork as the primary source of truth;
+- `.helmignore` no longer excludes `charts/`, so `helm template` actually sees
+  the vendored library chart instead of silently losing it during render;
+- local `templates/deckhouse-lib.tpl` was removed after render validation
+  proved that the vendored library chart covers the live helper surface;
+- repo layout and controller docs now explicitly describe module-local
+  distroless and real chart dependency ownership.
+
+## Slice 13. Promote KitOps to a dedicated runtime artifact stage
+
+Цель:
+
+- перестать скачивать и класть `KitOps` как побочный шаг внутри Go build stage;
+- сделать `KitOps` отдельным controller-owned runtime artifact seam с явным
+  smoke-check в image build.
+
+Артефакты:
+
+- tightened `images/controller/werf.inc.yaml`
+- tightened `images/controller/install-kitops.sh`
+- synced docs / bundle review
+
+Проверки:
+
+- `werf build --dev --platform=linux/amd64 controller-kitops-artifact controller-runtime`
+- `make verify`
+- `git diff --check`
+
+Ограничение:
+
+- release asset source for `KitOps` may stay external in this slice, but the
+  fetch/install path must become its own stage instead of being hidden inside
+  Go compilation.
+
+Статус: landed.
+
+Что вошло:
+
+- `KitOps` install no longer runs inside `controller-build-artifact`; it now
+  has a dedicated `controller-kitops-artifact` stage in
+  `images/controller/werf.inc.yaml`;
+- `controller-runtime` imports the pinned `kit` binary from that dedicated
+  artifact stage instead of coupling external tool delivery to Go compilation;
+- `install-kitops.sh` became mirror-ready for future hardening by accepting
+  optional archive/URL/checksum overrides and by failing closed when the archive
+  does not contain the expected `kit` binary;
+- the dedicated artifact stage now runs a live `kit version` smoke-check during
+  image build so broken release assets fail before runtime.
+
+## Slice 14. Binpack the lone KitOps installer seam
+
+Цель:
+
+- убрать fake boundary `images/controller/tools/`, который держал ровно один
+  installer script;
+- выровнять controller root с pruning rules: tiny build-only seams живут рядом с
+  `werf.inc.yaml` и `kitops.lock`, а не в отдельном каталоге без собственной
+  архитектурной роли.
+
+Артефакты:
+
+- moved `images/controller/install-kitops.sh`
+- tightened `images/controller/werf.inc.yaml`
+- synced controller docs / bundle memory
+
+Проверки:
+
+- `bash -n images/controller/install-kitops.sh`
+- `make verify`
+- `git diff --check`
+
+Статус: landed.
+
+Что вошло:
+
+- `install-kitops.sh` moved from `images/controller/tools/` to the controller
+  root next to `kitops.lock`;
+- `controller-kitops-artifact` now imports the installer directly from
+  `/images/controller/install-kitops.sh` without a one-file `tools/` directory;
+- controller structure docs now explicitly reject a dedicated `tools/` directory
+  for a single build-only installer script.
+
+## Slice 15. Audit remaining module-shell drifts vs virtualization patterns
+
+Цель:
+
+- отдельно сверить live `werf` / bundle / image-base shell против
+  `virtualization` и `gpu-control-plane`;
+- зафиксировать только реальные оставшиеся drifts, чтобы следующий corrective
+  cut был bounded и не плодил новую отсебятину.
+
+Артефакты:
+
+- updated bundle review with read-only findings
+
+Проверки:
+
+- manual diff audit against:
+  - `virtualization/werf.yaml`
+  - `virtualization/.werf/images.yaml`
+  - `virtualization/images/distroless/werf.inc.yaml`
+  - `gpu-control-plane/werf.yaml`
+  - `gpu-control-plane/.werf/images.yaml`
+  - `gpu-control-plane/images/distroless/werf.inc.yaml`
+
+Статус: landed as review-only slice.
+
+Что зафиксировано:
+
+- current `bundle` stage still omits `Chart.yaml` and vendored `charts/`, so the
+  release payload does not yet match the now-correct helm render path;
+- backend build still bypasses the Deckhouse base-image map with raw `node:` and
+  `python:` `from:` images instead of a module-disciplined image source path;
+- root `werf` shell still lacks the common mirror/proxy discipline
+  (`SOURCE_REPO_GIT`, distro packages proxy helpers) used by `virtualization`
+  and `gpu-control-plane`.
+
+## Slice 16. Restore module-shell parity for bundle and mirrors
+
+Цель:
+
+- привести release bundle к честному chart payload после перехода на vendored
+  `deckhouse_lib_helm`;
+- поднять в root `werf` общий mirror/proxy context и reusable helper templates,
+  чтобы package installs и git source fetches перестали жить как ad-hoc shell.
+
+Артефакты:
+
+- added `.werf/stages/helpers.yaml`
+- tightened `werf.yaml`
+- tightened `werf-giterminism.yaml`
+- tightened `.werf/stages/bundle.yaml`
+- tightened `images/distroless/werf.inc.yaml`
+- tightened `images/controller/werf.inc.yaml`
+- tightened `images/backend/werf.inc.yaml`
+- tightened backend fetch scripts
+- synced `docs/development/REPO_LAYOUT.ru.md`
+
+Проверки:
+
+- `bash -n images/backend/scripts/fetch-source.sh`
+- `bash -n images/backend/scripts/fetch-oidc-auth-source.sh`
+- `make verify`
+- `werf build --dev --platform=linux/amd64 backend-source-artifact backend-ui-build backend-oidc-auth-ui-build bundle`
+- `git diff --check`
+
+Статус: landed with one environment-limited validation gap.
+
+Что вошло:
+
+- root `werf.yaml` now exports `SOURCE_REPO_GIT` and `DistroPackagesProxy`, and
+  shared package-manager helpers now live in `.werf/stages/helpers.yaml`;
+- live stage files now consume shared helper templates instead of inline
+  distro-specific proxy shell for alt/debian/alpine package installs;
+- backend source fetch scripts now rewrite GitHub/GitLab repository URLs through
+  `SOURCE_REPO_GIT` when a mirror is configured;
+- release `bundle` now includes `Chart.yaml`, `requirements.lock`, and vendored
+  `charts/`, so the release payload matches the live helm dependency path;
+- repo layout docs now explicitly require bundle/chart parity and root-level
+  mirror/proxy discipline.
+
+Validation note:
+
+- `make verify`, shell syntax checks, and `git diff --check` passed;
+- the targeted `werf build` was rendered and planned successfully, but the local
+  Docker API failed again with `_ping` `500 Internal Server Error` before the
+  first base image could complete.
+
+## Slice 17. Remove raw node bases from backend UI build path
+
+Цель:
+
+- убрать оставшиеся raw `node:` image refs из backend UI build stages там, где в
+  Deckhouse base-image map уже есть module-disciplined replacement.
+
+Артефакты:
+
+- tightened `images/backend/werf.inc.yaml`
+
+Проверки:
+
+- `make verify`
+- `werf build --dev --platform=linux/amd64 backend-ui-build backend-oidc-auth-ui-build`
+- `git diff --check`
+
+Статус: landed with environment-limited build confirmation.
+
+Что вошло:
+
+- `backend-ui-build` and `backend-oidc-auth-ui-build` now build from
+  `builder/node-alpine` instead of raw external `node:` images;
+- the matching install shell was rewritten from Debian `apt` to Alpine `apk`
+  while preserving the same build responsibilities and source fetch path.
 
 ## Slice 6. Remove publication-operation ConfigMap protocol
 

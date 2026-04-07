@@ -38,38 +38,38 @@ func (s *Service) ensurePod(
 	request publicationports.OperationContext,
 	plan publicationapp.UploadSessionPlan,
 	uploadTokenSecretName string,
-) (*corev1.Pod, bool, error) {
-	pod, err := s.buildPod(request, plan, uploadTokenSecretName)
+) (*corev1.Pod, string, bool, error) {
+	pod, artifactURI, err := s.buildPod(request, plan, uploadTokenSecretName)
 	if err != nil {
-		return nil, false, err
+		return nil, "", false, err
 	}
 	created, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, owner, pod)
 	if err != nil {
-		return nil, false, err
+		return nil, "", false, err
 	}
-	return pod, created, nil
+	return pod, artifactURI, created, nil
 }
 
 func (s *Service) buildPod(
 	request publicationports.OperationContext,
 	plan publicationapp.UploadSessionPlan,
 	uploadTokenSecretName string,
-) (*corev1.Pod, error) {
+) (*corev1.Pod, string, error) {
 	name, err := resourcenames.UploadSessionPodName(request.Request.Owner.UID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	serviceName, err := resourcenames.UploadSessionServiceName(request.Request.Owner.UID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	artifactURI, err := artifactbackend.BuildOCIArtifactReference(s.options.OCIRepositoryPrefix, request.Request.Identity, request.Request.Owner.UID)
+	artifactURI, err := artifactbackend.BuildOCIArtifactReference(s.options.Runtime.OCIRepositoryPrefix, request.Request.Identity, request.Request.Owner.UID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	env := append(
-		ociregistry.Env(s.options.OCIInsecure, s.options.OCIRegistrySecretName, s.options.OCIRegistryCASecretName),
+		ociregistry.Env(s.options.Runtime.OCIInsecure, s.options.Runtime.OCIRegistrySecretName, s.options.Runtime.OCIRegistryCASecretName),
 		corev1.EnvVar{
 			Name: "AI_MODELS_UPLOAD_TOKEN",
 			ValueFrom: &corev1.EnvVarSource{
@@ -81,8 +81,8 @@ func (s *Service) buildPod(
 		},
 	)
 
-	volumeMounts := workloadpod.VolumeMounts(s.options.OCIRegistryCASecretName)
-	volumes := workloadpod.Volumes(s.options.OCIRegistryCASecretName)
+	volumeMounts := workloadpod.VolumeMounts(s.options.Runtime.OCIRegistryCASecretName)
+	volumes := workloadpod.Volumes(s.options.Runtime.OCIRegistryCASecretName)
 
 	args := []string{
 		"upload-session",
@@ -104,7 +104,7 @@ func (s *Service) buildPod(
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: s.options.Namespace,
+			Namespace: s.options.Runtime.Namespace,
 			Labels: addServiceLabel(
 				resourcenames.OwnerLabels("ai-models-upload", request.Request.Owner.Kind, request.Request.Owner.Name, request.Request.Owner.UID, request.Request.Owner.Namespace),
 				serviceName,
@@ -113,12 +113,12 @@ func (s *Service) buildPod(
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy:      corev1.RestartPolicyNever,
-			ServiceAccountName: s.options.ServiceAccountName,
+			ServiceAccountName: s.options.Runtime.ServiceAccountName,
 			Volumes:            volumes,
 			Containers: []corev1.Container{{
 				Name:            "upload",
-				Image:           s.options.Image,
-				ImagePullPolicy: s.options.ImagePullPolicy,
+				Image:           s.options.Runtime.Image,
+				ImagePullPolicy: s.options.Runtime.ImagePullPolicy,
 				Args:            args,
 				Env:             env,
 				VolumeMounts:    volumeMounts,
@@ -129,7 +129,7 @@ func (s *Service) buildPod(
 				}},
 			}},
 		},
-	}, nil
+	}, artifactURI, nil
 }
 
 func addServiceLabel(labels map[string]string, serviceName string) map[string]string {
@@ -147,7 +147,8 @@ func BuildPod(request publicationports.OperationContext, options Options, upload
 		return nil, err
 	}
 	service := &Service{options: options}
-	return service.buildPod(request, plan, uploadTokenSecretName)
+	pod, _, err := service.buildPod(request, plan, uploadTokenSecretName)
+	return pod, err
 }
 
 func requestPlan(request publicationports.OperationContext) (publicationapp.UploadSessionPlan, error) {

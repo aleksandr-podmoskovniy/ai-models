@@ -21,11 +21,16 @@ usage() {
 Usage: install-kitops.sh [--metadata <file>] [--dest <path>]
 
 Install the pinned KitOps CLI binary into the controller runtime image.
+Optional environment overrides:
+  KITOPS_SOURCE_ARCHIVE       use a pre-fetched archive instead of downloading it
+  KITOPS_LINUX_AMD64_URL      override amd64 archive URL from the metadata file
+  KITOPS_LINUX_AMD64_SHA256   override amd64 archive checksum from the metadata file
+  KITOPS_LINUX_ARM64_URL      override arm64 archive URL from the metadata file
+  KITOPS_LINUX_ARM64_SHA256   override arm64 archive checksum from the metadata file
 EOF
 }
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-controller_dir="$(cd -- "${script_dir}/.." && pwd)"
+controller_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 metadata_file="${controller_dir}/kitops.lock"
 dest="/usr/local/bin/kit"
 
@@ -62,12 +67,12 @@ source "${metadata_file}"
 arch="$(uname -m)"
 case "${arch}" in
   x86_64|amd64)
-    url="${LINUX_AMD64_URL}"
-    sha256="${LINUX_AMD64_SHA256}"
+    url="${KITOPS_LINUX_AMD64_URL:-${LINUX_AMD64_URL}}"
+    sha256="${KITOPS_LINUX_AMD64_SHA256:-${LINUX_AMD64_SHA256}}"
     ;;
   aarch64|arm64)
-    url="${LINUX_ARM64_URL}"
-    sha256="${LINUX_ARM64_SHA256}"
+    url="${KITOPS_LINUX_ARM64_URL:-${LINUX_ARM64_URL}}"
+    sha256="${KITOPS_LINUX_ARM64_SHA256:-${LINUX_ARM64_SHA256}}"
     ;;
   *)
     echo "Unsupported architecture for KitOps install: ${arch}" >&2
@@ -79,9 +84,18 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
 
 archive="${tmpdir}/kitops.tar.gz"
-curl -fsSLo "${archive}" "${url}"
+if [[ -n "${KITOPS_SOURCE_ARCHIVE:-}" ]]; then
+  cp "${KITOPS_SOURCE_ARCHIVE}" "${archive}"
+else
+  curl -fsSLo "${archive}" "${url}"
+fi
 echo "${sha256}  ${archive}" | sha256sum -c -
 tar -xzf "${archive}" -C "${tmpdir}"
+
+if [[ ! -f "${tmpdir}/kit" ]]; then
+  echo "KitOps archive does not contain the expected 'kit' binary." >&2
+  exit 1
+fi
 
 mkdir -p "$(dirname -- "${dest}")"
 install -m 0755 "${tmpdir}/kit" "${dest}"

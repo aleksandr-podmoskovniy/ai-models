@@ -3,7 +3,7 @@
 `images/controller/` is the canonical root for executable controller code of the
 `ai-models` module.
 
-Detailed folder/file inventory and rationale live in
+Current structure review and pruning rules live in
 [STRUCTURE.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/STRUCTURE.ru.md).
 Controller-level decision/test evidence lives in
 [TEST_EVIDENCE.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/TEST_EVIDENCE.ru.md).
@@ -11,6 +11,9 @@ Controller-level decision/test evidence lives in
 Rules:
 - phase 2 controller code lives in the module rooted here;
 - `go.mod` stays on this directory root;
+- `werf.inc.yaml` stays a thin controller image definition and must consume the
+  module-local `images/distroless` layer instead of pulling `base/distroless`
+  directly into final runtime images;
 - `cmd/` stays a thin executable shell;
 - domain logic stays under `internal/*` until there is a real external consumer;
 - shared controller ports live under `internal/ports/*` and must not stay
@@ -24,9 +27,15 @@ Rules:
 - public DKP API types still live in top-level `api/`.
 
 Current phase-2 slice implemented here:
-- `kitops.lock` and `tools/install-kitops.sh` for the pinned `KitOps` binary
+- `kitops.lock` and `install-kitops.sh` for the pinned `KitOps` binary
   that now belongs to the dedicated phase-2 runtime image instead of the
   backend runtime;
+- `KitOps` installation now lives in its own artifact stage instead of being a
+  side effect of the Go build stage, so external tool packaging no longer hides
+  inside controller compilation;
+- `werf.inc.yaml` now builds final controller images from the module-local
+  `distroless` stage so the runtime base follows the same DKP pattern as
+  `gpu-control-plane` and `virtualization`;
 - `cmd/ai-models-controller/*` for thin manager-only shell;
 - `cmd/ai-models-artifact-runtime/*` for thin one-shot phase-2 runtime shell:
   `publish-worker`, `upload-session`, and `artifact-cleanup`;
@@ -110,10 +119,14 @@ Current phase-2 slice implemented here:
   controller path for `Model` / `ClusterModel`; it now owns cleanup Job
   materialization directly because there is no second cleanup adapter and the
   old `adapters/k8s/cleanupjob` package was only an unnecessary extra boundary;
+- `internal/application/publishobserve` for publication reconcile gating,
+  runtime port orchestration, worker/session observation mapping, and backend
+  result decoding plus status-mutation planning behind an application seam
+  instead of inside reconciler files;
 - `internal/controllers/catalogstatus` for thin `Model` / `ClusterModel`
-  publication lifecycle ownership: planning worker/session runtime,
-  observing working Pods, projecting public status, and persisting cleanup
-  handles without an intermediate persisted bus;
+  publication lifecycle ownership: calling application use cases and
+  persisting planned status / cleanup-handle mutations without an intermediate
+  persisted bus;
 - `internal/bootstrap` for manager/bootstrap wiring.
 
 Naming rule:

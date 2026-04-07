@@ -26,6 +26,18 @@
 Перед следующим feature workstream нужно сделать corrective plan, иначе новый
 runtime/materializer/auth code будет наращиваться на плохом фундаменте.
 
+После уже выполненных bounded cuts остался ещё один живой drift, который
+ломает честность дерева:
+
+- `controllers/catalogstatus` всё ещё держит runtime branching, result decode,
+  upload expiry policy и status projection shell;
+- bootstrap/controller wiring всё ещё разговаривает legacy-терминами
+  `HFPublication` / `PublishPod`, хотя live path уже source-agnostic;
+- repo layout всё ещё делает вид, что `images/src-artifact/` является отдельной
+  reusable boundary, хотя в live build shell это пустой промежуточный stage;
+- часть planning/docs всё ещё описывает старый target shape, которого в live
+  tree уже нет.
+
 ## 2. Постановка задачи
 
 Использовать один canonical bundle и выполнить corrective refactor controller
@@ -85,6 +97,8 @@ runtime slice-by-slice:
   import graph и package-local tests.
 - Не оставлять после rewrite parallel old-vs-new package trees c одинаковой
   ответственностью.
+- Не оставлять misleading naming и doc claims, которые описывают уже несуществую
+  architecture.
 
 ## 5. Затрагиваемые области
 
@@ -132,6 +146,14 @@ runtime slice-by-slice:
   - `controllers/*` для reconcilers;
   - `adapters/k8s/*` для concrete Pod/Service/Secret/Job builders and CRUD;
   - `support/*` только для реально shared helpers, а не для business logic.
+- `controllers/catalogstatus` не должен inline-решать runtime worker/session
+  observation rules и decode result payload; эти решения должны жить в
+  `application` / `domain`.
+- controller/runtime wiring и error surface должны использовать
+  source-agnostic publication-runtime naming вместо legacy source-first
+  терминов.
+- repo layout/docs не должны объявлять отдельную image boundary там, где в live
+  build shell остался только пустой alias stage.
 - В репозитории есть явный shell для:
   - `deadcode` по controller packages;
   - сбору coverage artifacts в `artifacts/coverage` по bounded controller

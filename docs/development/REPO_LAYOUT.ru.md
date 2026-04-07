@@ -9,6 +9,25 @@ repo. Поэтому layout должен разделять:
 - internal backend packaging;
 - Deckhouse hooks.
 
+## Chart shell
+
+### `Chart.yaml`, `requirements.lock`, `charts/`
+
+Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
+`virtualization`.
+
+Правила:
+- `Chart.yaml` объявляет library dependency на `deckhouse_lib_helm`;
+- vendored dependency archive живёт в `charts/` и является частью render
+  contract для `helm template`;
+- release `bundle` должен забирать `Chart.yaml`, `requirements.lock` и
+  vendored `charts/`, иначе release payload начинает расходиться с live render
+  path;
+- `.helmignore` не должен исключать `charts/`, иначе dependency physically
+  лежит в репо, но не участвует в render path;
+- repo-local helper fork в `templates/` не должен становиться primary source of
+  truth для `helm_lib`; допустимы только узкие, явно обоснованные overrides.
+
 ## Каталоги
 
 ### `templates/`
@@ -71,9 +90,10 @@ repo. Поэтому layout должен разделять:
 
 Текущее разделение:
 - `images/backend/` — internal backend engine packaging;
+- `images/distroless/` — module-local distroless relocation layer для
+  собственного runtime кода;
 - `images/hooks/` — Deckhouse Go hooks, доставляемые в bundle как `/hooks/go`;
-- `images/controller/` — канонический корень для будущего controller executable code;
-- `images/src-artifact/` — reusable source artifact fetch layer.
+- `images/controller/` — канонический корень для controller executable code.
 
 Правила:
 - image-owned runtime wrappers и helper scripts backend должны жить под
@@ -84,9 +104,34 @@ repo. Поэтому layout должен разделять:
   - `images/backend/oidc-auth-patches/` — только для `mlflow-oidc-auth`;
 - controller source, module-local `go.mod` и image build files должны жить под
   `images/controller/`, а не в top-level `controllers/`;
+- собственные runtime images модуля должны строиться от module-local
+  `images/distroless/`, а не тянуть `base/distroless` напрямую в конечные
+  controller/runtime images;
 - Go hooks source, module-local `go.mod` и werf wiring для них должны жить под
   `images/hooks/`, а не в top-level `hooks/batch`;
+- если image-stage не несёт отдельной runtime/build boundary, его нужно
+  встраивать обратно в owning image definition, а не держать как пустой alias
+  каталог под `images/`;
+- mapped Deckhouse base images из `build/base-images/deckhouse_images.yml`
+  должны использоваться везде, где для stage уже есть подходящий builder/runtime
+  image; raw external `from:` допустим только как явный временный debt, если в
+  base-image map пока нет эквивалента;
 - `images/` не должен превращаться в свалку unrelated tooling или docs.
+
+## Werf shell
+
+Root `werf` должен оставаться module-oriented, как в `virtualization` и
+`gpu-control-plane`, а не держать ad-hoc mirror/proxy logic по отдельным image
+stage files.
+
+Правила:
+- root `werf.yaml` должен объявлять общий build-shell context:
+  `SOURCE_REPO`, `SOURCE_REPO_GIT`, `GOPROXY`, `DistroPackagesProxy`;
+- reusable package-manager helpers должны жить в `.werf/` и подключаться как
+  shared templates, а не копироваться вручную по каждому `werf.inc.yaml`;
+- git source fetches и package installs должны использовать общий mirror/proxy
+  discipline, а не локальные hardcoded `github.com` / distro mirror paths там,
+  где модуль уже умеет принимать общий proxy/mirror context.
 
 ### `hooks/`
 

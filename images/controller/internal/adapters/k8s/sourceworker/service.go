@@ -38,12 +38,13 @@ type Service struct {
 
 func NewService(client client.Client, scheme *runtime.Scheme, options Options) (*Service, error) {
 	if client == nil {
-		return nil, errors.New("source publish pod service client must not be nil")
+		return nil, errors.New("source worker service client must not be nil")
 	}
 	if scheme == nil {
-		return nil, errors.New("source publish pod service scheme must not be nil")
+		return nil, errors.New("source worker service scheme must not be nil")
 	}
-	if err := options.Validate(); err != nil {
+	options = workloadpod.NormalizeRuntimeOptions(options)
+	if err := validateOptions(options); err != nil {
 		return nil, err
 	}
 
@@ -56,10 +57,10 @@ func NewService(client client.Client, scheme *runtime.Scheme, options Options) (
 
 func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.OperationContext) (*publicationports.SourceWorkerHandle, bool, error) {
 	if s == nil {
-		return nil, false, errors.New("source publish pod service must not be nil")
+		return nil, false, errors.New("source worker service must not be nil")
 	}
 	if owner == nil {
-		return nil, false, errors.New("source publish pod owner must not be nil")
+		return nil, false, errors.New("source worker owner must not be nil")
 	}
 
 	plan, err := sourcePlan(request)

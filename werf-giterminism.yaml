@@ -10,6 +10,8 @@ config:
       - STAGED_DOCKERFILE
       - WERF_ENABLE_HOST_GO_PKG_CACHE
       - SOURCE_REPO
+      - SOURCE_REPO_GIT
+      - DISTRO_PACKAGES_PROXY
   stapel:
     mount:
       allowBuildDir: true

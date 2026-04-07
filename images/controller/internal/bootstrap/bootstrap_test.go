@@ -37,8 +37,8 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 				OCIRegistrySecretName: "ai-models-publication-registry",
 			},
 		},
-		HFPublication: catalogstatus.Options{
-			PublishPod: catalogstatus.PublishPodOptions{
+		PublicationRuntime: catalogstatus.Options{
+			Runtime: catalogstatus.PublicationRuntimeOptions{
 				Namespace:             "d8-ai-models",
 				Image:                 "backend:latest",
 				ServiceAccountName:    "ai-models-controller",
@@ -51,8 +51,8 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	if !application.hfPublication.Enabled() {
-		t.Fatal("expected live hf publication to be configured")
+	if !application.publicationRuntime.Enabled() {
+		t.Fatal("expected publication runtime to be configured")
 	}
 }
 
@@ -73,7 +73,7 @@ func TestNewAllowsCleanupOnlyRuntimeWithoutPublicationPlaneConfiguration(t *test
 		t.Fatalf("New() error = %v", err)
 	}
 
-	if application.hfPublication.Enabled() {
+	if application.publicationRuntime.Enabled() {
 		t.Fatal("expected publication runtime to stay disabled")
 	}
 }

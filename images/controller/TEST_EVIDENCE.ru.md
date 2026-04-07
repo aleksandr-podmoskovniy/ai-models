@@ -33,9 +33,21 @@
   - `plan_source_worker_test.go`
   - `issue_upload_session_test.go`
 - Residual gaps:
-  - source acceptance и reconcile short-circuit rules остаются adapter-local в
-    `controllers/catalogstatus`
-  - concrete replay/IO races остаются в adapter package tests
+- source acceptance и reconcile short-circuit rules остаются adapter-local в
+  `controllers/catalogstatus`
+- concrete replay/IO races остаются в adapter package tests
+
+## `internal/application/publishobserve`
+
+- Decision surface:
+  - translation of worker/session runtime handles into domain observations
+  - fail-closed handling for malformed terminal payloads
+  - upload-session expiry handling before public status projection
+- Primary evidence:
+  - `observe_runtime_test.go`
+- Residual gaps:
+  - final status persistence and reconcile replay still belong to
+    `controllers/catalogstatus` tests
 
 ## `internal/adapters/modelformat`
 

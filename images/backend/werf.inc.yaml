@@ -1,6 +1,6 @@
 ---
 image: backend-source-artifact
-fromImage: src-artifact
+fromImage: builder/alpine
 final: false
 git:
 - add: /images/backend/patches
@@ -29,16 +29,19 @@ git:
     install:
     - '**/*'
 shell:
+  beforeInstall:
+  {{- include "alpine packages proxy" . | nindent 2 }}
   install:
   - |
     set -euo pipefail
+    export SOURCE_REPO_GIT={{ .SOURCE_REPO_GIT | quote }}
     apk add --no-cache bash ca-certificates git tar
     bash /scripts/fetch-source.sh --metadata /metadata/upstream.lock --dest /src/backend
     bash /scripts/apply-patches.sh /src/backend /patches
 
 ---
 image: backend-ui-build
-from: node:22.19.0-bookworm-slim@sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90
+fromImage: builder/node-alpine
 final: false
 git:
 - add: /images/backend/scripts
@@ -62,15 +65,18 @@ import:
   to: /src/backend
   before: install
 shell:
+  beforeInstall:
+  {{- include "alpine packages proxy" . | nindent 2 }}
+  {{- include "node packages proxy" . | nindent 2 }}
   install:
   - |
     set -euo pipefail
-    bash /scripts/apt-install.sh ca-certificates git python3 make g++
+    apk add --no-cache bash ca-certificates git python3 make g++
     bash /scripts/build-ui.sh /src/backend
 
 ---
 image: backend-oidc-auth-ui-build
-from: node:22.19.0-bookworm-slim@sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90
+fromImage: builder/node-alpine
 final: false
 git:
 - add: /images/backend/scripts
@@ -89,10 +95,14 @@ git:
     install:
     - '**/*'
 shell:
+  beforeInstall:
+  {{- include "alpine packages proxy" . | nindent 2 }}
+  {{- include "node packages proxy" . | nindent 2 }}
   install:
   - |
     set -euo pipefail
-    bash /scripts/apt-install.sh ca-certificates git
+    export SOURCE_REPO_GIT={{ .SOURCE_REPO_GIT | quote }}
+    apk add --no-cache bash ca-certificates git
     bash /scripts/fetch-oidc-auth-source.sh --metadata /metadata/oidc-auth.lock --dest /src/oidc-auth
     bash /scripts/apply-patches.sh /src/oidc-auth /oidc-auth-patches
     bash /scripts/build-oidc-auth-ui.sh /src/oidc-auth
@@ -131,6 +141,9 @@ import:
   to: /oidc-auth-ui
   before: install
 shell:
+  beforeInstall:
+  {{- include "debian packages proxy" . | nindent 2 }}
+  {{- include "pypi proxy" . | nindent 2 }}
   install:
   - |
     set -euo pipefail
@@ -176,6 +189,9 @@ import:
   to: /oidc-auth-ui
   before: install
 shell:
+  beforeInstall:
+  {{- include "debian packages proxy" . | nindent 2 }}
+  {{- include "pypi proxy" . | nindent 2 }}
   install:
   - |
     set -euo pipefail

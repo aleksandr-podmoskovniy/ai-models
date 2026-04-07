@@ -17,6 +17,9 @@ git:
   - add: /
     to: /
     includePaths:
+      - Chart.yaml
+      - requirements.lock
+      - charts
       - module.yaml
       - oss.yaml
       - .helmignore

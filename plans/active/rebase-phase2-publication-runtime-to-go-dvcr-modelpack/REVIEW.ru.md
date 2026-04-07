@@ -17,24 +17,52 @@ scripts. Live path теперь controller-owned and Go-first:
 - ai-inference-oriented resolved metadata now lands in public status with a
   stricter calculation path for current live formats
 - dedicated runtime image owns the pinned `KitOps` binary
+- controller runtime images now build from a module-local `distroless`
+  relocation layer instead of pulling `base/distroless` directly
+- `KitOps` delivery now has its own artifact stage instead of being hidden
+  inside the Go build stage
+- the lone `KitOps` installer script now sits in the controller root next to
+  `kitops.lock` instead of creating a fake one-file `tools/` boundary
 - backend image no longer carries phase-2 publication/upload/cleanup execution
   entrypoints
 - render fixtures now include the dedicated `controller-runtime` digest, so the
   new image path is covered by `helm-template`/`kubeconform` instead of being
   invisible to template validation
+- root chart now consumes vendored `deckhouse_lib_helm` through the normal
+  DKP dependency path and no longer needs a repo-local helper fork in
+  `templates/`
 
 ## Проверки
 
 - `cd images/controller && go test ./...`
 - `make verify`
 - `werf build --dev --platform=linux/amd64 controller controller-runtime`
+- `werf build --dev --platform=linux/amd64 distroless controller controller-runtime`
+- `werf build --dev --platform=linux/amd64 controller-kitops-artifact controller-runtime`
+- `werf build --dev --platform=linux/amd64 backend-source-artifact backend-ui-build backend-oidc-auth-ui-build bundle`
 - `git diff --check`
+
+Validation note:
+
+- repo-level checks passed, including `make verify` and `git diff --check`;
+- the new targeted `werf build` for `controller-kitops-artifact` was attempted
+  twice but the local Docker API returned `_ping` `500 Internal Server Error`
+  before the actual image stages started, so this specific build could not be
+  re-confirmed end-to-end in the current environment;
+- the later targeted `werf build` for `backend-source-artifact`,
+  `backend-ui-build`, `backend-oidc-auth-ui-build`, and `bundle` also rendered a
+  valid build plan, but hit the same local Docker API `_ping` `500 Internal
+  Server Error` before the first base image finished.
 
 ## Архитектурный эффект
 
 - virtualization-style ownership improved:
   - controller/runtime data plane in Go
   - build/install shell only for tool installation
+  - controller runtime base image is now module-owned at the werf layer too,
+    not only at the Go code layer
+  - external `KitOps` packaging is now an explicit runtime artifact seam,
+    not hidden inside controller compilation
   - hidden backend artifact plane remains hidden behind OCI/ModelPack contract
 - public input contract is now simpler:
   - users provide `spec.source`
@@ -60,10 +88,24 @@ scripts. Live path теперь controller-owned and Go-first:
   - `ModelPack` in OCI
   - runtime input only `OCI from registry`
 - backend phase-1 runtime remains untouched for MLflow-oriented concerns
+- chart render path is now honest:
+  - `deckhouse_lib_helm` comes from the vendored library chart in `charts/`
+  - `.helmignore` no longer drops the library dependency during `helm template`
+  - helper ownership matches `gpu-control-plane` / `virtualization` patterns
+- remaining `KitOps` debt is now supply-chain provenance, not controller/runtime
+  ownership: release asset fetching is still external, but no longer mixed into
+  the Go build path
 
 ## Остаточный долг
 
 - runtime delivery to `ai-inference` is still not wired
+
+## Оставшиеся drifts против virtualization / gpu-control-plane
+
+- backend Python build/runtime stages still use raw external `python:` bases;
+  unlike the former raw `node:` UI stages, this part still has no mapped
+  module-owned replacement in the current repo base-image set and remains the
+  main honest shell debt.
 
 ## Текущая сверка с ADR
 

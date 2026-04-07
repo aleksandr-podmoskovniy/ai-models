@@ -16,13 +16,20 @@ limitations under the License.
 
 package main
 
-import "github.com/deckhouse/ai-models/controller/internal/cmdsupport"
+import (
+	"errors"
+
+	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
+)
 
 const (
-	commandPublishWorker   = "publish-worker"
-	commandUploadSession   = "upload-session"
-	commandArtifactCleanup = "artifact-cleanup"
+	publicationOCIInsecureEnv = "PUBLICATION_OCI_INSECURE"
+	commandPublishWorker      = "publish-worker"
+	commandUploadSession      = "upload-session"
+	commandArtifactCleanup    = "artifact-cleanup"
 )
+
+var errMissingCommand = errors.New("expected one of: publish-worker, upload-session, artifact-cleanup")
 
 func run(args []string) int {
 	switch {

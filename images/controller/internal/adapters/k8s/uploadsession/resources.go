@@ -86,7 +86,7 @@ func (s *Service) buildSecret(ownerUID types.UID) (*corev1.Secret, string, metav
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: s.options.Namespace,
+			Namespace: s.options.Runtime.Namespace,
 			Annotations: map[string]string{
 				"ai-models.deckhouse.io/upload-expires-at": expiresAt.Format(time.RFC3339),
 			},
@@ -107,7 +107,7 @@ func (s *Service) buildService(ownerUID types.UID) (*corev1.Service, error) {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: s.options.Namespace,
+			Namespace: s.options.Runtime.Namespace,
 		},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,

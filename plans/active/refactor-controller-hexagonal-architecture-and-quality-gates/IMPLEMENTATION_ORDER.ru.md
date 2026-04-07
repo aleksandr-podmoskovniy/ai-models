@@ -1,5 +1,16 @@
 # Implementation Order
 
+Историческая запись workstream slices.
+
+Внутри файла ниже остаются старые package names из ранних corrective cuts
+(`modelpublish`, `publicationoperation`, `publishrunner`, `source publish pod`).
+Они нужны как инженерная история, но не являются current target layout.
+Текущая source of truth для live tree и текущих remaining cuts:
+
+- `PLAN.ru.md`
+- `TARGET_LAYOUT.ru.md`
+- `images/controller/STRUCTURE.ru.md`
+
 ## Slice 1. Add Quality Gates First
 
 Before deep refactor, add the following to `verify`:

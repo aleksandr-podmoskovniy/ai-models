@@ -33,9 +33,9 @@ secrets:
 shell:
   install:
     - export GOPROXY=$(cat /run/secrets/GOPROXY)
-    - apt-get update
-    - apt-get install -y --no-install-recommends ca-certificates curl tar bash
-    - rm -rf /var/lib/apt/lists/*
+{{- include "debian packages proxy" . | nindent 4 }}
+    - apt-get install -y --no-install-recommends ca-certificates
+{{- include "debian packages clean" . | nindent 4 }}
     - cd /app/images/controller
     - go mod download
   setup:
@@ -45,11 +45,33 @@ shell:
     - export CGO_ENABLED=0
     - go build -ldflags="-s -w" -a -o /out/ai-models-controller ./cmd/ai-models-controller
     - go build -ldflags="-s -w" -a -o /out/ai-models-artifact-runtime ./cmd/ai-models-artifact-runtime
-    - bash /app/images/controller/tools/install-kitops.sh --metadata /app/images/controller/kitops.lock --dest /out/kit
+---
+image: controller-kitops-artifact
+final: false
+fromImage: builder/alt
+git:
+  - add: /images/controller/install-kitops.sh
+    to: /src/install-kitops.sh
+    stageDependencies:
+      install:
+        - install-kitops.sh
+  - add: /images/controller/kitops.lock
+    to: /src/kitops.lock
+    stageDependencies:
+      install:
+        - kitops.lock
+shell:
+  beforeInstall:
+  {{- include "alt packages proxy" . | nindent 2 }}
+    - apt-get install -y ca-certificates curl tar bash
+  {{- include "alt packages clean" . | nindent 2 }}
+  install:
+    - bash /src/install-kitops.sh --metadata /src/kitops.lock --dest /out/kit
+    - /out/kit version --show-update-notifications=false >/dev/null
 ---
 image: controller
 final: true
-fromImage: base/distroless
+fromImage: distroless
 import:
   - image: controller-build-artifact
     add: /out/ai-models-controller
@@ -64,13 +86,13 @@ imageSpec:
 ---
 image: controller-runtime
 final: true
-fromImage: base/distroless
+fromImage: distroless
 import:
   - image: controller-build-artifact
     add: /out/ai-models-artifact-runtime
     to: /app/ai-models-artifact-runtime
     after: install
-  - image: controller-build-artifact
+  - image: controller-kitops-artifact
     add: /out/kit
     to: /usr/local/bin/kit
     after: install

@@ -167,6 +167,28 @@ ensure_required_paths() {
   done
 }
 
+rewrite_repo_url() {
+  local original_url="$1"
+  local mirror="${SOURCE_REPO_GIT:-${SOURCE_REPO:-}}"
+
+  if [[ -z "${mirror}" ]]; then
+    printf '%s\n' "${original_url}"
+    return 0
+  fi
+
+  case "${original_url}" in
+    https://github.com/*)
+      printf '%s/%s\n' "${mirror%/}" "${original_url#https://github.com/}"
+      ;;
+    https://gitlab.com/*)
+      printf '%s/%s\n' "${mirror%/}" "${original_url#https://gitlab.com/}"
+      ;;
+    *)
+      printf '%s\n' "${original_url}"
+      ;;
+  esac
+}
+
 if [[ -n "${source_dir}" ]]; then
   if [[ ! -d "${source_dir}" ]]; then
     echo "Source directory does not exist: ${source_dir}" >&2
@@ -187,6 +209,7 @@ if [[ -n "${source_dir}" ]]; then
 
   copy_tree "${source_dir}" "${dest_dir}"
 else
+  repo_url="$(rewrite_repo_url "${repo_url}")"
   rm -rf "${dest_dir}"
   git clone --filter=blob:none "${repo_url}" "${dest_dir}"
   git -C "${dest_dir}" checkout "${ref}"

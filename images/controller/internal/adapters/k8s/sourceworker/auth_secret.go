@@ -93,7 +93,7 @@ func (s *Service) projectedAuthSecretData(
 	case plan.HTTP != nil && plan.HTTP.AuthSecretRef != nil:
 		return projectedHTTPAuthData(sourceSecret)
 	default:
-		return nil, errors.New("source publish pod auth projection requires a supported auth plan")
+		return nil, errors.New("source worker auth projection requires a supported auth plan")
 	}
 }
 
@@ -115,7 +115,7 @@ func projectedHFToken(secret *corev1.Secret) ([]byte, error) {
 		}
 	}
 	return nil, fmt.Errorf(
-		"source publish pod huggingFace auth secret %s/%s must contain one of: token, HF_TOKEN, HUGGING_FACE_HUB_TOKEN",
+		"source worker huggingFace auth secret %s/%s must contain one of: token, HF_TOKEN, HUGGING_FACE_HUB_TOKEN",
 		secret.Namespace,
 		secret.Name,
 	)
@@ -138,7 +138,7 @@ func projectedHTTPAuthData(secret *corev1.Secret) (map[string][]byte, error) {
 	}
 
 	return nil, fmt.Errorf(
-		"source publish pod http auth secret %s/%s must contain authorization or username+password",
+		"source worker http auth secret %s/%s must contain authorization or username+password",
 		secret.Namespace,
 		secret.Name,
 	)

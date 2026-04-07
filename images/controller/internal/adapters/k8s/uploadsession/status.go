@@ -28,31 +28,16 @@ import (
 )
 
 func buildUploadStatus(
-	pod *corev1.Pod,
+	artifactURI string,
 	service *corev1.Service,
 	token string,
 	expiresAt metav1.Time,
 ) modelsv1alpha1.ModelUploadStatus {
 	return modelsv1alpha1.ModelUploadStatus{
 		ExpiresAt:  &expiresAt,
-		Repository: artifactURIFromPod(pod),
+		Repository: strings.TrimSpace(artifactURI),
 		Command:    buildUploadCommand(service.Namespace, service.Name, token),
 	}
-}
-
-func artifactURIFromPod(pod *corev1.Pod) string {
-	if pod == nil || len(pod.Spec.Containers) == 0 {
-		return ""
-	}
-
-	args := pod.Spec.Containers[0].Args
-	for i := 0; i < len(args)-1; i++ {
-		if args[i] == "--artifact-uri" {
-			return strings.TrimSpace(args[i+1])
-		}
-	}
-
-	return ""
 }
 
 func expiresAtFromSecret(secret *corev1.Secret) (metav1.Time, error) {

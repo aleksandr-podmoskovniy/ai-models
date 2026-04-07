@@ -8,9 +8,9 @@ feature slices.
 ## Orchestration
 
 - mode: `full`
-- read-only subagents before writing the plan:
-  - controller boundary audit
-  - quality-gate / verify-pipeline audit
+- read-only audits are required by repo policy, but no subagents are spawned in
+  this turn because current execution policy forbids delegation without an
+  explicit user request; audits are performed locally.
 
 ## Audit conclusions
 
@@ -186,6 +186,58 @@ feature slices.
 - package-local `go test`
 - controller quality gates
 - `deadcode`
+
+## Slice 6. Catalogstatus Virtualization Alignment
+
+Цель:
+
+- добить remaining live drift в `controllers/catalogstatus` и связанном wiring,
+  чтобы live tree снова совпадал с virtualization-style ownership, а не только
+  с bundle docs.
+
+Что исправляется:
+
+- runtime worker/session observation и result decode уходят из reconciler
+  adapter shell в application seam;
+- reconcile entry/skip policy уходит из `controllers/catalogstatus` в
+  application gate, чтобы thin controller не держал свой локальный replay
+  policy;
+- runtime source-vs-upload orchestration уходит из `controllers/catalogstatus`
+  в application use case поверх shared publication ports;
+- status-mutation planning уходит из `controllers/catalogstatus` в
+  application seam, чтобы controller не знал напрямую domain projection rules;
+- legacy source-coupled naming (`HFPublication`, `PublishPod`,
+  `source publish pod`) меняется на source-agnostic publication runtime naming;
+- upload-session adapter перестаёт восстанавливать publication repository из
+  собственного Pod argv; live runtime state должен проходить по explicit
+  adapter contract, а не через reverse parsing rendered resources;
+- duplicate runtime workload options между `sourceworker` и `uploadsession`
+  схлопываются в shared `workloadpod` seam вместо второй копии одного и того же
+  adapter contract;
+- fake repo boundary `images/src-artifact/` убирается из build shell, если она
+  не даёт собственной живой ответственности;
+- stale target docs и structure inventory синхронизируются с live tree.
+
+Артефакты:
+
+- `images/controller/internal/application/*`
+- `images/controller/internal/controllers/catalogstatus/*`
+- `images/controller/internal/adapters/k8s/sourceworker/*`
+- `images/controller/internal/adapters/k8s/uploadsession/*`
+- `images/controller/internal/adapters/k8s/workloadpod/*`
+- `images/controller/internal/bootstrap/*`
+- `images/controller/cmd/ai-models-controller/*`
+- `images/backend/werf.inc.yaml`
+- `docs/development/REPO_LAYOUT.ru.md`
+- `images/controller/STRUCTURE.ru.md`
+- current bundle docs
+
+Проверки:
+
+- focused package tests for touched controller packages
+- `go test ./...` in `images/controller`
+- `make verify`
+- `git diff --check`
 
 ## Rollback point
 

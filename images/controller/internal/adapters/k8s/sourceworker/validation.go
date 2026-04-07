@@ -20,37 +20,15 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
-	corev1 "k8s.io/api/core/v1"
 )
 
-type Options struct {
-	Namespace               string
-	Image                   string
-	ServiceAccountName      string
-	OCIRepositoryPrefix     string
-	OCIInsecure             bool
-	OCIRegistrySecretName   string
-	OCIRegistryCASecretName string
-	ImagePullPolicy         corev1.PullPolicy
-}
+type Options = workloadpod.RuntimeOptions
 
-func (o Options) Validate() error {
-	switch {
-	case strings.TrimSpace(o.Namespace) == "":
-		return errors.New("source publish pod namespace must not be empty")
-	case strings.TrimSpace(o.Image) == "":
-		return errors.New("source publish pod image must not be empty")
-	case strings.TrimSpace(o.ServiceAccountName) == "":
-		return errors.New("source publish pod serviceAccountName must not be empty")
-	case strings.TrimSpace(o.OCIRepositoryPrefix) == "":
-		return errors.New("source publish pod OCI repository prefix must not be empty")
-	case strings.TrimSpace(o.OCIRegistrySecretName) == "":
-		return errors.New("source publish pod OCI registry secret name must not be empty")
-	default:
-		return nil
-	}
+func validateOptions(options Options) error {
+	return workloadpod.ValidateRuntimeOptions("source worker", options)
 }
 
 func sourcePlan(request publicationports.OperationContext) (publicationapp.SourceWorkerPlan, error) {
@@ -66,11 +44,11 @@ func sourcePlan(request publicationports.OperationContext) (publicationapp.Sourc
 func validateOwner(owner publicationports.Owner) error {
 	switch {
 	case strings.TrimSpace(string(owner.UID)) == "":
-		return errors.New("source publish pod owner UID must not be empty")
+		return errors.New("source worker owner UID must not be empty")
 	case strings.TrimSpace(owner.Kind) == "":
-		return errors.New("source publish pod owner kind must not be empty")
+		return errors.New("source worker owner kind must not be empty")
 	case strings.TrimSpace(owner.Name) == "":
-		return errors.New("source publish pod owner name must not be empty")
+		return errors.New("source worker owner name must not be empty")
 	default:
 		return nil
 	}

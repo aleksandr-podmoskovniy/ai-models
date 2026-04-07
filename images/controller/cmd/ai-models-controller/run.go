@@ -115,8 +115,8 @@ func runManager(args []string) int {
 			},
 			RequeueAfter: 5 * time.Second,
 		},
-		HFPublication: catalogstatus.Options{
-			PublishPod: catalogstatus.PublishPodOptions{
+		PublicationRuntime: catalogstatus.Options{
+			Runtime: catalogstatus.PublicationRuntimeOptions{
 				Namespace:               publicationWorkerNamespace,
 				Image:                   cmdsupport.FallbackString(publicationWorkerImage, cleanupJobImage),
 				ServiceAccountName:      cmdsupport.FallbackString(publicationWorkerServiceAccount, cleanupJobServiceAccount),

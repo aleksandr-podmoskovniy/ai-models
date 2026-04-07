@@ -1,5 +1,15 @@
 # Review
 
+Исторический cumulative review журнала corrective workstream.
+
+Ниже встречаются старые package names и промежуточные seams из ранних slices.
+Этот файл не должен использоваться как current architecture map; current source
+of truth теперь:
+
+- `PLAN.ru.md`
+- `TARGET_LAYOUT.ru.md`
+- `images/controller/STRUCTURE.ru.md`
+
 ## Findings
 
 - Critical blockers не найдены.
@@ -248,6 +258,29 @@
     rendering in `adapters/k8s/ociregistry`
   - shared helper duplication is now centralized under `internal/support/*`:
     `cleanuphandle`, `modelobject`, `resourcenames`
+- Follow-up virtualization alignment cut after Slice 18:
+  - `application/publishobserve` now owns not only reconcile gate and runtime
+    observation, but also source-vs-upload runtime orchestration through the
+    shared publication ports
+  - `controllers/catalogstatus/reconciler.go` no longer branches between
+    `sourceworker` and `uploadsession`; it delegates the runtime execution path
+    to one application use case and keeps only object loading plus persistence
+    shell
+  - docs and target-layout notes were synced so the repo no longer claims that
+    `catalogstatus` itself performs runtime port calls
+  - targeted package tests, `go test ./...` in `images/controller`,
+    `make verify`, and `git diff --check` pass after the cut
+- Final follow-up alignment cut for `catalogstatus`:
+  - `controllers/catalogstatus/io.go` no longer imports `domain/publishstate`
+    directly and no longer assembles status mutation policy inline
+  - `application/publishobserve` now plans controller status / cleanup-handle
+    mutations from domain observations, while the controller keeps only the
+    persistence shell and update ordering
+  - after this cut, concrete controller packages no longer call
+    `publishstate.ProjectStatus` directly; domain projection rules stay behind
+    application seams
+  - targeted package tests, `go test ./...` in `images/controller`,
+    `make verify`, and `git diff --check` pass after the cut
   - duplicated `Model` / `ClusterModel` status/kind/request helpers were
     removed from the controller packages and moved into `support/modelobject`
   - duplicated owner-name/label normalization and OCI env/volume rendering were

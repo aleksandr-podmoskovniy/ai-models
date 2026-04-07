@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
@@ -159,11 +160,13 @@ var _ publicationports.UploadSessionRuntime = (*Service)(nil)
 
 func uploadOptions() Options {
 	return Options{
-		Namespace:             "d8-ai-models",
-		Image:                 "backend:latest",
-		ServiceAccountName:    "ai-models-controller",
-		OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-		OCIRegistrySecretName: "ai-models-publication-registry",
-		TokenTTL:              15 * time.Minute,
+		Runtime: workloadpod.RuntimeOptions{
+			Namespace:             "d8-ai-models",
+			Image:                 "backend:latest",
+			ServiceAccountName:    "ai-models-controller",
+			OCIRepositoryPrefix:   "registry.internal.local/ai-models",
+			OCIRegistrySecretName: "ai-models-publication-registry",
+		},
+		TokenTTL: 15 * time.Minute,
 	}
 }

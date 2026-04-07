@@ -50,7 +50,8 @@ func buildWithPlan(
 	options Options,
 	projectedAuthSecretName string,
 ) (*corev1.Pod, error) {
-	if err := options.Validate(); err != nil {
+	options = workloadpod.NormalizeRuntimeOptions(options)
+	if err := validateOptions(options); err != nil {
 		return nil, err
 	}
 	if err := validateProjectedAuthSecretName(sourcePlan, projectedAuthSecretName); err != nil {
@@ -207,7 +208,7 @@ func validateProjectedAuthSecretName(
 		return nil
 	}
 	if strings.TrimSpace(projectedAuthSecretName) == "" {
-		return errors.New("source publish pod projected auth secret name must not be empty when authSecretRef is set")
+		return errors.New("source worker projected auth secret name must not be empty when authSecretRef is set")
 	}
 	return nil
 }

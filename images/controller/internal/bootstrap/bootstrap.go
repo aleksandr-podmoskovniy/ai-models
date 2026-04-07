@@ -34,9 +34,9 @@ import (
 )
 
 type Options struct {
-	CleanupJobs   catalogcleanup.Options
-	HFPublication catalogstatus.Options
-	Runtime       RuntimeOptions
+	CleanupJobs        catalogcleanup.Options
+	PublicationRuntime catalogstatus.Options
+	Runtime            RuntimeOptions
 }
 
 type RuntimeOptions struct {
@@ -48,10 +48,10 @@ type RuntimeOptions struct {
 }
 
 type App struct {
-	logger        *slog.Logger
-	cleanupJobs   catalogcleanup.Options
-	hfPublication catalogstatus.Options
-	runtime       RuntimeOptions
+	logger             *slog.Logger
+	cleanupJobs        catalogcleanup.Options
+	publicationRuntime catalogstatus.Options
+	runtime            RuntimeOptions
 }
 
 func New(logger *slog.Logger, options Options) (*App, error) {
@@ -61,17 +61,17 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 	if err := options.CleanupJobs.CleanupJob.Validate(); err != nil {
 		return nil, err
 	}
-	if err := options.HFPublication.Validate(); err != nil {
+	if err := options.PublicationRuntime.Validate(); err != nil {
 		return nil, err
 	}
 
 	runtimeOptions := normalizeRuntimeOptions(options.Runtime)
 
 	return &App{
-		cleanupJobs:   options.CleanupJobs,
-		hfPublication: options.HFPublication,
-		logger:        logger,
-		runtime:       runtimeOptions,
+		cleanupJobs:        options.CleanupJobs,
+		publicationRuntime: options.PublicationRuntime,
+		logger:             logger,
+		runtime:            runtimeOptions,
 	}, nil
 }
 
@@ -103,7 +103,7 @@ func (a *App) Run(ctx context.Context) error {
 	if err := catalogcleanup.SetupWithManager(mgr, a.cleanupJobs); err != nil {
 		return err
 	}
-	if err := catalogstatus.SetupWithManager(mgr, a.hfPublication); err != nil {
+	if err := catalogstatus.SetupWithManager(mgr, a.publicationRuntime); err != nil {
 		return err
 	}
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -123,11 +123,11 @@ func (a *App) Run(ctx context.Context) error {
 		slog.String("cleanupJobNamespace", a.cleanupJobs.CleanupJob.Namespace),
 		slog.String("cleanupJobImage", a.cleanupJobs.CleanupJob.Image),
 	)
-	if a.hfPublication.Enabled() {
+	if a.publicationRuntime.Enabled() {
 		a.logger.Info(
 			"controller model publication configured",
-			slog.String("publishPodNamespace", a.hfPublication.PublishPod.Namespace),
-			slog.String("publishPodImage", a.hfPublication.PublishPod.Image),
+			slog.String("publicationRuntimeNamespace", a.publicationRuntime.Runtime.Namespace),
+			slog.String("publicationRuntimeImage", a.publicationRuntime.Runtime.Image),
 		)
 	}
 

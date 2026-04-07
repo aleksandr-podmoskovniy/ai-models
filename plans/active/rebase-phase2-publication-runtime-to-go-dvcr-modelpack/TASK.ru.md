@@ -52,11 +52,20 @@
   какие остаются phase-1/backend-adjacent shell.
 - Начать bounded implementation cuts в сторону Go-first publication/runtime
   path без возврата к старой patchwork structure.
+- Выровнять module build/deploy shell с DKP module patterns из
+  `gpu-control-plane` и `virtualization` там, где это относится к
+  phase-2 runtime path:
+  - module-local distroless layer для собственного Go runtime;
+  - chart-level `deckhouse_lib_helm` dependency вместо repo-local helper fork;
+  - явное разделение между phase-2 controller runtime shell и phase-1 backend
+    packaging shell.
 - Синхронизировать repo memory, docs и controller structure rationale.
 
 ## Non-goals
 
 - Не переписывать phase-1 MLflow runtime/deployment shell в этой задаче.
+- Не переводить backend Python runtime в distroless до отдельного hardening
+  решения этапа 3.
 - Не менять публичный DKP contract без отдельного обоснования в slice.
 - Не реализовывать сразу весь `ai-inference` mutation/runtime delivery path в
   одном mega-slice.
@@ -66,8 +75,13 @@
 ## Затрагиваемые области
 
 - `images/controller/internal/*`
+- `images/distroless/*`
 - `images/backend/scripts/*`
 - `images/backend/werf.inc.yaml`
+- `werf.yaml`
+- `Chart.yaml`
+- `requirements.lock`
+- `templates/*`
 - `docs/*`
 - `plans/active/*`
 - `.agents/skills/*` если потребуется закрепить durable discipline
@@ -88,6 +102,12 @@
 - Первый bounded corrective slice реально landed в код, а не только в docs.
 - Изменение не ухудшает текущие controller quality gates и не создаёт новый
   patchwork bundle.
+- Controller/runtime build shell использует module-local distroless image, а не
+  прямой `base/distroless`.
+- Helm chart использует normal DKP dependency path для `deckhouse_lib_helm`,
+  без repo-local fork как primary source of truth.
+- Helm render, kubeconform и targeted werf build подтверждают, что module shell
+  по-прежнему корректно собирает и рендерит controller runtime path.
 
 ## Риски
 

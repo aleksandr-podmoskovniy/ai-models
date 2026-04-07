@@ -1,4 +1,0 @@
----
-image: src-artifact
-final: false
-fromImage: builder/alpine
