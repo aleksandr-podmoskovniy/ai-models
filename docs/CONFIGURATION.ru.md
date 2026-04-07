@@ -116,13 +116,13 @@ in-cluster import Jobs и break-glass operations, а browser users идут че
 целевым steady-state режимом.
 
 Для phase 2 controller теперь владеет publication/runtime adapters для первых
-live source paths. `Model` / `ClusterModel` с
-`spec.source.type=HuggingFace` и `spec.source.type=HTTP` проходят через
-controller-owned worker Pods, которые скачивают принятый source, генерируют
+live source paths. `Model` / `ClusterModel` с `spec.source.url` проходят через
+controller-owned worker Pods, которые сами определяют, является ли ссылка
+Hugging Face-источником или обычным HTTP-адресом, скачивают принятый source, генерируют
 model-package description, упаковывают checkpoint в `ModelPack` через текущий
 implementation adapter, пушат итоговый artifact в module-owned OCI publication
 plane, инспектируют remote manifest и только после этого пишут в public
-`status` ссылку на сохранённый artifact и базовый technical profile. Текущий
+`status` ссылку на сохранённый artifact и обогащённый technical profile. Текущий
 live scope для `HTTP` намеренно узкий: ожидается
 archive с Hugging Face-compatible checkpoint, требуется
 `spec.runtimeHints.task`, поддерживается inline `caBundle`, а `authSecretRef`
@@ -131,28 +131,73 @@ controller принимает source secret с одним из ключей `tok
 `HUGGING_FACE_HUB_TOKEN` и нормализует его в projected worker token. Для
 `HTTP` controller принимает либо `authorization`, либо пару
 `username`+`password` и проецирует только эти ключи в worker namespace.
-Backend worker жёстко harden'ит tar/zip extraction и отклоняет path traversal,
-symlink, hard link и другие специальные archive entries вместо raw
-`extractall`.
+Controller-owned publication worker жёстко harden'ит tar/zip extraction и
+отклоняет path traversal, symlink, hard link и другие специальные archive
+entries вместо raw `extractall`.
 
-`spec.source.type=Upload` теперь идёт через controller-owned session flow, а не
+`spec.source.upload` теперь идёт через controller-owned session flow, а не
 через batch import. Controller создаёт worker Pod, ClusterIP Service и
 short-lived auth Secret, после чего пишет helper command в
 `status.upload.command` для local-machine upload через `kubectl port-forward`.
-Текущий live backend path принимает загруженные archives только для
-`expectedFormat=HuggingFaceDirectory` и публикует их в тот же
-controller-owned `ModelPack`/OCI artifact plane через текущий adapter.
-`expectedFormat=ModelKit` уже
-остаётся в public API, но пока честно ведёт в controlled failure до отдельного
-slice с direct `ModelKit` ingest.
+Текущий live controller path принимает:
+
+- для `Safetensors`: архив с `config.json` и файлами весов;
+- для `GGUF`: либо прямой `.gguf` файл, либо архив.
+
+Дальше controller публикует их в тот же controller-owned `ModelPack`/OCI
+artifact plane через текущий Go dataplane и `ModelPack` adapter.
+
+`spec.inputFormat` трактуется как source-agnostic contract для валидации
+состава модели на входе, а не как формат финального registry artifact.
+Финальная опубликованная форма скрыта и фиксирована: `ModelPack` в OCI.
+Независимо от того, пришли ли байты из Hugging Face, HTTP или локального
+upload, controller теперь валидирует и санитизирует состав проекта до
+packaging. Текущие live правила такие:
+
+- `Safetensors`: нужен root `config.json`, хотя бы один `.safetensors`, разрешён
+  известный config/tokenizer/index companion set, benign extras вроде
+  `README.md` и картинок вычищаются, активные или неоднозначные файлы вроде
+  `.py`, `.sh`, `.dll`, `.so` и прочий unsupported payload отклоняются.
+- `GGUF`: нужен хотя бы один `.gguf`, benign extras вычищаются, те же активные
+  или неоднозначные payload'ы отклоняются.
+
+Для generic `HTTP` это означает:
+
+- `Safetensors` сейчас ожидает архив;
+- `GGUF` может приехать как прямой файл или как архив.
+
+Если `spec.inputFormat` не указан, controller сначала пытается определить
+формат сам:
+
+- `GGUF` — по наличию `.gguf`;
+- `Safetensors` — по `config.json` и `.safetensors`.
+
+Если формат определить однозначно не удалось, публикация fail-closed
+останавливается с ошибкой и требует явного `spec.inputFormat`.
+
+После валидации controller дополнительно обогащает metamodel:
+
+- для `Safetensors`
+  - читает `config.json`
+  - ищет размер контекстного окна по известным ключам
+  - считает `parameterCount` сначала по явным полям, затем по размерам
+    `.safetensors` shards
+  - определяет `quantization` и `compatiblePrecisions`
+  - строит `supportedEndpointTypes` из `task`
+  - строит `minimumLaunch` как GPU baseline по реальному размеру весов
+- для `GGUF`
+  - читает имя и размер `.gguf` файла
+  - выделяет family, quantization и приблизительный `parameterCount`
+  - строит `supportedEndpointTypes` из `task`
+  - строит `minimumLaunch` как GPU baseline по реальному размеру файла и
+    quantization
 
 Destructive cleanup тоже остаётся явным machine-oriented workflow. Phase-2
 controller теперь хранит только internal backend cleanup handle и запускает
-controller-owned one-shot Jobs через image-owned entrypoint
-`ai-models-backend-artifact-cleanup`. Текущий live cleanup path логинится в
-publication OCI registry с тем же controller-owned trust и credentials wiring и
-удаляет remote artifact по сохранённой ссылке, не выводя backend internals в
-public status.
+controller-owned one-shot Jobs через subcommand `artifact-cleanup` в
+dedicated runtime image. Текущий live cleanup path логинится в publication OCI
+registry с тем же controller-owned trust и credentials wiring и удаляет remote
+artifact по сохранённой ссылке, не выводя backend internals в public status.
 
 HF import path также оставляет в MLflow осмысленную metadata для production UX:
 

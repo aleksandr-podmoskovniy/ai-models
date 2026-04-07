@@ -53,23 +53,12 @@ func (o Options) Validate() error {
 	}
 }
 
-func validateRequest(request publicationports.OperationContext) error {
-	_, err := sourcePlan(request)
-	return err
-}
-
 func sourcePlan(request publicationports.OperationContext) (publicationapp.SourceWorkerPlan, error) {
 	if err := validateOwner(request.Request.Owner); err != nil {
 		return publicationapp.SourceWorkerPlan{}, err
 	}
 	if err := request.Request.Identity.Validate(); err != nil {
 		return publicationapp.SourceWorkerPlan{}, err
-	}
-	if strings.TrimSpace(request.OperationName) == "" {
-		return publicationapp.SourceWorkerPlan{}, errors.New("source publish pod operation name must not be empty")
-	}
-	if strings.TrimSpace(request.OperationNamespace) == "" {
-		return publicationapp.SourceWorkerPlan{}, errors.New("source publish pod operation namespace must not be empty")
 	}
 	return publicationapp.PlanSourceWorker(request.Request.Spec, request.Request.Owner.Namespace)
 }

@@ -40,10 +40,7 @@ func TestRequestValidate(t *testing.T) {
 				Identity: validIdentity(),
 				Spec: modelsv1alpha1.ModelSpec{
 					Source: modelsv1alpha1.ModelSourceSpec{
-						Type: modelsv1alpha1.ModelSourceTypeHuggingFace,
-						HuggingFace: &modelsv1alpha1.HuggingFaceModelSource{
-							RepoID: "deepseek-ai/DeepSeek-R1",
-						},
+						URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 					},
 				},
 			},
@@ -58,10 +55,7 @@ func TestRequestValidate(t *testing.T) {
 				Identity: validIdentity(),
 				Spec: modelsv1alpha1.ModelSpec{
 					Source: modelsv1alpha1.ModelSourceSpec{
-						Type: modelsv1alpha1.ModelSourceTypeHuggingFace,
-						HuggingFace: &modelsv1alpha1.HuggingFaceModelSource{
-							RepoID: "deepseek-ai/DeepSeek-R1",
-						},
+						URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 					},
 				},
 			},
@@ -77,10 +71,7 @@ func TestRequestValidate(t *testing.T) {
 				Identity: validIdentity(),
 				Spec: modelsv1alpha1.ModelSpec{
 					Source: modelsv1alpha1.ModelSourceSpec{
-						Type: modelsv1alpha1.ModelSourceTypeHuggingFace,
-						HuggingFace: &modelsv1alpha1.HuggingFaceModelSource{
-							RepoID: "deepseek-ai/DeepSeek-R1",
-						},
+						URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 					},
 				},
 			},
@@ -96,10 +87,7 @@ func TestRequestValidate(t *testing.T) {
 				Identity: validIdentity(),
 				Spec: modelsv1alpha1.ModelSpec{
 					Source: modelsv1alpha1.ModelSourceSpec{
-						Type: modelsv1alpha1.ModelSourceTypeHuggingFace,
-						HuggingFace: &modelsv1alpha1.HuggingFaceModelSource{
-							RepoID: "deepseek-ai/DeepSeek-R1",
-						},
+						URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 					},
 				},
 			},
@@ -112,17 +100,14 @@ func TestRequestValidate(t *testing.T) {
 				Identity: publication.Identity{},
 				Spec: modelsv1alpha1.ModelSpec{
 					Source: modelsv1alpha1.ModelSourceSpec{
-						Type: modelsv1alpha1.ModelSourceTypeHuggingFace,
-						HuggingFace: &modelsv1alpha1.HuggingFaceModelSource{
-							RepoID: "deepseek-ai/DeepSeek-R1",
-						},
+						URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 					},
 				},
 			},
 			wantErr: true,
 		},
 		{
-			name: "missing source type fails closed",
+			name: "missing source fails closed",
 			input: Request{
 				Owner:    validOwner(),
 				Identity: validIdentity(),
@@ -130,26 +115,13 @@ func TestRequestValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "unknown source type fails closed",
+			name: "unsupported source scheme fails closed",
 			input: Request{
 				Owner:    validOwner(),
 				Identity: validIdentity(),
 				Spec: modelsv1alpha1.ModelSpec{
 					Source: modelsv1alpha1.ModelSourceSpec{
-						Type: modelsv1alpha1.ModelSourceType("OCIArtifact"),
-					},
-				},
-			},
-			wantErr: true,
-		},
-		{
-			name: "huggingface without payload fails closed",
-			input: Request{
-				Owner:    validOwner(),
-				Identity: validIdentity(),
-				Spec: modelsv1alpha1.ModelSpec{
-					Source: modelsv1alpha1.ModelSourceSpec{
-						Type: modelsv1alpha1.ModelSourceTypeHuggingFace,
+						URL: "oci://example.invalid/model",
 					},
 				},
 			},
@@ -162,21 +134,31 @@ func TestRequestValidate(t *testing.T) {
 				Identity: validIdentity(),
 				Spec: modelsv1alpha1.ModelSpec{
 					Source: modelsv1alpha1.ModelSourceSpec{
-						Type: modelsv1alpha1.ModelSourceTypeUpload,
+						Upload: nil,
 					},
 				},
 			},
 			wantErr: true,
 		},
 		{
-			name: "http without payload fails closed",
+			name: "upload source is valid only with upload payload",
 			input: Request{
 				Owner:    validOwner(),
 				Identity: validIdentity(),
 				Spec: modelsv1alpha1.ModelSpec{
 					Source: modelsv1alpha1.ModelSourceSpec{
-						Type: modelsv1alpha1.ModelSourceTypeHTTP,
+						Upload: &modelsv1alpha1.UploadModelSource{},
 					},
+				},
+			},
+		},
+		{
+			name: "remote without URL fails closed",
+			input: Request{
+				Owner:    validOwner(),
+				Identity: validIdentity(),
+				Spec: modelsv1alpha1.ModelSpec{
+					Source: modelsv1alpha1.ModelSourceSpec{},
 				},
 			},
 			wantErr: true,

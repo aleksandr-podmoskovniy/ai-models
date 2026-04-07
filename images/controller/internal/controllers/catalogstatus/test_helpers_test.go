@@ -17,19 +17,49 @@ limitations under the License.
 package catalogstatus
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/controllers/publishrunner"
+	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func newModelReconciler(t *testing.T, objects ...client.Object) (*ModelReconciler, client.Client) {
+type fakeSourceWorkerRuntime struct {
+	handle *publicationports.SourceWorkerHandle
+	err    error
+	calls  int
+}
+
+func (f *fakeSourceWorkerRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.OperationContext) (*publicationports.SourceWorkerHandle, bool, error) {
+	f.calls++
+	return f.handle, false, f.err
+}
+
+type fakeUploadSessionRuntime struct {
+	handle *publicationports.UploadSessionHandle
+	err    error
+	calls  int
+}
+
+func (f *fakeUploadSessionRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.OperationContext) (*publicationports.UploadSessionHandle, bool, error) {
+	f.calls++
+	return f.handle, false, f.err
+}
+
+func newModelReconciler(
+	t *testing.T,
+	sourceWorkers publicationports.SourceWorkerRuntime,
+	uploadSessions publicationports.UploadSessionRuntime,
+	objects ...client.Object,
+) (*ModelReconciler, client.Client) {
 	t.Helper()
 
 	scheme := testkit.NewScheme(t)
@@ -41,14 +71,19 @@ func newModelReconciler(t *testing.T, objects ...client.Object) (*ModelReconcile
 	)
 
 	return &ModelReconciler{baseReconciler{
-		client: kubeClient,
-		options: Options{
-			OperationNamespace: "d8-ai-models",
-		},
+		client:         kubeClient,
+		options:        Options{},
+		sourceWorkers:  sourceWorkers,
+		uploadSessions: uploadSessions,
 	}}, kubeClient
 }
 
-func newClusterModelReconciler(t *testing.T, objects ...client.Object) (*ClusterModelReconciler, client.Client) {
+func newClusterModelReconciler(
+	t *testing.T,
+	sourceWorkers publicationports.SourceWorkerRuntime,
+	uploadSessions publicationports.UploadSessionRuntime,
+	objects ...client.Object,
+) (*ClusterModelReconciler, client.Client) {
 	t.Helper()
 
 	scheme := testkit.NewScheme(t)
@@ -60,10 +95,10 @@ func newClusterModelReconciler(t *testing.T, objects ...client.Object) (*Cluster
 	)
 
 	return &ClusterModelReconciler{baseReconciler{
-		client: kubeClient,
-		options: Options{
-			OperationNamespace: "d8-ai-models",
-		},
+		client:         kubeClient,
+		options:        Options{},
+		sourceWorkers:  sourceWorkers,
+		uploadSessions: uploadSessions,
 	}}, kubeClient
 }
 
@@ -79,58 +114,35 @@ func testUploadModel() *modelsv1alpha1.Model {
 	return testkit.NewUploadModel()
 }
 
-func succeededOperationForModel(t *testing.T, model *modelsv1alpha1.Model) *corev1.ConfigMap {
+func succeededTerminationMessage(t *testing.T) string {
 	t.Helper()
 
-	operation, err := publishrunner.NewConfigMap("d8-ai-models", publicationports.Request{
-		Owner: publicationports.Owner{
-			Kind:      modelsv1alpha1.ModelKind,
-			Name:      model.Name,
-			Namespace: model.Namespace,
-			UID:       model.UID,
+	payload, err := artifactbackend.EncodeResult(artifactbackend.Result{
+		Artifact: publication.PublishedArtifact{
+			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
+			URI:       "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef",
+			Digest:    "sha256:deadbeef",
+			MediaType: "application/vnd.cncf.model.manifest.v1+json",
+			SizeBytes: 42,
 		},
-		Identity: publication.Identity{
-			Scope:     publication.ScopeNamespaced,
-			Namespace: model.Namespace,
-			Name:      model.Name,
+		Resolved: publication.ResolvedProfile{
+			Task:                         "text-generation",
+			Framework:                    "transformers",
+			Family:                       "deepseek",
+			License:                      "apache-2.0",
+			Architecture:                 "DeepseekForCausalLM",
+			Format:                       "Safetensors",
+			ContextWindowTokens:          8192,
+			SourceRepoID:                 "deepseek-ai/DeepSeek-R1",
+			SupportedEndpointTypes:       []string{"OpenAIChatCompletions", "OpenAICompletions"},
+			CompatibleRuntimes:           []string{"KServe", "vLLM"},
+			CompatibleAcceleratorVendors: []string{"NVIDIA"},
+			CompatiblePrecisions:         []string{"BF16"},
 		},
-		Spec: model.Spec,
-	})
-	if err != nil {
-		t.Fatalf("NewConfigMap() error = %v", err)
-	}
-	if err := publishrunner.SetSucceeded(operation, publicationports.Result{
-		Snapshot: publication.Snapshot{
-			Identity: publication.Identity{
-				Scope:     publication.ScopeNamespaced,
-				Namespace: model.Namespace,
-				Name:      model.Name,
-			},
-			Source: publication.SourceProvenance{
-				Type:              modelsv1alpha1.ModelSourceTypeHuggingFace,
-				ExternalReference: "deepseek-ai/DeepSeek-R1",
-				ResolvedRevision:  "abc123",
-			},
-			Artifact: publication.PublishedArtifact{
-				Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
-				URI:       "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef",
-				MediaType: "application/vnd.cncf.model.manifest.v1+json",
-				SizeBytes: 42,
-			},
-			Resolved: publication.ResolvedProfile{
-				Task:                "text-generation",
-				Framework:           "transformers",
-				Family:              "deepseek",
-				License:             "apache-2.0",
-				Architecture:        "DeepseekForCausalLM",
-				Format:              "HuggingFaceCheckpoint",
-				ContextWindowTokens: 8192,
-				SourceRepoID:        "deepseek-ai/DeepSeek-R1",
-			},
-			Result: publication.Result{
-				State: "Published",
-				Ready: true,
-			},
+		Source: publication.SourceProvenance{
+			Type:              modelsv1alpha1.ModelSourceTypeHuggingFace,
+			ExternalReference: "deepseek-ai/DeepSeek-R1",
+			ResolvedRevision:  "abc123",
 		},
 		CleanupHandle: cleanuphandle.Handle{
 			Kind: cleanuphandle.KindBackendArtifact,
@@ -142,9 +154,42 @@ func succeededOperationForModel(t *testing.T, model *modelsv1alpha1.Model) *core
 				Reference: "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef",
 			},
 		},
-	}); err != nil {
-		t.Fatalf("SetSucceeded() error = %v", err)
+	})
+	if err != nil {
+		t.Fatalf("EncodeResult() error = %v", err)
 	}
+	return payload
+}
 
-	return operation
+func runningSourceWorkerHandle() *publicationports.SourceWorkerHandle {
+	return publicationports.NewSourceWorkerHandle("publish-worker", corev1.PodRunning, "", nil)
+}
+
+func failedSourceWorkerHandle(message string) *publicationports.SourceWorkerHandle {
+	return publicationports.NewSourceWorkerHandle("publish-worker", corev1.PodFailed, message, nil)
+}
+
+func succeededSourceWorkerHandle(t *testing.T, deleted *bool) *publicationports.SourceWorkerHandle {
+	t.Helper()
+	return publicationports.NewSourceWorkerHandle("publish-worker", corev1.PodSucceeded, succeededTerminationMessage(t), func(context.Context) error {
+		if deleted != nil {
+			*deleted = true
+		}
+		return nil
+	})
+}
+
+func runningUploadSessionHandle() *publicationports.UploadSessionHandle {
+	expiresAt := time.Now().UTC().Add(10 * time.Minute)
+	return publicationports.NewUploadSessionHandle(
+		"upload-worker",
+		corev1.PodRunning,
+		"",
+		modelsv1alpha1.ModelUploadStatus{
+			ExpiresAt:  &metav1.Time{Time: expiresAt},
+			Repository: "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/550e8400-e29b-41d4-a716-446655440111:published",
+			Command:    "curl -T file",
+		},
+		nil,
+	)
 }

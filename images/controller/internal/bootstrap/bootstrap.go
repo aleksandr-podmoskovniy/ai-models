@@ -25,7 +25,6 @@ import (
 	apiinstall "github.com/deckhouse/ai-models/api/core/install"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
-	"github.com/deckhouse/ai-models/controller/internal/controllers/publishrunner"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -37,7 +36,6 @@ import (
 type Options struct {
 	CleanupJobs   catalogcleanup.Options
 	HFPublication catalogstatus.Options
-	PublishRunner publishrunner.Options
 	Runtime       RuntimeOptions
 }
 
@@ -53,7 +51,6 @@ type App struct {
 	logger        *slog.Logger
 	cleanupJobs   catalogcleanup.Options
 	hfPublication catalogstatus.Options
-	publishRunner publishrunner.Options
 	runtime       RuntimeOptions
 }
 
@@ -67,19 +64,12 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 	if err := options.HFPublication.Validate(); err != nil {
 		return nil, err
 	}
-	if err := options.PublishRunner.Validate(); err != nil {
-		return nil, err
-	}
-	if options.HFPublication.Enabled() && !options.PublishRunner.Enabled() {
-		return nil, errors.New("publication operations must be enabled when model publication controller is enabled")
-	}
 
 	runtimeOptions := normalizeRuntimeOptions(options.Runtime)
 
 	return &App{
 		cleanupJobs:   options.CleanupJobs,
 		hfPublication: options.HFPublication,
-		publishRunner: options.PublishRunner,
 		logger:        logger,
 		runtime:       runtimeOptions,
 	}, nil
@@ -113,9 +103,6 @@ func (a *App) Run(ctx context.Context) error {
 	if err := catalogcleanup.SetupWithManager(mgr, a.cleanupJobs); err != nil {
 		return err
 	}
-	if err := publishrunner.SetupWithManager(mgr, a.publishRunner); err != nil {
-		return err
-	}
 	if err := catalogstatus.SetupWithManager(mgr, a.hfPublication); err != nil {
 		return err
 	}
@@ -139,14 +126,8 @@ func (a *App) Run(ctx context.Context) error {
 	if a.hfPublication.Enabled() {
 		a.logger.Info(
 			"controller model publication configured",
-			slog.String("operationNamespace", a.hfPublication.OperationNamespace),
-		)
-	}
-	if a.publishRunner.Enabled() {
-		a.logger.Info(
-			"controller publication operations configured",
-			slog.String("publishPodNamespace", a.publishRunner.PublishPod.Namespace),
-			slog.String("publishPodImage", a.publishRunner.PublishPod.Image),
+			slog.String("publishPodNamespace", a.hfPublication.PublishPod.Namespace),
+			slog.String("publishPodImage", a.hfPublication.PublishPod.Image),
 		)
 	}
 

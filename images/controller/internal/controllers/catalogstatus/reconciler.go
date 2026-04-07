@@ -18,13 +18,13 @@ package catalogstatus
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
-	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -62,9 +62,14 @@ func (r *baseReconciler) reconcileObject(
 	object client.Object,
 	spec modelsv1alpha1.ModelSpec,
 	status *modelsv1alpha1.ModelStatus,
-	operationRequest publicationports.Request,
+	request publicationports.Request,
 ) (ctrl.Result, error) {
-	if shouldIgnoreObject(object, spec.Source.Type) {
+	sourceType, err := spec.Source.DetectType()
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if shouldIgnoreObject(object, sourceType) {
 		return ctrl.Result{}, nil
 	}
 
@@ -76,117 +81,94 @@ func (r *baseReconciler) reconcileObject(
 		return ctrl.Result{}, nil
 	}
 
-	operation, created, err := r.ensureOperation(ctx, operationRequest)
-	if err != nil {
-		return ctrl.Result{}, err
+	if sourceType == modelsv1alpha1.ModelSourceTypeUpload {
+		return r.reconcileUploadSession(ctx, object, status, sourceType, request)
 	}
-	if created {
-		return r.acceptSource(ctx, object, status, spec.Source.Type)
-	}
-
-	return r.projectOperationStatus(ctx, object, status, spec.Source.Type, operation)
+	return r.reconcileSourceWorker(ctx, object, status, sourceType, request)
 }
 
-func shouldIgnoreObject(object client.Object, sourceType modelsv1alpha1.ModelSourceType) bool {
-	if !object.GetDeletionTimestamp().IsZero() {
-		return true
-	}
-	return !supportsSourceType(sourceType)
-}
-
-func (r *baseReconciler) acceptSource(
+func (r *baseReconciler) reconcileSourceWorker(
 	ctx context.Context,
 	object client.Object,
 	current *modelsv1alpha1.ModelStatus,
 	sourceType modelsv1alpha1.ModelSourceType,
+	request publicationports.Request,
 ) (ctrl.Result, error) {
-	desired := publicationdomain.AcceptedStatus(*current, object.GetGeneration(), sourceType)
-	if err := r.updateStatus(ctx, object, current, desired); err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{RequeueAfter: statusPollInterval}, nil
-}
-
-func (r *baseReconciler) projectOperationStatus(
-	ctx context.Context,
-	object client.Object,
-	current *modelsv1alpha1.ModelStatus,
-	sourceType modelsv1alpha1.ModelSourceType,
-	operation *corev1.ConfigMap,
-) (ctrl.Result, error) {
-	observation, err := observationFromConfigMap(operation)
-	if err != nil {
-		return r.failPublication(ctx, object, current, sourceType, err.Error())
-	}
-
-	projection, err := publicationdomain.ProjectStatus(*current, object.GetGeneration(), sourceType, observation)
-	if err != nil {
-		return r.failPublication(ctx, object, current, sourceType, err.Error())
-	}
-	if projection.CleanupHandle != nil {
-		updated, err := r.ensureCleanupHandle(ctx, object, *projection.CleanupHandle)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if updated {
-			return ctrl.Result{Requeue: true}, nil
-		}
-	}
-	if err := r.updateStatus(ctx, object, current, projection.Status); err != nil {
-		return ctrl.Result{}, err
-	}
-	if projection.Requeue {
-		return ctrl.Result{RequeueAfter: statusPollInterval}, nil
-	}
-	return ctrl.Result{}, nil
-}
-
-func supportsSourceType(sourceType modelsv1alpha1.ModelSourceType) bool {
-	switch sourceType {
-	case modelsv1alpha1.ModelSourceTypeHuggingFace,
-		modelsv1alpha1.ModelSourceTypeUpload,
-		modelsv1alpha1.ModelSourceTypeHTTP:
-		return true
-	default:
-		return false
-	}
-}
-
-func shouldSkipReconcile(
-	current modelsv1alpha1.ModelStatus,
-	generation int64,
-	hasCleanupHandle bool,
-) bool {
-	if current.ObservedGeneration != generation {
-		return false
-	}
-
-	switch current.Phase {
-	case modelsv1alpha1.ModelPhaseReady:
-		return hasCleanupHandle
-	case modelsv1alpha1.ModelPhaseFailed:
-		return true
-	default:
-		return false
-	}
-}
-
-func (r *baseReconciler) failPublication(
-	ctx context.Context,
-	object client.Object,
-	current *modelsv1alpha1.ModelStatus,
-	sourceType modelsv1alpha1.ModelSourceType,
-	message string,
-) (ctrl.Result, error) {
-	projection, err := publicationdomain.ProjectStatus(*current, object.GetGeneration(), sourceType, publicationdomain.Observation{
-		Phase:   publicationdomain.OperationPhaseFailed,
-		Message: message,
+	worker, _, err := r.sourceWorkers.GetOrCreate(ctx, object, publicationports.OperationContext{
+		Request: request,
 	})
 	if err != nil {
-		return ctrl.Result{}, err
+		return r.failPublication(ctx, object, current, sourceType, err.Error())
 	}
-	if err := r.updateStatus(ctx, object, current, projection.Status); err != nil {
-		return ctrl.Result{}, err
+
+	switch {
+	case worker.IsComplete():
+		rawResult := strings.TrimSpace(worker.TerminationMessage)
+		if rawResult == "" {
+			return r.failAndDelete(ctx, object, current, sourceType, "publication worker pod completed without a result", worker.Delete)
+		}
+		observation, err := observationFromRuntimeResult(request, rawResult)
+		if err != nil {
+			return r.failAndDelete(ctx, object, current, sourceType, err.Error(), worker.Delete)
+		}
+		return r.projectObservation(ctx, object, current, sourceType, observation, worker.Delete)
+	case worker.IsFailed():
+		message := strings.TrimSpace(worker.TerminationMessage)
+		if message == "" {
+			message = "publication worker pod failed"
+		}
+		return r.failAndDelete(ctx, object, current, sourceType, message, worker.Delete)
+	default:
+		return r.projectObservation(ctx, object, current, sourceType, publicationdomain.Observation{
+			Phase: publicationdomain.OperationPhaseRunning,
+		}, nil)
 	}
-	return ctrl.Result{}, nil
+}
+
+func (r *baseReconciler) reconcileUploadSession(
+	ctx context.Context,
+	object client.Object,
+	current *modelsv1alpha1.ModelStatus,
+	sourceType modelsv1alpha1.ModelSourceType,
+	request publicationports.Request,
+) (ctrl.Result, error) {
+	session, _, err := r.uploadSessions.GetOrCreate(ctx, object, publicationports.OperationContext{
+		Request: request,
+	})
+	if err != nil {
+		return r.failPublication(ctx, object, current, sourceType, err.Error())
+	}
+	if session == nil {
+		return r.failPublication(ctx, object, current, sourceType, "upload session worker pod is missing")
+	}
+
+	switch {
+	case session.IsComplete():
+		rawResult := strings.TrimSpace(session.TerminationMessage)
+		if rawResult == "" {
+			return r.failAndDelete(ctx, object, current, sourceType, "upload session completed without a publication result", session.Delete)
+		}
+		observation, err := observationFromRuntimeResult(request, rawResult)
+		if err != nil {
+			return r.failAndDelete(ctx, object, current, sourceType, err.Error(), session.Delete)
+		}
+		return r.projectObservation(ctx, object, current, sourceType, observation, session.Delete)
+	case session.IsFailed():
+		message := strings.TrimSpace(session.TerminationMessage)
+		if message == "" {
+			message = "upload session worker pod failed"
+		}
+		return r.failAndDelete(ctx, object, current, sourceType, message, session.Delete)
+	default:
+		if session.UploadStatus.ExpiresAt != nil {
+			now := time.Now().UTC()
+			if !session.UploadStatus.ExpiresAt.Time.After(now) {
+				return r.failAndDelete(ctx, object, current, sourceType, "upload session expired before publication completed", session.Delete)
+			}
+		}
+		return r.projectObservation(ctx, object, current, sourceType, publicationdomain.Observation{
+			Phase:  publicationdomain.OperationPhaseRunning,
+			Upload: &session.UploadStatus,
+		}, nil)
+	}
 }

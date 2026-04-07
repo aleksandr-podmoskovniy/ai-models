@@ -27,49 +27,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type Session struct {
-	Pod          *corev1.Pod
-	Service      *corev1.Service
-	Secret       *corev1.Secret
-	UploadStatus modelsv1alpha1.ModelUploadStatus
-}
-
-func IsComplete(session *Session) bool {
-	return session != nil && session.Pod != nil && session.Pod.Status.Phase == corev1.PodSucceeded
-}
-
-func IsFailed(session *Session) bool {
-	return session != nil && session.Pod != nil && session.Pod.Status.Phase == corev1.PodFailed
-}
-
-func sessionFromResources(pod *corev1.Pod, service *corev1.Service, secret *corev1.Secret) (*Session, error) {
-	token := strings.TrimSpace(string(secret.Data["token"]))
-	if token == "" {
-		return nil, errors.New("upload session token secret is empty")
-	}
-	expiresAt, err := expiresAtFromSecret(secret)
-	if err != nil {
-		return nil, err
-	}
-
-	return buildCreatedSession(pod, service, secret, token, expiresAt), nil
-}
-
-func buildCreatedSession(
-	pod *corev1.Pod,
-	service *corev1.Service,
-	secret *corev1.Secret,
-	token string,
-	expiresAt metav1.Time,
-) *Session {
-	return &Session{
-		Pod:          pod,
-		Service:      service,
-		Secret:       secret,
-		UploadStatus: buildUploadStatus(pod, service, token, expiresAt),
-	}
-}
-
 func buildUploadStatus(
 	pod *corev1.Pod,
 	service *corev1.Service,
@@ -112,7 +69,7 @@ func expiresAtFromSecret(secret *corev1.Secret) (metav1.Time, error) {
 
 func buildUploadCommand(namespace, serviceName, token string) string {
 	return fmt.Sprintf(
-		"MODEL_FILE=${MODEL_FILE:?set MODEL_FILE to the local archive path}; kubectl -n %s port-forward service/%s 18444:8444 >/tmp/ai-model-upload-port-forward.log 2>&1 & PF_PID=$!; trap 'kill $PF_PID' EXIT; until curl -fsS http://127.0.0.1:18444/healthz >/dev/null; do sleep 1; done; curl -fsS -X PUT -H 'Authorization: Bearer %s' --data-binary @\"$MODEL_FILE\" http://127.0.0.1:18444/upload",
+		"MODEL_FILE=${MODEL_FILE:?set MODEL_FILE to the local model file or archive path}; kubectl -n %s port-forward service/%s 18444:8444 >/tmp/ai-model-upload-port-forward.log 2>&1 & PF_PID=$!; trap 'kill $PF_PID' EXIT; until curl -fsS http://127.0.0.1:18444/healthz >/dev/null; do sleep 1; done; curl -fsS -X PUT -H 'Authorization: Bearer %s' -H \"X-AI-MODELS-FILENAME: $(basename \"$MODEL_FILE\")\" --data-binary @\"$MODEL_FILE\" http://127.0.0.1:18444/upload",
 		namespace,
 		serviceName,
 		token,

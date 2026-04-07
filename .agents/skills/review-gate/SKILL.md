@@ -33,6 +33,14 @@ description: Use at the end of any substantial task. Reviews the diff against th
      finding, not a cosmetic nit
    - treat misleading verify output or controller checks hidden behind broader
      shells as a real finding
+   - treat public API noise as a real finding:
+     fixed internal output formats must not be echoed in public `spec`, and
+     source-coupled pseudo-format names such as `HuggingFaceDirectory` or
+     `HFCheckpoint` must not survive when the real concern is input file format
+   - treat dead public knobs with no live semantics, such as speculative
+     `spec.publish` blocks, as a real finding
+   - treat nested provider scaffolding in public `spec.source` as a real
+     finding when the same UX can stay as `source.url` or `source.upload`
 7. If the task was substantial or used delegation, confirm whether a final `reviewer` pass is still required.
 8. Return only concrete findings, missing checks, and residual risks.
 

@@ -38,19 +38,15 @@ func testOperationContext() publicationports.OperationContext {
 				Name:      "deepseek-r1",
 			},
 			Spec: modelsv1alpha1.ModelSpec{
+				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 				Source: modelsv1alpha1.ModelSourceSpec{
-					Type: modelsv1alpha1.ModelSourceTypeHuggingFace,
-					HuggingFace: &modelsv1alpha1.HuggingFaceModelSource{
-						RepoID: "deepseek-ai/DeepSeek-R1",
-					},
+					URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 				},
 				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
 					Task: "text-generation",
 				},
 			},
 		},
-		OperationName:      "ai-model-publication-1111-2222",
-		OperationNamespace: "d8-ai-models",
 	}
 }
 

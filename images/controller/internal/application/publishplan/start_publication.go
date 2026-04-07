@@ -31,32 +31,28 @@ const (
 )
 
 type StartPublicationInput struct {
-	SourceType   modelsv1alpha1.ModelSourceType
-	Upload       *modelsv1alpha1.UploadModelSource
+	Source       modelsv1alpha1.ModelSourceSpec
 	RuntimeHints *modelsv1alpha1.ModelRuntimeHints
 }
 
 func StartPublication(input StartPublicationInput) (ExecutionMode, error) {
-	switch input.SourceType {
+	sourceType, err := input.Source.DetectType()
+	if err != nil {
+		return "", err
+	}
+
+	switch sourceType {
 	case modelsv1alpha1.ModelSourceTypeHuggingFace, modelsv1alpha1.ModelSourceTypeHTTP:
 		return ExecutionModeSourceWorker, nil
 	case modelsv1alpha1.ModelSourceTypeUpload:
-		if input.Upload == nil {
+		if input.Source.Upload == nil {
 			return "", fmt.Errorf("upload source must not be empty")
 		}
-		if input.Upload.ExpectedFormat != modelsv1alpha1.ModelUploadFormatHuggingFaceDirectory {
-			return "", fmt.Errorf(
-				"upload expectedFormat %q is not implemented on the current ModelPack publication adapter; use HuggingFaceDirectory until direct ModelKit ingest is delivered",
-				input.Upload.ExpectedFormat,
-			)
-		}
 		if input.RuntimeHints == nil || strings.TrimSpace(input.RuntimeHints.Task) == "" {
-			return "", fmt.Errorf(
-				"upload source currently requires spec.runtimeHints.task for publication through the current ModelPack adapter",
-			)
+			return "", fmt.Errorf("upload source currently requires spec.runtimeHints.task")
 		}
 		return ExecutionModeUpload, nil
 	default:
-		return "", fmt.Errorf("publication operation does not support source type %q", input.SourceType)
+		return "", fmt.Errorf("publication operation does not support source type %q", sourceType)
 	}
 }

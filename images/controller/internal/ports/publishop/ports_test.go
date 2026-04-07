@@ -28,7 +28,7 @@ func TestSourceWorkerHandleHelpers(t *testing.T) {
 	t.Parallel()
 
 	deleted := false
-	handle := NewSourceWorkerHandle("worker", corev1.PodSucceeded, func(context.Context) error {
+	handle := NewSourceWorkerHandle("worker", corev1.PodSucceeded, `{"artifact":{"kind":"OCI","uri":"registry.example/model@sha256:deadbeef","digest":"sha256:deadbeef","mediaType":"application/vnd.cncf.model.manifest.v1+json"},"resolved":{"task":"text-generation"},"source":{"type":"HTTP","externalReference":"https://example.invalid/model.gguf"},"cleanupHandle":{"kind":"BackendArtifact","artifact":{"kind":"OCI","uri":"registry.example/model@sha256:deadbeef"},"backend":{"reference":"registry.example/model@sha256:deadbeef"}}}`, func(context.Context) error {
 		deleted = true
 		return nil
 	})
@@ -51,7 +51,7 @@ func TestUploadSessionHandleHelpers(t *testing.T) {
 	t.Parallel()
 
 	deleted := false
-	handle := NewUploadSessionHandle("upload-worker", corev1.PodFailed, modelsv1alpha1.ModelUploadStatus{
+	handle := NewUploadSessionHandle("upload-worker", corev1.PodFailed, "upload failed", modelsv1alpha1.ModelUploadStatus{
 		Command:    "curl ...",
 		Repository: "registry.example/upload",
 	}, func(context.Context) error {

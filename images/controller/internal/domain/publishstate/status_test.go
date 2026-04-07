@@ -168,14 +168,26 @@ func TestProjectStatusSucceeded(t *testing.T) {
 					SizeBytes: 42,
 				},
 				Resolved: publicationdata.ResolvedProfile{
-					Task:                "text-generation",
-					Framework:           "transformers",
-					Family:              "deepseek",
-					License:             "apache-2.0",
-					Architecture:        "DeepseekForCausalLM",
-					Format:              "HuggingFaceCheckpoint",
-					ContextWindowTokens: 8192,
-					SourceRepoID:        "deepseek-ai/DeepSeek-R1",
+					Task:                         "text-generation",
+					Framework:                    "transformers",
+					Family:                       "deepseek",
+					License:                      "apache-2.0",
+					Architecture:                 "DeepseekForCausalLM",
+					Format:                       "Safetensors",
+					ParameterCount:               8_000_000_000,
+					Quantization:                 "bnb-nf4",
+					ContextWindowTokens:          8192,
+					SourceRepoID:                 "deepseek-ai/DeepSeek-R1",
+					SupportedEndpointTypes:       []string{"OpenAIChatCompletions", "OpenAICompletions"},
+					CompatibleRuntimes:           []string{"KServe"},
+					CompatibleAcceleratorVendors: []string{"NVIDIA", "AMD"},
+					CompatiblePrecisions:         []string{"int4"},
+					MinimumLaunch: publicationdata.MinimumLaunch{
+						PlacementType:        "GPU",
+						AcceleratorCount:     1,
+						AcceleratorMemoryGiB: 24,
+						SharingMode:          "Exclusive",
+					},
 				},
 			},
 			CleanupHandle: &handle,
@@ -195,6 +207,15 @@ func TestProjectStatusSucceeded(t *testing.T) {
 	}
 	if projection.Status.Resolved == nil || projection.Status.Resolved.SourceRepoID != "deepseek-ai/DeepSeek-R1" {
 		t.Fatalf("unexpected resolved status %#v", projection.Status.Resolved)
+	}
+	if projection.Status.Resolved.ParameterCount == nil || *projection.Status.Resolved.ParameterCount != 8_000_000_000 {
+		t.Fatalf("unexpected parameter count %#v", projection.Status.Resolved.ParameterCount)
+	}
+	if projection.Status.Resolved.Quantization == nil || *projection.Status.Resolved.Quantization != "bnb-nf4" {
+		t.Fatalf("unexpected quantization %#v", projection.Status.Resolved.Quantization)
+	}
+	if projection.Status.Resolved.MinimumLaunch == nil || projection.Status.Resolved.MinimumLaunch.PlacementType != "GPU" {
+		t.Fatalf("unexpected minimum launch %#v", projection.Status.Resolved.MinimumLaunch)
 	}
 	ready := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionReady))
 	if ready == nil || ready.Status != metav1.ConditionTrue {

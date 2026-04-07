@@ -28,7 +28,25 @@ description: Ai-models-specific overlay for phase-2 and later work on Model and 
 6. Keep runtime/materialization internals behind the public contract.
 7. Treat `ModelPack` as the publication contract and keep concrete
    implementation brands such as `KitOps` or `Modctl` behind adapters.
-8. If the task also touches controller boundaries, read `.agents/skills/controller-architecture-discipline/SKILL.md` before implementation.
+8. Keep the public publication contract simple:
+   - users choose `spec.source`
+   - users choose `spec.inputFormat`
+   - `spec.source` should stay close to user intent:
+     `source.url` or `source.upload`, not nested provider trees
+   - `spec.inputFormat` may be omitted only when the controller can determine
+     it unambiguously from the actual contents
+   - fixed internal output format stays hidden and must not be echoed back into
+     public `spec`
+   - dead public knobs with no live controller semantics, such as
+     placeholder `spec.publish` blocks, must be removed instead of kept as
+     speculative contract noise
+9. Public input format names must be real format names such as `Safetensors`
+   or `GGUF`, not source-coupled names such as `HuggingFaceDirectory` or vague
+   internal names such as `HFCheckpoint`.
+10. Do not expose prebuilt external artifacts as a normal public input path.
+    The module must build its own canonical `ModelPack` artifact from validated
+    raw model contents.
+11. If the task also touches controller boundaries, read `.agents/skills/controller-architecture-discipline/SKILL.md` before implementation.
 
 ## Output
 

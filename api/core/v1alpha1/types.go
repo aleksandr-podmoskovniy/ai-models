@@ -20,18 +20,16 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // ModelSpec is the shared desired state for both Model and ClusterModel.
 // +kubebuilder:validation:XValidation:rule="self.source == oldSelf.source",message="spec.source is immutable"
-// +kubebuilder:validation:XValidation:rule="self.package == oldSelf.package",message="spec.package is immutable"
-// +kubebuilder:validation:XValidation:rule="self.publish == oldSelf.publish",message="spec.publish is immutable"
+// +kubebuilder:validation:XValidation:rule="self.inputFormat == oldSelf.inputFormat",message="spec.inputFormat is immutable"
 // +kubebuilder:validation:XValidation:rule="self.runtimeHints == oldSelf.runtimeHints",message="spec.runtimeHints is immutable"
 type ModelSpec struct {
 	DisplayName string          `json:"displayName,omitempty"`
 	Description string          `json:"description,omitempty"`
 	Source      ModelSourceSpec `json:"source"`
-	// +kubebuilder:default={type:ModelPack,layout:HuggingFaceCheckpoint}
-	Package      *ModelPackageSpec  `json:"package,omitempty"`
-	Publish      *ModelPublishSpec  `json:"publish,omitempty"`
+	// InputFormat defines the input model format independently of the source.
+	// If omitted, the controller tries to determine the format automatically.
+	InputFormat  ModelInputFormat   `json:"inputFormat,omitempty"`
 	RuntimeHints *ModelRuntimeHints `json:"runtimeHints,omitempty"`
-	Access       *ModelAccessPolicy `json:"access,omitempty"`
 }
 
 // ModelStatus is the shared observed state for both Model and ClusterModel.
@@ -50,74 +48,28 @@ type ModelStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
-// +kubebuilder:validation:XValidation:rule="self.type == 'HuggingFace' ? has(self.huggingFace) && !has(self.upload) && !has(self.http) : true",message="huggingFace is required when type is HuggingFace and other source variants must be empty"
-// +kubebuilder:validation:XValidation:rule="self.type == 'Upload' ? has(self.upload) && !has(self.huggingFace) && !has(self.http) : true",message="upload is required when type is Upload and other source variants must be empty"
-// +kubebuilder:validation:XValidation:rule="self.type == 'HTTP' ? has(self.http) && !has(self.huggingFace) && !has(self.upload) : true",message="http is required when type is HTTP and other source variants must be empty"
+// +kubebuilder:validation:XValidation:rule="((size(self.url) > 0 ? 1 : 0) + (has(self.upload) ? 1 : 0)) == 1",message="exactly one of source.url or source.upload must be specified"
+// +kubebuilder:validation:XValidation:rule="has(self.upload) ? !has(self.authSecretRef) : true",message="source.authSecretRef is only allowed for source.url"
+// +kubebuilder:validation:XValidation:rule="has(self.upload) ? size(self.caBundle) == 0 : true",message="source.caBundle is only allowed for source.url"
 type ModelSourceSpec struct {
-	Type        ModelSourceType         `json:"type"`
-	HuggingFace *HuggingFaceModelSource `json:"huggingFace,omitempty"`
-	Upload      *UploadModelSource      `json:"upload,omitempty"`
-	HTTP        *HTTPModelSource        `json:"http,omitempty"`
-}
-
-type HuggingFaceModelSource struct {
 	// +kubebuilder:validation:MinLength=1
-	RepoID        string           `json:"repoID"`
-	Revision      string           `json:"revision,omitempty"`
-	AuthSecretRef *SecretReference `json:"authSecretRef,omitempty"`
-	AllowGated    bool             `json:"allowGated,omitempty"`
+	// +kubebuilder:validation:Pattern=`^http[s]?:\/\/(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+$`
+	URL string `json:"url,omitempty"`
+	// For namespaced Model, empty Namespace resolves to the object's namespace.
+	AuthSecretRef *SecretReference   `json:"authSecretRef,omitempty"`
+	CABundle      []byte             `json:"caBundle,omitempty"`
+	Upload        *UploadModelSource `json:"upload,omitempty"`
 }
 
 type UploadModelSource struct {
-	// +kubebuilder:default=HuggingFaceDirectory
-	ExpectedFormat ModelUploadFormat `json:"expectedFormat,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	ExpectedSizeBytes *int64 `json:"expectedSizeBytes,omitempty"`
-}
-
-type HTTPModelSource struct {
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:Pattern=`^http[s]?:\/\/(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+$`
-	URL string `json:"url"`
-	// For namespaced Model, empty Namespace resolves to the object's namespace.
-	AuthSecretRef *SecretReference `json:"authSecretRef,omitempty"`
-	CABundle      []byte           `json:"caBundle,omitempty"`
-}
-
-type ModelPackageSpec struct {
-	// +kubebuilder:default=ModelPack
-	Type ModelPackageType `json:"type,omitempty"`
-	// +kubebuilder:default=HuggingFaceCheckpoint
-	Layout ModelPackageLayout `json:"layout,omitempty"`
-}
-
-type ModelPublishSpec struct {
-	RepositoryClass string `json:"repositoryClass,omitempty"`
 }
 
 type ModelRuntimeHints struct {
 	Task string `json:"task,omitempty"`
 	// +listType=set
 	Engines []ModelRuntimeEngine `json:"engines,omitempty"`
-}
-
-// +kubebuilder:validation:XValidation:rule="(has(self.namespaces) && size(self.namespaces) > 0) || (has(self.serviceAccounts) && size(self.serviceAccounts) > 0) || (has(self.groups) && size(self.groups) > 0)",message="at least one access subject must be specified"
-type ModelAccessPolicy struct {
-	// +listType=set
-	Namespaces      []string                  `json:"namespaces,omitempty"`
-	ServiceAccounts []ServiceAccountReference `json:"serviceAccounts,omitempty"`
-	// +listType=set
-	Groups []string `json:"groups,omitempty"`
-}
-
-// ServiceAccountReference identifies a pull consumer.
-// For namespaced Model, empty Namespace resolves to the object's namespace.
-// For ClusterModel, Namespace should be explicit.
-type ServiceAccountReference struct {
-	// +kubebuilder:validation:MinLength=1
-	Namespace string `json:"namespace,omitempty"`
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
 }
 
 // SecretReference identifies a Secret used by a source integration.
@@ -191,26 +143,12 @@ const (
 	ModelSourceTypeHTTP        ModelSourceType = "HTTP"
 )
 
-// +kubebuilder:validation:Enum=ModelKit;HuggingFaceDirectory
-type ModelUploadFormat string
+// +kubebuilder:validation:Enum=Safetensors;GGUF
+type ModelInputFormat string
 
 const (
-	ModelUploadFormatModelKit             ModelUploadFormat = "ModelKit"
-	ModelUploadFormatHuggingFaceDirectory ModelUploadFormat = "HuggingFaceDirectory"
-)
-
-// +kubebuilder:validation:Enum=ModelPack
-type ModelPackageType string
-
-const (
-	ModelPackageTypeModelPack ModelPackageType = "ModelPack"
-)
-
-// +kubebuilder:validation:Enum=HuggingFaceCheckpoint
-type ModelPackageLayout string
-
-const (
-	ModelPackageLayoutHuggingFaceCheckpoint ModelPackageLayout = "HuggingFaceCheckpoint"
+	ModelInputFormatSafetensors ModelInputFormat = "Safetensors"
+	ModelInputFormatGGUF        ModelInputFormat = "GGUF"
 )
 
 // +kubebuilder:validation:Enum=KServe;KubeRay

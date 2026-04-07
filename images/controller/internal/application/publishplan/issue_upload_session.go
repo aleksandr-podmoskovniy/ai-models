@@ -26,23 +26,21 @@ import (
 )
 
 type UploadSessionIssueRequest struct {
-	OwnerUID           string
-	OwnerKind          string
-	OwnerName          string
-	Identity           publicationdata.Identity
-	OperationName      string
-	OperationNamespace string
-	SourceType         modelsv1alpha1.ModelSourceType
-	Upload             *modelsv1alpha1.UploadModelSource
-	Task               string
+	OwnerUID       string
+	OwnerKind      string
+	OwnerName      string
+	Identity       publicationdata.Identity
+	Source         modelsv1alpha1.ModelSourceSpec
+	InputFormat    modelsv1alpha1.ModelInputFormat
+	Task           string
+	RuntimeEngines []string
 }
 
 type UploadSessionPlan struct {
-	OperationName      string
-	OperationNamespace string
-	ExpectedFormat     modelsv1alpha1.ModelUploadFormat
-	ExpectedSizeBytes  *int64
-	Task               string
+	InputFormat       modelsv1alpha1.ModelInputFormat
+	ExpectedSizeBytes *int64
+	Task              string
+	RuntimeEngines    []string
 }
 
 func IssueUploadSession(request UploadSessionIssueRequest) (UploadSessionPlan, error) {
@@ -58,16 +56,8 @@ func IssueUploadSession(request UploadSessionIssueRequest) (UploadSessionPlan, e
 	if err := request.Identity.Validate(); err != nil {
 		return UploadSessionPlan{}, err
 	}
-	if strings.TrimSpace(request.OperationName) == "" {
-		return UploadSessionPlan{}, errors.New("upload session operation name must not be empty")
-	}
-	if strings.TrimSpace(request.OperationNamespace) == "" {
-		return UploadSessionPlan{}, errors.New("upload session operation namespace must not be empty")
-	}
-
 	mode, err := StartPublication(StartPublicationInput{
-		SourceType: request.SourceType,
-		Upload:     request.Upload,
+		Source: request.Source,
 		RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
 			Task: request.Task,
 		},
@@ -80,10 +70,9 @@ func IssueUploadSession(request UploadSessionIssueRequest) (UploadSessionPlan, e
 	}
 
 	return UploadSessionPlan{
-		OperationName:      strings.TrimSpace(request.OperationName),
-		OperationNamespace: strings.TrimSpace(request.OperationNamespace),
-		ExpectedFormat:     request.Upload.ExpectedFormat,
-		ExpectedSizeBytes:  request.Upload.ExpectedSizeBytes,
-		Task:               strings.TrimSpace(request.Task),
+		InputFormat:       request.InputFormat,
+		ExpectedSizeBytes: request.Source.Upload.ExpectedSizeBytes,
+		Task:              strings.TrimSpace(request.Task),
+		RuntimeEngines:    append([]string(nil), request.RuntimeEngines...),
 	}, nil
 }

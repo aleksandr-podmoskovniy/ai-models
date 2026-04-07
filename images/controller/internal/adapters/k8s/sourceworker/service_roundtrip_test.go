@@ -20,11 +20,9 @@ import (
 	"context"
 	"testing"
 
-	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -33,16 +31,11 @@ func TestServiceRoundTripGetOrCreateAndDelete(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
-	operation := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ai-model-publication-1111-2222",
-			Namespace: "d8-ai-models",
-		},
-	}
+	owner := testkit.NewModel()
 
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(operation).
+		WithObjects(owner).
 		Build()
 
 	runtime, err := NewService(kubeClient, scheme, Options{
@@ -56,11 +49,7 @@ func TestServiceRoundTripGetOrCreateAndDelete(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	handle, created, err := runtime.GetOrCreate(context.Background(), operation, publicationports.OperationContext{
-		Request:            testOperationContext().Request,
-		OperationName:      operation.Name,
-		OperationNamespace: operation.Namespace,
-	})
+	handle, created, err := runtime.GetOrCreate(context.Background(), owner, testOperationContext())
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}

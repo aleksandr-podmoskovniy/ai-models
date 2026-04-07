@@ -30,23 +30,18 @@ ENV BACKEND_BASE_EXTRAS=${BACKEND_BASE_EXTRAS}
 ENV BACKEND_OVERLAY_EXTRAS=${BACKEND_OVERLAY_EXTRAS}
 COPY .cache/backend-worktree /work/src/backend
 COPY images/backend/scripts /work/images/backend/scripts
-COPY images/backend/kitops.lock /work/images/backend/kitops.lock
 COPY --from=oidc-auth-ui-build /work/src/oidc-auth/mlflow_oidc_auth/ui /work/oidc-auth-ui
 RUN set -eux; \
     test -f /work/src/backend/mlflow/server/js/build/index.html; \
     bash /work/images/backend/scripts/apt-install.sh ca-certificates curl git tar; \
     python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel; \
     bash /work/images/backend/scripts/install-full-from-source.sh /work/src/backend; \
-    bash /work/images/backend/scripts/install-kitops.sh --metadata /work/images/backend/kitops.lock --dest /usr/local/bin/kit; \
     install -m 0755 /work/images/backend/scripts/ai_models_backend_runtime.py /usr/local/bin/ai_models_backend_runtime.py; \
     install -m 0755 /work/images/backend/scripts/ai_models_backend_runtime.py /usr/local/bin/ai-models-backend-runtime; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-bootstrap-oidc-auth.py /usr/local/bin/ai-models-backend-bootstrap-oidc-auth; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-hf-import; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-source-import; \
-    install -m 0755 /work/images/backend/scripts/ai-models-backend-source-publish.py /usr/local/bin/ai-models-backend-source-publish; \
-    install -m 0755 /work/images/backend/scripts/ai-models-backend-upload-session.py /usr/local/bin/ai-models-backend-upload-session; \
-    install -m 0755 /work/images/backend/scripts/ai-models-backend-artifact-cleanup.py /usr/local/bin/ai-models-backend-artifact-cleanup; \
     install -m 0755 /work/images/backend/scripts/ai-models-backend-model-cleanup.py /usr/local/bin/ai-models-backend-model-cleanup; \
     OIDC_AUTH_PREBUILT_UI_DIR=/work/oidc-auth-ui bash /work/images/backend/scripts/install-oidc-auth-from-source.sh; \
     python3 -m pip install --no-cache-dir \

@@ -25,10 +25,12 @@ import (
 )
 
 type SourceWorkerPlan struct {
-	SourceType  modelsv1alpha1.ModelSourceType
-	Task        string
-	HuggingFace *HuggingFaceSourcePlan
-	HTTP        *HTTPSourcePlan
+	SourceType     modelsv1alpha1.ModelSourceType
+	InputFormat    modelsv1alpha1.ModelInputFormat
+	Task           string
+	RuntimeEngines []string
+	HuggingFace    *HuggingFaceSourcePlan
+	HTTP           *HTTPSourcePlan
 }
 
 type SourceAuthSecretRef struct {
@@ -49,20 +51,29 @@ type HTTPSourcePlan struct {
 }
 
 func PlanSourceWorker(spec modelsv1alpha1.ModelSpec, ownerNamespace string) (SourceWorkerPlan, error) {
+	sourceType, err := spec.Source.DetectType()
+	if err != nil {
+		return SourceWorkerPlan{}, err
+	}
 	plan := SourceWorkerPlan{
-		SourceType: spec.Source.Type,
+		SourceType:  sourceType,
+		InputFormat: spec.InputFormat,
 	}
 	if spec.RuntimeHints != nil {
 		plan.Task = strings.TrimSpace(spec.RuntimeHints.Task)
+		for _, engine := range spec.RuntimeHints.Engines {
+			plan.RuntimeEngines = append(plan.RuntimeEngines, string(engine))
+		}
 	}
 
-	switch spec.Source.Type {
+	switch sourceType {
 	case modelsv1alpha1.ModelSourceTypeHuggingFace:
-		if spec.Source.HuggingFace == nil {
-			return SourceWorkerPlan{}, errors.New("source publish pod huggingFace source must not be empty")
+		repoID, revision, err := modelsv1alpha1.ParseHuggingFaceURL(spec.Source.URL)
+		if err != nil {
+			return SourceWorkerPlan{}, err
 		}
 		authSecretRef, err := resolveSourceAuthSecretRef(
-			spec.Source.HuggingFace.AuthSecretRef,
+			spec.Source.AuthSecretRef,
 			ownerNamespace,
 			"huggingFace",
 		)
@@ -70,20 +81,17 @@ func PlanSourceWorker(spec modelsv1alpha1.ModelSpec, ownerNamespace string) (Sou
 			return SourceWorkerPlan{}, err
 		}
 		plan.HuggingFace = &HuggingFaceSourcePlan{
-			RepoID:        spec.Source.HuggingFace.RepoID,
-			Revision:      spec.Source.HuggingFace.Revision,
+			RepoID:        repoID,
+			Revision:      revision,
 			AuthSecretRef: authSecretRef,
 		}
 		return plan, nil
 	case modelsv1alpha1.ModelSourceTypeHTTP:
-		if spec.Source.HTTP == nil {
-			return SourceWorkerPlan{}, errors.New("source publish pod http source must not be empty")
-		}
-		if strings.TrimSpace(spec.Source.HTTP.URL) == "" {
+		if strings.TrimSpace(spec.Source.URL) == "" {
 			return SourceWorkerPlan{}, errors.New("source publish pod http url must not be empty")
 		}
 		authSecretRef, err := resolveSourceAuthSecretRef(
-			spec.Source.HTTP.AuthSecretRef,
+			spec.Source.AuthSecretRef,
 			ownerNamespace,
 			"http",
 		)
@@ -94,15 +102,15 @@ func PlanSourceWorker(spec modelsv1alpha1.ModelSpec, ownerNamespace string) (Sou
 			return SourceWorkerPlan{}, errors.New("source publish pod http source requires spec.runtimeHints.task")
 		}
 		plan.HTTP = &HTTPSourcePlan{
-			URL:           spec.Source.HTTP.URL,
-			CABundle:      spec.Source.HTTP.CABundle,
+			URL:           spec.Source.URL,
+			CABundle:      spec.Source.CABundle,
 			AuthSecretRef: authSecretRef,
 		}
 		return plan, nil
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		return SourceWorkerPlan{}, errors.New("source publish pod upload source must be implemented as a session, not a batch-style worker pod")
 	default:
-		return SourceWorkerPlan{}, fmt.Errorf("source publish pod does not support source type %q", spec.Source.Type)
+		return SourceWorkerPlan{}, fmt.Errorf("source publish pod does not support source type %q", sourceType)
 	}
 }
 

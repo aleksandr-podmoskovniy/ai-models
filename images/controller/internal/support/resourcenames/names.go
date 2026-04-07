@@ -24,19 +24,22 @@ import (
 )
 
 const (
-	publicationOperationConfigMapPrefix = "ai-model-publication-"
-	sourceWorkerPodPrefix               = "ai-model-publish-"
-	sourceWorkerAuthSecretPrefix        = "ai-model-publish-auth-"
-	uploadSessionPodPrefix              = "ai-model-upload-"
-	uploadSessionServicePrefix          = "ai-model-upload-"
-	uploadSessionSecretPrefix           = "ai-model-upload-auth-"
-	cleanupJobPrefix                    = "ai-model-cleanup-"
+	sourceWorkerPodPrefix        = "ai-model-publish-"
+	sourceWorkerAuthSecretPrefix = "ai-model-publish-auth-"
+	uploadSessionPodPrefix       = "ai-model-upload-"
+	uploadSessionServicePrefix   = "ai-model-upload-"
+	uploadSessionSecretPrefix    = "ai-model-upload-auth-"
+	cleanupJobPrefix             = "ai-model-cleanup-"
 
 	AppNameLabelKey        = "app.kubernetes.io/name"
 	OwnerKindLabelKey      = "ai-models.deckhouse.io/owner-kind"
 	OwnerNameLabelKey      = "ai-models.deckhouse.io/owner-name"
 	OwnerUIDLabelKey       = "ai-models.deckhouse.io/owner-uid"
 	OwnerNamespaceLabelKey = "ai-models.deckhouse.io/owner-namespace"
+
+	OwnerKindAnnotationKey      = "ai-models.deckhouse.io/owner-kind-full"
+	OwnerNameAnnotationKey      = "ai-models.deckhouse.io/owner-name-full"
+	OwnerNamespaceAnnotationKey = "ai-models.deckhouse.io/owner-namespace-full"
 )
 
 func PrefixedName(prefix string, uid types.UID) (string, error) {
@@ -80,10 +83,6 @@ func BoolString(value bool) string {
 	return "false"
 }
 
-func PublicationOperationConfigMapName(uid types.UID) (string, error) {
-	return PrefixedName(publicationOperationConfigMapPrefix, uid)
-}
-
 func SourceWorkerPodName(uid types.UID) (string, error) {
 	return PrefixedName(sourceWorkerPodPrefix, uid)
 }
@@ -119,6 +118,17 @@ func OwnerLabels(appName, kind, name string, uid types.UID, namespace string) ma
 		labels[OwnerNamespaceLabelKey] = TruncateLabelValue(namespace)
 	}
 	return labels
+}
+
+func OwnerAnnotations(kind, name, namespace string) map[string]string {
+	annotations := map[string]string{
+		OwnerKindAnnotationKey: strings.TrimSpace(kind),
+		OwnerNameAnnotationKey: strings.TrimSpace(name),
+	}
+	if strings.TrimSpace(namespace) != "" {
+		annotations[OwnerNamespaceAnnotationKey] = strings.TrimSpace(namespace)
+	}
+	return annotations
 }
 
 func OwnerUIDFromLabels(labels map[string]string) (types.UID, bool) {

@@ -22,11 +22,11 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -34,7 +34,7 @@ import (
 
 func (s *Service) ensureProjectedAuthSecret(
 	ctx context.Context,
-	operation *corev1.ConfigMap,
+	ownerObject client.Object,
 	owner publicationports.Owner,
 	plan publicationapp.SourceWorkerPlan,
 ) (string, error) {
@@ -53,40 +53,22 @@ func (s *Service) ensureProjectedAuthSecret(
 		return "", err
 	}
 
-	desired := &corev1.Secret{
+	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
 			Namespace: s.options.Namespace,
-			Labels:    buildLabels(owner),
 		},
-		Type: corev1.SecretTypeOpaque,
-		Data: projectedData,
 	}
-	if err := controllerutil.SetControllerReference(operation, desired, s.scheme); err != nil {
+	if _, err := controllerutil.CreateOrUpdate(ctx, s.client, secret, func() error {
+		secret.Labels = buildLabels(owner)
+		secret.Type = corev1.SecretTypeOpaque
+		secret.Data = projectedData
+		return ownedresource.MaybeSetControllerReference(ownerObject, secret, s.scheme)
+	}); err != nil {
 		return "", err
 	}
 
-	existing := &corev1.Secret{}
-	key := client.ObjectKeyFromObject(desired)
-	if err := s.client.Get(ctx, key, existing); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return "", err
-		}
-		if err := s.client.Create(ctx, desired); err != nil {
-			return "", err
-		}
-		return desired.Name, nil
-	}
-
-	existing.Labels = desired.Labels
-	existing.Type = desired.Type
-	existing.Data = desired.Data
-	existing.OwnerReferences = desired.OwnerReferences
-	if err := s.client.Update(ctx, existing); err != nil {
-		return "", err
-	}
-
-	return desired.Name, nil
+	return secret.Name, nil
 }
 
 func (s *Service) projectedAuthSecretData(

@@ -29,49 +29,47 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func (s *Service) ensureSecret(
 	ctx context.Context,
-	operation *corev1.ConfigMap,
+	owner client.Object,
 	ownerUID types.UID,
-) (*corev1.Secret, string, metav1.Time, error) {
+) (*corev1.Secret, string, metav1.Time, bool, error) {
 	secret, token, expiresAt, err := s.buildSecret(ownerUID)
 	if err != nil {
-		return nil, "", metav1.Time{}, err
+		return nil, "", metav1.Time{}, false, err
 	}
-	created, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, operation, secret)
+	created, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, owner, secret)
 	if err != nil {
-		return nil, "", metav1.Time{}, err
+		return nil, "", metav1.Time{}, false, err
 	}
 	if created {
-		return secret, token, expiresAt, nil
+		return secret, token, expiresAt, true, nil
 	}
 	token = strings.TrimSpace(string(secret.Data["token"]))
 	expiresAt, err = expiresAtFromSecret(secret)
 	if err != nil {
-		return nil, "", metav1.Time{}, err
+		return nil, "", metav1.Time{}, false, err
 	}
-	return secret, token, expiresAt, nil
+	return secret, token, expiresAt, false, nil
 }
 
 func (s *Service) ensureService(
 	ctx context.Context,
-	operation *corev1.ConfigMap,
+	owner client.Object,
 	ownerUID types.UID,
-) (*corev1.Service, error) {
+) (*corev1.Service, bool, error) {
 	service, err := s.buildService(ownerUID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	created, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, operation, service)
+	created, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, owner, service)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	if created {
-		return service, nil
-	}
-	return service, nil
+	return service, created, nil
 }
 
 func (s *Service) buildSecret(ownerUID types.UID) (*corev1.Secret, string, metav1.Time, error) {

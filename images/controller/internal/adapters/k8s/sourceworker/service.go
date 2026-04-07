@@ -21,13 +21,12 @@ import (
 	"errors"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -55,82 +54,49 @@ func NewService(client client.Client, scheme *runtime.Scheme, options Options) (
 	}, nil
 }
 
-func (s *Service) getPod(ctx context.Context, ownerUID types.UID) (*corev1.Pod, error) {
-	if s == nil {
-		return nil, errors.New("source publish pod service must not be nil")
-	}
-
-	name, err := resourcenames.SourceWorkerPodName(ownerUID)
-	if err != nil {
-		return nil, err
-	}
-
-	pod := &corev1.Pod{}
-	if err := s.client.Get(ctx, client.ObjectKey{Name: name, Namespace: s.options.Namespace}, pod); err != nil {
-		return nil, err
-	}
-
-	return pod, nil
-}
-
-func (s *Service) GetOrCreate(ctx context.Context, operation *corev1.ConfigMap, request publicationports.OperationContext) (*publicationports.SourceWorkerHandle, bool, error) {
+func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.OperationContext) (*publicationports.SourceWorkerHandle, bool, error) {
 	if s == nil {
 		return nil, false, errors.New("source publish pod service must not be nil")
 	}
-	if operation == nil {
-		return nil, false, errors.New("source publish pod operation configmap must not be nil")
+	if owner == nil {
+		return nil, false, errors.New("source publish pod owner must not be nil")
 	}
-	if operation.Namespace != s.options.Namespace {
-		return nil, false, errors.New("source publish pod operation namespace must match worker namespace")
-	}
-
-	pod, err := s.getPod(ctx, request.Request.Owner.UID)
-	if err == nil {
-		return publicationports.NewSourceWorkerHandle(
-			pod.Name,
-			pod.Status.Phase,
-			func(ctx context.Context) error {
-				return s.deletePod(ctx, pod)
-			},
-		), false, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		return nil, false, err
-	}
-
-	request.OperationName = operation.Name
-	request.OperationNamespace = operation.Namespace
 
 	plan, err := sourcePlan(request)
 	if err != nil {
 		return nil, false, err
 	}
 
-	projectedAuthSecretName, err := s.ensureProjectedAuthSecret(ctx, operation, request.Request.Owner, plan)
+	projectedAuthSecretName, err := s.ensureProjectedAuthSecret(ctx, owner, request.Request.Owner, plan)
 	if err != nil {
 		return nil, false, err
 	}
 
-	pod, err = buildWithPlan(request, plan, s.options, projectedAuthSecretName)
+	pod, err := buildWithPlan(request, plan, s.options, projectedAuthSecretName)
 	if err != nil {
 		return nil, false, err
 	}
 
-	created, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, operation, pod)
+	created, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, owner, pod)
 	if err != nil {
 		return nil, false, err
 	}
 
+	return s.handleFromPod(pod), created, nil
+}
+
+func (s *Service) handleFromPod(pod *corev1.Pod) *publicationports.SourceWorkerHandle {
 	return publicationports.NewSourceWorkerHandle(
 		pod.Name,
 		pod.Status.Phase,
+		workloadpod.TerminationMessage(pod, "publish"),
 		func(ctx context.Context) error {
-			return s.deletePod(ctx, pod)
+			return s.deleteResources(ctx, pod)
 		},
-	), created, nil
+	)
 }
 
-func (s *Service) deletePod(ctx context.Context, pod *corev1.Pod) error {
+func (s *Service) deleteResources(ctx context.Context, pod *corev1.Pod) error {
 	if s == nil || pod == nil {
 		return nil
 	}

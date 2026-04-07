@@ -28,7 +28,7 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	t.Parallel()
 
 	request := testOperationContext()
-	request.Request.Spec.Source.HuggingFace.Revision = "main"
+	request.Request.Spec.Source.URL = "https://huggingface.co/deepseek-ai/DeepSeek-R1?revision=main"
 
 	options := testOptions()
 	options.OCIRegistryCASecretName = "ai-models-publication-registry-ca"
@@ -38,8 +38,8 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 		t.Fatalf("Build() error = %v", err)
 	}
 
-	if got, want := pod.Spec.Containers[0].Command[0], "ai-models-backend-source-publish"; got != want {
-		t.Fatalf("unexpected command %q", got)
+	if got, want := pod.Spec.Containers[0].Args[0], "publish-worker"; got != want {
+		t.Fatalf("unexpected subcommand %q", got)
 	}
 	if got, want := pod.Spec.ServiceAccountName, "ai-models-controller"; got != want {
 		t.Fatalf("unexpected service account %q", got)
@@ -53,13 +53,8 @@ func TestBuildAcceptsHTTPPublicationRequest(t *testing.T) {
 	request.Request.Owner.UID = "1111-3333"
 	request.Request.Owner.Name = "deepseek-r1-http"
 	request.Request.Identity.Name = "deepseek-r1-http"
-	request.Request.Spec.Source.Type = modelsv1alpha1.ModelSourceTypeHTTP
-	request.Request.Spec.Source.HuggingFace = nil
-	request.Request.Spec.Source.HTTP = &modelsv1alpha1.HTTPModelSource{
-		URL:      "https://downloads.example/models/deepseek-r1.tar.gz",
-		CABundle: []byte("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"),
-	}
-	request.OperationName = "ai-model-publication-1111-3333"
+	request.Request.Spec.Source.URL = "https://downloads.example/models/deepseek-r1.tar.gz"
+	request.Request.Spec.Source.CABundle = []byte("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
 
 	pod, err := Build(request, testOptions(), "")
 	if err != nil {
@@ -80,8 +75,7 @@ func TestBuildIncludesHuggingFaceAuthTokenEnvFromProjectedSecret(t *testing.T) {
 	request.Request.Owner.UID = "1111-3334"
 	request.Request.Owner.Name = "deepseek-r1-hf-auth"
 	request.Request.Identity.Name = "deepseek-r1-hf-auth"
-	request.Request.Spec.Source.HuggingFace.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
-	request.OperationName = "ai-model-publication-1111-3334"
+	request.Request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
 
 	pod, err := Build(request, testOptions(), "ai-model-publish-auth-1111-3334")
 	if err != nil {
@@ -110,8 +104,7 @@ func TestBuildRejectsMissingProjectedAuthSecretName(t *testing.T) {
 	request.Request.Owner.UID = "1111-3334"
 	request.Request.Owner.Name = "deepseek-r1-hf-auth"
 	request.Request.Identity.Name = "deepseek-r1-hf-auth"
-	request.Request.Spec.Source.HuggingFace.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
-	request.OperationName = "ai-model-publication-1111-3334"
+	request.Request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
 
 	if _, err := Build(request, testOptions(), ""); err == nil {
 		t.Fatal("expected missing projected auth secret name to fail")
@@ -125,13 +118,8 @@ func TestBuildRejectsHTTPWithoutTask(t *testing.T) {
 	request.Request.Owner.UID = "1111-3335"
 	request.Request.Owner.Name = "deepseek-r1-http-no-task"
 	request.Request.Identity.Name = "deepseek-r1-http-no-task"
-	request.Request.Spec.Source.Type = modelsv1alpha1.ModelSourceTypeHTTP
-	request.Request.Spec.Source.HuggingFace = nil
-	request.Request.Spec.Source.HTTP = &modelsv1alpha1.HTTPModelSource{
-		URL: "https://downloads.example/models/deepseek-r1.tar.gz",
-	}
+	request.Request.Spec.Source.URL = "https://downloads.example/models/deepseek-r1.tar.gz"
 	request.Request.Spec.RuntimeHints = nil
-	request.OperationName = "ai-model-publication-1111-3335"
 
 	if _, err := Build(request, testOptions(), ""); err == nil {
 		t.Fatal("expected HTTP source without task to be rejected")
@@ -145,15 +133,8 @@ func TestBuildIncludesHTTPAuthSecretVolumeAndArgs(t *testing.T) {
 	request.Request.Owner.UID = "1111-3336"
 	request.Request.Owner.Name = "deepseek-r1-http-auth"
 	request.Request.Identity.Name = "deepseek-r1-http-auth"
-	request.Request.Spec.Source.Type = modelsv1alpha1.ModelSourceTypeHTTP
-	request.Request.Spec.Source.HuggingFace = nil
-	request.Request.Spec.Source.HTTP = &modelsv1alpha1.HTTPModelSource{
-		URL: "https://downloads.example/models/deepseek-r1.tar.gz",
-		AuthSecretRef: &modelsv1alpha1.SecretReference{
-			Name: "http-auth",
-		},
-	}
-	request.OperationName = "ai-model-publication-1111-3336"
+	request.Request.Spec.Source.URL = "https://downloads.example/models/deepseek-r1.tar.gz"
+	request.Request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "http-auth"}
 
 	pod, err := Build(request, testOptions(), "ai-model-publish-auth-1111-3336")
 	if err != nil {
@@ -187,7 +168,6 @@ func TestBuildTruncatesOwnerLabelsToKubernetesLimit(t *testing.T) {
 	request.Request.Owner.UID = "1111-4444"
 	request.Request.Owner.Name = longName
 	request.Request.Identity.Name = longName
-	request.OperationName = "ai-model-publication-1111-4444"
 
 	pod, err := Build(request, testOptions(), "")
 	if err != nil {

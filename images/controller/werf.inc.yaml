@@ -33,6 +33,9 @@ secrets:
 shell:
   install:
     - export GOPROXY=$(cat /run/secrets/GOPROXY)
+    - apt-get update
+    - apt-get install -y --no-install-recommends ca-certificates curl tar bash
+    - rm -rf /var/lib/apt/lists/*
     - cd /app/images/controller
     - go mod download
   setup:
@@ -41,6 +44,8 @@ shell:
     - export GOARCH=amd64
     - export CGO_ENABLED=0
     - go build -ldflags="-s -w" -a -o /out/ai-models-controller ./cmd/ai-models-controller
+    - go build -ldflags="-s -w" -a -o /out/ai-models-artifact-runtime ./cmd/ai-models-artifact-runtime
+    - bash /app/images/controller/tools/install-kitops.sh --metadata /app/images/controller/kitops.lock --dest /out/kit
 ---
 image: controller
 final: true
@@ -56,3 +61,22 @@ imageSpec:
     workingDir: /app
     entrypoint:
       - /app/ai-models-controller
+---
+image: controller-runtime
+final: true
+fromImage: base/distroless
+import:
+  - image: controller-build-artifact
+    add: /out/ai-models-artifact-runtime
+    to: /app/ai-models-artifact-runtime
+    after: install
+  - image: controller-build-artifact
+    add: /out/kit
+    to: /usr/local/bin/kit
+    after: install
+imageSpec:
+  config:
+    user: 64535
+    workingDir: /app
+    entrypoint:
+      - /app/ai-models-artifact-runtime

@@ -40,19 +40,15 @@ func testUploadOperationContext() publicationports.OperationContext {
 				Name:      "deepseek-r1-upload",
 			},
 			Spec: modelsv1alpha1.ModelSpec{
+				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 				Source: modelsv1alpha1.ModelSourceSpec{
-					Type: modelsv1alpha1.ModelSourceTypeUpload,
-					Upload: &modelsv1alpha1.UploadModelSource{
-						ExpectedFormat: modelsv1alpha1.ModelUploadFormatHuggingFaceDirectory,
-					},
+					Upload: &modelsv1alpha1.UploadModelSource{},
 				},
 				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
 					Task: "text-generation",
 				},
 			},
 		},
-		OperationName:      "ai-model-publication-1111-2224",
-		OperationNamespace: "d8-ai-models",
 	}
 }
 

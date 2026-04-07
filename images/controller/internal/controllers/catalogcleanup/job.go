@@ -122,8 +122,7 @@ func buildCleanupJob(owner cleanupJobOwner, handle cleanuphandle.Handle, options
 							Name:            "cleanup",
 							Image:           options.Image,
 							ImagePullPolicy: imagePullPolicy,
-							Command:         []string{"ai-models-backend-artifact-cleanup"},
-							Args:            []string{"--handle-json", string(handlePayload)},
+							Args:            []string{"artifact-cleanup", "--handle-json", string(handlePayload)},
 							Env: append(
 								ociregistry.Env(options.OCIInsecure, options.OCIRegistrySecretName, options.OCIRegistryCASecretName),
 								options.Env...,

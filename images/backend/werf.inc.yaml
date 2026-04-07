@@ -23,11 +23,6 @@ git:
   stageDependencies:
     install:
     - '**/*'
-- add: /images/backend/kitops.lock
-  to: /metadata/kitops.lock
-  stageDependencies:
-    install:
-    - '**/*'
 - add: /images/backend/upstream.lock
   to: /metadata/upstream.lock
   stageDependencies:
@@ -189,16 +184,12 @@ shell:
     rm -rf /src/backend/mlflow/server/js/build
     cp -a /ui-build /src/backend/mlflow/server/js/build
     bash /scripts/install-full-from-source.sh /src/backend
-    bash /scripts/install-kitops.sh --metadata /metadata/kitops.lock --dest /usr/local/bin/kit
     install -m 0755 /scripts/ai_models_backend_runtime.py /usr/local/bin/ai_models_backend_runtime.py
     install -m 0755 /scripts/ai_models_backend_runtime.py /usr/local/bin/ai-models-backend-runtime
     install -m 0755 /scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade
     install -m 0755 /scripts/ai-models-backend-bootstrap-oidc-auth.py /usr/local/bin/ai-models-backend-bootstrap-oidc-auth
     install -m 0755 /scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-hf-import
     install -m 0755 /scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-source-import
-    install -m 0755 /scripts/ai-models-backend-source-publish.py /usr/local/bin/ai-models-backend-source-publish
-    install -m 0755 /scripts/ai-models-backend-upload-session.py /usr/local/bin/ai-models-backend-upload-session
-    install -m 0755 /scripts/ai-models-backend-artifact-cleanup.py /usr/local/bin/ai-models-backend-artifact-cleanup
     install -m 0755 /scripts/ai-models-backend-model-cleanup.py /usr/local/bin/ai-models-backend-model-cleanup
     OIDC_AUTH_PREBUILT_UI_DIR=/oidc-auth-ui bash /scripts/install-oidc-auth-from-source.sh
     python3 -m pip install --no-cache-dir \

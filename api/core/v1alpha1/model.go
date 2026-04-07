@@ -33,7 +33,7 @@ const (
 // +kubebuilder:resource:categories={ai-models},scope=Namespaced,singular=model
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-// +kubebuilder:printcolumn:name="Source",type=string,JSONPath=`.spec.source.type`
+// +kubebuilder:printcolumn:name="Source",type=string,JSONPath=`.status.source.resolvedType`
 // +kubebuilder:printcolumn:name="ArtifactURI",type=string,JSONPath=`.status.artifact.uri`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type Model struct {

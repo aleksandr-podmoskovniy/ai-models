@@ -23,7 +23,6 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
-	"github.com/deckhouse/ai-models/controller/internal/controllers/publishrunner"
 )
 
 func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
@@ -39,10 +38,7 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 			},
 		},
 		HFPublication: catalogstatus.Options{
-			OperationNamespace: "d8-ai-models",
-		},
-		PublishRunner: publishrunner.Options{
-			PublishPod: publishrunner.PublishPodOptions{
+			PublishPod: catalogstatus.PublishPodOptions{
 				Namespace:             "d8-ai-models",
 				Image:                 "backend:latest",
 				ServiceAccountName:    "ai-models-controller",
@@ -57,9 +53,6 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 
 	if !application.hfPublication.Enabled() {
 		t.Fatal("expected live hf publication to be configured")
-	}
-	if !application.publishRunner.Enabled() {
-		t.Fatal("expected publication operations to be configured")
 	}
 }
 
@@ -80,7 +73,7 @@ func TestNewAllowsCleanupOnlyRuntimeWithoutPublicationPlaneConfiguration(t *test
 		t.Fatalf("New() error = %v", err)
 	}
 
-	if application.publishRunner.Enabled() {
-		t.Fatal("expected publication operations to stay disabled")
+	if application.hfPublication.Enabled() {
+		t.Fatal("expected publication runtime to stay disabled")
 	}
 }

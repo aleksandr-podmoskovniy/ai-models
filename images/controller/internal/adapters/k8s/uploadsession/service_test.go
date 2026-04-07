@@ -22,9 +22,9 @@ import (
 	"testing"
 
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
+	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -33,13 +33,13 @@ import (
 func TestServiceGetOrCreateCreatesOwnedUploadSessionResources(t *testing.T) {
 	t.Parallel()
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("AddToScheme(corev1) error = %v", err)
-	}
-
+	scheme := testkit.NewScheme(t)
+	owner := testkit.NewUploadModel()
+	owner.UID = types.UID("1111-2222")
+	owner.Name = "deepseek-r1-upload"
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
+		WithObjects(owner).
 		Build()
 
 	service, err := NewService(kubeClient, scheme, testUploadOptions())
@@ -47,22 +47,12 @@ func TestServiceGetOrCreateCreatesOwnedUploadSessionResources(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	operation := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ai-model-publication-1111-2222",
-			Namespace: "d8-ai-models",
-			UID:       types.UID("operation-uid"),
-		},
-	}
-
 	request := testUploadOperationContext()
 	request.Request.Owner.UID = types.UID("1111-2222")
 	request.Request.Owner.Name = "deepseek-r1-upload"
 	request.Request.Identity.Name = "deepseek-r1-upload"
-	request.OperationName = operation.Name
-	request.OperationNamespace = operation.Namespace
 
-	handle, created, err := service.GetOrCreate(context.Background(), operation, request)
+	handle, created, err := service.GetOrCreate(context.Background(), owner, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}
@@ -74,6 +64,9 @@ func TestServiceGetOrCreateCreatesOwnedUploadSessionResources(t *testing.T) {
 	}
 	if !strings.Contains(handle.UploadStatus.Command, "port-forward service/") {
 		t.Fatalf("unexpected upload command %q", handle.UploadStatus.Command)
+	}
+	if !strings.Contains(handle.UploadStatus.Command, "X-AI-MODELS-FILENAME") {
+		t.Fatalf("expected upload filename header in command %q", handle.UploadStatus.Command)
 	}
 	if handle.UploadStatus.ExpiresAt == nil {
 		t.Fatal("expected upload session expiration")
@@ -97,9 +90,20 @@ func TestServiceGetOrCreateCreatesOwnedUploadSessionResources(t *testing.T) {
 		if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(object), stored); err != nil {
 			t.Fatalf("Get(%T) error = %v", object, err)
 		}
-		if len(stored.GetOwnerReferences()) != 1 {
-			t.Fatalf("expected controller owner references on %T", object)
+		if len(stored.GetOwnerReferences()) != 0 {
+			t.Fatalf("expected no cross-namespace owner references on %T", object)
 		}
+	}
+
+	pod := &corev1.Pod{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: handle.WorkerName, Namespace: "d8-ai-models"}, pod); err != nil {
+		t.Fatalf("Get(pod) error = %v", err)
+	}
+	if got, want := pod.Annotations[resourcenames.OwnerNameAnnotationKey], owner.Name; got != want {
+		t.Fatalf("unexpected owner-name annotation %q", got)
+	}
+	if got, want := pod.Annotations[resourcenames.OwnerNamespaceAnnotationKey], owner.Namespace; got != want {
+		t.Fatalf("unexpected owner-namespace annotation %q", got)
 	}
 }
 
@@ -110,7 +114,6 @@ func TestBuildPodUsesUploadSessionRuntime(t *testing.T) {
 	request.Request.Owner.UID = types.UID("1111-2222")
 	request.Request.Owner.Name = "deepseek-r1-upload"
 	request.Request.Identity.Name = "deepseek-r1-upload"
-	request.OperationName = "ai-model-publication-1111-2222"
 	request.Request.Spec.Source.Upload.ExpectedSizeBytes = ptrTo[int64](128)
 
 	options := testUploadOptions()
@@ -121,8 +124,8 @@ func TestBuildPodUsesUploadSessionRuntime(t *testing.T) {
 		t.Fatalf("BuildPod() error = %v", err)
 	}
 
-	if got, want := pod.Spec.Containers[0].Command[0], "ai-models-backend-upload-session"; got != want {
-		t.Fatalf("unexpected command %q", got)
+	if got, want := pod.Spec.Containers[0].Args[0], "upload-session"; got != want {
+		t.Fatalf("unexpected subcommand %q", got)
 	}
 	if !containsArg(pod.Spec.Containers[0].Args, "--expected-size-bytes", "128") {
 		t.Fatalf("expected size arg in %#v", pod.Spec.Containers[0].Args)

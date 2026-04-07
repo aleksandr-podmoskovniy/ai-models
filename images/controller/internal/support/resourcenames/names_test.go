@@ -103,6 +103,21 @@ func TestOwnerUIDFromLabels(t *testing.T) {
 	}
 }
 
+func TestOwnerAnnotations(t *testing.T) {
+	t.Parallel()
+
+	annotations := OwnerAnnotations("Model", "very-long-owner-name-that-must-not-be-truncated-in-annotations", "team-a")
+	if got, want := annotations[OwnerKindAnnotationKey], "Model"; got != want {
+		t.Fatalf("unexpected owner-kind annotation %q", got)
+	}
+	if got, want := annotations[OwnerNameAnnotationKey], "very-long-owner-name-that-must-not-be-truncated-in-annotations"; got != want {
+		t.Fatalf("unexpected owner-name annotation %q", got)
+	}
+	if got, want := annotations[OwnerNamespaceAnnotationKey], "team-a"; got != want {
+		t.Fatalf("unexpected owner-namespace annotation %q", got)
+	}
+}
+
 func TestCanonicalResourceNames(t *testing.T) {
 	t.Parallel()
 
@@ -111,7 +126,6 @@ func TestCanonicalResourceNames(t *testing.T) {
 		fn     func(types.UID) (string, error)
 		prefix string
 	}{
-		{name: "publication operation configmap", fn: PublicationOperationConfigMapName, prefix: "ai-model-publication-"},
 		{name: "source worker pod", fn: SourceWorkerPodName, prefix: "ai-model-publish-"},
 		{name: "source worker auth secret", fn: SourceWorkerAuthSecretName, prefix: "ai-model-publish-auth-"},
 		{name: "upload session pod", fn: UploadSessionPodName, prefix: "ai-model-upload-"},
@@ -138,9 +152,6 @@ func TestCanonicalResourceNames(t *testing.T) {
 		})
 	}
 
-	if _, err := PublicationOperationConfigMapName(""); err == nil {
-		t.Fatal("expected empty UID to be rejected")
-	}
 	if _, err := CleanupJobName(types.UID(":::")); err == nil {
 		t.Fatal("expected normalized-empty UID to be rejected")
 	}

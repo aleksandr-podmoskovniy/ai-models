@@ -21,12 +21,10 @@ import (
 	"errors"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
-	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -52,94 +50,45 @@ func NewService(client client.Client, scheme *runtime.Scheme, options Options) (
 	return &Service{client: client, scheme: scheme, options: options}, nil
 }
 
-func (s *Service) getSession(ctx context.Context, ownerUID types.UID) (*Session, error) {
-	podName, err := resourcenames.UploadSessionPodName(ownerUID)
-	if err != nil {
-		return nil, err
+func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.OperationContext) (*publicationports.UploadSessionHandle, bool, error) {
+	if owner == nil {
+		return nil, false, errors.New("upload session owner must not be nil")
 	}
-	serviceName, err := resourcenames.UploadSessionServiceName(ownerUID)
-	if err != nil {
-		return nil, err
-	}
-	secretName, err := resourcenames.UploadSessionSecretName(ownerUID)
-	if err != nil {
-		return nil, err
-	}
-
-	pod := &corev1.Pod{}
-	if err := s.client.Get(ctx, client.ObjectKey{Name: podName, Namespace: s.options.Namespace}, pod); err != nil {
-		return nil, err
-	}
-	service := &corev1.Service{}
-	if err := s.client.Get(ctx, client.ObjectKey{Name: serviceName, Namespace: s.options.Namespace}, service); err != nil {
-		return nil, err
-	}
-	secret := &corev1.Secret{}
-	if err := s.client.Get(ctx, client.ObjectKey{Name: secretName, Namespace: s.options.Namespace}, secret); err != nil {
-		return nil, err
-	}
-
-	return sessionFromResources(pod, service, secret)
-}
-
-func (s *Service) GetOrCreate(ctx context.Context, operation *corev1.ConfigMap, request publicationports.OperationContext) (*publicationports.UploadSessionHandle, bool, error) {
-	if operation == nil {
-		return nil, false, errors.New("upload session operation configmap must not be nil")
-	}
-	if operation.Namespace != s.options.Namespace {
-		return nil, false, errors.New("upload session operation namespace must match worker namespace")
-	}
-
-	request.OperationName = operation.Name
-	request.OperationNamespace = operation.Namespace
 
 	plan, err := requestPlan(request)
 	if err != nil {
 		return nil, false, err
 	}
 
-	session, err := s.getSession(ctx, request.Request.Owner.UID)
-	if err == nil {
-		return publicationports.NewUploadSessionHandle(
-			session.Pod.Name,
-			session.Pod.Status.Phase,
-			session.UploadStatus,
-			func(ctx context.Context) error {
-				return s.deleteSession(ctx, session)
-			},
-		), false, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		return nil, false, err
-	}
-
-	secret, token, expiresAt, err := s.ensureSecret(ctx, operation, request.Request.Owner.UID)
+	secret, token, expiresAt, createdSecret, err := s.ensureSecret(ctx, owner, request.Request.Owner.UID)
 	if err != nil {
 		return nil, false, err
 	}
-	service, err := s.ensureService(ctx, operation, request.Request.Owner.UID)
+	service, createdService, err := s.ensureService(ctx, owner, request.Request.Owner.UID)
 	if err != nil {
 		return nil, false, err
 	}
-	pod, err := s.ensurePod(ctx, operation, request, plan, secret.Name)
+	pod, createdPod, err := s.ensurePod(ctx, owner, request, plan, secret.Name)
 	if err != nil {
 		return nil, false, err
 	}
 
-	session = buildCreatedSession(pod, service, secret, token, expiresAt)
 	return publicationports.NewUploadSessionHandle(
-		session.Pod.Name,
-		session.Pod.Status.Phase,
-		session.UploadStatus,
+		pod.Name,
+		pod.Status.Phase,
+		workloadpod.TerminationMessage(pod, "upload"),
+		buildUploadStatus(pod, service, token, expiresAt),
 		func(ctx context.Context) error {
-			return s.deleteSession(ctx, session)
+			return s.deleteResources(ctx, pod, service, secret)
 		},
-	), true, nil
+	), createdSecret || createdService || createdPod, nil
 }
 
-func (s *Service) deleteSession(ctx context.Context, session *Session) error {
-	if session == nil {
-		return nil
-	}
-	return ownedresource.DeleteAll(ctx, s.client, session.Pod, session.Service, session.Secret)
+func (s *Service) deleteResources(
+	ctx context.Context,
+	pod *corev1.Pod,
+	service *corev1.Service,
+	secret *corev1.Secret,
+) error {
+	return ownedresource.DeleteAll(ctx, s.client, pod, service, secret)
 }

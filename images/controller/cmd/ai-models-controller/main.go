@@ -19,5 +19,5 @@ package main
 import "os"
 
 func main() {
-	os.Exit(run())
+	os.Exit(runManager(os.Args[1:]))
 }

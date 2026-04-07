@@ -21,33 +21,34 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type SourceWorkerRuntime interface {
-	GetOrCreate(ctx context.Context, operation *corev1.ConfigMap, request OperationContext) (*SourceWorkerHandle, bool, error)
+	GetOrCreate(ctx context.Context, owner client.Object, request OperationContext) (*SourceWorkerHandle, bool, error)
 }
 
 type UploadSessionRuntime interface {
-	GetOrCreate(ctx context.Context, operation *corev1.ConfigMap, request OperationContext) (*UploadSessionHandle, bool, error)
+	GetOrCreate(ctx context.Context, owner client.Object, request OperationContext) (*UploadSessionHandle, bool, error)
 }
 
 type OperationContext struct {
-	Request            Request
-	OperationName      string
-	OperationNamespace string
+	Request Request
 }
 
 type SourceWorkerHandle struct {
-	Name     string
-	Phase    corev1.PodPhase
-	deleteFn func(context.Context) error
+	Name               string
+	Phase              corev1.PodPhase
+	TerminationMessage string
+	deleteFn           func(context.Context) error
 }
 
-func NewSourceWorkerHandle(name string, phase corev1.PodPhase, deleteFn func(context.Context) error) *SourceWorkerHandle {
+func NewSourceWorkerHandle(name string, phase corev1.PodPhase, terminationMessage string, deleteFn func(context.Context) error) *SourceWorkerHandle {
 	return &SourceWorkerHandle{
-		Name:     name,
-		Phase:    phase,
-		deleteFn: deleteFn,
+		Name:               name,
+		Phase:              phase,
+		TerminationMessage: terminationMessage,
+		deleteFn:           deleteFn,
 	}
 }
 
@@ -67,23 +68,26 @@ func (h *SourceWorkerHandle) IsFailed() bool {
 }
 
 type UploadSessionHandle struct {
-	WorkerName   string
-	Phase        corev1.PodPhase
-	UploadStatus modelsv1alpha1.ModelUploadStatus
-	deleteFn     func(context.Context) error
+	WorkerName         string
+	Phase              corev1.PodPhase
+	TerminationMessage string
+	UploadStatus       modelsv1alpha1.ModelUploadStatus
+	deleteFn           func(context.Context) error
 }
 
 func NewUploadSessionHandle(
 	workerName string,
 	phase corev1.PodPhase,
+	terminationMessage string,
 	uploadStatus modelsv1alpha1.ModelUploadStatus,
 	deleteFn func(context.Context) error,
 ) *UploadSessionHandle {
 	return &UploadSessionHandle{
-		WorkerName:   workerName,
-		Phase:        phase,
-		UploadStatus: uploadStatus,
-		deleteFn:     deleteFn,
+		WorkerName:         workerName,
+		Phase:              phase,
+		TerminationMessage: terminationMessage,
+		UploadStatus:       uploadStatus,
+		deleteFn:           deleteFn,
 	}
 }
 

@@ -48,8 +48,8 @@ func (r Request) Validate() error {
 	if err := r.Identity.Validate(); err != nil {
 		return err
 	}
-	if r.Spec.Source.Type == "" {
-		return errors.New("artifact backend request source type must not be empty")
+	if _, err := r.Spec.Source.DetectType(); err != nil {
+		return err
 	}
 
 	return nil
@@ -64,6 +64,17 @@ func (r Result) Validate() error {
 	}
 
 	return r.CleanupHandle.Validate()
+}
+
+func EncodeResult(result Result) (string, error) {
+	if err := result.Validate(); err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
 }
 
 func DecodeResult(raw string) (Result, error) {

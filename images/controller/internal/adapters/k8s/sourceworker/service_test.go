@@ -22,23 +22,19 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
+	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestServiceGetOrCreateSetsControllerOwnerReference(t *testing.T) {
+func TestServiceGetOrCreateEncodesOwnerIdentityOnPod(t *testing.T) {
 	t.Parallel()
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("AddToScheme(corev1) error = %v", err)
-	}
-
+	scheme := testkit.NewScheme(t)
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		Build()
@@ -54,18 +50,10 @@ func TestServiceGetOrCreateSetsControllerOwnerReference(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	operation := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ai-model-publication-1111-2222",
-			Namespace: "d8-ai-models",
-			UID:       types.UID("operation-uid"),
-		},
-	}
+	modelOwner := testkit.NewModel()
 	request := testOperationContext()
-	request.OperationName = ""
-	request.OperationNamespace = ""
 
-	handle, created, err := service.GetOrCreate(context.Background(), operation, request)
+	handle, created, err := service.GetOrCreate(context.Background(), modelOwner, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}
@@ -80,34 +68,25 @@ func TestServiceGetOrCreateSetsControllerOwnerReference(t *testing.T) {
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: handle.Name, Namespace: "d8-ai-models"}, pod); err != nil {
 		t.Fatalf("Get(stored pod) error = %v", err)
 	}
-	if len(pod.OwnerReferences) != 1 {
-		t.Fatalf("unexpected owner reference count %d", len(pod.OwnerReferences))
+	if len(pod.OwnerReferences) != 0 {
+		t.Fatalf("expected no cross-namespace owner reference, got %d", len(pod.OwnerReferences))
 	}
-	owner := pod.OwnerReferences[0]
-	if owner.Kind != "ConfigMap" || owner.Name != operation.Name || owner.UID != operation.UID {
-		t.Fatalf("unexpected owner reference %#v", owner)
+	if got, want := pod.Annotations[resourcenames.OwnerNameAnnotationKey], modelOwner.Name; got != want {
+		t.Fatalf("unexpected owner-name annotation %q", got)
 	}
-
-	if len(pod.OwnerReferences) != 1 {
-		t.Fatalf("unexpected stored owner reference count %d", len(pod.OwnerReferences))
+	if got, want := pod.Annotations[resourcenames.OwnerNamespaceAnnotationKey], modelOwner.Namespace; got != want {
+		t.Fatalf("unexpected owner-namespace annotation %q", got)
 	}
 }
 
 func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 	t.Parallel()
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("AddToScheme(corev1) error = %v", err)
-	}
+	scheme := testkit.NewScheme(t)
+	modelOwner := testkit.NewModel()
+	modelOwner.UID = types.UID("2222-3333")
+	modelOwner.Name = "deepseek-r1-private"
 
-	operation := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ai-model-publication-2222-3333",
-			Namespace: "d8-ai-models",
-			UID:       types.UID("operation-auth-uid"),
-		},
-	}
 	sourceSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "hf-auth",
@@ -121,7 +100,7 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(operation, sourceSecret).
+		WithObjects(modelOwner, sourceSecret).
 		Build()
 
 	service, err := NewService(kubeClient, scheme, Options{
@@ -139,11 +118,9 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 	request.Request.Owner.UID = types.UID("2222-3333")
 	request.Request.Owner.Name = "deepseek-r1-private"
 	request.Request.Identity.Name = "deepseek-r1-private"
-	request.Request.Spec.Source.HuggingFace.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
-	request.OperationName = ""
-	request.OperationNamespace = ""
+	request.Request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
 
-	handle, created, err := service.GetOrCreate(context.Background(), operation, request)
+	handle, created, err := service.GetOrCreate(context.Background(), modelOwner, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}
@@ -154,22 +131,13 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 		t.Fatal("expected source worker handle")
 	}
 
-	pod := &corev1.Pod{}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: handle.Name, Namespace: "d8-ai-models"}, pod); err != nil {
-		t.Fatalf("Get(stored pod) error = %v", err)
-	}
-
 	secretName, err := resourcenames.SourceWorkerAuthSecretName(request.Request.Owner.UID)
 	if err != nil {
 		t.Fatalf("SourceWorkerAuthSecretName() error = %v", err)
 	}
 
 	projected := &corev1.Secret{}
-	if err := kubeClient.Get(
-		context.Background(),
-		client.ObjectKey{Name: secretName, Namespace: "d8-ai-models"},
-		projected,
-	); err != nil {
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: secretName, Namespace: "d8-ai-models"}, projected); err != nil {
 		t.Fatalf("Get(projected secret) error = %v", err)
 	}
 	if got, want := string(projected.Data["token"]), "hf-token"; got != want {
@@ -178,18 +146,14 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 	if _, found := projected.Data["unused-extra"]; found {
 		t.Fatal("projected secret must not copy unsupported keys")
 	}
-	if len(projected.OwnerReferences) != 1 {
-		t.Fatalf("unexpected projected secret owner reference count %d", len(projected.OwnerReferences))
+	if len(projected.OwnerReferences) != 0 {
+		t.Fatalf("expected no cross-namespace owner reference on projected secret, got %d", len(projected.OwnerReferences))
 	}
 
 	if err := handle.Delete(context.Background()); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
-	if err := kubeClient.Get(
-		context.Background(),
-		client.ObjectKey{Name: secretName, Namespace: "d8-ai-models"},
-		projected,
-	); !apierrors.IsNotFound(err) {
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: secretName, Namespace: "d8-ai-models"}, projected); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected projected secret to be deleted, got err=%v", err)
 	}
 }

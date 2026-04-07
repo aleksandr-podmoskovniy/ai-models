@@ -37,7 +37,7 @@ func TestCreateOrGetCreatesControlledObject(t *testing.T) {
 	}
 
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-	owner := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "publication", Namespace: "d8-ai-models", UID: "operation-uid"}}
+	owner := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "publication-owner", Namespace: "d8-ai-models", UID: "operation-uid"}}
 	desired := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "upload", Namespace: "d8-ai-models"}}
 
 	created, err := CreateOrGet(context.Background(), kubeClient, scheme, owner, desired)
@@ -73,7 +73,7 @@ func TestCreateOrGetLoadsExistingObject(t *testing.T) {
 		Data:       map[string][]byte{"token": []byte("existing-token")},
 	}
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
-	owner := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "publication", Namespace: "d8-ai-models", UID: "operation-uid"}}
+	owner := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "publication-owner", Namespace: "d8-ai-models", UID: "operation-uid"}}
 	desired := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "upload-auth", Namespace: "d8-ai-models"}}
 
 	created, err := CreateOrGet(context.Background(), kubeClient, scheme, owner, desired)

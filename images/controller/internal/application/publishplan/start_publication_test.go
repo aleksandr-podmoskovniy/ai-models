@@ -33,50 +33,41 @@ func TestIsTerminalOperationPhase(t *testing.T) {
 	}{
 		{
 			name:  "huggingface uses source worker",
-			input: StartPublicationInput{SourceType: modelsv1alpha1.ModelSourceTypeHuggingFace},
+			input: StartPublicationInput{Source: modelsv1alpha1.ModelSourceSpec{URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1"}},
 			want:  ExecutionModeSourceWorker,
 		},
 		{
 			name:  "http uses source worker",
-			input: StartPublicationInput{SourceType: modelsv1alpha1.ModelSourceTypeHTTP},
+			input: StartPublicationInput{Source: modelsv1alpha1.ModelSourceSpec{URL: "https://downloads.example/model.tar.gz"}},
 			want:  ExecutionModeSourceWorker,
 		},
 		{
-			name: "upload uses upload session",
+			name: "safetensors upload uses upload session",
 			input: StartPublicationInput{
-				SourceType: modelsv1alpha1.ModelSourceTypeUpload,
-				Upload: &modelsv1alpha1.UploadModelSource{
-					ExpectedFormat: modelsv1alpha1.ModelUploadFormatHuggingFaceDirectory,
-				},
+				Source:       modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
 				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
 			},
 			want: ExecutionModeUpload,
 		},
 		{
-			name: "upload modelkit fails",
+			name: "gguf upload uses upload session",
 			input: StartPublicationInput{
-				SourceType: modelsv1alpha1.ModelSourceTypeUpload,
-				Upload: &modelsv1alpha1.UploadModelSource{
-					ExpectedFormat: modelsv1alpha1.ModelUploadFormatModelKit,
-				},
+				Source:       modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
 				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
 			},
-			wantErr: true,
+			want: ExecutionModeUpload,
 		},
 		{
 			name: "upload without task fails",
 			input: StartPublicationInput{
-				SourceType: modelsv1alpha1.ModelSourceTypeUpload,
-				Upload: &modelsv1alpha1.UploadModelSource{
-					ExpectedFormat: modelsv1alpha1.ModelUploadFormatHuggingFaceDirectory,
-				},
+				Source: modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
 			},
 			wantErr: true,
 		},
 		{
 			name: "unsupported source fails",
 			input: StartPublicationInput{
-				SourceType: modelsv1alpha1.ModelSourceType("Unsupported"),
+				Source: modelsv1alpha1.ModelSourceSpec{URL: "oci://example.invalid/model"},
 			},
 			wantErr: true,
 		},

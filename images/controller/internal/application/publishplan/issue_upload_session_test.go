@@ -34,24 +34,19 @@ func TestIssueUploadSession(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "accepted upload returns plan",
+			name: "accepted safetensors upload returns plan",
 			input: UploadSessionIssueRequest{
-				OwnerUID:           "1111-2222",
-				OwnerKind:          modelsv1alpha1.ModelKind,
-				OwnerName:          "deepseek-r1",
-				Identity:           publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				OperationName:      "op-a",
-				OperationNamespace: "d8-ai-models",
-				SourceType:         modelsv1alpha1.ModelSourceTypeUpload,
-				Upload: &modelsv1alpha1.UploadModelSource{
-					ExpectedFormat:    modelsv1alpha1.ModelUploadFormatHuggingFaceDirectory,
-					ExpectedSizeBytes: &size,
-				},
-				Task: " text-generation ",
+				OwnerUID:    "1111-2222",
+				OwnerKind:   modelsv1alpha1.ModelKind,
+				OwnerName:   "deepseek-r1",
+				Identity:    publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:      modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{ExpectedSizeBytes: &size}},
+				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
+				Task:        " text-generation ",
 			},
 			assert: func(t *testing.T, got UploadSessionPlan) {
 				t.Helper()
-				if got.ExpectedFormat != modelsv1alpha1.ModelUploadFormatHuggingFaceDirectory {
+				if got.InputFormat != modelsv1alpha1.ModelInputFormatSafetensors {
 					t.Fatalf("unexpected format %#v", got)
 				}
 				if got.ExpectedSizeBytes == nil || *got.ExpectedSizeBytes != size {
@@ -63,79 +58,67 @@ func TestIssueUploadSession(t *testing.T) {
 			},
 		},
 		{
+			name: "accepted gguf upload returns plan",
+			input: UploadSessionIssueRequest{
+				OwnerUID:    "1111-2222",
+				OwnerKind:   modelsv1alpha1.ModelKind,
+				OwnerName:   "deepseek-r1",
+				Identity:    publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:      modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+				InputFormat: modelsv1alpha1.ModelInputFormatGGUF,
+				Task:        "text-generation",
+			},
+			assert: func(t *testing.T, got UploadSessionPlan) {
+				t.Helper()
+				if got.InputFormat != modelsv1alpha1.ModelInputFormatGGUF {
+					t.Fatalf("unexpected format %#v", got)
+				}
+			},
+		},
+		{
 			name: "missing owner uid fails closed",
 			input: UploadSessionIssueRequest{
-				OwnerKind:          modelsv1alpha1.ModelKind,
-				OwnerName:          "deepseek-r1",
-				Identity:           publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				OperationName:      "op-a",
-				OperationNamespace: "d8-ai-models",
-				SourceType:         modelsv1alpha1.ModelSourceTypeUpload,
-				Upload: &modelsv1alpha1.UploadModelSource{
-					ExpectedFormat: modelsv1alpha1.ModelUploadFormatHuggingFaceDirectory,
-				},
-				Task: "text-generation",
+				OwnerKind:   modelsv1alpha1.ModelKind,
+				OwnerName:   "deepseek-r1",
+				Identity:    publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:      modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
+				Task:        "text-generation",
 			},
 			wantErr: true,
 		},
 		{
 			name: "non-upload source is rejected",
 			input: UploadSessionIssueRequest{
-				OwnerUID:           "1111-2222",
-				OwnerKind:          modelsv1alpha1.ModelKind,
-				OwnerName:          "deepseek-r1",
-				Identity:           publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				OperationName:      "op-a",
-				OperationNamespace: "d8-ai-models",
-				SourceType:         modelsv1alpha1.ModelSourceTypeHuggingFace,
-				Task:               "text-generation",
+				OwnerUID:  "1111-2222",
+				OwnerKind: modelsv1alpha1.ModelKind,
+				OwnerName: "deepseek-r1",
+				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:    modelsv1alpha1.ModelSourceSpec{URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1"},
+				Task:      "text-generation",
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing upload source is rejected",
 			input: UploadSessionIssueRequest{
-				OwnerUID:           "1111-2222",
-				OwnerKind:          modelsv1alpha1.ModelKind,
-				OwnerName:          "deepseek-r1",
-				Identity:           publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				OperationName:      "op-a",
-				OperationNamespace: "d8-ai-models",
-				SourceType:         modelsv1alpha1.ModelSourceTypeUpload,
-				Task:               "text-generation",
-			},
-			wantErr: true,
-		},
-		{
-			name: "modelkit is rejected on current path",
-			input: UploadSessionIssueRequest{
-				OwnerUID:           "1111-2222",
-				OwnerKind:          modelsv1alpha1.ModelKind,
-				OwnerName:          "deepseek-r1",
-				Identity:           publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				OperationName:      "op-a",
-				OperationNamespace: "d8-ai-models",
-				SourceType:         modelsv1alpha1.ModelSourceTypeUpload,
-				Upload: &modelsv1alpha1.UploadModelSource{
-					ExpectedFormat: modelsv1alpha1.ModelUploadFormatModelKit,
-				},
-				Task: "text-generation",
+				OwnerUID:  "1111-2222",
+				OwnerKind: modelsv1alpha1.ModelKind,
+				OwnerName: "deepseek-r1",
+				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Task:      "text-generation",
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing task is rejected",
 			input: UploadSessionIssueRequest{
-				OwnerUID:           "1111-2222",
-				OwnerKind:          modelsv1alpha1.ModelKind,
-				OwnerName:          "deepseek-r1",
-				Identity:           publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				OperationName:      "op-a",
-				OperationNamespace: "d8-ai-models",
-				SourceType:         modelsv1alpha1.ModelSourceTypeUpload,
-				Upload: &modelsv1alpha1.UploadModelSource{
-					ExpectedFormat: modelsv1alpha1.ModelUploadFormatHuggingFaceDirectory,
-				},
+				OwnerUID:    "1111-2222",
+				OwnerKind:   modelsv1alpha1.ModelKind,
+				OwnerName:   "deepseek-r1",
+				Identity:    publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:      modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 			},
 			wantErr: true,
 		},

@@ -53,9 +53,6 @@ func buildWithPlan(
 	if err := options.Validate(); err != nil {
 		return nil, err
 	}
-	if err := validateRequest(request); err != nil {
-		return nil, err
-	}
 	if err := validateProjectedAuthSecretName(sourcePlan, projectedAuthSecretName); err != nil {
 		return nil, err
 	}
@@ -73,17 +70,17 @@ func buildWithPlan(
 		Name:            "publish",
 		Image:           options.Image,
 		ImagePullPolicy: imagePullPolicyFor(options),
-		Command:         []string{"ai-models-backend-source-publish"},
-		Args:            buildArgs(request, sourcePlan, artifactURI),
+		Args:            append([]string{"publish-worker"}, buildArgs(request, sourcePlan, artifactURI)...),
 		Env:             buildEnv(options, sourcePlan, projectedAuthSecretName),
 		VolumeMounts:    buildVolumeMounts(options, sourcePlan),
 	}
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: options.Namespace,
-			Labels:    buildLabels(request.Request.Owner),
+			Name:        name,
+			Namespace:   options.Namespace,
+			Labels:      buildLabels(request.Request.Owner),
+			Annotations: resourcenames.OwnerAnnotations(request.Request.Owner.Kind, request.Request.Owner.Name, request.Request.Owner.Namespace),
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy:      corev1.RestartPolicyNever,
@@ -160,11 +157,15 @@ func buildArgs(request publicationports.OperationContext, plan publicationapp.So
 	args := []string{
 		"--artifact-uri", artifactURI,
 		"--source-type", string(plan.SourceType),
-		"--result-configmap-name", request.OperationName,
-		"--result-configmap-namespace", request.OperationNamespace,
+	}
+	if strings.TrimSpace(string(plan.InputFormat)) != "" {
+		args = append(args, "--input-format", string(plan.InputFormat))
 	}
 	if plan.Task != "" {
 		args = append(args, "--task", plan.Task)
+	}
+	for _, engine := range plan.RuntimeEngines {
+		args = append(args, "--runtime-engine", engine)
 	}
 	return append(args, sourceArgs(plan)...)
 }

@@ -35,10 +35,7 @@ func TestRequestValidateAcceptsNamespacedSourceFirstPublication(t *testing.T) {
 		},
 		Spec: modelsv1alpha1.ModelSpec{
 			Source: modelsv1alpha1.ModelSourceSpec{
-				Type: modelsv1alpha1.ModelSourceTypeHuggingFace,
-				HuggingFace: &modelsv1alpha1.HuggingFaceModelSource{
-					RepoID: "deepseek-ai/DeepSeek-R1",
-				},
+				URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 			},
 		},
 	}
@@ -79,7 +76,7 @@ func TestResultValidateRequiresArtifactAndCleanupHandle(t *testing.T) {
 func TestDecodeResultRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	raw := `{"source":{"type":"HuggingFace","externalReference":"deepseek-ai/DeepSeek-R1","resolvedRevision":"abc123"},"artifact":{"kind":"OCI","uri":"registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef","digest":"sha256:deadbeef","mediaType":"application/vnd.cncf.model.manifest.v1+json","sizeBytes":123},"resolved":{"task":"text-generation","framework":"transformers","family":"deepseek","architecture":"DeepseekForCausalLM","format":"HuggingFaceCheckpoint","contextWindowTokens":8192,"sourceRepoID":"deepseek-ai/DeepSeek-R1"},"cleanupHandle":{"kind":"BackendArtifact","artifact":{"kind":"OCI","uri":"registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef","digest":"sha256:deadbeef"},"backend":{"reference":"registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef"}}}`
+	raw := `{"source":{"type":"HuggingFace","externalReference":"deepseek-ai/DeepSeek-R1","resolvedRevision":"abc123"},"artifact":{"kind":"OCI","uri":"registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef","digest":"sha256:deadbeef","mediaType":"application/vnd.cncf.model.manifest.v1+json","sizeBytes":123},"resolved":{"task":"text-generation","framework":"transformers","family":"deepseek","architecture":"DeepseekForCausalLM","format":"Safetensors","contextWindowTokens":8192,"sourceRepoID":"deepseek-ai/DeepSeek-R1"},"cleanupHandle":{"kind":"BackendArtifact","artifact":{"kind":"OCI","uri":"registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef","digest":"sha256:deadbeef"},"backend":{"reference":"registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef"}}}`
 
 	result, err := DecodeResult(raw)
 	if err != nil {

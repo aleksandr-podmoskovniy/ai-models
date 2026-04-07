@@ -54,6 +54,23 @@
 - Почему не в `templates/`: build shell и Kubernetes manifests не должны
   смешиваться.
 
+### [kitops.lock](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/kitops.lock)
+
+- Назначение: pinned metadata для phase-2 runtime-owned `KitOps` binary.
+- Почему здесь: phase-2 `ModelPack` implementation теперь принадлежит
+  dedicated runtime image рядом с controller tree.
+- Почему не в `images/backend/`: phase-2 publication/upload/cleanup runtime
+  больше не должен жить в backend image.
+
+### [tools/install-kitops.sh](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/tools/install-kitops.sh)
+
+- Назначение: build-time installer pinned `KitOps` CLI for phase-2 runtime
+  image.
+- Почему здесь: tool installation shell допустим как build-time glue рядом с
+  controller tree.
+- Почему не в backend scripts: текущий phase-2 execution path больше не
+  backend-owned.
+
 ## 2. `cmd/`
 
 `cmd/` должен оставаться thin executable shell.
@@ -71,7 +88,67 @@
 - Почему не в `internal/bootstrap`: bootstrap должен принимать уже нормализованные options,
   а не заниматься argv/env parsing.
 
-## 3. `internal/bootstrap/`
+### `cmd/ai-models-artifact-runtime/`
+
+- Назначение: отдельный thin executable shell для one-shot phase-2 runtime.
+- Почему здесь: manager и data-plane execution больше не должны притворяться
+  одним бинарём.
+- Почему не в `internal/dataplane`: dataplane packages не должны знать про
+  argv/env parsing и process entrypoints.
+
+#### [cmd/ai-models-artifact-runtime/main.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/cmd/ai-models-artifact-runtime/main.go)
+
+- Назначение: минимальный entrypoint для runtime binary.
+
+#### [cmd/ai-models-artifact-runtime/dispatch.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/cmd/ai-models-artifact-runtime/dispatch.go)
+
+- Назначение: explicit dispatch between `publish-worker`, `upload-session` and
+  `artifact-cleanup`.
+- Почему здесь: routing one-shot commands — outer shell responsibility.
+- Почему не в `internal/bootstrap`: manager bootstrap не должен знать про
+  phase-2 runtime entrypoints.
+
+#### [cmd/ai-models-artifact-runtime/common.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/cmd/ai-models-artifact-runtime/common.go)
+
+- Назначение: локальные command constants для runtime binary.
+- Почему отдельно: manager binary больше не должен держать phase-2 one-shot
+  command names.
+
+#### [cmd/ai-models-artifact-runtime/publish_worker.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/cmd/ai-models-artifact-runtime/publish_worker.go)
+
+- Назначение: thin CLI shell for controller-owned publish worker runtime.
+- Почему здесь: one-shot data-plane execution belongs to dedicated runtime
+  binary entrypoint layer.
+- Почему не в `sourceworker`: `sourceworker` строит Pod и runtime contract, а
+  не исполняет process entrypoint.
+
+#### [cmd/ai-models-artifact-runtime/upload_session.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/cmd/ai-models-artifact-runtime/upload_session.go)
+
+- Назначение: thin CLI shell for controller-owned upload session HTTP runtime.
+- Почему здесь: это executable process boundary отдельного runtime binary.
+- Почему не в `uploadsession`: adapter materializes K8s resources; HTTP server
+  runtime lives in dataplane/cmd.
+
+#### [cmd/ai-models-artifact-runtime/artifact_cleanup.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/cmd/ai-models-artifact-runtime/artifact_cleanup.go)
+
+- Назначение: thin CLI shell for controller-owned artifact cleanup runtime.
+- Почему здесь: cleanup execution is a process entrypoint dedicated runtime
+  binary, not reconciler policy.
+- Почему не в `catalogcleanup`: controller decides *when* to run cleanup, but
+  actual artifact removal is dataplane runtime code.
+
+## 3. `internal/cmdsupport/`
+
+### [common.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/cmdsupport/common.go)
+
+- Назначение: shared env/flags/signal/logger/termination helpers for manager
+  and runtime binaries.
+- Почему здесь: это реально reusable executable glue, не привязанный только к
+  одному `cmd` package.
+- Почему не в `support/`: helper не нужен controller domain/adapters и не
+  должен выглядеть как ещё один business-support layer.
+
+## 4. `internal/bootstrap/`
 
 `internal/bootstrap` — bootstrap layer. Он собирает manager и controllers, но
 не содержит доменной логики publication/delete.
@@ -92,7 +169,7 @@
 - Почему здесь: тестирует именно `internal/bootstrap`.
 - Почему не в controller packages: это не lifecycle behavior, а runtime wiring.
 
-## 4. `internal/domain/publishstate/`
+## 5. `internal/domain/publishstate/`
 
 Это чистый domain слой publication lifecycle. Здесь нет Kubernetes API CRUD,
 нет `client.Client`, нет `ConfigMap` serialization.
@@ -125,7 +202,7 @@
 
 - Назначение: интерпретация worker/session observation.
 - Почему здесь: это domain decision table.
-- Почему не в `publishrunner`: adapter не должен решать бизнес-исход.
+- Почему не в controller adapter: adapter не должен решать бизнес-исход.
 
 ### Tests
 
@@ -147,7 +224,7 @@ Decision evidence для пакета централизована в
 [TEST_EVIDENCE.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/TEST_EVIDENCE.ru.md),
 а не в локальном `BRANCH_MATRIX.ru.md`.
 
-## 5. `internal/application/`
+## 6. `internal/application/`
 
 `application` — use-case слой. Он связывает domain и input contract, но не
 строит Kubernetes resources.
@@ -225,7 +302,7 @@ Decision evidence для пакета централизована в
 [TEST_EVIDENCE.ru.md](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/TEST_EVIDENCE.ru.md),
 а не в локальном `BRANCH_MATRIX.ru.md`.
 
-## 6. `internal/ports/publishop/`
+## 7. `internal/ports/publishop/`
 
 Порты — shared boundary между use cases/domain и concrete adapters.
 
@@ -233,7 +310,7 @@ Decision evidence для пакета централизована в
 
 - Назначение: shared operation contract primitives.
 - Почему здесь: это reusable port contract.
-- Почему не в `publishrunner`: adapter не должен владеть shared contract.
+- Почему не в controller adapter: adapter не должен владеть shared contract.
 - Почему не `ports/publication`: пакет содержит не “всю publication”, а
   operation/runtime contract для controller-owned execution boundary.
 
@@ -245,12 +322,10 @@ Decision evidence для пакета централизована в
 - Почему source worker и upload session теперь оба идут через `GetOrCreate`:
   concrete runtime adapters не должны расходиться по surface area без реальной
   поведенческой причины; раньше отдельный `Get` у `sourceworker` только держал
-  лишнюю асимметрию и подталкивал `publishrunner` к лишнему create-vs-observe
-  split.
-- Почему не держит `OperationStore`: persisted `ConfigMap` protocol сейчас не
-  является сменным shared seam; это controller-local storage boundary внутри
-  `publishrunner`, и выносить его в shared ports без второго адаптера было
-  ложной абстракцией.
+  лишнюю асимметрию и раздувал reconcile flow.
+- Почему handles несут `TerminationMessage`: worker/session завершаются
+  one-shot pod’ом, а controller читает результат прямо из termination log без
+  промежуточного отдельного хранилища состояния.
 
 ### Tests
 
@@ -262,7 +337,17 @@ Decision evidence для пакета централизована в
 
 - Назначение: проверяет runtime-port shapes и handle contracts.
 
-## 7. `internal/publishedsnapshot/`
+## 8. `internal/ports/modelpack/`
+
+### [contract.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/ports/modelpack/contract.go)
+
+- Назначение: replaceable `ModelPack` publication/removal contract.
+- Почему здесь: выбор concrete implementation (`KitOps`, `Modctl`, native impl)
+  должен оставаться отдельным портом.
+- Почему не в `publishop`: publish execution contract и `ModelPack`
+  implementation contract — разные boundaries.
+
+## 9. `internal/publishedsnapshot/`
 
 `publishedsnapshot` — immutable handoff model между publish, status и cleanup.
 
@@ -279,7 +364,7 @@ Decision evidence для пакета централизована в
 
 - Назначение: validates snapshot contract.
 
-## 8. `internal/artifactbackend/`
+## 10. `internal/artifactbackend/`
 
 Это boundary к backend artifact plane.
 
@@ -302,7 +387,226 @@ Decision evidence для пакета централизована в
 - [contract_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/artifactbackend/contract_test.go)
 - [location_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/artifactbackend/location_test.go)
 
-## 9. `internal/controllers/`
+## 11. `internal/adapters/sourcefetch/`
+
+### [archive.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/sourcefetch/archive.go)
+
+- Назначение: safe payload preparation entrypoint for fetched/uploaded model
+  inputs.
+- Важная деталь: умеет либо распаковывать архив, либо материализовать один
+  файл; это нужно для прямого `GGUF` через `HTTP` и `Upload`.
+- Почему здесь: это concrete source acquisition adapter concern.
+- Почему не в `dataplane/*`: extract/materialize policy переиспользуется
+  несколькими runtime paths.
+
+### [tar_gzip.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/sourcefetch/tar_gzip.go)
+
+- Назначение: hardened tar/gzip extraction helpers.
+- Почему здесь: tar safety — деталь source-fetch adapter implementation.
+- Почему не в `support/`: логика не shared вне source acquisition boundary.
+
+### [http.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/sourcefetch/http.go)
+
+- Назначение: generic HTTP model payload download with auth and custom CA
+  support.
+- Почему здесь: concrete adapter for generic remote URL download after source
+  type is resolved from the URL.
+- Почему не в `publishworker`: worker orchestrates runtime, sourcefetch acquires
+  bytes and normalizes them.
+
+### [remote.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/sourcefetch/remote.go)
+
+- Назначение: один canonical remote ingest entrypoint для `HuggingFace` и
+  generic `HTTP`: скачать, определить входной формат, подготовить локальную
+  директорию модели и вернуть нормализованный результат.
+- Почему здесь: это всё ещё одна concrete source-acquisition boundary, а не
+  responsibility `publishworker`.
+- Почему не в `http.go` или `huggingface.go`: provider-specific transport и
+  provider-agnostic orchestration больше не должны быть перемешаны.
+
+### [transport.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/sourcefetch/transport.go)
+
+- Назначение: общий minimal HTTP transport shell для remote source adapters:
+  GET-запрос, разбор ошибки ответа, JSON decode и запись тела в файл.
+- Почему отдельно: раньше `http.go` и `huggingface.go` держали один и тот же
+  сетевой и file-write boilerplate; это был повтор внутри одной границы.
+- Почему не в `support/`: helper остаётся специфичным для source acquisition
+  adapters и не нужен всему controller tree.
+
+### [huggingface.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/sourcefetch/huggingface.go)
+
+- Назначение: Hugging Face metadata lookup and filtered snapshot download via
+  HTTP API.
+- Почему здесь: concrete adapter for upstream source acquisition.
+- Почему не в domain/application: network IO и upstream response parsing не
+  являются use-case policy.
+
+#### Tests
+
+- [archive_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/sourcefetch/archive_test.go)
+- [http_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/sourcefetch/http_test.go)
+- [huggingface_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/sourcefetch/huggingface_test.go)
+- [remote_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/sourcefetch/remote_test.go)
+
+Назначение блока: проверяет safe fetch/extract/materialize policy без
+Kubernetes shell.
+
+## 12. `internal/adapters/modelformat/`
+
+### [validation.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/modelformat/validation.go)
+
+- Назначение: source-agnostic validation and sanitization rules for
+  `spec.inputFormat`.
+- Почему здесь: это filesystem inspection adapter, общий для `HuggingFace`,
+  `HTTP` и `Upload`.
+- Почему не в `application/publishplan`: use case выбирает execution mode, но
+  не должен владеть file allowlist/rejectlist semantics.
+- Почему не в `publishworker`: dataplane runtime orchestrates fetch/unpack/push,
+  а не владеет списками допустимых файлов и security policy.
+
+### [detect.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/modelformat/detect.go)
+
+- Назначение: автоматическое определение `spec.inputFormat`, когда пользователь
+  его не указал явно.
+- Почему здесь: это тот же adapter boundary над составом файлов модели, а не
+  use-case decision layer.
+- Почему не в `application/publishplan`: планировщик выбирает execution mode,
+  а не распознаёт формат по файлам или списку remote files.
+
+### [validation_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/modelformat/validation_test.go)
+
+- Назначение: verifies required-file enforcement, benign extra stripping and
+  forbidden file rejection for `Safetensors` and `GGUF`.
+
+## 13. `internal/adapters/modelprofile/`
+
+### `internal/adapters/modelprofile/common/`
+
+#### [profile.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/modelprofile/common/profile.go)
+
+- Назначение: общий расчётный слой для profile adapters:
+  endpoint types по `task`, уникализация списков, оценка bytes-per-parameter и
+  минимального GPU launch.
+- Почему здесь: это общий math/normalization слой для нескольких format
+  adapters, но не доменная логика и не controller runtime.
+
+#### [profile_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/modelprofile/common/profile_test.go)
+
+- Назначение: проверяет общую математику endpoint mapping и launch sizing.
+
+### `internal/adapters/modelprofile/safetensors/`
+
+#### [profile.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/modelprofile/safetensors/profile.go)
+
+- Назначение: ai-inference-oriented metadata extraction from validated
+  `Safetensors` model directories.
+- Важная деталь: использует не только `config.json`, но и реальные размеры
+  `.safetensors` shard files для более жёсткой оценки `parameterCount` и
+  `minimumLaunch`.
+- Почему здесь: metamodel calculation depends on concrete files on disk, но
+  должна жить отдельно от source-fetch, `ModelPack` publishing и status
+  projection.
+- Почему не в domain: это technical inspection adapter over files on disk.
+
+#### [profile_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/modelprofile/safetensors/profile_test.go)
+
+- Назначение: verifies parameter/precision/runtime/launch heuristics for the
+  `Safetensors` path.
+
+### `internal/adapters/modelprofile/gguf/`
+
+#### [profile.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/modelprofile/gguf/profile.go)
+
+- Назначение: ai-inference-oriented metadata extraction from validated
+  `GGUF` payloads.
+- Важная деталь: использует имя и размер `.gguf` файла, чтобы выделять family,
+  quantization, приблизительный `parameterCount` и GPU baseline
+  `minimumLaunch`.
+- Почему здесь: это отдельный concrete file-format adapter с собственными
+  runtime/precision heuristics.
+- Почему не в `safetensors`: это другой format boundary и другой heuristic set.
+
+#### [profile_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/modelprofile/gguf/profile_test.go)
+
+- Назначение: verifies `GGUF` family, quantization and runtime heuristics.
+
+## 14. `internal/adapters/modelpack/kitops/`
+
+### [adapter.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/modelpack/kitops/adapter.go)
+
+- Назначение: concrete `ModelPack` adapter over pinned `KitOps` CLI.
+- Почему здесь: tool-specific implementation belongs to an adapter package
+  behind `ports/modelpack`.
+- Почему не в dataplane runtime: publishworker depends on the `ModelPack` port,
+  а не на конкретный tool brand.
+
+### [adapter_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/modelpack/kitops/adapter_test.go)
+
+- Назначение: verifies command assembly, immutable OCI reference logic and
+  inspect payload parsing for the adapter.
+
+## 15. `internal/dataplane/`
+
+`dataplane` — controller-owned one-shot runtime execution layer. Он не является
+reconciler tree и не должен снова уезжать в backend Python scripts.
+
+### `internal/dataplane/publishworker/`
+
+#### [run.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/dataplane/publishworker/run.go)
+
+- Назначение: publication runtime for `HuggingFace`, `HTTP` and
+  `Upload`.
+- Почему здесь: это executable data-plane orchestration, не reconciler и не
+  K8s supplement builder.
+- Почему здесь нет file allowlist policy: content validation живёт отдельно в
+  `adapters/modelformat`, чтобы один и тот же input-format contract применялся
+  ко всем source paths.
+- Почему не в `cmd/`: `cmd` парсит flags и вызывает dataplane.
+
+#### [support.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/dataplane/publishworker/support.go)
+
+- Назначение: package-local runtime helpers for workspace lifecycle, result
+  shaping and profile/sanitizer glue.
+- Почему здесь: это boilerplate конкретно publication runtime package, но не
+  main publish flow.
+- Почему не в `support/`: логика не shared вне `publishworker` boundary.
+
+#### [run_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/dataplane/publishworker/run_test.go)
+
+- Назначение: verifies publication runtime result shaping and fail-closed
+  behavior around fetch/profile/modelpack adapters.
+
+### `internal/dataplane/uploadsession/`
+
+#### [run.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/dataplane/uploadsession/run.go)
+
+- Назначение: controller-owned upload HTTP server runtime.
+- Важная деталь: сохраняет исходное имя файла из upload request, чтобы архивы и
+  прямой `.gguf` не теряли формат при дальнейшей обработке.
+- Почему здесь: это one-shot dataplane server, ближе к virtualization uploader
+  pattern, чем к backend scripts.
+- Почему не в `internal/adapters/k8s/uploadsession`: K8s adapter materializes
+  Pod/Service/Secret, но не исполняет HTTP server.
+
+#### [run_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/dataplane/uploadsession/run_test.go)
+
+- Назначение: verifies base runtime validation, health endpoint, auth guard and
+  filename-preserving upload behavior for the upload session server.
+
+### `internal/dataplane/artifactcleanup/`
+
+#### [run.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/dataplane/artifactcleanup/run.go)
+
+- Назначение: controller-owned published-artifact cleanup runtime.
+- Почему здесь: это one-shot execution layer for delete plane.
+- Почему не в `catalogcleanup`: reconciler decides and launches; dataplane
+  performs artifact removal.
+
+#### [run_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/dataplane/artifactcleanup/run_test.go)
+
+- Назначение: validates cleanup-handle decoding and remover invocation rules.
+
+## 16. `internal/controllers/`
 
 Здесь живут только concrete reconcilers и их тонкие observation/persistence
 shell files.
@@ -316,18 +620,40 @@ shell files.
 - Почему здесь нет `RequeueAfter`: polling cadence для status owner не является
   module/runtime contract. Это локальная lifecycle policy и она должна жить
   рядом с reconcile path, а не притворяться operator option.
+- Важная деталь: controller подписывается на рабочие `Pod`-ы через map-функции,
+  а не через `Owns`, потому что `Model` в namespace команды не может быть
+  `ownerRef` для pod’а в `d8-ai-models`.
+
+#### [watch.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/watch.go)
+
+- Назначение: переводит события рабочих `Pod`-ов обратно в `Model` или
+  `ClusterModel`.
+- Почему здесь: это часть concrete controller wiring, а не shared helper.
+- Почему не в `support/*`: mapping зависит от текущей publication topology и не
+  является общим utility-кодом для всего controller tree.
+
+#### [policy.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/policy.go)
+
+- Назначение: локальные reconcile policy helpers:
+  supported source types, ignore rules и skip rules.
+- Почему здесь: это policy именно `catalogstatus`, но не domain и не shared
+  support.
+- Почему не в `reconciler.go`: thin reconciler gate требует держать локальные
+  decision helpers рядом, но вне основного reconcile shell.
 
 #### [reconciler.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/reconciler.go)
 
 - Назначение: thin reconcile shell для `Model` / `ClusterModel` status owner.
 - Почему здесь: это Kubernetes adapter.
 - Почему не в application: содержит `client.Get`, requeue, adapter wiring.
+- Что делает теперь: сам планирует и наблюдает `sourceworker` / `uploadsession`
+  напрямую, без промежуточной service-state шины.
 
 #### [io.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/io.go)
 
 - Назначение: весь adapter-side IO для status controller:
-  `ConfigMap -> domain Observation`, operation create, cleanup-handle
-  persistence, status patch.
+  `termination-log -> domain Observation`, cleanup-handle persistence, status
+  patch и failed/delete projection.
 - Почему здесь: это единая concrete read/write boundary вокруг status owner.
 - Почему не split на `observation.go` и `persistence.go`: отдельной
   самостоятельной границы там не было; это был искусственный micro-split.
@@ -336,12 +662,12 @@ shell files.
 
 #### [reconciler_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/reconciler_test.go)
 
-- Назначение: проверяет public status projection, request creation и corrupted
-  operation replay behavior.
+- Назначение: проверяет public status projection для running/succeeded/failed
+  worker paths и upload wait path без промежуточного persisted store.
 
 #### [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/catalogstatus/test_helpers_test.go)
 
-- Назначение: держит adapter-local operation/status fixtures и result builders.
+- Назначение: держит adapter-local fake runtimes и termination-result builders.
 - Почему отдельно: не размазывает этот шум по каждому test case, но и не
   создаёт второй shared fixture layer поверх `support/testkit`.
 
@@ -388,112 +714,7 @@ shell files.
 
 - Назначение: держит controller-local delete fixtures и cleanup job builders.
 
-### `internal/controllers/publishrunner/`
-
-Это concrete durable execution boundary вокруг operation `ConfigMap`. Здесь
-должны оставаться только три реальные ответственности: outer reconcile shell,
-persisted `ConfigMap` protocol и source/upload runtime orchestration.
-
-- Почему не `publicationops`: `ops` слишком vague и не объясняет роль пакета.
-  Здесь controller именно запускает и ведёт durable publication run, поэтому
-  concrete controller boundary названа `publishrunner`.
-
-#### [options.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/options.go)
-
-- Назначение: controller options и setup.
-- Почему здесь нет `RequeueAfter`: polling ожидания `worker-result.json` — это
-  локальная lifecycle policy source-worker branch, а не внешний setup knob;
-  держать её в options было той же ошибкой, что и раньше в `catalogstatus`.
-
-#### [reconciler.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/reconciler.go)
-
-- Назначение: thin outer reconcile shell.
-- Логика внутри: только object load, branch dispatch, minimal failure/result
-  persistence и controller-runtime `Result`.
-
-#### [configmap_protocol.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/configmap_protocol.go)
-
-- Назначение: весь concrete `ConfigMap` protocol boundary:
-  keys/constants, decode/encode, mutate persisted state, validate persisted
-  status, view persisted status as domain operation view.
-- Почему здесь: это одна concrete storage protocol boundary для
-  `publishrunner`.
-- Почему не split на `constants.go`, `configmap_codec.go`,
-  `configmap_mutation.go`, `status.go`: отдельной архитектурной выгоды от
-  такого дробления не было; один bounded protocol file оказался честнее и
-  компактнее.
-- Почему внутри файла всё ещё есть create/read/mutate helpers: это один
-  persisted protocol boundary; здесь важнее сохранить один honest seam, чем
-  снова разнести его по нескольким псевдослоям.
-- Почему внутри файла теперь есть generic decode/store helpers: это не новый
-  слой, а локальный способ убрать ручной JSON/unmarshal/marshal boilerplate из
-  того же bounded protocol seam; helper’ы не переживают границу файла и не
-  превращаются в shared utility package.
-
-#### [source.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/source.go)
-
-- Назначение: adapter path для source worker operation branch.
-- Логика внутри: один entrypoint вокруг `GetOrCreate`, local waiting policy и
-  apply source-worker terminal result to the persisted operation state.
-- Почему здесь больше нет отдельного create-vs-observe shell: после выравнивания
-  runtime contract по одному `GetOrCreate` separate wrapper перестал добавлять
-  смысл и только размазывал один и тот же branch по двум функциям.
-- Почему здесь есть `sourceWorkerResultPollInterval`: waiting for
-  `worker-result.json` — это concrete branch behavior именно source-worker
-  flow; переносить его обратно в setup options или shared port было бы ложной
-  абстракцией.
-
-#### [upload.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/upload.go)
-
-- Назначение: adapter path для upload session branch.
-- Логика внутри: issue/reuse upload session, observe session state, map upload
-  terminal result and expiry/failure branches into the persisted operation.
-
-#### [worker_result.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/worker_result.go)
-
-- Назначение: один shared helper для decode `worker-result.json` и перевода его
-  в domain `PublicationSuccess`, плюс нормализация fallback failure message.
-- Почему здесь: это shared concrete helper именно для `publishrunner` runtime
-  branches; он одинаково нужен `source` и `upload`, но не является ни domain,
-  ни store, ни K8s adapter boundary.
-- Почему не дублировать в `source.go` и `upload.go`: эта duplication уже была
-  ошибкой и только раздувала два соседних adapter branch файла.
-
-#### Tests
-
-#### [reconcile_core_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/reconcile_core_test.go)
-
-- Назначение: invariant/fail-closed lifecycle cases without runtime-branch
-  specifics.
-
-#### [reconcile_source_worker_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/reconcile_source_worker_test.go)
-
-- Назначение: source-worker family including start, waiting and terminal-result
-  branches.
-
-#### [reconcile_upload_session_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/reconcile_upload_session_test.go)
-
-- Назначение: upload-session family including issue, ready/running, expiry and
-  terminal-result branches.
-
-#### [configmap_protocol_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/configmap_protocol_test.go)
-
-- Назначение: one concrete persisted-protocol boundary: decoder/accessor,
-  upload payload, mutation and status-validation families.
-
-#### [test_helpers_test.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/controllers/publishrunner/test_helpers_test.go)
-
-- Назначение: minimal bootstrap and canonical scenario fixtures.
-- Почему отдельно: он не строит второй shadow API над production contract, а
-  только стабилизирует test input shape for the package.
-
-Почему package всё ещё требует следующего круга reduction:
-- persisted `ConfigMap` protocol и source/upload branches пока живут рядом;
-- это допустимо, пока обе части образуют один durable controller boundary;
-- любой новый file-level split без новой реальной границы должен считаться
-  ошибкой, а не улучшением.
-
-## 10. `internal/adapters/k8s/`
+## 17. `internal/adapters/k8s/`
 
 Это concrete reusable Kubernetes object/service builders и CRUD adapters.
 
@@ -517,7 +738,7 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 #### [lifecycle.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/ownedresource/lifecycle.go)
 
 - Назначение: canonical K8s owned-resource lifecycle helpers:
-  `SetControllerReference -> Create -> AlreadyExists -> Get` и
+  safe owner wiring, `Create -> AlreadyExists -> Get` и
   `Delete(ignore-not-found)` для controlled objects.
 - Почему здесь: это общий K8s adapter lifecycle shell, а не business logic и не
   `support/*` helper.
@@ -574,6 +795,9 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 
 - Назначение: projected source-auth secret handling.
 - Почему отдельно: secret projection — отдельная side effect зона от Pod build.
+- Почему не держит ручной `Get/Create/Update`: projected secret теперь тоже
+  проходит через один reconcile path с `CreateOrUpdate`, а не через
+  adapter-local CRUD shell.
 
 #### [service.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/service.go)
 
@@ -585,6 +809,13 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
   `Service` уже является concrete runtime adapter, а второй constructor path и
   лишний read-only runtime method только дублировали wiring и расходились по
   surface area с `uploadsession` без новой границы.
+- Почему больше нет отдельного replay read path перед `CreateOrGet`: найденный
+  Pod и созданный Pod всё равно проходят через один и тот же concrete adapter
+  contract, поэтому отдельный предварительный `Get` только дублировал lifecycle
+  shell без новой семантики.
+- Почему handle construction не open-code дважды: local helper inside service
+  keeps one concrete source-worker handle path вместо повторяющегося
+  `NewSourceWorkerHandle(...)` для найденного и созданного Pod.
 - Почему не open-code `SetControllerReference/Create/Get`: controlled create
   flow вынесен в `adapters/k8s/ownedresource`, чтобы такой K8s IO shell не
   дублировался между worker/session adapters.
@@ -624,19 +855,12 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 
 ### `internal/adapters/k8s/uploadsession/`
 
-Это concrete session supplements для `spec.source.type=Upload`.
+Это concrete session supplements для `spec.source.upload`.
 
 #### [options.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/options.go)
 
 - Назначение: normalize/validate runtime options и хранить package-level
   constants upload-session supplements.
-
-#### [request.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/request.go)
-
-- Назначение: validate shared `publishop.OperationContext` и map его в upload
-  session plan.
-- Почему не через local request type: upload adapter больше не зеркалит shared
-  port contract локальными `Request/OwnerRef`.
 
 #### [resources.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/resources.go)
 
@@ -653,6 +877,9 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 - Назначение: build upload pod.
 - Почему не содержит свой naming layer: `uploadsession` использует тот же
   shared resource naming policy из `support/resourcenames`.
+- Почему здесь же лежит mapping shared request в upload plan: после удаления
+  `request.go` это остался один узкий helper ровно рядом с единственным live
+  builder, а не отдельный file-level seam без собственной границы.
 - Почему не open-code create-or-get: owned Pod create/reuse path такой же
   concrete K8s adapter shell, как и для session `Secret` / `Service`, поэтому
   он использует `adapters/k8s/ownedresource`.
@@ -661,7 +888,7 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 
 #### [status.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/status.go)
 
-- Назначение: session aggregate shape и derivation of upload status from created
+- Назначение: derivation of user-facing upload status from ensured session
   resources.
 
 #### [service.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/service.go)
@@ -674,6 +901,9 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
   concrete runtime adapter здесь уже сам `Service`, а дополнительные proxy
   wrappers и read-only method без use site только плодили surface area без
   новой границы.
+- Почему больше нет отдельного resource replay branch: существующие `Secret`,
+  `Service` и `Pod` теперь проходят через тот же direct ensure/create-or-get
+  цикл, что и новые resources, поэтому pre-read shell больше не нужен.
 - Почему delete path не open-code: shared delete shell теперь живёт в
   `adapters/k8s/ownedresource`, чтобы Pod/Service/Secret cleanup не
   копировался по adapters.
@@ -709,7 +939,7 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 - Почему отдельно: делает package tests поддерживаемыми после удаления local
   request wrappers и остаётся чисто test-only layer.
 
-## 11. `internal/support/`
+## 18. `internal/support/`
 
 `support` допускается только для реально shared helpers без business policy.
 
@@ -742,8 +972,9 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 #### [names.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/support/resourcenames/names.go)
 
 - Назначение: единый canonical policy для owner-based resource naming,
-  owner-label rendering/extraction и label normalization.
-- Почему здесь: эти правила реально shared между `publishrunner`,
+  owner-label rendering/extraction, full owner annotations и label
+  normalization.
+- Почему здесь: эти правила реально shared между `catalogstatus`,
   `catalogcleanup`, `sourceworker` и `uploadsession`.
 - Почему не в каждом adapter package: duplication уже была именно ошибкой;
   package-local `names.go` не несли отдельной архитектурной границы и только
@@ -764,24 +995,27 @@ persisted `ConfigMap` protocol и source/upload runtime orchestration.
 - Почему не в production package: файл живёт в support, но используется только
   тестами и не вводит business logic.
 
-## 12. Что сейчас ещё выглядит самым спорным
+## 19. Что сейчас ещё выглядит самым спорным
 
 Главный remaining кандидат на следующий reduction cut:
 
-- [service.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/service.go)
-- [service.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/uploadsession/service.go)
+- [auth_secret.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/auth_secret.go)
+- [build.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/images/controller/internal/adapters/k8s/sourceworker/build.go)
 
 Почему он ещё допустим:
-- это реальные concrete CRUD adapters, не скрытые доменные слои;
-- после выноса runtime port implementation они уже лежат в правильном слое.
+- это всё ещё adapter-local preparation code, не скрытая доменная логика;
+- после схлопывания replay/create shell они уже не держат отдельные lifecycle
+  ветки.
 
 Почему его всё равно надо дальше резать:
-- между `sourceworker` и `uploadsession` всё ещё заметен повтор по owner/request
-  translation и service lifecycle shell;
-- следующий cut должен либо убрать повтор, либо доказать, что он неизбежен из-за
-  разного supplement model.
+- `sourceworker` всё ещё отделяет auth projection и pod rendering по старому
+  file split;
+- `uploadsession` уже убрал отдельный request-mapping file, но в `pod.go` всё
+  ещё живёт небольшой mapping helper, который при следующем круге можно либо
+  оставить как честный local helper, либо схлопнуть дальше, если появится ещё
+  один реальный consumer.
 
-## 13. Что не должно появляться снова
+## 20. Что не должно появляться снова
 
 - новый top-level patchwork package рядом с `controllers/`, `adapters/`,
   `support/`, если его роль уже укладывается в существующий слой;

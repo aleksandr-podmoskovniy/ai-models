@@ -58,7 +58,7 @@ func TestBuildCleanupJob(t *testing.T) {
 	if got, want := job.Namespace, "d8-ai-models"; got != want {
 		t.Fatalf("unexpected job namespace %q", got)
 	}
-	if got, want := job.Spec.Template.Spec.Containers[0].Command[0], "ai-models-backend-artifact-cleanup"; got != want {
-		t.Fatalf("unexpected cleanup command %q", got)
+	if got, want := job.Spec.Template.Spec.Containers[0].Args[0], "artifact-cleanup"; got != want {
+		t.Fatalf("unexpected cleanup subcommand %q", got)
 	}
 }

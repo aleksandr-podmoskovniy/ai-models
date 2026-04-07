@@ -44,8 +44,8 @@ test -s "${OUTPUT_DIR}/ai-models.deckhouse.io_models.yaml"
 test -s "${OUTPUT_DIR}/ai-models.deckhouse.io_clustermodels.yaml"
 
 grep -Fq "x-kubernetes-validations:" "${OUTPUT_DIR}/ai-models.deckhouse.io_models.yaml"
-grep -Fq "spec.package is immutable" "${OUTPUT_DIR}/ai-models.deckhouse.io_models.yaml"
-grep -Fq "spec.access is required for ClusterModel" "${OUTPUT_DIR}/ai-models.deckhouse.io_clustermodels.yaml"
+grep -Fq "spec.inputFormat is immutable" "${OUTPUT_DIR}/ai-models.deckhouse.io_models.yaml"
+grep -Fq "spec.source.authSecretRef.namespace is required for ClusterModel" "${OUTPUT_DIR}/ai-models.deckhouse.io_clustermodels.yaml"
 
 if [[ "${KEEP_OUTPUT}" == "true" ]]; then
   echo "==> CRD schema generated in ${OUTPUT_DIR}"

@@ -34,7 +34,7 @@ Keep controller code split into these layers:
   - token/session issuer
 - `adapters`
   - Kubernetes reconcilers
-  - ConfigMap/Secret/Pod/Service materializers
+  - concrete Pod/Service/Secret/Job builders and service adapters
   - concrete `ModelPack` implementations such as `KitOps` or `Modctl`
 
 ## Thin reconciler rule
@@ -53,7 +53,7 @@ Do not keep the following in reconciler files:
 
 - lifecycle branching trees
 - publication state machine logic
-- inline `Pod` / `Service` / `Secret` / `ConfigMap` construction
+- inline `Pod` / `Service` / `Secret` / `Job` construction
 - status reason decision trees
 - serialization format details for worker result handoff
 
@@ -62,7 +62,7 @@ Do not keep the following in reconciler files:
 Cut the current controller in this order:
 
 1. `controllers/catalogstatus`
-2. `controllers/publishrunner`
+2. `adapters/k8s/sourceworker`
 3. `adapters/k8s/uploadsession`
 
 Do not add new feature logic to these packages before checking whether the
@@ -95,9 +95,9 @@ Do not keep four generic folders named around one vague word such as
 when each one actually owns a narrower responsibility. Use role-based names
 such as `publishedsnapshot`, `publishplan`, `publishstate`, and `publishop`.
 
-Do not recreate package-local `names.go` wrappers for Pod/Service/Secret/Job/
-ConfigMap names unless they add a real new boundary. Canonical resource naming
-belongs in `internal/support/resourcenames`.
+Do not recreate package-local `names.go` wrappers for Pod/Service/Secret/Job
+names unless they add a real new boundary. Canonical resource naming belongs in
+`internal/support/resourcenames`.
 
 Do not mirror shared publication runtime input through adapter-local `Request`
 or `OwnerRef` wrapper types unless the adapter truly needs a different contract.
@@ -119,11 +119,10 @@ mount, registry CA volumes/mounts) across multiple adapters. If the structure
 is the same and only command/env/extra mounts differ, keep one shared helper
 under `internal/adapters/k8s/*`.
 
-Do not promote a controller-local persisted protocol helper into `internal/ports`
-until there is a real second adapter behind that seam. If only one controller
-package owns the `ConfigMap`/`Secret`/`Job` storage protocol, keep that
-boundary local to the concrete controller package instead of inventing a fake
-shared port.
+Do not invent a shared persisted-bus layer unless there is a real second
+adapter behind that seam. If one controller can observe working Pods directly
+and read their termination result, keep that path direct instead of inserting
+another store-shaped hop.
 
 When the package map changes materially, update the repo-local inventory in
 `images/controller/STRUCTURE.ru.md`. New files should be defendable by:

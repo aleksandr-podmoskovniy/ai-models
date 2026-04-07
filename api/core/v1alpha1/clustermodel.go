@@ -24,20 +24,16 @@ const (
 )
 
 // ClusterModel is the cluster-scoped public catalog object for curated shared
-// published models. Unlike Model, access policy for ClusterModel is expected to
-// be explicit rather than inferred from the object's namespace.
+// published models.
 // +genclient
 // +genclient:nonNamespaced
 // +kubebuilder:object:root=true
-// +kubebuilder:validation:XValidation:rule="has(self.spec.access)",message="spec.access is required for ClusterModel"
-// +kubebuilder:validation:XValidation:rule="!has(self.spec.access) || !has(self.spec.access.serviceAccounts) || self.spec.access.serviceAccounts.all(sa, has(sa.namespace) && size(sa.namespace) > 0)",message="spec.access.serviceAccounts.namespace is required for ClusterModel"
-// +kubebuilder:validation:XValidation:rule="self.spec.source.type != 'HuggingFace' || !has(self.spec.source.huggingFace) || !has(self.spec.source.huggingFace.authSecretRef) || (has(self.spec.source.huggingFace.authSecretRef.namespace) && size(self.spec.source.huggingFace.authSecretRef.namespace) > 0)",message="spec.source.huggingFace.authSecretRef.namespace is required for ClusterModel"
-// +kubebuilder:validation:XValidation:rule="self.spec.source.type != 'HTTP' || !has(self.spec.source.http) || !has(self.spec.source.http.authSecretRef) || (has(self.spec.source.http.authSecretRef.namespace) && size(self.spec.source.http.authSecretRef.namespace) > 0)",message="spec.source.http.authSecretRef.namespace is required for ClusterModel"
+// +kubebuilder:validation:XValidation:rule="!has(self.spec.source.authSecretRef) || (has(self.spec.source.authSecretRef.namespace) && size(self.spec.source.authSecretRef.namespace) > 0)",message="spec.source.authSecretRef.namespace is required for ClusterModel"
 // +kubebuilder:metadata:labels={heritage=deckhouse,module=ai-models}
 // +kubebuilder:resource:categories={ai-models},scope=Cluster,singular=clustermodel
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-// +kubebuilder:printcolumn:name="Source",type=string,JSONPath=`.spec.source.type`
+// +kubebuilder:printcolumn:name="Source",type=string,JSONPath=`.status.source.resolvedType`
 // +kubebuilder:printcolumn:name="ArtifactURI",type=string,JSONPath=`.status.artifact.uri`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type ClusterModel struct {

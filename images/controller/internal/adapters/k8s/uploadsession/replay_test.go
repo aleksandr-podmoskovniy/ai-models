@@ -23,9 +23,9 @@ import (
 
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
+	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -34,22 +34,12 @@ import (
 func TestGetOrCreateReusesExistingSession(t *testing.T) {
 	t.Parallel()
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("AddToScheme(corev1) error = %v", err)
-	}
+	scheme := testkit.NewScheme(t)
+	owner := testkit.NewUploadModel()
+	owner.UID = types.UID("3333-4444")
 
-	operation := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ai-model-publication-3333",
-			Namespace: "d8-ai-models",
-			UID:       types.UID("operation-uid"),
-		},
-	}
 	request := testUploadOperationContext()
 	request.Request.Owner.UID = types.UID("3333-4444")
-	request.OperationName = operation.Name
-	request.OperationNamespace = operation.Namespace
 
 	pod, err := BuildPod(request, uploadOptions(), "ai-model-upload-auth-3333-4444")
 	if err != nil {
@@ -70,6 +60,7 @@ func TestGetOrCreateReusesExistingSession(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(
+			owner,
 			pod,
 			&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: "d8-ai-models"}},
 			&corev1.Secret{
@@ -88,7 +79,7 @@ func TestGetOrCreateReusesExistingSession(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	handle, created, err := service.GetOrCreate(context.Background(), operation, request)
+	handle, created, err := service.GetOrCreate(context.Background(), owner, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}
@@ -103,22 +94,12 @@ func TestGetOrCreateReusesExistingSession(t *testing.T) {
 func TestGetOrCreateRecoversFromPartialAlreadyExists(t *testing.T) {
 	t.Parallel()
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("AddToScheme(corev1) error = %v", err)
-	}
+	scheme := testkit.NewScheme(t)
+	owner := testkit.NewUploadModel()
+	owner.UID = types.UID("3333-4444")
 
-	operation := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ai-model-publication-4444",
-			Namespace: "d8-ai-models",
-			UID:       types.UID("operation-uid"),
-		},
-	}
 	request := testUploadOperationContext()
 	request.Request.Owner.UID = types.UID("3333-4444")
-	request.OperationName = operation.Name
-	request.OperationNamespace = operation.Namespace
 
 	serviceName, err := resourcenames.UploadSessionServiceName(request.Request.Owner.UID)
 	if err != nil {
@@ -133,6 +114,7 @@ func TestGetOrCreateRecoversFromPartialAlreadyExists(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(
+			owner,
 			&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: "d8-ai-models"}},
 			&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -150,7 +132,7 @@ func TestGetOrCreateRecoversFromPartialAlreadyExists(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	handle, created, err := service.GetOrCreate(context.Background(), operation, request)
+	handle, created, err := service.GetOrCreate(context.Background(), owner, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}

@@ -31,9 +31,29 @@ description: Use for controller implementation work: reconciliation boundaries, 
 8. For phase-2 runtime/materialization work, keep `ModelPack` as the contract,
    `OCI from registry` as the only runtime input, and concrete tools such as
    `KitOps`, `Modctl`, or init images behind adapters.
-9. If the task continues an existing canonical phase-2 workstream, update that
+9. For phase-2 publication API shape, keep the public model simple:
+   - users provide `source`
+   - users provide `inputFormat`
+   - `source` should stay user-facing and minimal:
+     `source.url` or `source.upload`, not nested provider scaffolding
+   - `inputFormat` may stay empty only when the controller can determine it
+     safely and uniquely from contents
+   - fixed internal output (`ModelPack` in OCI) stays implicit
+   - do not leak source-coupled names such as `HuggingFaceDirectory` or
+     `HFCheckpoint` into the public contract when the actual concern is model
+     file format
+10. For phase-2 publication/runtime execution paths, prefer Go-first data-plane
+   code by default:
+   - source worker runtime;
+   - upload session HTTP serving;
+   - archive validation/unpack;
+   - metadata calculation;
+   - cleanup execution.
+   Python or shell may remain only where they are strictly phase-1
+   backend-adjacent or build/install tooling.
+11. If the task continues an existing canonical phase-2 workstream, update that
    bundle instead of creating a sibling active bundle.
-10. Keep the concrete package map stable:
+12. Keep the concrete package map stable:
    - bootstrap/composition root must use an explicit name such as
      `internal/bootstrap`; do not keep an `internal/app` package beside
      `internal/application`, because that naming collision makes the tree
@@ -64,7 +84,7 @@ description: Use for controller implementation work: reconciliation boundaries, 
    - do not elevate a controller-local persisted protocol helper into
      `internal/ports/*` until there is a real second adapter behind that seam;
      fake shared store interfaces are architecture debt, not reuse
-11. Keep controller tests systematic:
+13. Keep controller tests systematic:
    - shared scheme/object/fake-client fixtures under `internal/support/testkit`
    - package-local `test_helpers_test.go` only for adapter-local builders and
      assertions
@@ -74,10 +94,10 @@ description: Use for controller implementation work: reconciliation boundaries, 
    - keep one controller-level test evidence inventory in
      `images/controller/TEST_EVIDENCE.ru.md`; do not scatter package-local
      `BRANCH_MATRIX.ru.md` files through the tree
-12. If the controller package map changes or grows, sync
+14. If the controller package map changes or grows, sync
     `images/controller/STRUCTURE.ru.md` so every folder/file keeps an explicit
     rationale.
-13. Keep controller verification signals explicit:
+15. Keep controller verification signals explicit:
    - controller deadcode must be a first-class verify step, not hidden behind
      hooks output
    - if a verification shell checks multiple areas, controller-specific output

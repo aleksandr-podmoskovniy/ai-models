@@ -152,13 +152,17 @@ func readyStatus(
 			MediaType: snapshot.Artifact.MediaType,
 		},
 		Resolved: &modelsv1alpha1.ModelResolvedStatus{
-			Task:         snapshot.Resolved.Task,
-			Framework:    snapshot.Resolved.Framework,
-			Family:       snapshot.Resolved.Family,
-			License:      snapshot.Resolved.License,
-			Architecture: snapshot.Resolved.Architecture,
-			Format:       snapshot.Resolved.Format,
-			SourceRepoID: snapshot.Resolved.SourceRepoID,
+			Task:                         snapshot.Resolved.Task,
+			Framework:                    snapshot.Resolved.Framework,
+			Family:                       snapshot.Resolved.Family,
+			License:                      snapshot.Resolved.License,
+			Architecture:                 snapshot.Resolved.Architecture,
+			Format:                       snapshot.Resolved.Format,
+			SourceRepoID:                 snapshot.Resolved.SourceRepoID,
+			SupportedEndpointTypes:       append([]string(nil), snapshot.Resolved.SupportedEndpointTypes...),
+			CompatibleRuntimes:           append([]string(nil), snapshot.Resolved.CompatibleRuntimes...),
+			CompatibleAcceleratorVendors: append([]string(nil), snapshot.Resolved.CompatibleAcceleratorVendors...),
+			CompatiblePrecisions:         append([]string(nil), snapshot.Resolved.CompatiblePrecisions...),
 		},
 		Conditions: keepNonPublishConditions(current.Conditions),
 	}
@@ -170,6 +174,29 @@ func readyStatus(
 	if snapshot.Resolved.ContextWindowTokens > 0 {
 		contextWindow := snapshot.Resolved.ContextWindowTokens
 		status.Resolved.ContextWindowTokens = &contextWindow
+	}
+	if snapshot.Resolved.ParameterCount > 0 {
+		parameterCount := snapshot.Resolved.ParameterCount
+		status.Resolved.ParameterCount = &parameterCount
+	}
+	if snapshot.Resolved.Quantization != "" {
+		quantization := snapshot.Resolved.Quantization
+		status.Resolved.Quantization = &quantization
+	}
+	if snapshot.Resolved.MinimumLaunch.PlacementType != "" {
+		minimumLaunch := &modelsv1alpha1.ModelMinimumLaunchStatus{
+			PlacementType: snapshot.Resolved.MinimumLaunch.PlacementType,
+			SharingMode:   snapshot.Resolved.MinimumLaunch.SharingMode,
+		}
+		if snapshot.Resolved.MinimumLaunch.AcceleratorCount > 0 {
+			acceleratorCount := snapshot.Resolved.MinimumLaunch.AcceleratorCount
+			minimumLaunch.AcceleratorCount = &acceleratorCount
+		}
+		if snapshot.Resolved.MinimumLaunch.AcceleratorMemoryGiB > 0 {
+			acceleratorMemory := snapshot.Resolved.MinimumLaunch.AcceleratorMemoryGiB
+			minimumLaunch.AcceleratorMemoryGiB = &acceleratorMemory
+		}
+		status.Resolved.MinimumLaunch = minimumLaunch
 	}
 
 	setAcceptedCondition(&status.Conditions, generation)

@@ -48,18 +48,11 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 			wantErr: "unsupported publication scope",
 		},
 		{
-			name: "missing operation namespace",
-			mutate: func(request *publicationports.OperationContext) {
-				request.OperationNamespace = ""
-			},
-			wantErr: "operation namespace",
-		},
-		{
 			name: "missing huggingface source",
 			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.HuggingFace = nil
+				request.Request.Spec.Source.URL = ""
 			},
-			wantErr: "huggingFace source",
+			wantErr: "source.url or source.upload",
 		},
 		{
 			name: "cluster scoped huggingface auth secret without namespace",
@@ -67,19 +60,18 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 				request.Request.Owner.Namespace = ""
 				request.Request.Identity.Scope = publication.ScopeCluster
 				request.Request.Identity.Namespace = ""
-				request.Request.Spec.Source.HuggingFace.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
+				request.Request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
 			},
 			wantErr: "authSecretRef namespace",
 		},
 		{
 			name: "http missing url",
 			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.Type = modelsv1alpha1.ModelSourceTypeHTTP
-				request.Request.Spec.Source.HuggingFace = nil
-				request.Request.Spec.Source.HTTP = &modelsv1alpha1.HTTPModelSource{}
+				request.Request.Spec.Source.URL = "https://example.invalid/model.tgz"
+				request.Request.Spec.Source.URL = ""
 				request.Request.Spec.RuntimeHints = &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"}
 			},
-			wantErr: "http url",
+			wantErr: "source.url or source.upload",
 		},
 		{
 			name: "cluster scoped http auth secret without namespace",
@@ -87,12 +79,8 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 				request.Request.Owner.Namespace = ""
 				request.Request.Identity.Scope = publication.ScopeCluster
 				request.Request.Identity.Namespace = ""
-				request.Request.Spec.Source.Type = modelsv1alpha1.ModelSourceTypeHTTP
-				request.Request.Spec.Source.HuggingFace = nil
-				request.Request.Spec.Source.HTTP = &modelsv1alpha1.HTTPModelSource{
-					URL:           "https://example.invalid/model.tgz",
-					AuthSecretRef: &modelsv1alpha1.SecretReference{Name: "http-auth"},
-				}
+				request.Request.Spec.Source.URL = "https://example.invalid/model.tgz"
+				request.Request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "http-auth"}
 				request.Request.Spec.RuntimeHints = &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"}
 			},
 			wantErr: "authSecretRef namespace",
@@ -100,14 +88,10 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 		{
 			name: "namespaced http auth secret rejects foreign namespace",
 			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.Type = modelsv1alpha1.ModelSourceTypeHTTP
-				request.Request.Spec.Source.HuggingFace = nil
-				request.Request.Spec.Source.HTTP = &modelsv1alpha1.HTTPModelSource{
-					URL: "https://example.invalid/model.tgz",
-					AuthSecretRef: &modelsv1alpha1.SecretReference{
-						Namespace: "other-team",
-						Name:      "http-auth",
-					},
+				request.Request.Spec.Source.URL = "https://example.invalid/model.tgz"
+				request.Request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{
+					Namespace: "other-team",
+					Name:      "http-auth",
 				}
 				request.Request.Spec.RuntimeHints = &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"}
 			},
@@ -116,11 +100,7 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 		{
 			name: "http missing task",
 			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.Type = modelsv1alpha1.ModelSourceTypeHTTP
-				request.Request.Spec.Source.HuggingFace = nil
-				request.Request.Spec.Source.HTTP = &modelsv1alpha1.HTTPModelSource{
-					URL: "https://example.invalid/model.tgz",
-				}
+				request.Request.Spec.Source.URL = "https://example.invalid/model.tgz"
 				request.Request.Spec.RuntimeHints = nil
 			},
 			wantErr: "runtimeHints.task",
@@ -128,19 +108,17 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 		{
 			name: "upload rejected",
 			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.Type = modelsv1alpha1.ModelSourceTypeUpload
-				request.Request.Spec.Source.HuggingFace = nil
+				request.Request.Spec.Source.URL = ""
 				request.Request.Spec.Source.Upload = &modelsv1alpha1.UploadModelSource{}
 			},
 			wantErr: "must be implemented as a session",
 		},
 		{
-			name: "unsupported source type",
+			name: "unsupported source scheme",
 			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.Type = modelsv1alpha1.ModelSourceType("OCIArtifact")
-				request.Request.Spec.Source.HuggingFace = nil
+				request.Request.Spec.Source.URL = "oci://example.invalid/model"
 			},
-			wantErr: "does not support source type",
+			wantErr: "unsupported source URL scheme",
 		},
 	}
 
@@ -152,7 +130,7 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 			request := testOperationContext()
 			tc.mutate(&request)
 
-			err := validateRequest(request)
+			_, err := sourcePlan(request)
 			if err == nil {
 				t.Fatal("expected validation error")
 			}

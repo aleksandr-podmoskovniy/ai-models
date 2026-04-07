@@ -84,24 +84,22 @@ func (r Result) Validate() error {
 }
 
 func validateRequestSource(source modelsv1alpha1.ModelSourceSpec) error {
-	switch source.Type {
-	case modelsv1alpha1.ModelSourceTypeHuggingFace:
-		if source.HuggingFace == nil {
-			return errors.New("publication operation huggingFace source must not be empty")
-		}
+	sourceType, err := source.DetectType()
+	if err != nil {
+		return err
+	}
+
+	switch sourceType {
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		if source.Upload == nil {
 			return errors.New("publication operation upload source must not be empty")
 		}
-	case modelsv1alpha1.ModelSourceTypeHTTP:
-		if source.HTTP == nil {
-			return errors.New("publication operation http source must not be empty")
+	case modelsv1alpha1.ModelSourceTypeHuggingFace, modelsv1alpha1.ModelSourceTypeHTTP:
+		if strings.TrimSpace(source.URL) == "" {
+			return errors.New("publication operation source url must not be empty")
 		}
 	default:
-		if strings.TrimSpace(string(source.Type)) == "" {
-			return errors.New("publication operation source type must not be empty")
-		}
-		return fmt.Errorf("publication operation does not support source type %q", source.Type)
+		return fmt.Errorf("publication operation does not support source type %q", sourceType)
 	}
 
 	return nil

@@ -23,7 +23,7 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
-    - jsonPath: .spec.source.type
+    - jsonPath: .status.source.resolvedType
       name: Source
       type: string
     - jsonPath: .status.artifact.uri
@@ -38,8 +38,7 @@ spec:
       openAPIV3Schema:
         description: |-
           ClusterModel is the cluster-scoped public catalog object for curated shared
-          published models. Unlike Model, access policy for ClusterModel is expected to
-          be explicit rather than inferred from the object's namespace.
+          published models.
         properties:
           apiVersion:
             description: |-
@@ -62,66 +61,18 @@ spec:
             description: ModelSpec is the shared desired state for both Model and
               ClusterModel.
             properties:
-              access:
-                properties:
-                  groups:
-                    items:
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: set
-                  namespaces:
-                    items:
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: set
-                  serviceAccounts:
-                    items:
-                      description: |-
-                        ServiceAccountReference identifies a pull consumer.
-                        For namespaced Model, empty Namespace resolves to the object's namespace.
-                        For ClusterModel, Namespace should be explicit.
-                      properties:
-                        name:
-                          minLength: 1
-                          type: string
-                        namespace:
-                          minLength: 1
-                          type: string
-                      required:
-                      - name
-                      type: object
-                    type: array
-                type: object
-                x-kubernetes-validations:
-                - message: at least one access subject must be specified
-                  rule: (has(self.namespaces) && size(self.namespaces) > 0) || (has(self.serviceAccounts)
-                    && size(self.serviceAccounts) > 0) || (has(self.groups) && size(self.groups)
-                    > 0)
               description:
                 type: string
               displayName:
                 type: string
-              package:
-                default:
-                  layout: HuggingFaceCheckpoint
-                  type: ModelPack
-                properties:
-                  layout:
-                    default: HuggingFaceCheckpoint
-                    enum:
-                    - HuggingFaceCheckpoint
-                    type: string
-                  type:
-                    default: ModelPack
-                    enum:
-                    - ModelPack
-                    type: string
-                type: object
-              publish:
-                properties:
-                  repositoryClass:
-                    type: string
-                type: object
+              inputFormat:
+                description: |-
+                  InputFormat defines the input model format independently of the source.
+                  If omitted, the controller tries to determine the format automatically.
+                enum:
+                - Safetensors
+                - GGUF
+                type: string
               runtimeHints:
                 properties:
                   engines:
@@ -137,102 +88,50 @@ spec:
                 type: object
               source:
                 properties:
-                  http:
+                  authSecretRef:
+                    description: For namespaced Model, empty Namespace resolves to
+                      the object's namespace.
                     properties:
-                      authSecretRef:
-                        description: For namespaced Model, empty Namespace resolves
-                          to the object's namespace.
-                        properties:
-                          name:
-                            minLength: 1
-                            type: string
-                          namespace:
-                            minLength: 1
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      caBundle:
-                        format: byte
-                        type: string
-                      url:
-                        minLength: 1
-                        pattern: ^http[s]?:\/\/(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+$
-                        type: string
-                    required:
-                    - url
-                    type: object
-                  huggingFace:
-                    properties:
-                      allowGated:
-                        type: boolean
-                      authSecretRef:
-                        description: |-
-                          SecretReference identifies a Secret used by a source integration.
-                          For namespaced Model, empty Namespace resolves to the object's namespace.
-                        properties:
-                          name:
-                            minLength: 1
-                            type: string
-                          namespace:
-                            minLength: 1
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      repoID:
+                      name:
                         minLength: 1
                         type: string
-                      revision:
+                      namespace:
+                        minLength: 1
                         type: string
                     required:
-                    - repoID
+                    - name
                     type: object
-                  type:
-                    enum:
-                    - HuggingFace
-                    - Upload
-                    - HTTP
+                  caBundle:
+                    format: byte
                     type: string
                   upload:
                     properties:
-                      expectedFormat:
-                        default: HuggingFaceDirectory
-                        enum:
-                        - ModelKit
-                        - HuggingFaceDirectory
-                        type: string
                       expectedSizeBytes:
                         format: int64
                         minimum: 1
                         type: integer
                     type: object
-                required:
-                - type
+                  url:
+                    minLength: 1
+                    pattern: ^http[s]?:\/\/(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+$
+                    type: string
                 type: object
                 x-kubernetes-validations:
-                - message: huggingFace is required when type is HuggingFace and other
-                    source variants must be empty
-                  rule: 'self.type == ''HuggingFace'' ? has(self.huggingFace) && !has(self.upload)
-                    && !has(self.http) : true'
-                - message: upload is required when type is Upload and other source
-                    variants must be empty
-                  rule: 'self.type == ''Upload'' ? has(self.upload) && !has(self.huggingFace)
-                    && !has(self.http) : true'
-                - message: http is required when type is HTTP and other source variants
-                    must be empty
-                  rule: 'self.type == ''HTTP'' ? has(self.http) && !has(self.huggingFace)
-                    && !has(self.upload) : true'
+                - message: exactly one of source.url or source.upload must be specified
+                  rule: '((size(self.url) > 0 ? 1 : 0) + (has(self.upload) ? 1 : 0))
+                    == 1'
+                - message: source.authSecretRef is only allowed for source.url
+                  rule: 'has(self.upload) ? !has(self.authSecretRef) : true'
+                - message: source.caBundle is only allowed for source.url
+                  rule: 'has(self.upload) ? size(self.caBundle) == 0 : true'
             required:
             - source
             type: object
             x-kubernetes-validations:
             - message: spec.source is immutable
               rule: self.source == oldSelf.source
-            - message: spec.package is immutable
-              rule: self.package == oldSelf.package
-            - message: spec.publish is immutable
-              rule: self.publish == oldSelf.publish
+            - message: spec.inputFormat is immutable
+              rule: self.inputFormat == oldSelf.inputFormat
             - message: spec.runtimeHints is immutable
               rule: self.runtimeHints == oldSelf.runtimeHints
           status:
@@ -416,21 +315,9 @@ spec:
         - spec
         type: object
         x-kubernetes-validations:
-        - message: spec.access is required for ClusterModel
-          rule: has(self.spec.access)
-        - message: spec.access.serviceAccounts.namespace is required for ClusterModel
-          rule: '!has(self.spec.access) || !has(self.spec.access.serviceAccounts)
-            || self.spec.access.serviceAccounts.all(sa, has(sa.namespace) && size(sa.namespace)
-            > 0)'
-        - message: spec.source.huggingFace.authSecretRef.namespace is required for
-            ClusterModel
-          rule: self.spec.source.type != 'HuggingFace' || !has(self.spec.source.huggingFace)
-            || !has(self.spec.source.huggingFace.authSecretRef) || (has(self.spec.source.huggingFace.authSecretRef.namespace)
-            && size(self.spec.source.huggingFace.authSecretRef.namespace) > 0)
-        - message: spec.source.http.authSecretRef.namespace is required for ClusterModel
-          rule: self.spec.source.type != 'HTTP' || !has(self.spec.source.http) ||
-            !has(self.spec.source.http.authSecretRef) || (has(self.spec.source.http.authSecretRef.namespace)
-            && size(self.spec.source.http.authSecretRef.namespace) > 0)
+        - message: spec.source.authSecretRef.namespace is required for ClusterModel
+          rule: '!has(self.spec.source.authSecretRef) || (has(self.spec.source.authSecretRef.namespace)
+            && size(self.spec.source.authSecretRef.namespace) > 0)'
     served: true
     storage: true
     subresources:

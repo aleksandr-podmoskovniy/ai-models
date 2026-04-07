@@ -18,37 +18,10 @@ package uploadsession
 
 import (
 	"testing"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-func TestSessionTerminalStateHelpers(t *testing.T) {
-	t.Parallel()
-
-	if !IsComplete(&Session{Pod: &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodSucceeded}}}) {
-		t.Fatal("expected complete session")
-	}
-	if !IsFailed(&Session{Pod: &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodFailed}}}) {
-		t.Fatal("expected failed session")
-	}
-}
-
-func TestSessionFromResourcesFailsClosedOnEmptyToken(t *testing.T) {
-	t.Parallel()
-
-	_, err := sessionFromResources(
-		&corev1.Pod{},
-		&corev1.Service{},
-		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{"ai-models.deckhouse.io/upload-expires-at": time.Now().UTC().Format(time.RFC3339)},
-		}},
-	)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
 
 func TestExpiresAtFromSecretFailsClosedOnMalformedValue(t *testing.T) {
 	t.Parallel()
