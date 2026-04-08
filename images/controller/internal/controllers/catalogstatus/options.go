@@ -37,6 +37,11 @@ type Options struct {
 
 type PublicationRuntimeOptions = workloadpod.RuntimeOptions
 
+const (
+	modelControllerName        = "catalogstatus-model"
+	clusterModelControllerName = "catalogstatus-cluster-model"
+)
+
 type baseReconciler struct {
 	client         client.Client
 	options        Options
@@ -76,6 +81,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	}
 
 	if err := ctrl.NewControllerManagedBy(mgr).
+		Named(modelControllerName).
 		For(&modelsv1alpha1.Model{}).
 		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(mapPodToModelRequests)).
 		Complete(&ModelReconciler{base}); err != nil {
@@ -83,6 +89,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
+		Named(clusterModelControllerName).
 		For(&modelsv1alpha1.ClusterModel{}).
 		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(mapPodToClusterModelRequests)).
 		Complete(&ClusterModelReconciler{base})

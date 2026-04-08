@@ -389,6 +389,9 @@ Prefer first candidates:
   the `controller-runtime` image, so
   `helm-template` and `kubeconform` validate the new image path instead of
   failing before render
+- controller registration now uses explicit unique names across
+  `catalogcleanup` and `catalogstatus`, so manager startup does not fail on
+  duplicate controller-runtime metric/name validation
 
 ## Slice 11. Collapse remote ingest and direct runtime ensure flow
 

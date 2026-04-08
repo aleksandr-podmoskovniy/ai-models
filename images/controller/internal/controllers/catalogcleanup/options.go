@@ -28,6 +28,11 @@ import (
 
 const Finalizer = "ai-models.deckhouse.io/model-cleanup"
 
+const (
+	modelControllerName        = "catalogcleanup-model"
+	clusterModelControllerName = "catalogcleanup-cluster-model"
+)
+
 type Options struct {
 	CleanupJob   CleanupJobOptions
 	RequeueAfter time.Duration
@@ -59,9 +64,15 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 		options: options,
 	}
 
-	if err := ctrl.NewControllerManagedBy(mgr).For(&modelsv1alpha1.Model{}).Complete(&ModelReconciler{base}); err != nil {
+	if err := ctrl.NewControllerManagedBy(mgr).
+		Named(modelControllerName).
+		For(&modelsv1alpha1.Model{}).
+		Complete(&ModelReconciler{base}); err != nil {
 		return err
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).For(&modelsv1alpha1.ClusterModel{}).Complete(&ClusterModelReconciler{base})
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(clusterModelControllerName).
+		For(&modelsv1alpha1.ClusterModel{}).
+		Complete(&ClusterModelReconciler{base})
 }
