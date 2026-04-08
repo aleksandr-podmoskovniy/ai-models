@@ -11,7 +11,7 @@ repo. Поэтому layout должен разделять:
 
 ## Chart shell
 
-### `Chart.yaml`, `requirements.lock`, `charts/`
+### `Chart.yaml`, `Chart.lock`, `charts/`
 
 Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
 `virtualization`.
@@ -20,7 +20,7 @@ Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
 - `Chart.yaml` объявляет library dependency на `deckhouse_lib_helm`;
 - vendored dependency archive живёт в `charts/` и является частью render
   contract для `helm template`;
-- release `bundle` должен забирать `Chart.yaml`, `requirements.lock` и
+- release `bundle` должен забирать `Chart.yaml`, `Chart.lock` и
   vendored `charts/`, иначе release payload начинает расходиться с live render
   path;
 - `.helmignore` не должен исключать `charts/`, иначе dependency physically

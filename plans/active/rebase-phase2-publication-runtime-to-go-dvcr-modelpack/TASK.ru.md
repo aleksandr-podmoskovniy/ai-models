@@ -80,7 +80,7 @@
 - `images/backend/werf.inc.yaml`
 - `werf.yaml`
 - `Chart.yaml`
-- `requirements.lock`
+- `Chart.lock`
 - `templates/*`
 - `docs/*`
 - `plans/active/*`

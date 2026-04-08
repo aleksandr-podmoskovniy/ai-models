@@ -3,8 +3,6 @@
 .cache/
 .tmp/
 artifacts/
-charts/
-Chart.lock
 node_modules/
 __pycache__/
 *.pyc

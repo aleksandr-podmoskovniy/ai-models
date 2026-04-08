@@ -456,7 +456,7 @@ Prefer first candidates:
 - new `images/distroless/werf.inc.yaml`
 - tightened `images/controller/werf.inc.yaml`
 - tightened `Chart.yaml`
-- new `requirements.lock`
+- new `Chart.lock`
 - removed `templates/deckhouse-lib.tpl`
 - synced docs / bundle review
 
@@ -639,7 +639,7 @@ Prefer first candidates:
   distro-specific proxy shell for alt/debian/alpine package installs;
 - backend source fetch scripts now rewrite GitHub/GitLab repository URLs through
   `SOURCE_REPO_GIT` when a mirror is configured;
-- release `bundle` now includes `Chart.yaml`, `requirements.lock`, and vendored
+- release `bundle` now includes `Chart.yaml`, `Chart.lock`, and vendored
   `charts/`, so the release payload matches the live helm dependency path;
 - repo layout docs now explicitly require bundle/chart parity and root-level
   mirror/proxy discipline.
