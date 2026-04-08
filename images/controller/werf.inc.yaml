@@ -54,12 +54,12 @@ git:
     to: /src/install-kitops.sh
     stageDependencies:
       install:
-        - install-kitops.sh
+        - "**/*"
   - add: /images/controller/kitops.lock
     to: /src/kitops.lock
     stageDependencies:
       install:
-        - kitops.lock
+        - "**/*"
 shell:
   beforeInstall:
   {{- include "alt packages proxy" . | nindent 2 }}
@@ -67,6 +67,7 @@ shell:
   {{- include "alt packages clean" . | nindent 2 }}
   install:
     - bash /src/install-kitops.sh --metadata /src/kitops.lock --dest /out/kit
+    - mkdir -p /root/.local/share/kitops
     - /out/kit version --show-update-notifications=false >/dev/null
 ---
 image: controller

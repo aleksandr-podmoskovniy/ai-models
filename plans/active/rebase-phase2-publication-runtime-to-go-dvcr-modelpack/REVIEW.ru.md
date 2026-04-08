@@ -36,6 +36,13 @@ scripts. Live path теперь controller-owned and Go-first:
   malformed `beforeInstall` command list after `alt packages proxy`; their
   `apt-get install` entries are back on the correct YAML level and no longer
   collapse into one broken `apt-get` invocation during `werf build`
+- `controller-kitops-artifact` no longer uses bogus per-file
+  `stageDependencies.install` paths that werf expanded into nonexistent
+  `images/controller/<file>/<file>` lookups; both imported files are now
+  tracked through the standard wildcard dependency pattern
+- the same KitOps stage now creates `/root/.local/share/kitops` before
+  disabling update notifications, so `kit version --show-update-notifications=false`
+  no longer aborts during image build
 - root chart now consumes vendored `deckhouse_lib_helm` through the normal
   DKP dependency path and no longer needs a repo-local helper fork in
   `templates/`
@@ -48,6 +55,7 @@ scripts. Live path теперь controller-owned and Go-first:
 - `werf build --dev --platform=linux/amd64 distroless controller controller-runtime`
 - `werf build --dev --platform=linux/amd64 controller-kitops-artifact controller-runtime`
 - `werf build --dev --platform=linux/amd64 backend-source-artifact backend-ui-build backend-oidc-auth-ui-build bundle`
+- `werf build --dev --platform=linux/amd64`
 - `git diff --check`
 
 Validation note:

@@ -396,6 +396,16 @@ Prefer first candidates:
   `apt-get install` line at the same YAML list level as `alt packages proxy`,
   matching `virtualization` / `gpu-control-plane` and preventing malformed
   `beforeInstall` shell commands during `werf build`
+- `controller-kitops-artifact` now tracks imported single files through
+  `stageDependencies.install: ["**/*"]` instead of fake path names derived
+  from the destination path, so werf no longer warns that
+  `images/controller/install-kitops.sh/install-kitops.sh` and
+  `images/controller/kitops.lock/kitops.lock` do not exist in git
+- the same stage now creates `/root/.local/share/kitops` before running
+  `kit version --show-update-notifications=false`, so KitOps can persist its
+  disable-notifications marker without aborting the build
+- full local `werf build --dev --platform=linux/amd64` completed successfully
+  after these shell fixes, covering the whole image graph through `bundle`
 
 ## Slice 11. Collapse remote ingest and direct runtime ensure flow
 
