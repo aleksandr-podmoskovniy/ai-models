@@ -21,7 +21,7 @@ final: false
 shell:
   beforeInstall:
   {{- include "alt packages proxy" . | nindent 2 }}
-    - apt-get install ca-certificates tzdata -y
+  - apt-get install ca-certificates tzdata -y
   {{- include "alt packages clean" . | nindent 2 }}
   install:
     - |

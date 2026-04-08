@@ -392,6 +392,10 @@ Prefer first candidates:
 - controller registration now uses explicit unique names across
   `catalogcleanup` and `catalogstatus`, so manager startup does not fail on
   duplicate controller-runtime metric/name validation
+- `controller-kitops-artifact` and `distroless-artifact` now keep the
+  `apt-get install` line at the same YAML list level as `alt packages proxy`,
+  matching `virtualization` / `gpu-control-plane` and preventing malformed
+  `beforeInstall` shell commands during `werf build`
 
 ## Slice 11. Collapse remote ingest and direct runtime ensure flow
 

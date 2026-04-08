@@ -32,6 +32,10 @@ scripts. Live path теперь controller-owned and Go-first:
 - controller registration now uses explicit unique names across
   `catalogcleanup` and `catalogstatus`, so startup no longer dies on duplicate
   controller-runtime controller/metric names
+- `controller-kitops-artifact` and `distroless-artifact` no longer render a
+  malformed `beforeInstall` command list after `alt packages proxy`; their
+  `apt-get install` entries are back on the correct YAML level and no longer
+  collapse into one broken `apt-get` invocation during `werf build`
 - root chart now consumes vendored `deckhouse_lib_helm` through the normal
   DKP dependency path and no longer needs a repo-local helper fork in
   `templates/`

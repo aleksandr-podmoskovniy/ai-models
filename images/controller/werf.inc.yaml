@@ -63,7 +63,7 @@ git:
 shell:
   beforeInstall:
   {{- include "alt packages proxy" . | nindent 2 }}
-    - apt-get install -y ca-certificates curl tar bash
+  - apt-get install -y ca-certificates curl tar bash
   {{- include "alt packages clean" . | nindent 2 }}
   install:
     - bash /src/install-kitops.sh --metadata /src/kitops.lock --dest /out/kit
