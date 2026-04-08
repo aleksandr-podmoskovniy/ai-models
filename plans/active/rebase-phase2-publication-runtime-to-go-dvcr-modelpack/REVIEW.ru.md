@@ -43,6 +43,12 @@ scripts. Live path теперь controller-owned and Go-first:
 - the same KitOps stage now creates `/root/.local/share/kitops` before
   disabling update notifications, so `kit version --show-update-notifications=false`
   no longer aborts during image build
+- root `.helmignore` now follows the same DKP module pattern as
+  `gpu-control-plane` / `virtualization`, so Helm ignores generated `hooks`,
+  docs, openapi, CRDs and root markdown when loading the chart from the bundle
+- this removes the operator-startup drift where the generated
+  `hooks/go/ai-models-module-hooks` binary leaked into the Helm chart payload
+  and tripped the 5 MiB per-file chart limit
 - root chart now consumes vendored `deckhouse_lib_helm` through the normal
   DKP dependency path and no longer needs a repo-local helper fork in
   `templates/`
@@ -56,6 +62,8 @@ scripts. Live path теперь controller-owned and Go-first:
 - `werf build --dev --platform=linux/amd64 controller-kitops-artifact controller-runtime`
 - `werf build --dev --platform=linux/amd64 backend-source-artifact backend-ui-build backend-oidc-auth-ui-build bundle`
 - `werf build --dev --platform=linux/amd64`
+- synthetic `helm package` of the module root with a generated
+  `hooks/go/ai-models-module-hooks` payload to verify `.helmignore`
 - `git diff --check`
 
 Validation note:

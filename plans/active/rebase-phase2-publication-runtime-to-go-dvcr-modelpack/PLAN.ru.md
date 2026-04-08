@@ -406,6 +406,14 @@ Prefer first candidates:
   disable-notifications marker without aborting the build
 - full local `werf build --dev --platform=linux/amd64` completed successfully
   after these shell fixes, covering the whole image graph through `bundle`
+- root `.helmignore` is now aligned with the DKP module pattern from
+  `gpu-control-plane` / `virtualization`, so Helm no longer sees generated
+  `hooks/go`, docs, openapi, CRDs and root READMEs as chart files during
+  operator startup
+- a synthetic local `helm package` check with a 42 MiB
+  `hooks/go/ai-models-module-hooks` now excludes that file from the packaged
+  chart, removing the exact drift that triggered
+  `chart file "ai-models-module-hooks" is larger than the maximum file size`
 
 ## Slice 11. Collapse remote ingest and direct runtime ensure flow
 
