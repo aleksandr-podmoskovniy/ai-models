@@ -385,7 +385,8 @@ Prefer first candidates:
 - pinned `KitOps` stays only in runtime image, not in manager image
 - deployment now passes `controller-runtime` image into cleanup and publication
   worker options
-- render fixtures now include a dedicated digest for `controller-runtime`, so
+- render fixtures now include a dedicated `controllerRuntime` digest key for
+  the `controller-runtime` image, so
   `helm-template` and `kubeconform` validate the new image path instead of
   failing before render
 

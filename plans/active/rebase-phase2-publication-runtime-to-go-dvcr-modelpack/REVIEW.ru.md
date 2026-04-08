@@ -25,7 +25,8 @@ scripts. Live path теперь controller-owned and Go-first:
   `kitops.lock` instead of creating a fake one-file `tools/` boundary
 - backend image no longer carries phase-2 publication/upload/cleanup execution
   entrypoints
-- render fixtures now include the dedicated `controller-runtime` digest, so the
+- render fixtures now include the dedicated `controllerRuntime` digest key for
+  the `controller-runtime` image, so the
   new image path is covered by `helm-template`/`kubeconform` instead of being
   invisible to template validation
 - root chart now consumes vendored `deckhouse_lib_helm` through the normal

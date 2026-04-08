@@ -35,10 +35,10 @@ spec:
             - --leader-elect=true
             - --leader-election-id={{ include "ai-models.controllerLeaderElectionID" . }}
             - --leader-election-namespace=$(POD_NAMESPACE)
-            - --cleanup-job-image={{ include "helm_lib_module_image" (list . "controller-runtime") }}
+            - --cleanup-job-image={{ include "helm_lib_module_image" (list . "controllerRuntime") }}
             - --cleanup-job-namespace=$(POD_NAMESPACE)
             - --cleanup-job-service-account={{ include "ai-models.controllerServiceAccountName" . }}
-            - --publication-worker-image={{ include "helm_lib_module_image" (list . "controller-runtime") }}
+            - --publication-worker-image={{ include "helm_lib_module_image" (list . "controllerRuntime") }}
             - --publication-worker-namespace=$(POD_NAMESPACE)
             - --publication-worker-service-account={{ include "ai-models.controllerServiceAccountName" . }}
             - --publication-oci-repository-prefix={{ include "ai-models.publicationRegistryRepositoryPrefix" . }}
