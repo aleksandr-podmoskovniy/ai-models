@@ -26,6 +26,8 @@
 - Если изменялись `Model` / `ClusterModel`, роли и ownership понятны.
 - `spec` и `status` не смешаны.
 - `conditions` и reasons выглядят стабильно и объяснимо.
+- Если менялся controller bootstrap или manager entrypoint, root logger явно
+  прокинут в `slog`, `controller-runtime/pkg/log` и `k8s.io/klog/v2`.
 
 ## Качество и сопровождение
 - Изменение не тянет лишних фич из будущих этапов.

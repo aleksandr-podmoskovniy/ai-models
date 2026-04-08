@@ -98,6 +98,7 @@ func runManager(args []string) int {
 		fmt.Fprintf(os.Stderr, "ai-models-controller: %v\n", err)
 		return 1
 	}
+	cmdsupport.SetDefaultLogger(logger)
 
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()

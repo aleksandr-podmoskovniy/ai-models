@@ -28,7 +28,10 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type RepeatedStringFlag []string
@@ -131,6 +134,13 @@ func NewLogger(format string) (*slog.Logger, error) {
 	default:
 		return nil, fmt.Errorf("unsupported log format %q", format)
 	}
+}
+
+func SetDefaultLogger(logger *slog.Logger) {
+	slog.SetDefault(logger)
+	bridged := logr.FromSlogHandler(logger.Handler())
+	logf.SetLogger(bridged)
+	klog.SetLogger(bridged)
 }
 
 func WriteTerminationFailure(message string) {

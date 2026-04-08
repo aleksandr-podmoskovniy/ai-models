@@ -49,6 +49,9 @@ scripts. Live path теперь controller-owned and Go-first:
 - this removes the operator-startup drift where the generated
   `hooks/go/ai-models-module-hooks` binary leaked into the Helm chart payload
   and tripped the 5 MiB per-file chart limit
+- controller bootstrap now sets the root `slog` logger as the default logger
+  for both `controller-runtime` and `klog`, so controller-runtime internals no
+  longer fall back to the empty promised logger and emit the 30-second warning
 - root chart now consumes vendored `deckhouse_lib_helm` through the normal
   DKP dependency path and no longer needs a repo-local helper fork in
   `templates/`

@@ -414,6 +414,10 @@ Prefer first candidates:
   `hooks/go/ai-models-module-hooks` now excludes that file from the packaged
   chart, removing the exact drift that triggered
   `chart file "ai-models-module-hooks" is larger than the maximum file size`
+- controller bootstrap now bridges the chosen `slog` logger into both
+  `controller-runtime/pkg/log` and `k8s.io/klog/v2`, matching the live logging
+  pattern from `virtualization` and removing the delayed
+  `[controller-runtime] log.SetLogger(...) was never called` warning at runtime
 
 ## Slice 11. Collapse remote ingest and direct runtime ensure flow
 
