@@ -4,7 +4,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "ai-models.controllerName" . }}
-  namespace: {{ include "ai-models.namespace" . }}
+  namespace: {{ include "ai-models.monitoringNamespace" . }}
   {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "controller")) | nindent 2 }}
 spec:
   selector:
@@ -12,9 +12,15 @@ spec:
       app: "ai-models"
       component: "controller"
   endpoints:
-    - port: metrics
+    - bearerTokenSecret:
+        key: token
+        name: prometheus-token
+      port: https-metrics
       path: /metrics
       interval: 30s
+      scheme: https
+      tlsConfig:
+        insecureSkipVerify: true
   namespaceSelector:
     matchNames:
       - {{ include "ai-models.namespace" . }}

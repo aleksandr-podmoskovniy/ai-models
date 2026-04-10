@@ -46,7 +46,7 @@ func TestBuildCleanupJob(t *testing.T) {
 		Namespace:             "d8-ai-models",
 		Image:                 "backend:latest",
 		ServiceAccountName:    "ai-models-controller",
-		OCIRegistrySecretName: "ai-models-publication-registry",
+		OCIRegistrySecretName: "ai-models-dmcr-auth-write",
 		Env: []corev1.EnvVar{
 			{Name: "AWS_REGION", Value: "us-east-1"},
 		},

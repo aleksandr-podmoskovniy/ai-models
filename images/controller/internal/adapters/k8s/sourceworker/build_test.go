@@ -31,7 +31,7 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	request.Request.Spec.Source.URL = "https://huggingface.co/deepseek-ai/DeepSeek-R1?revision=main"
 
 	options := testOptions()
-	options.OCIRegistryCASecretName = "ai-models-publication-registry-ca"
+	options.OCIRegistryCASecretName = "ai-models-dmcr-ca"
 
 	pod, err := Build(request, options, "")
 	if err != nil {

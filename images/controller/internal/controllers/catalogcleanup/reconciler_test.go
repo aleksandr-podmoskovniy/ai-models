@@ -23,7 +23,9 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
+	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -123,6 +125,13 @@ func TestModelReconcilerCreatesCleanupJobOnDelete(t *testing.T) {
 
 	jobName := cleanupJobName(t, model)
 	assertCleanupJobExists(t, kubeClient, jobName)
+	registrySecretName, err := resourcenames.OCIRegistryAuthSecretName(model.GetUID())
+	if err != nil {
+		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
+	}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: registrySecretName, Namespace: "d8-ai-models"}, &corev1.Secret{}); err != nil {
+		t.Fatalf("expected projected OCI auth secret, got err=%v", err)
+	}
 	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonCleanupPending)
 }
 
@@ -164,13 +173,68 @@ func TestModelReconcilerFailsClosedWhenCleanupJobFails(t *testing.T) {
 	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonCleanupFailed)
 }
 
-func TestModelReconcilerRemovesFinalizerAfterCompletedJob(t *testing.T) {
+func TestModelReconcilerCreatesGarbageCollectionRequestAfterCompletedJob(t *testing.T) {
 	t.Parallel()
 
 	model := newDeletingModel()
 	setCleanupHandle(t, model, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef")
 	jobName := cleanupJobName(t, model)
 	reconciler, kubeClient := newModelReconciler(t, model, completedJob("d8-ai-models", jobName))
+
+	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if result.RequeueAfter != time.Second {
+		t.Fatalf("unexpected requeue %#v", result)
+	}
+
+	var updated modelsv1alpha1.Model
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &updated); err != nil {
+		t.Fatalf("Get(model) error = %v", err)
+	}
+	if !controllerutil.ContainsFinalizer(&updated, Finalizer) {
+		t.Fatal("expected finalizer to stay until dmcr garbage collection completes")
+	}
+
+	var requestSecret corev1.Secret
+	key := client.ObjectKey{Namespace: "d8-ai-models", Name: dmcrGCRequestSecretName(model.GetUID())}
+	if err := kubeClient.Get(context.Background(), key, &requestSecret); err != nil {
+		t.Fatalf("Get(secret) error = %v", err)
+	}
+	if requestSecret.Annotations[dmcrGCSwitchAnnotationKey] == "" {
+		t.Fatalf("expected switch annotation on garbage-collection request secret, got %#v", requestSecret.Annotations)
+	}
+}
+
+func TestModelReconcilerKeepsPendingStatusWhileGarbageCollectionRuns(t *testing.T) {
+	t.Parallel()
+
+	model := newDeletingModel()
+	setCleanupHandle(t, model, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef")
+	jobName := cleanupJobName(t, model)
+	gcSecret := requestedGCSecret("d8-ai-models", model.GetUID())
+	reconciler, kubeClient := newModelReconciler(t, model, completedJob("d8-ai-models", jobName), gcSecret)
+
+	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if result.RequeueAfter != time.Second {
+		t.Fatalf("unexpected result %#v", result)
+	}
+
+	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonCleanupPending)
+}
+
+func TestModelReconcilerRemovesFinalizerAfterCompletedGarbageCollection(t *testing.T) {
+	t.Parallel()
+
+	model := newDeletingModel()
+	setCleanupHandle(t, model, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef")
+	jobName := cleanupJobName(t, model)
+	gcSecret := completedGCSecret("d8-ai-models", model.GetUID())
+	reconciler, kubeClient := newModelReconciler(t, model, completedJob("d8-ai-models", jobName), gcSecret)
 
 	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)}); err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
@@ -181,10 +245,21 @@ func TestModelReconcilerRemovesFinalizerAfterCompletedJob(t *testing.T) {
 		if !apierrors.IsNotFound(err) {
 			t.Fatalf("Get(model) error = %v", err)
 		}
-		return
+	} else if controllerutil.ContainsFinalizer(&updated, Finalizer) {
+		t.Fatal("expected finalizer to be removed after completed cleanup and garbage collection")
 	}
-	if controllerutil.ContainsFinalizer(&updated, Finalizer) {
-		t.Fatal("expected finalizer to be removed after completed cleanup job")
+
+	var requestSecret corev1.Secret
+	key := client.ObjectKey{Namespace: "d8-ai-models", Name: dmcrGCRequestSecretName(model.GetUID())}
+	if err := kubeClient.Get(context.Background(), key, &requestSecret); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected garbage-collection request secret to be deleted, got err=%v", err)
+	}
+	registrySecretName, err := resourcenames.OCIRegistryAuthSecretName(model.GetUID())
+	if err != nil {
+		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
+	}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: registrySecretName, Namespace: "d8-ai-models"}, &corev1.Secret{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected projected OCI auth secret to be deleted, got err=%v", err)
 	}
 }
 

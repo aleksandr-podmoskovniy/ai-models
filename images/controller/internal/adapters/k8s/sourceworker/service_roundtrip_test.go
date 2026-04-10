@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,7 +36,10 @@ func TestServiceRoundTripGetOrCreateAndDelete(t *testing.T) {
 
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(owner).
+		WithObjects(
+			owner,
+			testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write"),
+		).
 		Build()
 
 	runtime, err := NewService(kubeClient, scheme, Options{
@@ -43,7 +47,7 @@ func TestServiceRoundTripGetOrCreateAndDelete(t *testing.T) {
 		Image:                 "backend:latest",
 		ServiceAccountName:    "ai-models-controller",
 		OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-		OCIRegistrySecretName: "ai-models-publication-registry",
+		OCIRegistrySecretName: "ai-models-dmcr-auth-write",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -67,5 +71,12 @@ func TestServiceRoundTripGetOrCreateAndDelete(t *testing.T) {
 	}
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(&pod), &pod); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected pod to be deleted, got err=%v", err)
+	}
+	registrySecretName, err := resourcenames.OCIRegistryAuthSecretName(owner.UID)
+	if err != nil {
+		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
+	}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: registrySecretName, Namespace: "d8-ai-models"}, &corev1.Secret{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected projected OCI auth secret to be deleted, got err=%v", err)
 	}
 }

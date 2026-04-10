@@ -19,17 +19,13 @@ package catalogcleanup
 import (
 	"context"
 
-	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	deletionapp "github.com/deckhouse/ai-models/controller/internal/application/deletion"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
-	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -66,7 +62,7 @@ func (r *baseReconciler) observeDelete(
 	observation.HandleFound = true
 	observation.HandleKind = handle.Kind
 
-	if handle.Kind != cleanuphandle.KindBackendArtifact {
+	if handle.Kind != cleanuphandle.KindBackendArtifact && handle.Kind != cleanuphandle.KindUploadStaging {
 		return handle, observation, nil
 	}
 
@@ -75,6 +71,13 @@ func (r *baseReconciler) observeDelete(
 		return cleanuphandle.Handle{}, deletionapp.FinalizeDeleteInput{}, err
 	}
 	observation.JobState = jobState
+	if jobState == deletionapp.CleanupJobStateComplete {
+		gcState, err := r.observeGarbageCollectionState(ctx, object.GetUID())
+		if err != nil {
+			return cleanuphandle.Handle{}, deletionapp.FinalizeDeleteInput{}, err
+		}
+		observation.GarbageCollectionState = gcState
+	}
 	return handle, observation, nil
 }
 
@@ -103,87 +106,21 @@ func (r *baseReconciler) observeCleanupJobState(
 	}
 }
 
-func (r *baseReconciler) applyEnsureFinalizerDecision(
+func (r *baseReconciler) observeGarbageCollectionState(
 	ctx context.Context,
-	object client.Object,
-	decision deletionapp.EnsureCleanupFinalizerDecision,
-) (ctrl.Result, error) {
-	switch {
-	case decision.RemoveFinalizer:
-		controllerutil.RemoveFinalizer(object, Finalizer)
-		return ctrl.Result{}, r.client.Update(ctx, object)
-	case decision.AddFinalizer:
-		controllerutil.AddFinalizer(object, Finalizer)
-		return ctrl.Result{}, r.client.Update(ctx, object)
+	ownerUID types.UID,
+) (deletionapp.GarbageCollectionState, error) {
+	var secret corev1.Secret
+	key := client.ObjectKey{
+		Namespace: r.options.CleanupJob.Namespace,
+		Name:      dmcrGCRequestSecretName(ownerUID),
+	}
+	switch err := r.client.Get(ctx, key, &secret); {
+	case apierrors.IsNotFound(err):
+		return deletionapp.GarbageCollectionStateMissing, nil
+	case err != nil:
+		return "", err
 	default:
-		return ctrl.Result{}, nil
+		return observeDMCRGCRequestState(&secret), nil
 	}
-}
-
-func (r *baseReconciler) applyFinalizeDeleteDecision(
-	ctx context.Context,
-	object client.Object,
-	handle cleanuphandle.Handle,
-	decision deletionapp.FinalizeDeleteDecision,
-) (ctrl.Result, error) {
-	if decision.CreateJob {
-		kind, err := modelobject.KindFor(object)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		job, err := buildCleanupJob(cleanupJobOwner{
-			UID:       object.GetUID(),
-			Kind:      kind,
-			Name:      object.GetName(),
-			Namespace: object.GetNamespace(),
-		}, handle, r.options.CleanupJob)
-		if err != nil {
-			if err := r.updateDeleteStatus(ctx, object, modelsv1alpha1.ModelConditionReasonCleanupFailed, err.Error()); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{RequeueAfter: r.options.RequeueAfter}, nil
-		}
-		if err := r.client.Create(ctx, job); err != nil && !apierrors.IsAlreadyExists(err) {
-			return ctrl.Result{}, err
-		}
-	}
-	if decision.UpdateStatus {
-		if err := r.updateDeleteStatus(ctx, object, decision.StatusReason, decision.StatusMessage); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-	if decision.RemoveFinalizer {
-		controllerutil.RemoveFinalizer(object, Finalizer)
-		return ctrl.Result{}, r.client.Update(ctx, object)
-	}
-	if decision.Requeue {
-		return ctrl.Result{RequeueAfter: r.options.RequeueAfter}, nil
-	}
-	return ctrl.Result{}, nil
-}
-
-func (r *baseReconciler) updateDeleteStatus(
-	ctx context.Context,
-	object client.Object,
-	reason modelsv1alpha1.ModelConditionReason,
-	message string,
-) error {
-	status, err := modelobject.GetStatus(object)
-	if err != nil {
-		return err
-	}
-	status.Phase = modelsv1alpha1.ModelPhaseDeleting
-	status.ObservedGeneration = object.GetGeneration()
-	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
-		Type:               string(modelsv1alpha1.ModelConditionCleanupCompleted),
-		Status:             metav1.ConditionFalse,
-		Reason:             string(reason),
-		Message:            message,
-		ObservedGeneration: object.GetGeneration(),
-		LastTransitionTime: metav1.Now(),
-	})
-	if err := modelobject.SetStatus(object, status); err != nil {
-		return err
-	}
-	return r.client.Status().Update(ctx, object)
 }

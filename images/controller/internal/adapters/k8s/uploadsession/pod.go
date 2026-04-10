@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
@@ -38,8 +38,9 @@ func (s *Service) ensurePod(
 	request publicationports.OperationContext,
 	plan publicationapp.UploadSessionPlan,
 	uploadTokenSecretName string,
+	options Options,
 ) (*corev1.Pod, string, bool, error) {
-	pod, artifactURI, err := s.buildPod(request, plan, uploadTokenSecretName)
+	pod, artifactURI, err := s.buildPod(request, plan, uploadTokenSecretName, options)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -54,6 +55,7 @@ func (s *Service) buildPod(
 	request publicationports.OperationContext,
 	plan publicationapp.UploadSessionPlan,
 	uploadTokenSecretName string,
+	options Options,
 ) (*corev1.Pod, string, error) {
 	name, err := resourcenames.UploadSessionPodName(request.Request.Owner.UID)
 	if err != nil {
@@ -63,13 +65,17 @@ func (s *Service) buildPod(
 	if err != nil {
 		return nil, "", err
 	}
-	artifactURI, err := artifactbackend.BuildOCIArtifactReference(s.options.Runtime.OCIRepositoryPrefix, request.Request.Identity, request.Request.Owner.UID)
+	artifactURI, err := artifactbackend.BuildOCIArtifactReference(options.Runtime.OCIRepositoryPrefix, request.Request.Identity, request.Request.Owner.UID)
+	if err != nil {
+		return nil, "", err
+	}
+	stagingPrefix, err := resourcenames.UploadStagingObjectPrefix(request.Request.Owner.UID)
 	if err != nil {
 		return nil, "", err
 	}
 
 	env := append(
-		ociregistry.Env(s.options.Runtime.OCIInsecure, s.options.Runtime.OCIRegistrySecretName, s.options.Runtime.OCIRegistryCASecretName),
+		objectstorage.Env(options.Runtime.ObjectStorage),
 		corev1.EnvVar{
 			Name: "AI_MODELS_UPLOAD_TOKEN",
 			ValueFrom: &corev1.EnvVarSource{
@@ -81,24 +87,16 @@ func (s *Service) buildPod(
 		},
 	)
 
-	volumeMounts := workloadpod.VolumeMounts(s.options.Runtime.OCIRegistryCASecretName)
-	volumes := workloadpod.Volumes(s.options.Runtime.OCIRegistryCASecretName)
+	volumeMounts := workloadpod.VolumeMounts("", objectstorage.VolumeMounts(options.Runtime.ObjectStorage.CASecretName)...)
+	volumes := workloadpod.Volumes("", objectstorage.Volumes(options.Runtime.ObjectStorage.CASecretName)...)
 
 	args := []string{
 		"upload-session",
-		"--artifact-uri", artifactURI,
-	}
-	if plan.InputFormat != "" {
-		args = append(args, "--input-format", string(plan.InputFormat))
+		"--staging-bucket", options.Runtime.ObjectStorage.Bucket,
+		"--staging-key-prefix", stagingPrefix,
 	}
 	if plan.ExpectedSizeBytes != nil && *plan.ExpectedSizeBytes > 0 {
 		args = append(args, "--expected-size-bytes", fmt.Sprintf("%d", *plan.ExpectedSizeBytes))
-	}
-	if plan.Task != "" {
-		args = append(args, "--task", plan.Task)
-	}
-	for _, engine := range plan.RuntimeEngines {
-		args = append(args, "--runtime-engine", engine)
 	}
 
 	return &corev1.Pod{
@@ -113,12 +111,12 @@ func (s *Service) buildPod(
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy:      corev1.RestartPolicyNever,
-			ServiceAccountName: s.options.Runtime.ServiceAccountName,
+			ServiceAccountName: options.Runtime.ServiceAccountName,
 			Volumes:            volumes,
 			Containers: []corev1.Container{{
 				Name:            "upload",
-				Image:           s.options.Runtime.Image,
-				ImagePullPolicy: s.options.Runtime.ImagePullPolicy,
+				Image:           options.Runtime.Image,
+				ImagePullPolicy: options.Runtime.ImagePullPolicy,
 				Args:            args,
 				Env:             env,
 				VolumeMounts:    volumeMounts,
@@ -147,28 +145,16 @@ func BuildPod(request publicationports.OperationContext, options Options, upload
 		return nil, err
 	}
 	service := &Service{options: options}
-	pod, _, err := service.buildPod(request, plan, uploadTokenSecretName)
+	pod, _, err := service.buildPod(request, plan, uploadTokenSecretName, options)
 	return pod, err
 }
 
 func requestPlan(request publicationports.OperationContext) (publicationapp.UploadSessionPlan, error) {
-	task := ""
-	var runtimeEngines []string
-	if request.Request.Spec.RuntimeHints != nil {
-		task = request.Request.Spec.RuntimeHints.Task
-		for _, engine := range request.Request.Spec.RuntimeHints.Engines {
-			runtimeEngines = append(runtimeEngines, string(engine))
-		}
-	}
-
 	return publicationapp.IssueUploadSession(publicationapp.UploadSessionIssueRequest{
-		OwnerUID:       string(request.Request.Owner.UID),
-		OwnerKind:      request.Request.Owner.Kind,
-		OwnerName:      request.Request.Owner.Name,
-		Identity:       request.Request.Identity,
-		Source:         request.Request.Spec.Source,
-		InputFormat:    request.Request.Spec.InputFormat,
-		Task:           task,
-		RuntimeEngines: runtimeEngines,
+		OwnerUID:  string(request.Request.Owner.UID),
+		OwnerKind: request.Request.Owner.Kind,
+		OwnerName: request.Request.Owner.Name,
+		Identity:  request.Request.Identity,
+		Source:    request.Request.Spec.Source,
 	})
 }

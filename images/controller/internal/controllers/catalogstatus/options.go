@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/sourceworker"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsession"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
@@ -32,10 +33,12 @@ import (
 )
 
 type Options struct {
-	Runtime PublicationRuntimeOptions
+	Runtime       PublicationRuntimeOptions
+	UploadIngress UploadIngressOptions
 }
 
 type PublicationRuntimeOptions = workloadpod.RuntimeOptions
+type UploadIngressOptions = uploadsession.IngressOptions
 
 const (
 	modelControllerName        = "catalogstatus-model"
@@ -68,7 +71,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	if err != nil {
 		return err
 	}
-	uploadSessions, err := uploadsession.NewService(mgr.GetClient(), mgr.GetScheme(), uploadSessionOptions(options.Runtime))
+	uploadSessions, err := uploadsession.NewService(mgr.GetClient(), mgr.GetScheme(), uploadSessionOptions(options.Runtime, options.UploadIngress))
 	if err != nil {
 		return err
 	}
@@ -104,15 +107,19 @@ func (o Options) Validate() error {
 	if !o.Enabled() {
 		return nil
 	}
-	return workloadpod.ValidateRuntimeOptions("publication runtime", o.Runtime)
+	if err := workloadpod.ValidateRuntimeOptions("publication runtime", o.Runtime); err != nil {
+		return err
+	}
+	return objectstorage.ValidateOptions("publication runtime", o.Runtime.ObjectStorage)
 }
 
 func sourceWorkerOptions(o PublicationRuntimeOptions) sourceworker.Options {
 	return sourceworker.Options(o)
 }
 
-func uploadSessionOptions(o PublicationRuntimeOptions) uploadsession.Options {
+func uploadSessionOptions(o PublicationRuntimeOptions, ingress uploadsession.IngressOptions) uploadsession.Options {
 	return uploadsession.Options{
 		Runtime: o,
+		Ingress: ingress,
 	}
 }

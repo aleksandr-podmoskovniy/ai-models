@@ -34,56 +34,75 @@ func TestIssueUploadSession(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "accepted safetensors upload returns plan",
+			name: "accepted upload returns expected size plan",
 			input: UploadSessionIssueRequest{
-				OwnerUID:    "1111-2222",
-				OwnerKind:   modelsv1alpha1.ModelKind,
-				OwnerName:   "deepseek-r1",
-				Identity:    publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				Source:      modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{ExpectedSizeBytes: &size}},
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
-				Task:        " text-generation ",
+				OwnerUID:  "1111-2222",
+				OwnerKind: modelsv1alpha1.ModelKind,
+				OwnerName: "deepseek-r1",
+				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:    modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{ExpectedSizeBytes: &size}},
 			},
 			assert: func(t *testing.T, got UploadSessionPlan) {
 				t.Helper()
-				if got.InputFormat != modelsv1alpha1.ModelInputFormatSafetensors {
-					t.Fatalf("unexpected format %#v", got)
-				}
 				if got.ExpectedSizeBytes == nil || *got.ExpectedSizeBytes != size {
 					t.Fatalf("unexpected size %#v", got)
-				}
-				if got.Task != "text-generation" {
-					t.Fatalf("unexpected task %#v", got)
 				}
 			},
 		},
 		{
-			name: "accepted gguf upload returns plan",
+			name: "accepted upload without expected size returns empty size plan",
 			input: UploadSessionIssueRequest{
-				OwnerUID:    "1111-2222",
-				OwnerKind:   modelsv1alpha1.ModelKind,
-				OwnerName:   "deepseek-r1",
-				Identity:    publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				Source:      modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
-				InputFormat: modelsv1alpha1.ModelInputFormatGGUF,
-				Task:        "text-generation",
+				OwnerUID:  "1111-2222",
+				OwnerKind: modelsv1alpha1.ModelKind,
+				OwnerName: "deepseek-r1",
+				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:    modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
 			},
 			assert: func(t *testing.T, got UploadSessionPlan) {
 				t.Helper()
-				if got.InputFormat != modelsv1alpha1.ModelInputFormatGGUF {
-					t.Fatalf("unexpected format %#v", got)
+				if got.ExpectedSizeBytes != nil {
+					t.Fatalf("unexpected size %#v", got)
 				}
 			},
 		},
 		{
 			name: "missing owner uid fails closed",
 			input: UploadSessionIssueRequest{
-				OwnerKind:   modelsv1alpha1.ModelKind,
-				OwnerName:   "deepseek-r1",
-				Identity:    publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				Source:      modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
-				Task:        "text-generation",
+				OwnerKind: modelsv1alpha1.ModelKind,
+				OwnerName: "deepseek-r1",
+				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:    modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing owner kind fails closed",
+			input: UploadSessionIssueRequest{
+				OwnerUID:  "1111-2222",
+				OwnerName: "deepseek-r1",
+				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:    modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing owner name fails closed",
+			input: UploadSessionIssueRequest{
+				OwnerUID:  "1111-2222",
+				OwnerKind: modelsv1alpha1.ModelKind,
+				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:    modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid identity fails closed",
+			input: UploadSessionIssueRequest{
+				OwnerUID:  "1111-2222",
+				OwnerKind: modelsv1alpha1.ModelKind,
+				OwnerName: "deepseek-r1",
+				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Name: "deepseek-r1"},
+				Source:    modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
 			},
 			wantErr: true,
 		},
@@ -95,7 +114,6 @@ func TestIssueUploadSession(t *testing.T) {
 				OwnerName: "deepseek-r1",
 				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
 				Source:    modelsv1alpha1.ModelSourceSpec{URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1"},
-				Task:      "text-generation",
 			},
 			wantErr: true,
 		},
@@ -106,19 +124,6 @@ func TestIssueUploadSession(t *testing.T) {
 				OwnerKind: modelsv1alpha1.ModelKind,
 				OwnerName: "deepseek-r1",
 				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				Task:      "text-generation",
-			},
-			wantErr: true,
-		},
-		{
-			name: "missing task is rejected",
-			input: UploadSessionIssueRequest{
-				OwnerUID:    "1111-2222",
-				OwnerKind:   modelsv1alpha1.ModelKind,
-				OwnerName:   "deepseek-r1",
-				Identity:    publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				Source:      modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 			},
 			wantErr: true,
 		},

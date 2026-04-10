@@ -1,0 +1,247 @@
+{{- if (include "ai-models.isEnabled" .) }}
+{{- $storageType := include "ai-models.publicationStorageType" . | trim -}}
+{{- $replicas := 1 -}}
+{{- $strategyType := "RollingUpdate" -}}
+{{- $priorityClassName := include "ai-models.priorityClassName" . -}}
+{{- if eq $storageType "PersistentVolumeClaim" -}}
+  {{- $strategyType = "Recreate" -}}
+{{- else if (include "helm_lib_ha_enabled" .) -}}
+  {{- $replicas = 2 -}}
+{{- end -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-models.dmcrName" . }}
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "dmcr")) | nindent 2 }}
+spec:
+  replicas: {{ $replicas }}
+  revisionHistoryLimit: 2
+  strategy:
+    type: {{ $strategyType }}
+    {{- if and (eq $strategyType "RollingUpdate") (gt $replicas 1) }}
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ai-models.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dmcr
+  template:
+    metadata:
+      labels:
+        {{- include "ai-models.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: dmcr
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/dmcr/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/dmcr/secret.yaml") . | sha256sum }}
+        kubectl.kubernetes.io/default-container: dmcr
+    spec:
+      {{- if (include "ai-models.hasRegistrySecret" .) }}
+      imagePullSecrets:
+        - name: {{ include "ai-models.registrySecretName" . }}
+      {{- end }}
+      serviceAccountName: {{ include "ai-models.dmcrServiceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- include "helm_lib_module_pod_security_context_run_as_user_deckhouse_with_writable_fs" . | nindent 6 }}
+      {{- include "helm_lib_pod_anti_affinity_for_ha" (list . (dict "app.kubernetes.io/name" (include "ai-models.fullname" .) "app.kubernetes.io/component" "dmcr")) | nindent 6 }}
+      {{- include "helm_lib_priority_class" (tuple . $priorityClassName) | nindent 6 }}
+      {{- include "ai-models.systemNodeSelector" . | nindent 6 }}
+      {{- include "ai-models.systemTolerations" . | nindent 6 }}
+      containers:
+        - name: dmcr
+          {{- include "helm_lib_module_container_security_context_read_only_root_filesystem_capabilities_drop_all_pss_restricted" . | nindent 10 }}
+          image: {{ include "helm_lib_module_image" (list . "dmcr") }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - /usr/bin/dmcr
+            - serve
+            - /etc/docker/registry/config.yml
+          env:
+            - name: REGISTRY_HTTP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.dmcrAuthSecretName" . }}
+                  key: salt
+            {{- if eq $storageType "ObjectStorage" }}
+            - name: REGISTRY_STORAGE_S3_ACCESSKEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
+                  key: accessKey
+            - name: REGISTRY_STORAGE_S3_SECRETKEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
+                  key: secretKey
+            {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+            - name: AWS_CA_BUNDLE
+              value: /etc/ai-models/artifacts-ca/ca.crt
+            {{- end }}
+            {{- end }}
+          ports:
+            - name: https
+              containerPort: 5000
+              protocol: TCP
+            - name: metrics
+              containerPort: 5001
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /
+              port: https
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /
+              port: https
+          resources:
+            requests:
+              {{- include "helm_lib_module_ephemeral_storage_only_logs" . | nindent 14 }}
+              {{- if not (.Values.global.enabledModules | has "vertical-pod-autoscaler-crd") }}
+              {{- include "ai-models.dmcrResources" . | nindent 14 }}
+              {{- end }}
+            {{- if not (.Values.global.enabledModules | has "vertical-pod-autoscaler-crd") }}
+            limits:
+              cpu: 300m
+              memory: 512Mi
+            {{- end }}
+          volumeMounts:
+            - name: dmcr-config
+              mountPath: /etc/docker/registry
+            - name: dmcr-tls
+              mountPath: /etc/ssl/docker
+              readOnly: true
+            - name: dmcr-auth
+              mountPath: /auth
+              readOnly: true
+            {{- if eq $storageType "PersistentVolumeClaim" }}
+            - name: data
+              mountPath: /var/lib/registry
+            {{- end }}
+            {{- if and (eq $storageType "ObjectStorage") (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+            - name: artifacts-ca
+              mountPath: /etc/ai-models/artifacts-ca
+              readOnly: true
+            {{- end }}
+        {{- $kubeRbacProxySettings := dict }}
+        {{- $_ := set $kubeRbacProxySettings "portName" "https-metrics" }}
+        {{- $_ := set $kubeRbacProxySettings "listenPort" "8443" }}
+        {{- $_ := set $kubeRbacProxySettings "upstreams" (list
+          (dict
+            "upstream" "http://127.0.0.1:5001/metrics"
+            "path" "/metrics"
+            "name" (include "ai-models.dmcrName" .)
+            "namespace" (include "ai-models.namespace" .)
+          )
+        ) }}
+        {{- include "kube_rbac_proxy.sidecar_container" (tuple . $kubeRbacProxySettings) | nindent 8 }}
+        - name: dmcr-garbage-collection
+          {{- include "helm_lib_module_container_security_context_read_only_root_filesystem_capabilities_drop_all_pss_restricted" . | nindent 10 }}
+          image: {{ include "helm_lib_module_image" (list . "dmcr") }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - /usr/local/bin/dmcr-cleaner
+            {{- if eq (include "ai-models.dmcrGarbageCollectionModeEnabled" . | trim) "true" }}
+            - gc
+            - run
+            - --request-namespace={{ include "ai-models.namespace" . }}
+            - --request-label-selector={{ include "ai-models.dmcrGCRequestLabelKey" . }}=true
+            - --garbage-collection-timeout=10m
+            {{- else }}
+            - pause
+            {{- end }}
+          env:
+            {{- if eq $storageType "ObjectStorage" }}
+            - name: REGISTRY_STORAGE_S3_ACCESSKEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
+                  key: accessKey
+            - name: REGISTRY_STORAGE_S3_SECRETKEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
+                  key: secretKey
+            {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+            - name: AWS_CA_BUNDLE
+              value: /etc/ai-models/artifacts-ca/ca.crt
+            {{- end }}
+            {{- end }}
+          resources:
+            requests:
+              {{- include "helm_lib_module_ephemeral_storage_only_logs" . | nindent 14 }}
+              {{- if not (.Values.global.enabledModules | has "vertical-pod-autoscaler-crd") }}
+              {{- include "ai-models.dmcrGarbageCollectionResources" . | nindent 14 }}
+              {{- end }}
+            {{- if not (.Values.global.enabledModules | has "vertical-pod-autoscaler-crd") }}
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            {{- end }}
+          volumeMounts:
+            - name: dmcr-config
+              mountPath: /etc/docker/registry
+            - name: dmcr-tls
+              mountPath: /etc/ssl/docker
+              readOnly: true
+            - name: dmcr-auth
+              mountPath: /auth
+              readOnly: true
+            - name: dmcr-kube-api-access
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            {{- if eq $storageType "PersistentVolumeClaim" }}
+            - name: data
+              mountPath: /var/lib/registry
+            {{- end }}
+            {{- if and (eq $storageType "ObjectStorage") (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+            - name: artifacts-ca
+              mountPath: /etc/ai-models/artifacts-ca
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: dmcr-config
+          configMap:
+            name: {{ include "ai-models.dmcrConfigMapName" . }}
+        - name: dmcr-tls
+          secret:
+            secretName: {{ include "ai-models.dmcrTLSSecretName" . }}
+        - name: dmcr-auth
+          secret:
+            secretName: {{ include "ai-models.dmcrAuthSecretName" . }}
+            items:
+              - key: htpasswd
+                path: htpasswd
+        {{- if eq $storageType "PersistentVolumeClaim" }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "ai-models.dmcrName" . }}
+        {{- end }}
+        {{- if and (eq $storageType "ObjectStorage") (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+        - name: artifacts-ca
+          secret:
+            secretName: {{ include "ai-models.artifactsMountedCASecretName" . }}
+        {{- end }}
+        - name: dmcr-kube-api-access
+          projected:
+            defaultMode: 0444
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        apiVersion: v1
+                        fieldPath: metadata.namespace
+{{- end }}

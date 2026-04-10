@@ -24,6 +24,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -68,7 +69,11 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 	if err != nil {
 		return nil, false, err
 	}
-	pod, artifactURI, createdPod, err := s.ensurePod(ctx, owner, request, plan, secret.Name)
+	ingress, createdIngress, err := s.ensureIngress(ctx, owner, request.Request.Owner.UID, token)
+	if err != nil {
+		return nil, false, err
+	}
+	pod, artifactURI, createdPod, err := s.ensurePod(ctx, owner, request, plan, secret.Name, s.options)
 	if err != nil {
 		return nil, false, err
 	}
@@ -77,11 +82,11 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 		pod.Name,
 		pod.Status.Phase,
 		workloadpod.TerminationMessage(pod, "upload"),
-		buildUploadStatus(artifactURI, service, token, expiresAt),
+		buildUploadStatus(artifactURI, service, ingress, token, expiresAt),
 		func(ctx context.Context) error {
-			return s.deleteResources(ctx, pod, service, secret)
+			return s.deleteResources(ctx, pod, service, secret, ingress)
 		},
-	), createdSecret || createdService || createdPod, nil
+	), createdSecret || createdService || createdIngress || createdPod, nil
 }
 
 func (s *Service) deleteResources(
@@ -89,6 +94,7 @@ func (s *Service) deleteResources(
 	pod *corev1.Pod,
 	service *corev1.Service,
 	secret *corev1.Secret,
+	ingress *networkingv1.Ingress,
 ) error {
-	return ownedresource.DeleteAll(ctx, s.client, pod, service, secret)
+	return ownedresource.DeleteAll(ctx, s.client, pod, service, secret, ingress)
 }

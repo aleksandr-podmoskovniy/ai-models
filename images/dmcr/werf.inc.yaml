@@ -1,0 +1,55 @@
+{{- $versions := fromYaml ($.Files.Get "build/components/versions.yml") | toJson | fromJson -}}
+{{- $core := (get $versions "core") | default dict -}}
+{{- $distributionVersion := default "3.0.0" (get $core "distribution") -}}
+---
+image: dmcr-build-artifact
+final: false
+fromImage: builder/golang-bookworm-1.25
+git:
+  - add: /images/dmcr
+    to: /src/images/dmcr
+    stageDependencies:
+      install:
+        - "**/*"
+{{- if eq (env "WERF_ENABLE_HOST_GO_PKG_CACHE" "true") "true" }}
+mount:
+  - fromPath: "~/go-pkg-cache"
+    to: /go/pkg
+{{- end }}
+secrets:
+  - id: GOPROXY
+    value: {{ .GOPROXY }}
+shell:
+  setup:
+    - |
+      cd /src/images/dmcr
+      export GOOS=linux
+      export GOARCH=amd64
+      export CGO_ENABLED=0
+      export GOPROXY=$(cat /run/secrets/GOPROXY)
+
+      VERSION="{{ $distributionVersion }}"
+      go build -trimpath \
+        -ldflags "-s -w -X github.com/distribution/distribution/v3/version.version=v${VERSION} -X github.com/distribution/distribution/v3/version.revision=v${VERSION}" \
+        -o /out/dmcr \
+        ./cmd/dmcr
+      go build -trimpath \
+        -ldflags "-s -w" \
+        -o /out/dmcr-cleaner \
+        ./cmd/dmcr-cleaner
+---
+image: dmcr
+final: true
+fromImage: distroless
+import:
+  - image: dmcr-build-artifact
+    add: /out/dmcr
+    to: /usr/bin/dmcr
+    after: install
+  - image: dmcr-build-artifact
+    add: /out/dmcr-cleaner
+    to: /usr/local/bin/dmcr-cleaner
+    after: install
+imageSpec:
+  config:
+    user: 64535

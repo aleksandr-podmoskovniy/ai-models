@@ -37,6 +37,9 @@ Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
 Подкаталоги:
 - `templates/module/` — namespace, registry secret и прочая module-wide обвязка;
 - `templates/backend/` — runtime manifests внутреннего backend;
+- `templates/dmcr/` — manifests внутреннего publication backend;
+- `templates/kube-rbac-proxy/` — shared helper templates для защищённого
+  metrics scrape path у module-owned runtime components;
 - `templates/controller/` — runtime manifests phase-2 controller shell;
 - `templates/database/` — declarative managed-postgres resources.
 
@@ -90,6 +93,8 @@ Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
 
 Текущее разделение:
 - `images/backend/` — internal backend engine packaging;
+- `images/dmcr/` — module-local internal publication backend image и исходники
+  собственного `dmcr` binary;
 - `images/distroless/` — module-local distroless relocation layer для
   собственного runtime кода;
 - `images/hooks/` — Deckhouse Go hooks, доставляемые в bundle как `/hooks/go`;

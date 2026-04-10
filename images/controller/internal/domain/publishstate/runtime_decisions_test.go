@@ -124,20 +124,19 @@ func TestObserveUploadSession(t *testing.T) {
 	t.Parallel()
 
 	expiresAt := metav1.NewTime(time.Unix(1712345678, 0).UTC())
-	success := &PublicationSuccess{
-		Snapshot: publicationdata.Snapshot{
-			Artifact: publicationdata.PublishedArtifact{
-				Kind:   modelsv1alpha1.ModelArtifactLocationKindOCI,
-				URI:    "registry.example/model@sha256:deadbeef",
-				Digest: "sha256:deadbeef",
-			},
+	stagedHandle := &cleanuphandle.Handle{
+		Kind: cleanuphandle.KindUploadStaging,
+		UploadStaging: &cleanuphandle.UploadStagingHandle{
+			Bucket:   "ai-models",
+			Key:      "uploaded-model-staging/1111-2222/model.gguf",
+			FileName: "model.gguf",
 		},
-		CleanupHandle: cleanuphandle.Handle{Kind: cleanuphandle.KindBackendArtifact},
 	}
 	uploadStatus := &modelsv1alpha1.ModelUploadStatus{
-		Command:    "curl -T archive",
-		Repository: "registry.example/upload",
-		ExpiresAt:  &expiresAt,
+		ExternalURL:  "https://ai-models.example.com/upload/token",
+		InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+		Repository:   "registry.example/upload",
+		ExpiresAt:    &expiresAt,
 	}
 
 	testCases := []struct {
@@ -176,11 +175,11 @@ func TestObserveUploadSession(t *testing.T) {
 		{
 			name: "success deletes session",
 			input: UploadSessionObservation{
-				State:   RuntimeStateSucceeded,
-				Success: success,
+				State:        RuntimeStateSucceeded,
+				StagedHandle: stagedHandle,
 			},
 			want: UploadSessionDecision{
-				Success:       success,
+				StagedHandle:  stagedHandle,
 				DeleteSession: true,
 			},
 		},

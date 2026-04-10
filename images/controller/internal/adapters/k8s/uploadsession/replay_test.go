@@ -21,11 +21,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -56,14 +58,28 @@ func TestGetOrCreateReusesExistingSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UploadSessionSecretName() error = %v", err)
 	}
+	ingressName, err := resourcenames.UploadSessionIngressName(request.Request.Owner.UID)
+	if err != nil {
+		t.Fatalf("UploadSessionIngressName() error = %v", err)
+	}
 	expiresAt := metav1.NewTime(time.Now().Add(10 * time.Minute).UTC())
 
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(
 			owner,
+			testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write"),
 			pod,
 			&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: "d8-ai-models"}},
+			&networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{Name: ingressName, Namespace: "d8-ai-models"},
+				Spec: networkingv1.IngressSpec{
+					TLS: []networkingv1.IngressTLS{{Hosts: []string{"ai-models.example.com"}, SecretName: "ingress-tls"}},
+					Rules: []networkingv1.IngressRule{{
+						Host: "ai-models.example.com",
+					}},
+				},
+			},
 			&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        secretName,
@@ -90,6 +106,9 @@ func TestGetOrCreateReusesExistingSession(t *testing.T) {
 	if handle == nil || handle.UploadStatus.Repository == "" || handle.UploadStatus.ExpiresAt == nil {
 		t.Fatalf("unexpected reused session %#v", handle)
 	}
+	if handle.UploadStatus.ExternalURL == "" || handle.UploadStatus.InClusterURL == "" {
+		t.Fatalf("expected upload URLs in reused session %#v", handle.UploadStatus)
+	}
 }
 
 func TestGetOrCreateRecoversFromPartialAlreadyExists(t *testing.T) {
@@ -110,12 +129,17 @@ func TestGetOrCreateRecoversFromPartialAlreadyExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UploadSessionSecretName() error = %v", err)
 	}
+	ingressName, err := resourcenames.UploadSessionIngressName(request.Request.Owner.UID)
+	if err != nil {
+		t.Fatalf("UploadSessionIngressName() error = %v", err)
+	}
 	expiresAt := metav1.NewTime(time.Now().Add(10 * time.Minute).UTC())
 
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(
 			owner,
+			testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write"),
 			&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: "d8-ai-models"}},
 			&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -148,6 +172,7 @@ func TestGetOrCreateRecoversFromPartialAlreadyExists(t *testing.T) {
 		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: handle.WorkerName, Namespace: "d8-ai-models"}},
 		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: "d8-ai-models"}},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: "d8-ai-models"}},
+		&networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: ingressName, Namespace: "d8-ai-models"}},
 	} {
 		stored := object.DeepCopyObject().(client.Object)
 		if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(object), stored); err != nil {
@@ -165,7 +190,19 @@ func uploadOptions() Options {
 			Image:                 "backend:latest",
 			ServiceAccountName:    "ai-models-controller",
 			OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-			OCIRegistrySecretName: "ai-models-publication-registry",
+			OCIRegistrySecretName: "ai-models-dmcr-auth-write",
+			ObjectStorage: objectstorage.Options{
+				Bucket:                "ai-models",
+				EndpointURL:           "https://s3.example.com",
+				Region:                "us-east-1",
+				UsePathStyle:          true,
+				CredentialsSecretName: "ai-models-artifacts",
+			},
+		},
+		Ingress: IngressOptions{
+			Host:          "ai-models.example.com",
+			ClassName:     "nginx",
+			TLSSecretName: "ingress-tls",
 		},
 		TokenTTL: 15 * time.Minute,
 	}

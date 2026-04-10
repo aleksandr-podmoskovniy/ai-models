@@ -24,6 +24,7 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/bootstrap"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
@@ -43,6 +44,16 @@ const (
 	publicationOCIInsecureEnv          = "PUBLICATION_OCI_INSECURE"
 	publicationOCISecretEnv            = "PUBLICATION_OCI_CREDENTIALS_SECRET_NAME"
 	publicationOCICASecretEnv          = "PUBLICATION_OCI_CA_SECRET_NAME"
+	artifactsBucketEnv                 = "ARTIFACTS_BUCKET"
+	artifactsS3EndpointEnv             = "ARTIFACTS_S3_ENDPOINT_URL"
+	artifactsS3RegionEnv               = "ARTIFACTS_S3_REGION"
+	artifactsS3UsePathStyleEnv         = "ARTIFACTS_S3_USE_PATH_STYLE"
+	artifactsS3IgnoreTLSEnv            = "ARTIFACTS_S3_IGNORE_TLS"
+	artifactsCredentialsSecretEnv      = "ARTIFACTS_CREDENTIALS_SECRET_NAME"
+	artifactsCASecretEnv               = "ARTIFACTS_CA_SECRET_NAME"
+	uploadPublicHostEnv                = "UPLOAD_PUBLIC_HOST"
+	uploadIngressClassEnv              = "UPLOAD_INGRESS_CLASS"
+	uploadIngressTLSSecretEnv          = "UPLOAD_INGRESS_TLS_SECRET_NAME"
 	metricsBindAddressEnv              = "METRICS_BIND_ADDRESS"
 	healthProbeBindAddressEnv          = "HEALTH_PROBE_BIND_ADDRESS"
 	leaderElectEnv                     = "LEADER_ELECT"
@@ -65,6 +76,16 @@ func runManager(args []string) int {
 	var publicationOCIInsecure bool
 	var publicationOCISecretName string
 	var publicationOCICASecretName string
+	var artifactsBucket string
+	var artifactsS3Endpoint string
+	var artifactsS3Region string
+	var artifactsS3UsePathStyle bool
+	var artifactsS3IgnoreTLS bool
+	var artifactsCredentialsSecretName string
+	var artifactsCASecretName string
+	var uploadPublicHost string
+	var uploadIngressClass string
+	var uploadIngressTLSSecretName string
 	var metricsBindAddress string
 	var healthProbeBindAddress string
 	var leaderElect bool
@@ -84,6 +105,16 @@ func runManager(args []string) int {
 	flags.BoolVar(&publicationOCIInsecure, "publication-oci-insecure", cmdsupport.EnvOrBool(publicationOCIInsecureEnv, false), "Disable TLS verification for publication worker OCI registry access.")
 	flags.StringVar(&publicationOCISecretName, "publication-oci-credentials-secret-name", cmdsupport.EnvOr(publicationOCISecretEnv, ""), "Secret with OCI registry username/password for publication workers.")
 	flags.StringVar(&publicationOCICASecretName, "publication-oci-ca-secret-name", cmdsupport.EnvOr(publicationOCICASecretEnv, ""), "Optional Secret with ca.crt for publication worker OCI registry trust.")
+	flags.StringVar(&artifactsBucket, "artifacts-bucket", cmdsupport.EnvOr(artifactsBucketEnv, ""), "Bucket used for upload staging.")
+	flags.StringVar(&artifactsS3Endpoint, "artifacts-s3-endpoint-url", cmdsupport.EnvOr(artifactsS3EndpointEnv, ""), "S3-compatible endpoint used for upload staging.")
+	flags.StringVar(&artifactsS3Region, "artifacts-s3-region", cmdsupport.EnvOr(artifactsS3RegionEnv, ""), "S3-compatible region used for upload staging.")
+	flags.BoolVar(&artifactsS3UsePathStyle, "artifacts-s3-use-path-style", cmdsupport.EnvOrBool(artifactsS3UsePathStyleEnv, false), "Use path-style addressing for upload staging object storage.")
+	flags.BoolVar(&artifactsS3IgnoreTLS, "artifacts-s3-ignore-tls", cmdsupport.EnvOrBool(artifactsS3IgnoreTLSEnv, false), "Disable TLS verification for upload staging object storage.")
+	flags.StringVar(&artifactsCredentialsSecretName, "artifacts-credentials-secret-name", cmdsupport.EnvOr(artifactsCredentialsSecretEnv, ""), "Secret with object storage accessKey/secretKey for upload staging.")
+	flags.StringVar(&artifactsCASecretName, "artifacts-ca-secret-name", cmdsupport.EnvOr(artifactsCASecretEnv, ""), "Optional Secret with ca.crt for upload staging object storage.")
+	flags.StringVar(&uploadPublicHost, "upload-public-host", cmdsupport.EnvOr(uploadPublicHostEnv, ""), "Public host used for upload session ingress URLs.")
+	flags.StringVar(&uploadIngressClass, "upload-ingress-class", cmdsupport.EnvOr(uploadIngressClassEnv, ""), "IngressClass used for upload session ingresses.")
+	flags.StringVar(&uploadIngressTLSSecretName, "upload-ingress-tls-secret-name", cmdsupport.EnvOr(uploadIngressTLSSecretEnv, ""), "TLS secret name used by upload session ingresses.")
 	flags.StringVar(&metricsBindAddress, "metrics-bind-address", cmdsupport.EnvOr(metricsBindAddressEnv, ":8080"), "The address the metric endpoint binds to.")
 	flags.StringVar(&healthProbeBindAddress, "health-probe-bind-address", cmdsupport.EnvOr(healthProbeBindAddressEnv, ":8081"), "The address the health probe endpoint binds to.")
 	flags.BoolVar(&leaderElect, "leader-elect", cmdsupport.EnvOrBool(leaderElectEnv, true), "Enable leader election for controller manager.")
@@ -103,6 +134,16 @@ func runManager(args []string) int {
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
 
+	artifactsObjectStorage := objectstorage.Options{
+		Bucket:                artifactsBucket,
+		EndpointURL:           artifactsS3Endpoint,
+		Region:                artifactsS3Region,
+		UsePathStyle:          artifactsS3UsePathStyle,
+		Insecure:              artifactsS3IgnoreTLS,
+		CredentialsSecretName: artifactsCredentialsSecretName,
+		CASecretName:          artifactsCASecretName,
+	}
+
 	application, err := bootstrap.New(logger, bootstrap.Options{
 		CleanupJobs: catalogcleanup.Options{
 			CleanupJob: catalogcleanup.CleanupJobOptions{
@@ -112,6 +153,7 @@ func runManager(args []string) int {
 				OCIInsecure:             publicationOCIInsecure,
 				OCIRegistrySecretName:   publicationOCISecretName,
 				OCIRegistryCASecretName: publicationOCICASecretName,
+				ObjectStorage:           artifactsObjectStorage,
 				Env:                     cmdsupport.PassThroughEnv(cleanupJobEnvPassThrough),
 			},
 			RequeueAfter: 5 * time.Second,
@@ -125,6 +167,12 @@ func runManager(args []string) int {
 				OCIInsecure:             publicationOCIInsecure,
 				OCIRegistrySecretName:   publicationOCISecretName,
 				OCIRegistryCASecretName: publicationOCICASecretName,
+				ObjectStorage:           artifactsObjectStorage,
+			},
+			UploadIngress: catalogstatus.UploadIngressOptions{
+				Host:          uploadPublicHost,
+				ClassName:     uploadIngressClass,
+				TLSSecretName: uploadIngressTLSSecretName,
 			},
 		},
 		Runtime: bootstrap.RuntimeOptions{

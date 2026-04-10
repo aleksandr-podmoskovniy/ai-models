@@ -128,6 +128,8 @@ func TestCanonicalResourceNames(t *testing.T) {
 	}{
 		{name: "source worker pod", fn: SourceWorkerPodName, prefix: "ai-model-publish-"},
 		{name: "source worker auth secret", fn: SourceWorkerAuthSecretName, prefix: "ai-model-publish-auth-"},
+		{name: "oci registry auth secret", fn: OCIRegistryAuthSecretName, prefix: "ai-model-oci-auth-"},
+		{name: "oci registry ca secret", fn: OCIRegistryCASecretName, prefix: "ai-model-oci-ca-"},
 		{name: "upload session pod", fn: UploadSessionPodName, prefix: "ai-model-upload-"},
 		{name: "upload session service", fn: UploadSessionServiceName, prefix: "ai-model-upload-"},
 		{name: "upload session secret", fn: UploadSessionSecretName, prefix: "ai-model-upload-auth-"},

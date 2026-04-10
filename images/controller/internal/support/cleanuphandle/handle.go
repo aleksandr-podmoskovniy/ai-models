@@ -32,6 +32,7 @@ type Kind string
 
 const (
 	KindBackendArtifact Kind = "BackendArtifact"
+	KindUploadStaging  Kind = "UploadStaging"
 )
 
 type ArtifactSnapshot struct {
@@ -44,10 +45,18 @@ type BackendArtifactHandle struct {
 	Reference string `json:"reference,omitempty"`
 }
 
+type UploadStagingHandle struct {
+	Bucket    string `json:"bucket,omitempty"`
+	Key       string `json:"key,omitempty"`
+	FileName  string `json:"fileName,omitempty"`
+	SizeBytes int64  `json:"sizeBytes,omitempty"`
+}
+
 type Handle struct {
-	Kind     Kind                   `json:"kind,omitempty"`
-	Artifact *ArtifactSnapshot      `json:"artifact,omitempty"`
-	Backend  *BackendArtifactHandle `json:"backend,omitempty"`
+	Kind          Kind                   `json:"kind,omitempty"`
+	Artifact      *ArtifactSnapshot      `json:"artifact,omitempty"`
+	Backend       *BackendArtifactHandle `json:"backend,omitempty"`
+	UploadStaging *UploadStagingHandle   `json:"uploadStaging,omitempty"`
 }
 
 func (h Handle) Validate() error {
@@ -58,6 +67,16 @@ func (h Handle) Validate() error {
 		}
 		if strings.TrimSpace(h.Backend.Reference) == "" {
 			return errors.New("backend cleanup handle reference must not be empty")
+		}
+	case KindUploadStaging:
+		if h.UploadStaging == nil {
+			return errors.New("upload staging cleanup handle payload must not be empty")
+		}
+		if strings.TrimSpace(h.UploadStaging.Bucket) == "" {
+			return errors.New("upload staging cleanup handle bucket must not be empty")
+		}
+		if strings.TrimSpace(h.UploadStaging.Key) == "" {
+			return errors.New("upload staging cleanup handle key must not be empty")
 		}
 	default:
 		return fmt.Errorf("unsupported cleanup handle kind %q", h.Kind)

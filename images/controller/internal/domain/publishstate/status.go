@@ -26,6 +26,7 @@ import (
 
 type Observation struct {
 	Phase         OperationPhase
+	RuntimeKind   RuntimeKind
 	Message       string
 	Upload        *modelsv1alpha1.ModelUploadStatus
 	Snapshot      *publicationdata.Snapshot
@@ -51,6 +52,7 @@ func AcceptedStatus(
 
 func ProjectStatus(
 	current modelsv1alpha1.ModelStatus,
+	spec modelsv1alpha1.ModelSpec,
 	generation int64,
 	sourceType modelsv1alpha1.ModelSourceType,
 	observation Observation,
@@ -58,8 +60,17 @@ func ProjectStatus(
 	switch observation.Phase {
 	case OperationPhasePending, OperationPhaseRunning:
 		return Projection{
-			Status:  runningStatus(current, generation, sourceType, observation.Upload),
+			Status:  runningStatus(current, generation, sourceType, observation.RuntimeKind, observation.Upload),
 			Requeue: true,
+		}, nil
+	case OperationPhaseStaged:
+		if observation.CleanupHandle == nil {
+			return Projection{}, errors.New("upload staging cleanup handle must not be empty")
+		}
+		return Projection{
+			Status:        publishingStatus(current, generation, sourceType),
+			CleanupHandle: observation.CleanupHandle,
+			Requeue:       true,
 		}, nil
 	case OperationPhaseFailed:
 		return Projection{
@@ -73,7 +84,7 @@ func ProjectStatus(
 			return Projection{}, errors.New("publication operation cleanup handle must not be empty")
 		}
 		return Projection{
-			Status:        readyStatus(current, generation, sourceType, *observation.Snapshot),
+			Status:        readyStatus(current, spec, generation, sourceType, *observation.Snapshot),
 			CleanupHandle: observation.CleanupHandle,
 		}, nil
 	default:
@@ -85,13 +96,17 @@ func runningStatus(
 	current modelsv1alpha1.ModelStatus,
 	generation int64,
 	sourceType modelsv1alpha1.ModelSourceType,
+	runtimeKind RuntimeKind,
 	upload *modelsv1alpha1.ModelUploadStatus,
 ) modelsv1alpha1.ModelStatus {
 	if sourceType != modelsv1alpha1.ModelSourceTypeUpload {
 		return publishingStatus(current, generation, sourceType)
 	}
-	if upload == nil {
+	if upload != nil {
+		return waitForUploadStatus(current, generation, sourceType, upload)
+	}
+	if runtimeKind == RuntimeKindUploadSession {
 		return pendingUploadStatus(current, generation, sourceType)
 	}
-	return waitForUploadStatus(current, generation, sourceType, upload)
+	return publishingStatus(current, generation, sourceType)
 }

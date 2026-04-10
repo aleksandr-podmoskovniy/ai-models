@@ -58,6 +58,15 @@ func TestIsTerminalOperationPhase(t *testing.T) {
 			want: ExecutionModeUpload,
 		},
 		{
+			name: "staged upload switches to source worker",
+			input: StartPublicationInput{
+				Source:             modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+				RuntimeHints:       &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
+				UploadStagePresent: true,
+			},
+			want: ExecutionModeSourceWorker,
+		},
+		{
 			name: "upload without task fails",
 			input: StartPublicationInput{
 				Source: modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},

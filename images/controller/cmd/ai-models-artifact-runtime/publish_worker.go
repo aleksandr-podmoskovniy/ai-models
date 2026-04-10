@@ -20,21 +20,27 @@ import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/kitops"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
+	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
+	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/dataplane/publishworker"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 const (
-	publishSourceTypeEnv      = "AI_MODELS_PUBLISH_SOURCE_TYPE"
-	publishHFModelIDEnv       = "AI_MODELS_IMPORT_HF_MODEL_ID"
-	publishHTTPURLEnv         = "AI_MODELS_IMPORT_HTTP_URL"
-	publishHTTPCABundleB64Env = "AI_MODELS_IMPORT_HTTP_CA_BUNDLE_B64"
-	publishHTTPAuthDirEnv     = "AI_MODELS_IMPORT_HTTP_AUTH_DIR"
-	publishUploadPathEnv      = "AI_MODELS_IMPORT_UPLOAD_PATH"
-	publishInputFormatEnv     = "AI_MODELS_IMPORT_INPUT_FORMAT"
-	publishRevisionEnv        = "AI_MODELS_IMPORT_HF_REVISION"
-	publishTaskEnv            = "AI_MODELS_IMPORT_TASK"
-	publishSnapshotDirEnv     = "AI_MODELS_IMPORT_SNAPSHOT_DIR"
+	publishSourceTypeEnv          = "AI_MODELS_PUBLISH_SOURCE_TYPE"
+	publishHFModelIDEnv           = "AI_MODELS_IMPORT_HF_MODEL_ID"
+	publishHTTPURLEnv             = "AI_MODELS_IMPORT_HTTP_URL"
+	publishHTTPCABundleB64Env     = "AI_MODELS_IMPORT_HTTP_CA_BUNDLE_B64"
+	publishHTTPAuthDirEnv         = "AI_MODELS_IMPORT_HTTP_AUTH_DIR"
+	publishUploadPathEnv          = "AI_MODELS_IMPORT_UPLOAD_PATH"
+	publishUploadStageBucketEnv   = "AI_MODELS_IMPORT_UPLOAD_STAGE_BUCKET"
+	publishUploadStageKeyEnv      = "AI_MODELS_IMPORT_UPLOAD_STAGE_KEY"
+	publishUploadStageFileNameEnv = "AI_MODELS_IMPORT_UPLOAD_STAGE_FILE_NAME"
+	publishInputFormatEnv         = "AI_MODELS_IMPORT_INPUT_FORMAT"
+	publishRevisionEnv            = "AI_MODELS_IMPORT_HF_REVISION"
+	publishTaskEnv                = "AI_MODELS_IMPORT_TASK"
+	publishSnapshotDirEnv         = "AI_MODELS_IMPORT_SNAPSHOT_DIR"
 )
 
 func runPublishWorker(args []string) int {
@@ -47,6 +53,9 @@ func runPublishWorker(args []string) int {
 	var httpCABundleB64 string
 	var httpAuthDir string
 	var uploadPath string
+	var uploadStageBucket string
+	var uploadStageKey string
+	var uploadStageFileName string
 	var inputFormat string
 	var revision string
 	var task string
@@ -60,6 +69,9 @@ func runPublishWorker(args []string) int {
 	flags.StringVar(&httpCABundleB64, "http-ca-bundle-b64", cmdsupport.EnvOr(publishHTTPCABundleB64Env, ""), "Base64-encoded HTTP CA bundle.")
 	flags.StringVar(&httpAuthDir, "http-auth-dir", cmdsupport.EnvOr(publishHTTPAuthDirEnv, ""), "HTTP auth directory.")
 	flags.StringVar(&uploadPath, "upload-path", cmdsupport.EnvOr(publishUploadPathEnv, ""), "Uploaded archive path.")
+	flags.StringVar(&uploadStageBucket, "upload-stage-bucket", cmdsupport.EnvOr(publishUploadStageBucketEnv, ""), "Bucket containing staged upload input.")
+	flags.StringVar(&uploadStageKey, "upload-stage-key", cmdsupport.EnvOr(publishUploadStageKeyEnv, ""), "Object key containing staged upload input.")
+	flags.StringVar(&uploadStageFileName, "upload-stage-file-name", cmdsupport.EnvOr(publishUploadStageFileNameEnv, ""), "Original staged upload file name.")
 	flags.StringVar(&inputFormat, "input-format", cmdsupport.EnvOr(publishInputFormatEnv, ""), "Model input format. Leave empty for auto-detection.")
 	flags.StringVar(&revision, "revision", cmdsupport.EnvOr(publishRevisionEnv, ""), "Resolved source revision.")
 	flags.StringVar(&task, "task", cmdsupport.EnvOr(publishTaskEnv, ""), "Runtime task.")
@@ -76,6 +88,21 @@ func runPublishWorker(args []string) int {
 		return cmdsupport.CommandError(commandPublishWorker, err)
 	}
 
+	var uploadStage *cleanuphandle.UploadStagingHandle
+	var uploadStagingClient *uploadstagings3.Adapter
+	if uploadStageKey != "" || uploadStageBucket != "" {
+		uploadStage = &cleanuphandle.UploadStagingHandle{
+			Bucket:   uploadStageBucket,
+			Key:      uploadStageKey,
+			FileName: uploadStageFileName,
+		}
+		uploadStagingClient, err = uploadstagings3.New(uploadStagingS3ConfigFromEnv())
+		if err != nil {
+			cmdsupport.WriteTerminationFailure(err.Error())
+			return cmdsupport.CommandError(commandPublishWorker, err)
+		}
+	}
+
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
 
@@ -88,11 +115,13 @@ func runPublishWorker(args []string) int {
 		HTTPCABundle:       caBundle,
 		HTTPAuthDir:        httpAuthDir,
 		UploadPath:         uploadPath,
+		UploadStage:        uploadStage,
 		InputFormat:        modelsv1alpha1.ModelInputFormat(inputFormat),
 		Task:               task,
 		RuntimeEngines:     []string(runtimeEngines),
 		SnapshotDir:        snapshotDir,
 		HFToken:            cmdsupport.EnvOr("HF_TOKEN", cmdsupport.EnvOr("HUGGING_FACE_HUB_TOKEN", "")),
+		UploadStaging:      uploadStagingClient,
 		ModelPackPublisher: kitops.New(),
 		RegistryAuth:       cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
 	})
@@ -100,10 +129,12 @@ func runPublishWorker(args []string) int {
 		cmdsupport.WriteTerminationFailure(err.Error())
 		return cmdsupport.CommandError(commandPublishWorker, err)
 	}
-	if err := cmdsupport.WriteTerminationResult(result); err != nil {
+	payload, err := artifactbackend.EncodeResult(result)
+	if err != nil {
 		cmdsupport.WriteTerminationFailure(err.Error())
 		return cmdsupport.CommandError(commandPublishWorker, err)
 	}
+	cmdsupport.WriteTerminationMessage(payload)
 
 	return 0
 }

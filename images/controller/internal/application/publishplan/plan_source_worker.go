@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 type SourceWorkerPlan struct {
@@ -31,6 +32,7 @@ type SourceWorkerPlan struct {
 	RuntimeEngines []string
 	HuggingFace    *HuggingFaceSourcePlan
 	HTTP           *HTTPSourcePlan
+	Upload         *UploadSourcePlan
 }
 
 type SourceAuthSecretRef struct {
@@ -50,7 +52,15 @@ type HTTPSourcePlan struct {
 	AuthSecretRef *SourceAuthSecretRef
 }
 
-func PlanSourceWorker(spec modelsv1alpha1.ModelSpec, ownerNamespace string) (SourceWorkerPlan, error) {
+type UploadSourcePlan struct {
+	Stage cleanuphandle.UploadStagingHandle
+}
+
+func PlanSourceWorker(
+	spec modelsv1alpha1.ModelSpec,
+	ownerNamespace string,
+	uploadStage *cleanuphandle.UploadStagingHandle,
+) (SourceWorkerPlan, error) {
 	sourceType, err := spec.Source.DetectType()
 	if err != nil {
 		return SourceWorkerPlan{}, err
@@ -108,7 +118,14 @@ func PlanSourceWorker(spec modelsv1alpha1.ModelSpec, ownerNamespace string) (Sou
 		}
 		return plan, nil
 	case modelsv1alpha1.ModelSourceTypeUpload:
-		return SourceWorkerPlan{}, errors.New("source worker upload source must be implemented as a session, not a batch-style worker pod")
+		if uploadStage == nil {
+			return SourceWorkerPlan{}, errors.New("source worker upload source requires a staged upload handle")
+		}
+		if plan.Task == "" {
+			return SourceWorkerPlan{}, errors.New("source worker upload source requires spec.runtimeHints.task")
+		}
+		plan.Upload = &UploadSourcePlan{Stage: *uploadStage}
+		return plan, nil
 	default:
 		return SourceWorkerPlan{}, fmt.Errorf("source worker does not support source type %q", sourceType)
 	}

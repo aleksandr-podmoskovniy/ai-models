@@ -32,21 +32,32 @@ const (
 	CleanupJobStateFailed   CleanupJobState = "Failed"
 )
 
+type GarbageCollectionState string
+
+const (
+	GarbageCollectionStateMissing   GarbageCollectionState = "Missing"
+	GarbageCollectionStateRequested GarbageCollectionState = "Requested"
+	GarbageCollectionStateComplete  GarbageCollectionState = "Complete"
+)
+
 type FinalizeDeleteInput struct {
-	HasFinalizer bool
-	HandleFound  bool
-	HandleErr    error
-	HandleKind   cleanuphandle.Kind
-	JobState     CleanupJobState
+	HasFinalizer           bool
+	HandleFound            bool
+	HandleErr              error
+	HandleKind             cleanuphandle.Kind
+	JobState               CleanupJobState
+	GarbageCollectionState GarbageCollectionState
 }
 
 type FinalizeDeleteDecision struct {
-	RemoveFinalizer bool
-	CreateJob       bool
-	UpdateStatus    bool
-	StatusReason    modelsv1alpha1.ModelConditionReason
-	StatusMessage   string
-	Requeue         bool
+	RemoveFinalizer                bool
+	CreateJob                      bool
+	EnsureGarbageCollectionRequest bool
+	DeleteGarbageCollectionRequest bool
+	UpdateStatus                   bool
+	StatusReason                   modelsv1alpha1.ModelConditionReason
+	StatusMessage                  string
+	Requeue                        bool
 }
 
 func FinalizeDelete(input FinalizeDeleteInput) FinalizeDeleteDecision {
@@ -65,7 +76,9 @@ func FinalizeDelete(input FinalizeDeleteInput) FinalizeDeleteDecision {
 
 	switch input.HandleKind {
 	case cleanuphandle.KindBackendArtifact:
-		return finalizeBackendArtifactDelete(input.JobState)
+		return finalizeBackendArtifactDelete(input.JobState, input.GarbageCollectionState)
+	case cleanuphandle.KindUploadStaging:
+		return finalizeUploadStagingDelete(input.JobState)
 	default:
 		return failureDecision(
 			modelsv1alpha1.ModelConditionReasonCleanupBlocked,
@@ -74,8 +87,37 @@ func FinalizeDelete(input FinalizeDeleteInput) FinalizeDeleteDecision {
 	}
 }
 
-func finalizeBackendArtifactDelete(state CleanupJobState) FinalizeDeleteDecision {
-	switch state {
+func finalizeUploadStagingDelete(jobState CleanupJobState) FinalizeDeleteDecision {
+	switch jobState {
+	case CleanupJobStateMissing:
+		return FinalizeDeleteDecision{
+			CreateJob:     true,
+			UpdateStatus:  true,
+			StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
+			StatusMessage: "upload staging cleanup job created and waiting for completion",
+			Requeue:       true,
+		}
+	case CleanupJobStateRunning:
+		return FinalizeDeleteDecision{
+			UpdateStatus:  true,
+			StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
+			StatusMessage: "upload staging cleanup job is still running",
+			Requeue:       true,
+		}
+	case CleanupJobStateFailed:
+		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "upload staging cleanup job failed")
+	case CleanupJobStateComplete:
+		return FinalizeDeleteDecision{RemoveFinalizer: true}
+	default:
+		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "upload staging cleanup job entered an unsupported state")
+	}
+}
+
+func finalizeBackendArtifactDelete(
+	jobState CleanupJobState,
+	garbageCollectionState GarbageCollectionState,
+) FinalizeDeleteDecision {
+	switch jobState {
 	case CleanupJobStateMissing:
 		return FinalizeDeleteDecision{
 			CreateJob:     true,
@@ -94,7 +136,30 @@ func finalizeBackendArtifactDelete(state CleanupJobState) FinalizeDeleteDecision
 	case CleanupJobStateFailed:
 		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "cleanup job failed")
 	case CleanupJobStateComplete:
-		return FinalizeDeleteDecision{RemoveFinalizer: true}
+		switch garbageCollectionState {
+		case GarbageCollectionStateMissing:
+			return FinalizeDeleteDecision{
+				EnsureGarbageCollectionRequest: true,
+				UpdateStatus:                   true,
+				StatusReason:                   modelsv1alpha1.ModelConditionReasonCleanupPending,
+				StatusMessage:                  "registry garbage collection requested",
+				Requeue:                        true,
+			}
+		case GarbageCollectionStateRequested:
+			return FinalizeDeleteDecision{
+				UpdateStatus:  true,
+				StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
+				StatusMessage: "registry garbage collection is still running",
+				Requeue:       true,
+			}
+		case GarbageCollectionStateComplete:
+			return FinalizeDeleteDecision{
+				DeleteGarbageCollectionRequest: true,
+				RemoveFinalizer:                true,
+			}
+		default:
+			return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "registry garbage collection entered an unsupported state")
+		}
 	default:
 		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "cleanup job entered an unsupported state")
 	}

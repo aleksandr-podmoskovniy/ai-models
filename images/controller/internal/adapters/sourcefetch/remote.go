@@ -19,7 +19,6 @@ package sourcefetch
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -68,83 +67,6 @@ func FetchRemoteModel(ctx context.Context, options RemoteOptions) (RemoteResult,
 	default:
 		return RemoteResult{}, errors.New("unsupported remote source type")
 	}
-}
-
-func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteResult, error) {
-	repoID, revision, err := modelsv1alpha1.ParseHuggingFaceURL(options.URL)
-	if err != nil {
-		return RemoteResult{}, err
-	}
-
-	info, err := FetchHuggingFaceInfo(ctx, repoID, revision, options.HFToken)
-	if err != nil {
-		return RemoteResult{}, err
-	}
-
-	inputFormat, err := resolveRemoteFormat(info.Files, options.RequestedFormat)
-	if err != nil {
-		return RemoteResult{}, err
-	}
-	selectedFiles, err := modelformat.SelectRemoteFiles(inputFormat, info.Files)
-	if err != nil {
-		return RemoteResult{}, err
-	}
-
-	modelDir := filepath.Join(options.Workspace, "checkpoint")
-	resolvedRevision := ResolveHuggingFaceRevision(info, revision)
-	if err := DownloadHuggingFaceFiles(ctx, repoID, resolvedRevision, options.HFToken, modelDir, selectedFiles); err != nil {
-		return RemoteResult{}, err
-	}
-	if err := modelformat.ValidateDir(modelDir, inputFormat); err != nil {
-		return RemoteResult{}, err
-	}
-
-	return RemoteResult{
-		SourceType:        modelsv1alpha1.ModelSourceTypeHuggingFace,
-		ModelDir:          modelDir,
-		InputFormat:       inputFormat,
-		ExternalReference: firstNonEmpty(info.ID, repoID),
-		ResolvedRevision:  resolvedRevision,
-		Framework:         firstNonEmpty(info.LibraryName, "transformers"),
-		PipelineTag:       info.PipelineTag,
-		License:           info.License,
-		SourceRepoID:      info.ID,
-	}, nil
-}
-
-func fetchHTTPModel(ctx context.Context, options RemoteOptions) (RemoteResult, error) {
-	sourcePath, metadata, err := DownloadHTTPSource(
-		ctx,
-		options.URL,
-		options.HTTPCABundle,
-		options.HTTPAuthDir,
-		filepath.Join(options.Workspace, ".download"),
-	)
-	if err != nil {
-		return RemoteResult{}, err
-	}
-
-	modelDir, err := PrepareModelInput(sourcePath, filepath.Join(options.Workspace, "checkpoint"))
-	if err != nil {
-		return RemoteResult{}, err
-	}
-
-	inputFormat, err := resolveDirFormat(modelDir, options.RequestedFormat)
-	if err != nil {
-		return RemoteResult{}, err
-	}
-	if err := modelformat.ValidateDir(modelDir, inputFormat); err != nil {
-		return RemoteResult{}, err
-	}
-
-	return RemoteResult{
-		SourceType:        modelsv1alpha1.ModelSourceTypeHTTP,
-		ModelDir:          modelDir,
-		InputFormat:       inputFormat,
-		ExternalReference: options.URL,
-		ResolvedRevision:  metadata.ResolvedRevision(),
-		Framework:         "transformers",
-	}, nil
 }
 
 func resolveRemoteFormat(files []string, requested modelsv1alpha1.ModelInputFormat) (modelsv1alpha1.ModelInputFormat, error) {

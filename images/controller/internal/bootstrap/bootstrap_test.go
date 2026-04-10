@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
 )
@@ -34,7 +35,14 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 			CleanupJob: catalogcleanup.CleanupJobOptions{
 				Namespace:             "d8-ai-models",
 				Image:                 "backend:latest",
-				OCIRegistrySecretName: "ai-models-publication-registry",
+				OCIRegistrySecretName: "ai-models-dmcr-auth-write",
+				ObjectStorage: objectstorage.Options{
+					Bucket:                "ai-models",
+					EndpointURL:           "https://s3.example.com",
+					Region:                "us-east-1",
+					UsePathStyle:          true,
+					CredentialsSecretName: "ai-models-artifacts",
+				},
 			},
 		},
 		PublicationRuntime: catalogstatus.Options{
@@ -43,7 +51,14 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 				Image:                 "backend:latest",
 				ServiceAccountName:    "ai-models-controller",
 				OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-				OCIRegistrySecretName: "ai-models-publication-registry",
+				OCIRegistrySecretName: "ai-models-dmcr-auth-write",
+				ObjectStorage: objectstorage.Options{
+					Bucket:                "ai-models",
+					EndpointURL:           "https://s3.example.com",
+					Region:                "us-east-1",
+					UsePathStyle:          true,
+					CredentialsSecretName: "ai-models-artifacts",
+				},
 			},
 		},
 	})
@@ -65,7 +80,14 @@ func TestNewAllowsCleanupOnlyRuntimeWithoutPublicationPlaneConfiguration(t *test
 			CleanupJob: catalogcleanup.CleanupJobOptions{
 				Namespace:             "d8-ai-models",
 				Image:                 "backend:latest",
-				OCIRegistrySecretName: "ai-models-publication-registry",
+				OCIRegistrySecretName: "ai-models-dmcr-auth-write",
+				ObjectStorage: objectstorage.Options{
+					Bucket:                "ai-models",
+					EndpointURL:           "https://s3.example.com",
+					Region:                "us-east-1",
+					UsePathStyle:          true,
+					CredentialsSecretName: "ai-models-artifacts",
+				},
 			},
 		},
 	})

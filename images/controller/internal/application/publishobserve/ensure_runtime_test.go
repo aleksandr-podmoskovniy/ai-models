@@ -86,8 +86,9 @@ func TestEnsureRuntimeObservation(t *testing.T) {
 		sourceWorkers := &fakeSourceWorkerRuntime{}
 		uploadSessions := &fakeUploadSessionRuntime{
 			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodRunning, "", modelsv1alpha1.ModelUploadStatus{
-				Command:    "curl -T model.tar",
-				Repository: "registry.example/upload",
+				ExternalURL:  "https://ai-models.example.com/upload/token",
+				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:   "registry.example/upload",
 			}, func(context.Context) error {
 				deleted = true
 				return nil
@@ -112,7 +113,7 @@ func TestEnsureRuntimeObservation(t *testing.T) {
 		if got.Decision.Observation.Phase != publicationdomain.OperationPhaseRunning {
 			t.Fatalf("unexpected observation phase %q", got.Decision.Observation.Phase)
 		}
-		if got.Decision.Observation.Upload == nil || got.Decision.Observation.Upload.Command == "" {
+		if got.Decision.Observation.Upload == nil || got.Decision.Observation.Upload.InClusterURL == "" {
 			t.Fatalf("unexpected upload observation %#v", got.Decision.Observation.Upload)
 		}
 		if got.DeleteFn == nil {

@@ -69,12 +69,13 @@ func (r *baseReconciler) reconcileObject(
 	}
 
 	decision, err := publicationapp.DecideCatalogStatusReconcile(publicationapp.CatalogStatusReconcileInput{
-		Deleting:         !object.GetDeletionTimestamp().IsZero(),
-		Source:           spec.Source,
-		RuntimeHints:     spec.RuntimeHints,
-		Current:          *status,
-		Generation:       object.GetGeneration(),
-		HasCleanupHandle: hasHandle,
+		Deleting:           !object.GetDeletionTimestamp().IsZero(),
+		Source:             spec.Source,
+		RuntimeHints:       spec.RuntimeHints,
+		UploadStagePresent: request.UploadStage != nil,
+		Current:            *status,
+		Generation:         object.GetGeneration(),
+		HasCleanupHandle:   hasHandle,
 	})
 	if err != nil {
 		return ctrl.Result{}, err
@@ -95,5 +96,5 @@ func (r *baseReconciler) reconcileObject(
 	if err != nil {
 		return r.failPublication(ctx, object, status, decision.SourceType, err.Error())
 	}
-	return r.applyRuntimeObservation(ctx, object, status, decision.SourceType, result.Decision, result.DeleteFn)
+	return r.applyRuntimeObservation(ctx, object, spec, status, decision.SourceType, result.Decision, result.DeleteFn)
 }

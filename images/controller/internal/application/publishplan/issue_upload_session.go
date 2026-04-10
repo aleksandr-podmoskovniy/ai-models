@@ -26,21 +26,15 @@ import (
 )
 
 type UploadSessionIssueRequest struct {
-	OwnerUID       string
-	OwnerKind      string
-	OwnerName      string
-	Identity       publicationdata.Identity
-	Source         modelsv1alpha1.ModelSourceSpec
-	InputFormat    modelsv1alpha1.ModelInputFormat
-	Task           string
-	RuntimeEngines []string
+	OwnerUID  string
+	OwnerKind string
+	OwnerName string
+	Identity  publicationdata.Identity
+	Source    modelsv1alpha1.ModelSourceSpec
 }
 
 type UploadSessionPlan struct {
-	InputFormat       modelsv1alpha1.ModelInputFormat
 	ExpectedSizeBytes *int64
-	Task              string
-	RuntimeEngines    []string
 }
 
 func IssueUploadSession(request UploadSessionIssueRequest) (UploadSessionPlan, error) {
@@ -56,12 +50,7 @@ func IssueUploadSession(request UploadSessionIssueRequest) (UploadSessionPlan, e
 	if err := request.Identity.Validate(); err != nil {
 		return UploadSessionPlan{}, err
 	}
-	mode, err := StartPublication(StartPublicationInput{
-		Source: request.Source,
-		RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
-			Task: request.Task,
-		},
-	})
+	mode, err := uploadSessionMode(request.Source)
 	if err != nil {
 		return UploadSessionPlan{}, err
 	}
@@ -70,9 +59,20 @@ func IssueUploadSession(request UploadSessionIssueRequest) (UploadSessionPlan, e
 	}
 
 	return UploadSessionPlan{
-		InputFormat:       request.InputFormat,
 		ExpectedSizeBytes: request.Source.Upload.ExpectedSizeBytes,
-		Task:              strings.TrimSpace(request.Task),
-		RuntimeEngines:    append([]string(nil), request.RuntimeEngines...),
 	}, nil
+}
+
+func uploadSessionMode(source modelsv1alpha1.ModelSourceSpec) (ExecutionMode, error) {
+	sourceType, err := source.DetectType()
+	if err != nil {
+		return "", err
+	}
+	if sourceType != modelsv1alpha1.ModelSourceTypeUpload {
+		return "", fmt.Errorf("upload session only supports source type %q", modelsv1alpha1.ModelSourceTypeUpload)
+	}
+	if source.Upload == nil {
+		return "", errors.New("upload session source must not be empty")
+	}
+	return ExecutionModeUpload, nil
 }

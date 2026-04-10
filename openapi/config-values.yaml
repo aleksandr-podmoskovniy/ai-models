@@ -162,50 +162,59 @@ properties:
         type: boolean
         description: Use path-style S3 requests.
         default: true
-  publicationRegistry:
+  publicationStorage:
     type: object
     description: |
-      OCI registry used by phase-2 model publication workers.
-      This is still part of the stable module contract; concrete runtime
-      materializer adapter settings must stay out of `config-values`.
+      Storage settings for the internal module-owned publication backend.
+      Published model artifacts are always served through the hidden internal
+      OCI plane; this block only selects how that internal backend stores bytes.
     additionalProperties: false
     properties:
-      repositoryPrefix:
+      type:
         type: string
         description: |
-          OCI repository prefix used for published model artifacts.
-          Example: `registry.internal.example/ai-models`.
-        default: ""
-      credentialsSecretName:
-        type: string
+          Storage backend used by the internal publication plane.
+          `ObjectStorage` reuses the configured S3-compatible endpoint from
+          `ai-models.artifacts`.
+          `PersistentVolumeClaim` stores published model artifacts inside a
+          module-owned PVC.
+        enum:
+          - "ObjectStorage"
+          - "PersistentVolumeClaim"
+        default: "ObjectStorage"
+      objectStorage:
+        type: object
         description: |
-          Existing Secret in `d8-ai-models` with `username` and `password` for
-          publication workers.
-        default: ""
-      caSecretName:
-        type: string
+          Optional overrides for the internal publication backend when
+          `type=ObjectStorage`. Credentials, endpoint, CA and path-style
+          settings are reused from `ai-models.artifacts`.
+        additionalProperties: false
+        properties:
+          bucket:
+            type: string
+            description: |
+              Optional bucket override for published model artifacts.
+              When empty, ai-models reuses `ai-models.artifacts.bucket`.
+            default: ""
+          pathPrefix:
+            type: string
+            description: Prefix inside the bucket used by the internal publication backend.
+            default: published-models
+      persistentVolumeClaim:
+        type: object
         description: |
-          Optional existing Secret in `d8-ai-models` with key `ca.crt` used to trust
-          a custom CA for the publication OCI registry. When empty, ai-models falls
-          back only to the shared platform CA that is already discovered for Dex or
-          copied from the global `CustomCertificate` HTTPS path.
-        default: ""
-      username:
-        type: string
-        description: |
-          Inline registry username used to render the internal publication registry Secret.
-          Intended mainly for bootstrap when a pre-created Secret is not used.
-        default: ""
-      password:
-        type: string
-        description: |
-          Inline registry password or token used to render the internal publication registry Secret.
-          Intended mainly for bootstrap when a pre-created Secret is not used.
-        default: ""
-      insecure:
-        type: boolean
-        description: Disable TLS verification for publication worker registry access.
-        default: false
+          PVC settings for the internal publication backend when
+          `type=PersistentVolumeClaim`.
+        additionalProperties: false
+        properties:
+          storageClassName:
+            type: string
+            description: StorageClass for the internal publication PVC. Empty means cluster default.
+            default: ""
+          storageSize:
+            type: string
+            description: Persistent volume size for the internal publication backend.
+            default: 50Gi
   auth:
     type: object
     description: Deckhouse SSO settings for browser access to ai-models.

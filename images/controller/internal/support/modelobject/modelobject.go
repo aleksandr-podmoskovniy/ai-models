@@ -22,6 +22,7 @@ import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -65,6 +66,10 @@ func PublicationRequest(object client.Object, spec modelsv1alpha1.ModelSpec) (pu
 	if err != nil {
 		return publicationports.Request{}, err
 	}
+	uploadStage, err := uploadStageFromObject(object, spec)
+	if err != nil {
+		return publicationports.Request{}, err
+	}
 
 	switch object.(type) {
 	case *modelsv1alpha1.Model:
@@ -80,7 +85,8 @@ func PublicationRequest(object client.Object, spec modelsv1alpha1.ModelSpec) (pu
 				Namespace: object.GetNamespace(),
 				Name:      object.GetName(),
 			},
-			Spec: spec,
+			Spec:        spec,
+			UploadStage: uploadStage,
 		}, nil
 	case *modelsv1alpha1.ClusterModel:
 		return publicationports.Request{
@@ -93,9 +99,25 @@ func PublicationRequest(object client.Object, spec modelsv1alpha1.ModelSpec) (pu
 				Scope: publication.ScopeCluster,
 				Name:  object.GetName(),
 			},
-			Spec: spec,
+			Spec:        spec,
+			UploadStage: uploadStage,
 		}, nil
 	default:
 		return publicationports.Request{}, fmt.Errorf("unsupported model object type %T", object)
 	}
+}
+
+func uploadStageFromObject(object client.Object, spec modelsv1alpha1.ModelSpec) (*cleanuphandle.UploadStagingHandle, error) {
+	if object == nil || spec.Source.Upload == nil {
+		return nil, nil
+	}
+
+	handle, found, err := cleanuphandle.FromObject(object)
+	if err != nil {
+		return nil, err
+	}
+	if !found || handle.Kind != cleanuphandle.KindUploadStaging {
+		return nil, nil
+	}
+	return handle.UploadStaging, nil
 }

@@ -55,7 +55,7 @@ type UploadSessionObservation struct {
 	Created       bool
 	State         RuntimeState
 	Failure       string
-	Success       *PublicationSuccess
+	StagedHandle  *cleanuphandle.Handle
 	CurrentUpload *modelsv1alpha1.ModelUploadStatus
 	UploadStatus  *modelsv1alpha1.ModelUploadStatus
 	Expired       bool
@@ -67,7 +67,7 @@ type UploadSessionDecision struct {
 	RunningWorker  string
 	PersistUpload  bool
 	UploadStatus   *modelsv1alpha1.ModelUploadStatus
-	Success        *PublicationSuccess
+	StagedHandle   *cleanuphandle.Handle
 	FailMessage    string
 	DeleteSession  bool
 	RequeueAfter   time.Duration
@@ -131,11 +131,11 @@ func ObserveUploadSession(observation UploadSessionObservation) (UploadSessionDe
 		}
 		return decision, nil
 	case RuntimeStateSucceeded:
-		if observation.Success == nil {
-			return UploadSessionDecision{}, errors.New("upload session success payload must not be empty")
+		if observation.StagedHandle == nil {
+			return UploadSessionDecision{}, errors.New("upload session staging handle must not be empty")
 		}
 		return UploadSessionDecision{
-			Success:       observation.Success,
+			StagedHandle:  observation.StagedHandle,
 			DeleteSession: true,
 		}, nil
 	case RuntimeStateFailed:

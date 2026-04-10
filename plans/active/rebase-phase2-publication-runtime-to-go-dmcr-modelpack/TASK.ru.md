@@ -1,4 +1,4 @@
-# Rebase Phase-2 Publication Runtime To Go DVCR ModelPack Pattern
+# Rebase Phase-2 Publication Runtime To Go DMCR ModelPack Pattern
 
 ## Контекст
 
@@ -13,7 +13,7 @@
 - `ai-inference`-oriented resolved metadata в API уже предусмотрена, но
   текущий publish path считает только маленький subset;
 - runtime/public contract уже договорён как `OCI from registry`, hidden backend
-  under `DVCR`, `ModelPack` as contract, but current implementation drift still
+  under `DMCR`, `ModelPack` as contract, but current implementation drift still
   keeps phase-2 publication closer to ad-hoc backend scripts than to the
   virtualization pattern.
 
@@ -21,7 +21,7 @@
 
 - убрать Python/script-centric phase-2 publication/runtime path;
 - сделать controller/runtime path самодостаточным и Go-first;
-- переиспользовать working patterns из virtualization, особенно DVCR/data-plane
+- переиспользовать working patterns из virtualization, особенно DMCR/data-plane
   discipline;
 - оставить module-owned domain только там, где это действительно наш продукт:
   `Model` / `ClusterModel`, `ModelPack` contract, inference-oriented metadata.
@@ -39,6 +39,12 @@
 
 - controller/runtime data plane в Go;
 - hidden backend artifact plane reused by pattern, not reimplemented;
+- module-local internal DMCR becomes the actual publication backend instead of
+  an externally configured OCI registry;
+- internal publication backend supports the two storage modes required by the
+  target architecture:
+  - S3-compatible object storage;
+  - `PersistentVolumeClaim`;
 - `ModelPack` contract with replaceable implementations (`KitOps`, `Modctl`,
   future module-owned encoder) behind adapters;
 - ai-inference-oriented resolved metadata becomes a first-class publication
@@ -52,6 +58,8 @@
   какие остаются phase-1/backend-adjacent shell.
 - Начать bounded implementation cuts в сторону Go-first publication/runtime
   path без возврата к старой patchwork structure.
+- Убрать external-registry-centric module contract и заменить его на
+  module-owned internal publication plane contract.
 - Выровнять module build/deploy shell с DKP module patterns из
   `gpu-control-plane` и `virtualization` там, где это относится к
   phase-2 runtime path:
@@ -60,6 +68,24 @@
   - явное разделение между phase-2 controller runtime shell и phase-1 backend
     packaging shell.
 - Синхронизировать repo memory, docs и controller structure rationale.
+- Добить текущие structural hotspots внутри уже landed runtime tree без
+  выдумывания новых fake boundaries:
+  - `catalogcleanup`
+  - `dmcr-cleaner`
+- Вернуть в public contract только те policy-поля, у которых есть живая
+  runtime/publication semantics:
+  - `spec.modelType`
+  - `spec.usagePolicy`
+  - `spec.launchPolicy`
+  - `spec.optimization`
+- Убрать текущий synchronous `uploadsession` smell, где один ephemeral pod
+  сначала принимает большие байты, а потом в том же critical path сам делает
+  publication.
+- Убрать `KitOps` CLI как runtime dependency, если replacement slice можно
+  сделать без потери OCI publication contract и без новой fake abstraction.
+- Сжать текущие жирные controller hotspots in place:
+  - `sourcefetch`
+  - `modelformat`
 
 ## Non-goals
 
@@ -71,6 +97,12 @@
   одном mega-slice.
 - Не писать собственный registry/storage backend с нуля.
 - Не ломать текущий live publication path без replacement slice.
+- Не удалять phase-1 MLflow/backend path, пока внутренний publication backend
+  не wired end-to-end и не закрывает текущий phase-2 path.
+- Не возвращать в public API старую ADR-спеку буквально, если конкретное поле
+  не подтверждено живой controller semantics.
+- Не тащить speculative policy blocks как пустые placeholder knobs без
+  validation и observable effect в status/conditions.
 
 ## Затрагиваемые области
 
@@ -81,6 +113,7 @@
 - `werf.yaml`
 - `Chart.yaml`
 - `Chart.lock`
+- `openapi/*`
 - `templates/*`
 - `docs/*`
 - `plans/active/*`
@@ -90,15 +123,32 @@
 
 - Canonical architecture bundle явно фиксирует:
   - Go-first phase-2 data plane;
-  - hidden backend under DVCR-style artifact plane;
+  - hidden backend under a real module-local DMCR-style artifact plane;
   - `ModelPack` as contract, concrete tools only as adapters;
   - ai-inference metadata as required publication outcome.
+- Chart/runtime shell больше не требует внешнего `publicationRegistry`
+  endpoint/credentials contract; controller publication workers всегда смотрят
+  в module-local internal registry service.
+- Module config задаёт storage semantics внутреннего publication backend в
+  терминах модуля (`S3` или `PersistentVolumeClaim`), а не как внешний registry
+  wiring.
 - Ясно перечислены текущие implementation drifts и backlog cuts по каждому
   проблемному seam:
   - Python publication worker;
   - Python upload session server;
   - metadata calculation gap;
   - runtime delivery gap.
+- `spec.modelType`, `spec.usagePolicy`, `spec.launchPolicy` и
+  `spec.optimization` либо отсутствуют, либо имеют живую semantics:
+  validation against calculated profile, immutability rules, and condition
+  impact visible through `Validated` / `Ready`.
+- Upload path больше не заставляет один и тот же runtime pod держать
+  пользовательский upload stream и publication pipeline в одной synchronous
+  critical section.
+- Phase-2 runtime больше не зависит от external `KitOps` CLI binary inside the
+  runtime image, если native replacement slice landed safely.
+- `sourcefetch` и `modelformat` уменьшаются как hotspots через explicit
+  ownership split, а не через generic util dumps.
 - Первый bounded corrective slice реально landed в код, а не только в docs.
 - Изменение не ухудшает текущие controller quality gates и не создаёт новый
   patchwork bundle.
@@ -108,6 +158,13 @@
   без repo-local fork как primary source of truth.
 - Helm render, kubeconform и targeted werf build подтверждают, что module shell
   по-прежнему корректно собирает и рендерит controller runtime path.
+- Current structural hotspots are reduced in place instead of being hidden
+  behind new generic packages:
+  - `catalogcleanup` no longer keeps one monolithic controller I/O file for
+    observation, mutation, status update and GC-request lifecycle;
+  - `dmcr-cleaner` command package becomes a thin CLI shell and moves runtime
+    garbage-collection lifecycle logic into an explicit internal implementation
+    seam under `images/dmcr`.
 
 ## Риски
 
@@ -115,3 +172,7 @@
 - Можно перепутать phase-1 backend-adjacent scripts с phase-2 publication debt
   и удалить нужный shell раньше времени.
 - Можно снова зашить public/runtime contract на конкретный tool brand.
+- Можно вернуть в `spec` красивые, но пустые policy knobs и снова получить
+  ложный contract drift.
+- Можно попытаться выкинуть synchronous upload path без честного intermediate
+  storage/ownership seam и сломать большие upload scenarios хуже, чем сейчас.

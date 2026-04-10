@@ -18,8 +18,10 @@ package uploadsession
 
 import (
 	"errors"
+	"strings"
 	"time"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 )
 
@@ -31,11 +33,19 @@ const (
 
 type Options struct {
 	Runtime  workloadpod.RuntimeOptions
+	Ingress  IngressOptions
 	TokenTTL time.Duration
+}
+
+type IngressOptions struct {
+	Host          string
+	ClassName     string
+	TLSSecretName string
 }
 
 func normalizeOptions(options Options) Options {
 	options.Runtime = workloadpod.NormalizeRuntimeOptions(options.Runtime)
+	options.Ingress = normalizeIngressOptions(options.Ingress)
 	if options.TokenTTL <= 0 {
 		options.TokenTTL = defaultTokenTTL
 	}
@@ -43,8 +53,22 @@ func normalizeOptions(options Options) Options {
 	return options
 }
 
+func normalizeIngressOptions(options IngressOptions) IngressOptions {
+	options.Host = strings.TrimSpace(options.Host)
+	options.ClassName = strings.TrimSpace(options.ClassName)
+	options.TLSSecretName = strings.TrimSpace(options.TLSSecretName)
+	return options
+}
+
+func (o IngressOptions) Enabled() bool {
+	return strings.TrimSpace(o.Host) != ""
+}
+
 func (o Options) Validate() error {
 	if err := workloadpod.ValidateRuntimeOptions("upload session", o.Runtime); err != nil {
+		return err
+	}
+	if err := objectstorage.ValidateOptions("upload session", o.Runtime.ObjectStorage); err != nil {
 		return err
 	}
 	if o.TokenTTL <= 0 {

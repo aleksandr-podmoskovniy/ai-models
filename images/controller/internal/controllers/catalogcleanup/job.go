@@ -21,6 +21,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
@@ -37,6 +38,7 @@ type CleanupJobOptions struct {
 	OCIInsecure             bool
 	OCIRegistrySecretName   string
 	OCIRegistryCASecretName string
+	ObjectStorage           objectstorage.Options
 	Env                     []corev1.EnvVar
 	ImagePullPolicy         corev1.PullPolicy
 	TTLSecondsFinished      int32
@@ -59,7 +61,6 @@ func (o CleanupJobOptions) Validate() error {
 	if strings.TrimSpace(o.OCIRegistrySecretName) == "" {
 		return errors.New("cleanup job OCI registry secret name must not be empty")
 	}
-
 	return nil
 }
 
@@ -84,6 +85,25 @@ func buildCleanupJob(owner cleanupJobOwner, handle cleanuphandle.Handle, options
 	imagePullPolicy := options.ImagePullPolicy
 	if imagePullPolicy == "" {
 		imagePullPolicy = corev1.PullIfNotPresent
+	}
+	registryEnv := []corev1.EnvVar{}
+	registryMounts := []corev1.VolumeMount{}
+	registryVolumes := []corev1.Volume{}
+	objectStorageEnv := []corev1.EnvVar{}
+	objectStorageMounts := []corev1.VolumeMount{}
+	objectStorageVolumes := []corev1.Volume{}
+	if handle.Kind == cleanuphandle.KindBackendArtifact {
+		registryEnv = ociregistry.Env(options.OCIInsecure, options.OCIRegistrySecretName, options.OCIRegistryCASecretName)
+		registryMounts = ociregistry.VolumeMounts(options.OCIRegistryCASecretName)
+		registryVolumes = ociregistry.Volumes(options.OCIRegistryCASecretName)
+	}
+	if handle.Kind == cleanuphandle.KindUploadStaging {
+		if err := objectstorage.ValidateOptions("cleanup job", options.ObjectStorage); err != nil {
+			return nil, err
+		}
+		objectStorageEnv = objectstorage.Env(options.ObjectStorage)
+		objectStorageMounts = objectstorage.VolumeMounts(options.ObjectStorage.CASecretName)
+		objectStorageVolumes = objectstorage.Volumes(options.ObjectStorage.CASecretName)
 	}
 	handlePayload, err := json.Marshal(handle)
 	if err != nil {
@@ -116,7 +136,10 @@ func buildCleanupJob(owner cleanupJobOwner, handle cleanuphandle.Handle, options
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
 					ServiceAccountName: options.ServiceAccountName,
-					Volumes:            ociregistry.Volumes(options.OCIRegistryCASecretName),
+					Volumes: append(
+						registryVolumes,
+						objectStorageVolumes...,
+					),
 					Containers: []corev1.Container{
 						{
 							Name:            "cleanup",
@@ -124,10 +147,16 @@ func buildCleanupJob(owner cleanupJobOwner, handle cleanuphandle.Handle, options
 							ImagePullPolicy: imagePullPolicy,
 							Args:            []string{"artifact-cleanup", "--handle-json", string(handlePayload)},
 							Env: append(
-								ociregistry.Env(options.OCIInsecure, options.OCIRegistrySecretName, options.OCIRegistryCASecretName),
+								append(
+									registryEnv,
+									objectStorageEnv...,
+								),
 								options.Env...,
 							),
-							VolumeMounts: ociregistry.VolumeMounts(options.OCIRegistryCASecretName),
+							VolumeMounts: append(
+								registryMounts,
+								objectStorageMounts...,
+							),
 						},
 					},
 				},

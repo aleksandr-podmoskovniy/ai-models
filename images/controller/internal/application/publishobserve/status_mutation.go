@@ -23,6 +23,7 @@ import (
 )
 
 type CatalogStatusMutationInput struct {
+	Spec    modelsv1alpha1.ModelSpec
 	Current modelsv1alpha1.ModelStatus
 	Runtime CatalogStatusRuntimeResult
 }
@@ -45,6 +46,7 @@ type CatalogStatusMutationPlan struct {
 func PlanCatalogStatusMutation(input CatalogStatusMutationInput) (CatalogStatusMutationPlan, error) {
 	projection, err := publicationdomain.ProjectStatus(
 		input.Current,
+		input.Spec,
 		input.Runtime.Generation,
 		input.Runtime.SourceType,
 		input.Runtime.Observation,
@@ -69,6 +71,7 @@ func PlanFailedCatalogStatusMutation(
 	message string,
 ) (CatalogStatusMutationPlan, error) {
 	return PlanCatalogStatusMutation(CatalogStatusMutationInput{
+		Spec:    modelsv1alpha1.ModelSpec{},
 		Current: current,
 		Runtime: CatalogStatusRuntimeResult{
 			Generation:  generation,

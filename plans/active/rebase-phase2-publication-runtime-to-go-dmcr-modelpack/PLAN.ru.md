@@ -27,8 +27,17 @@ production baseline for model catalog and ai-inference integration.
 - `ModelPack` is the publication contract.
 - `KitOps`, `Modctl`, or a future module-owned implementation remain concrete
   adapters behind ports.
-- Hidden backend / DVCR-style artifact plane is reused as backend plumbing and
+- Hidden backend / DMCR-style artifact plane is reused as backend plumbing and
   must not leak into public/runtime contract.
+- External publication registry wiring is not part of the target architecture.
+  The controller must publish only into a module-local internal DMCR-style
+  registry service.
+- Internal publication storage supports only the two deployment modes that
+  matter for this module:
+  - `S3`-compatible object storage;
+  - `PersistentVolumeClaim`.
+- Deleting `Model` / `ClusterModel` must delete the internal published artifact
+  as part of the same publication lifecycle.
 - ai-inference-oriented resolved metadata becomes a required publication output
   shape, not best-effort optional metadata.
 - Public input contract stays simple:
@@ -60,6 +69,21 @@ production baseline for model catalog and ai-inference integration.
 - API already contains richer `status.resolved.*` fields, but current publish
   path calculates and projects only a narrow subset.
 - Runtime delivery to `ai-inference` is still missing.
+- Public `spec` drift is now in the opposite direction:
+  - old ADR policy fields were removed entirely;
+  - current `Validated=True` path does not read any public policy contract at
+    all;
+  - the module cannot express `modelType`, allowed endpoint usage, launch
+    constraints, or draft-model optimization intent.
+- `uploadsession` still accepts bytes and runs heavy publication work in the
+  same ephemeral runtime process, which is a poor fit for large-model uploads.
+- `KitOps` still lives as a CLI boundary inside the runtime image.
+- `sourcefetch` and `modelformat` remain oversized concrete adapter seams.
+- Live chart/runtime shell is still external-registry-centric:
+  - user-facing `publicationRegistry` config leaks backend plumbing;
+  - controller publishes into external `GHCR` instead of an internal module
+    backend;
+  - there is no module-local registry service with `S3/PVC` storage ownership.
 
 ## Slice 1. Canonical target architecture
 
@@ -133,6 +157,250 @@ Prefer first candidates:
 - `go test ./...` in `images/controller`
 - `werf build --dev --platform=linux/amd64 controller`
 - `make verify`
+
+## Slice 9. Internal DMCR publication backend
+
+Цель:
+
+- заменить external-registry-centric phase-2 wiring на реальный module-local
+  internal DMCR publication plane;
+- переподключить controller publication workers и cleanup path на internal
+  registry service;
+- убрать внешний `publicationRegistry` contract из user-facing values и
+  заменить его storage-centric module contract.
+
+Артефакты:
+
+- module-local `images/dmcr/*`
+- `templates/dmcr/*`
+- updated controller/module templates and helpers
+- updated `openapi/*`, docs, bundle notes
+
+Проверки:
+
+- `make helm-template`
+- `make kubeconform`
+- targeted `werf build --dev --platform=linux/amd64 dmcr controller controller-runtime`
+- `make verify`
+
+Статус: landed.
+
+Реально сделано:
+
+- module-local internal registry image landed in:
+  - `images/dmcr/werf.inc.yaml`
+- module-local internal registry binary now has its own repo-owned Go source:
+  - `images/dmcr/go.mod`
+  - `images/dmcr/cmd/dmcr/*`
+- module-local internal registry runtime shell landed in:
+  - `templates/dmcr/*`
+- shared protected metrics helper landed in:
+  - `templates/kube-rbac-proxy/*`
+- user-facing external-registry contract removed:
+  - `templates/module/publication-registry-secret.yaml` deleted
+  - `publicationRegistry` values/schema replaced with `publicationStorage`
+- controller publication runtime now always points to the internal registry
+  service with module-owned auth/CA wiring
+- internal publication storage now supports:
+  - `ObjectStorage`
+  - `PersistentVolumeClaim`
+- docs, repo layout and controller runtime notes were synchronized to the new
+  module-local DMCR shape
+- build shell no longer clones upstream registry source during image build;
+  it now compiles the local `dmcr` binary from the repo-owned wrapper module
+  over normal Go module resolution through `GOPROXY`
+- controller and DMCR metrics now bind locally inside the Pod and are exposed
+  to Prometheus only through kube-rbac-proxy sidecars over HTTPS, closer to
+  the virtualization pattern
+- top-level docs no longer claim that ai-inference runtime materialization is
+  already landed; that workstream remains separate until there is a live
+  consumer path
+
+Фактические проверки:
+
+- `make helm-template`
+- `make kubeconform`
+- `werf config render --dev --loose-giterminism`
+- `werf build --dev --platform=linux/amd64 --loose-giterminism dmcr controller controller-runtime`
+- direct PVC-mode render via module Helm toolchain:
+  - `./.cache/helm/v3.17.2/darwin-arm64/helm template ... --set-string aiModels.publicationStorage.type=PersistentVolumeClaim`
+- `make verify`
+- `git diff --check`
+
+## Slice 10. Production shell hardening for controller and DMCR
+
+Цель:
+
+- довести live deployment shell `controller` и `dmcr` до closer
+  `virtualization` / `gpu-control-plane` production pattern без выдумывания
+  несуществующего runtime-delivery слоя;
+- закрыть remaining DKP deployment drifts в placement, HA shell, VPA wiring,
+  protected scheduling и read-only-rootfs discipline.
+
+Артефакты:
+
+- `templates/controller/deployment.yaml`
+- `templates/controller/vpa.yaml`
+- `templates/dmcr/deployment.yaml`
+- `templates/dmcr/vpa.yaml`
+- `templates/kube-rbac-proxy/_helpers.tpl`
+- `templates/_helpers.tpl`
+- bundle notes/review
+
+Проверки:
+
+- `make helm-template`
+- `make kubeconform`
+- `werf config render --dev --loose-giterminism`
+- `make verify`
+- `git diff --check`
+
+Статус: landed.
+
+Реально сделано:
+
+- `controller` deployment shell теперь использует:
+  - HA anti-affinity
+  - `system-cluster-critical` priority class
+  - control-plane placement
+  - fail-safe control-plane tolerations
+  - read-only-rootfs container security helper
+  - VPA object when `vertical-pod-autoscaler-crd` is enabled
+- `dmcr` deployment shell теперь использует:
+  - HA anti-affinity
+  - `system-cluster-critical` priority class
+  - fail-safe `system -> control-plane` node selector fallback
+  - fail-safe system/control-plane tolerations
+  - read-only-rootfs container security helper
+  - HTTPS liveness/readiness probes instead of raw TCP socket checks
+  - VPA object when `vertical-pod-autoscaler-crd` is enabled
+- module-local helper layer now owns the fail-safe DKP placement logic needed
+  for clean fixture renders:
+  - `ai-models.controlPlaneNodeSelector`
+  - `ai-models.systemNodeSelector`
+  - `ai-models.controlPlaneTolerations`
+  - `ai-models.systemTolerations`
+  - `ai-models.vpaPolicyUpdateMode`
+- local `kube-rbac-proxy` helper now also exports VPA container policy so the
+  sidecar is covered by the same production shell as the main workloads
+
+## Slice 11. DMCR garbage collection lifecycle
+
+Цель:
+
+- довести destructive publication cleanup до полного module-owned lifecycle,
+  а не останавливаться на удалении remote manifest reference;
+- добавить virtualization-style coordination между controller cleanup
+  finalizer, internal DMCR maintenance mode и physical blob garbage
+  collection.
+
+Артефакты:
+
+- `images/dmcr/cmd/dmcr-cleaner/*`
+- `images/dmcr/werf.inc.yaml`
+- `images/hooks/pkg/hooks/dmcr_garbage_collection/*`
+- `templates/dmcr/*`
+- `templates/_helpers.tpl`
+- `images/controller/internal/application/deletion/*`
+- `images/controller/internal/controllers/catalogcleanup/*`
+- updated docs and bundle notes
+
+Проверки:
+
+- `cd images/dmcr && go test ./...`
+- `cd images/hooks && go test ./...`
+- `cd images/controller && go test ./internal/application/deletion ./internal/controllers/catalogcleanup ./internal/bootstrap ./cmd/ai-models-controller`
+- `make verify`
+- `git diff --check`
+- targeted `werf build --dev --platform=linux/amd64 --loose-giterminism dmcr controller controller-runtime`
+
+Статус: landed with targeted build blocked by local Docker daemon availability.
+
+Реально сделано:
+
+- module-local `dmcr-cleaner` binary landed in:
+  - `images/dmcr/cmd/dmcr-cleaner/*`
+- `dmcr` image now ships both:
+  - `dmcr`
+  - `dmcr-cleaner`
+- hook-driven internal switch now projects DMCR garbage-collection mode into
+  module values when cleanup request secrets exist
+- DMCR config now enables maintenance/read-only mode only while internal
+  garbage collection is active
+- DMCR deployment now runs a dedicated `dmcr-garbage-collection` sidecar that:
+  - waits idle in normal mode
+  - executes registry `garbage-collect` in GC mode
+  - marks cleanup requests as completed
+- `catalogcleanup` finalizer now waits for three explicit phases:
+  - remote artifact delete job
+  - DMCR garbage-collection request creation/running
+  - request completion before finalizer removal
+- controller tests were updated so finalizer removal no longer happens right
+  after remote delete completion; it now requires completed DMCR garbage
+  collection too
+
+Фактические проверки:
+
+- `cd images/dmcr && go test ./...`
+- `cd images/hooks && go test ./...`
+- `cd images/controller && go test ./internal/application/deletion ./internal/controllers/catalogcleanup ./internal/bootstrap ./cmd/ai-models-controller`
+- `make verify`
+- `git diff --check`
+- targeted `werf build --dev --platform=linux/amd64 --loose-giterminism dmcr controller controller-runtime`
+  reached build planning but could not run in this session because Docker
+  daemon access was unavailable:
+  `Cannot connect to the Docker daemon at unix:///Users/myskat_90/.docker/run/docker.sock`
+
+## Slice 18. Structural cleanup of current runtime hotspots
+
+Цель:
+
+- сделать уже landed runtime tree чище без нового architectural drift;
+- убрать два текущих structural hotspots, где код ещё не соответствует своей
+  declared boundary:
+  - `images/controller/internal/controllers/catalogcleanup`
+  - `images/dmcr/cmd/dmcr-cleaner`
+
+Артефакты:
+
+- split `catalogcleanup` package files by real responsibility instead of one
+  monolithic `io.go`
+- thin `dmcr-cleaner` command shell with runtime logic moved into an explicit
+  internal implementation package
+- synced structure docs and bundle notes
+
+Проверки:
+
+- `cd images/controller && go test ./internal/application/deletion ./internal/controllers/catalogcleanup`
+- `cd images/dmcr && go test ./...`
+- `make verify`
+- `git diff --check`
+
+Статус: landed.
+
+Реально сделано:
+
+- `catalogcleanup` больше не держит один generic `io.go`;
+  package разрезан по реальным responsibilities:
+  - `observe.go`
+  - `apply.go`
+  - `status.go`
+  - `gc_request.go`
+- delete-time GC request lifecycle теперь живёт рядом со своей resource/state
+  model, а не в общем controller I/O файле
+- `dmcr-cleaner/cmd/gc.go` снова стал thin CLI shell:
+  in-cluster client bootstrap и registry garbage-collection loop вынесены в
+  `images/dmcr/internal/garbagecollection`
+- tests переехали вместе с runtime lifecycle logic:
+  `shouldRunGarbageCollection` теперь проверяется рядом с internal
+  implementation seam, а не в command package
+
+Фактические проверки:
+
+- `cd images/controller && go test ./internal/application/deletion ./internal/controllers/catalogcleanup`
+- `cd images/dmcr && go test ./...`
+- `make verify`
+- `git diff --check`
 
 ## Slice 3. Inference metadata hardening
 
@@ -703,6 +971,205 @@ Validation note:
 - the matching install shell was rewritten from Debian `apt` to Alpine `apk`
   while preserving the same build responsibilities and source fetch path.
 
+## Slice 19. Restore live public model policy contract
+
+Цель:
+
+- вернуть `modelType`, `usagePolicy`, `launchPolicy` и `optimization` только в
+  той форме, в которой controller уже может реально валидировать их against
+  calculated profile;
+- перестать ставить `Validated=True` без чтения public policy.
+
+Артефакты:
+
+- `api/core/v1alpha1/*`
+- `images/controller/internal/domain/publishstate/*`
+- `images/controller/internal/application/publishobserve/*`
+- focused docs and bundle notes
+
+Проверки:
+
+- `cd api && bash scripts/update-codegen.sh && go test ./...`
+- `cd images/controller && go test ./internal/domain/publishstate ./internal/application/publishobserve ./...`
+- `bash api/scripts/verify-crdgen.sh`
+
+Статус: landed.
+
+Реально сделано:
+
+- public policy contract restored only with live semantics:
+  - `spec.modelType`
+  - `spec.usagePolicy`
+  - `spec.launchPolicy`
+  - `spec.optimization`
+- API immutability and CRD schema were regenerated from codegen
+- `Validated` / `Ready` no longer become `True` blindly after a successful
+  publication worker run
+- controller now validates the declared public policy against the resolved
+  publication profile before projecting the final status
+- condition reasons were extended to explain policy mismatches:
+  - `ModelTypeMismatch`
+  - `EndpointTypeNotSupported`
+  - `RuntimeNotSupported`
+  - `AcceleratorPolicyConflict`
+  - `OptimizationNotSupported`
+- speculative decoding remains intentionally narrow:
+  today it is accepted only for resolved LLM/chat-or-generation profiles and
+  does not yet resolve or cross-validate referenced draft models
+
+Фактические проверки:
+
+- `cd api && bash scripts/update-codegen.sh`
+- `cd api && go test ./...`
+- `bash api/scripts/verify-crdgen.sh`
+- `cd images/controller && go test ./internal/domain/publishstate ./internal/application/publishobserve ./internal/controllers/catalogstatus`
+- `cd images/controller && go test ./...`
+- `make verify`
+- `git diff --check`
+
+## Slice 20. Remove the KitOps CLI runtime dependency
+
+Цель:
+
+- заменить current `KitOps` CLI adapter на native Go OCI publication/remove
+  path, если это можно сделать без слома internal publication contract;
+- убрать pinned binary/install shell from the runtime image.
+
+Артефакты:
+
+- `images/controller/internal/ports/modelpack/*`
+- current concrete adapter under `images/controller/internal/adapters/modelpack/*`
+- `images/controller/cmd/ai-models-artifact-runtime/*`
+- `images/controller/werf.inc.yaml`
+- `images/controller/README.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelpack/... ./internal/dataplane/publishworker ./cmd/ai-models-artifact-runtime`
+- `make verify`
+- targeted `werf build --dev --platform=linux/amd64 controller controller-runtime`
+
+## Slice 21. Break the synchronous upload-session critical path
+
+Цель:
+
+- уйти от live smell, где upload pod сам же синхронно делает publication after
+  the final byte;
+- ввести explicit intermediate ownership seam for large uploads instead of
+  `receive + publish` in one request lifecycle.
+
+Артефакты:
+
+- `images/controller/internal/adapters/k8s/uploadsession/*`
+- `images/controller/internal/dataplane/uploadsession/*`
+- `images/controller/internal/application/publishobserve/*`
+- `templates/controller/*` only if upload ingress/service shell changes
+
+Проверки:
+
+- focused controller/runtime tests around upload path
+- `cd images/controller && go test ./internal/adapters/k8s/uploadsession ./internal/dataplane/uploadsession ./internal/application/publishobserve`
+- `make verify`
+
+## Slice 22. Shrink sourcefetch and modelformat hotspots in place
+
+Цель:
+
+- уменьшить concrete adapter hotspots без новых generic buckets;
+- сделать per-format/per-transport ownership explicit.
+
+Артефакты:
+
+- `images/controller/internal/adapters/sourcefetch/*`
+- `images/controller/internal/adapters/modelformat/*`
+- `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- focused package tests
+- `make verify`
+
+Статус: landed.
+
+Реально сделано:
+
+- `internal/adapters/modelformat/` was split by explicit format ownership
+  instead of keeping all detect/validate logic in one growing file:
+  - `format_common.go`
+  - `safetensors.go`
+  - `gguf.go`
+  - thin top-level `detect.go`
+  - thin top-level `validation.go`
+- `internal/adapters/sourcefetch/` was split by explicit remote/provider
+  ownership:
+  - `remote.go` keeps only the canonical remote ingest entrypoint
+  - provider-specific heavy fetch logic now lives in `http.go` and
+    `huggingface.go`
+- the corrective cut stayed in place:
+  no new generic helper buckets or fake support packages were introduced
+- `images/controller/STRUCTURE.ru.md` was synchronized to the new hotspot shape
+
+Фактические проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelformat ./internal/adapters/sourcefetch`
+- `cd images/controller && go test ./...`
+- `make verify`
+- `git diff --check`
+
+## Slice 23. Rewrite the target architecture around honest DMCR patterns
+
+Цель:
+
+- перестать держать target architecture в режиме wish-list и явно
+  зафиксировать реальный hexagonal target around `DMCR`, upload session,
+  auth/trust projection and future materialization;
+- описать reuse from `virtualization` without falsely claiming already landed
+  upload/session/materializer capabilities.
+
+Артефакты:
+
+- `plans/active/rebase-phase2-publication-runtime-to-go-dmcr-modelpack/TARGET_ARCHITECTURE.ru.md`
+- `plans/active/rebase-phase2-publication-runtime-to-go-dmcr-modelpack/DRIFT_AND_REPLACEMENTS.ru.md`
+- `plans/active/rebase-phase2-publication-runtime-to-go-dmcr-modelpack/REVIEW.ru.md`
+
+Проверки:
+
+- docs sanity review against live code and `virtualization` references
+- `make verify`
+- `git diff --check`
+
+Статус: landed.
+
+Реально сделано:
+
+- target architecture was rewritten from a short generic note into an explicit
+  contract for:
+  - public API / control plane
+  - hidden data plane
+  - hidden storage plane
+  - upload staging-first flow
+  - auth/trust/authorization boundaries
+  - DMCR GC lifecycle
+  - future materialization contract
+- the document now states explicitly that:
+  - `port-forward` is not the target upload UX
+  - shard/torrent upload into registry is not the target
+  - parallel upload belongs to object-storage staging, not to OCI registry
+  - `virtualization` patterns are reused at the boundary level, not copied
+    blindly together with CDI-specific flows
+- drift companion notes now explicitly enumerate the remaining gaps:
+  - synchronous upload path
+  - CLI modelpack adapter
+  - simplified DMCR auth/trust lifecycle
+  - missing consumer materialization
+
+Фактические проверки:
+
+- manual bundle/docs review against `virtualization/docs/internal/data_source_details.md`
+- manual bundle/docs review against `virtualization/docs/internal/dvcr_auth.md`
+- `make verify`
+- `git diff --check`
+
 ## Slice 6. Remove publication-operation ConfigMap protocol
 
 Цель:
@@ -732,6 +1199,229 @@ Validation note:
 
 - это жёсткий architecture cut, поэтому важно не заменить ConfigMap на другой
   service object with the same smell
+
+## Slice 24. Upload session URLs and ingress-backed edge
+
+Цель:
+
+- убрать `port-forward`-centric upload UX из live phase-2 controller path;
+- перевести `source.upload` на controller-owned session URLs по паттерну
+  `virtualization`, не притворяясь при этом, что staging-first async publish
+  уже landed.
+
+Артефакты:
+
+- `api/core/v1alpha1/types.go`
+- `crds/ai-models.deckhouse.io_{models,clustermodels}.yaml`
+- `images/controller/internal/adapters/k8s/uploadsession/*`
+- `images/controller/internal/dataplane/uploadsession/run.go`
+- `images/controller/internal/application/publishobserve/*`
+- `images/controller/internal/domain/publishstate/*`
+- `templates/controller/deployment.yaml`
+- `templates/controller/rbac.yaml`
+- `templates/_helpers.tpl`
+- runtime/docs/bundle notes
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/uploadsession ./internal/application/publishobserve ./internal/domain/publishstate ./internal/controllers/catalogstatus ./internal/bootstrap ./internal/ports/publishop ./internal/dataplane/uploadsession`
+- `bash api/scripts/update-codegen.sh`
+- `bash api/scripts/verify-crdgen.sh`
+- `make helm-template`
+- `make kubeconform`
+- `make verify`
+- `git diff --check`
+
+Статус: landed.
+
+Реально сделано:
+
+- `ModelStatus.upload` now projects URL capability instead of a
+  `kubectl port-forward` helper command:
+  - `status.upload.inClusterURL`
+  - `status.upload.externalURL`
+- controller upload session adapter now owns:
+  - `Pod`
+  - `Service`
+  - short-lived auth `Secret`
+  - optional session `Ingress`
+- controller bootstrap/runtime shell now passes:
+  - `--upload-public-host`
+  - `--upload-ingress-class`
+  - `--upload-ingress-tls-secret-name`
+- upload runtime now accepts both:
+  - `/upload`
+  - `/upload/<token>`
+  so the new URL-based edge works without breaking the old auth-header path
+- controller/publication projection tests, runtime observation tests and CRD
+  schema were synchronized to the new upload surface
+
+Фактические проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/uploadsession ./internal/application/publishobserve ./internal/domain/publishstate ./internal/controllers/catalogstatus ./internal/bootstrap ./internal/ports/publishop ./internal/dataplane/uploadsession`
+- `bash api/scripts/update-codegen.sh`
+- `bash api/scripts/verify-crdgen.sh`
+- `make helm-template`
+- `make kubeconform`
+- `make verify`
+
+## Slice 25. DMCR auth/trust projection for publication and cleanup runtimes
+
+Цель:
+
+- довести publication-side `DMCR` auth/trust до честного
+  `virtualization`-style projection lifecycle;
+- убрать прямое потребление root write secret из one-shot runtime pods/jobs;
+- разделить server auth secret, write client secret и read client secret без
+  выдумывания нового public contract.
+
+Артефакты:
+
+- `templates/_helpers.tpl`
+- `templates/dmcr/secret.yaml`
+- `templates/controller/deployment.yaml`
+- `images/controller/internal/adapters/k8s/ociregistry/*`
+- `images/controller/internal/adapters/k8s/sourceworker/*`
+- `images/controller/internal/adapters/k8s/uploadsession/*`
+- `images/controller/internal/controllers/catalogcleanup/*`
+- `images/controller/internal/support/{resourcenames,testkit}/*`
+- bundle/docs notes
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/ociregistry ./internal/adapters/k8s/sourceworker ./internal/adapters/k8s/uploadsession ./internal/controllers/catalogcleanup ./internal/bootstrap ./internal/support/resourcenames`
+- `make helm-template`
+- `make kubeconform`
+- `make verify`
+- `git diff --check`
+
+Статус: landed.
+
+Реально сделано:
+
+- `DMCR` auth was split into:
+  - server-side htpasswd secret
+  - write client secret
+  - read client secret
+- controller/runtime wiring now uses the write client secret instead of the
+  server auth secret;
+- `sourceworker`, `uploadsession`, and delete-time cleanup jobs now receive
+  controller-owned projected OCI auth/CA copies derived per owner UID, rather
+  than reading the module root secret directly;
+- derived auth/trust objects are now explicitly deleted together with runtime
+  completion / delete finalization;
+- the main remaining auth/trust drift moved to the future consumer side:
+  read-only projection into materializer / `ai-inference` runtime still does
+  not exist because that runtime is not landed yet.
+
+Фактические проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/ociregistry ./internal/adapters/k8s/sourceworker ./internal/adapters/k8s/uploadsession ./internal/controllers/catalogcleanup ./internal/bootstrap ./internal/support/resourcenames`
+
+## Slice 26. Staging-first async upload publication and public status cleanup
+
+Цель:
+
+- убрать live `receive bytes -> publish` synchronous critical path из upload
+  runtime;
+- выровнять upload flow под `virtualization` pattern:
+  upload edge only stages bytes, controller then runs separate publish worker;
+- удалить legacy public `status.upload.command`, который уже не несёт live
+  semantics.
+
+Артефакты:
+
+- `api/core/v1alpha1/types.go`
+- `crds/ai-models.deckhouse.io_{models,clustermodels}.yaml`
+- `images/controller/internal/support/cleanuphandle/*`
+- `images/controller/internal/support/modelobject/*`
+- `images/controller/internal/ports/publishop/*`
+- `images/controller/internal/application/publishplan/*`
+- `images/controller/internal/application/publishobserve/*`
+- `images/controller/internal/domain/publishstate/*`
+- `images/controller/internal/adapters/k8s/{objectstorage,sourceworker,uploadsession,workloadpod}/*`
+- `images/controller/internal/adapters/uploadstaging/s3/*`
+- `images/controller/internal/dataplane/{uploadsession,publishworker,artifactcleanup}/*`
+- `images/controller/cmd/ai-models-artifact-runtime/*`
+- `images/controller/cmd/ai-models-controller/run.go`
+- `templates/controller/deployment.yaml`
+- docs/bundle notes
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/sourceworker ./internal/adapters/k8s/uploadsession ./internal/adapters/k8s/objectstorage ./internal/adapters/uploadstaging/s3 ./internal/application/publishplan ./internal/application/publishobserve ./internal/domain/publishstate ./internal/controllers/catalogstatus ./internal/controllers/catalogcleanup ./internal/dataplane/uploadsession ./internal/dataplane/publishworker ./internal/dataplane/artifactcleanup ./internal/support/cleanuphandle ./internal/support/modelobject ./internal/ports/publishop`
+- `bash api/scripts/update-codegen.sh`
+- `bash api/scripts/verify-crdgen.sh`
+- `make helm-template`
+- `make kubeconform`
+- `make verify`
+- `git diff --check`
+
+Статус: landed.
+
+Реально сделано:
+
+- `source.upload` больше не держит live `receive bytes -> publish` critical
+  path:
+  upload session runtime теперь только принимает байты и пишет их в
+  controller-owned object-storage staging;
+- termination message upload runtime теперь несёт `upload staging` cleanup
+  handle, а controller сохраняет его, удаляет upload runtime и requeue'ит
+  объект в normal publish-worker path;
+- staged upload source затем продолжается через `sourceworker`, который
+  скачивает staged object, валидирует/профилирует модель, публикует `ModelPack`
+  в `DMCR` и при успехе удаляет staging object;
+- delete-time cleanup path теперь понимает и backend artifact handles, и
+  upload staging handles;
+- public contract очищен:
+  `status.upload.command` удалён из API/CRD, live upload status теперь
+  ограничен URL capability и expiry/repository metadata.
+
+Фактические проверки:
+
+- `cd images/controller && go test ./internal/... ./cmd/ai-models-artifact-runtime/...`
+- `bash api/scripts/update-codegen.sh`
+- `bash api/scripts/verify-crdgen.sh`
+
+## Slice 27. Runtime shell binpack and `cmdsupport` boundary cleanup
+
+Цель:
+
+- убрать fake seam, где shared `internal/cmdsupport` знает concrete
+  upload-staging adapter;
+- вернуть environment/result wiring в ту binary boundary, которой он реально
+  принадлежит;
+- не оставлять в controller tree shared glue, который тащит concrete
+  data-plane details только ради удобства.
+
+Артефакты:
+
+- `images/controller/cmd/ai-models-artifact-runtime/*`
+- `images/controller/internal/cmdsupport/*`
+- `images/controller/STRUCTURE.ru.md`
+- bundle notes
+
+Проверки:
+
+- `cd images/controller && go test ./cmd/ai-models-artifact-runtime ./internal/cmdsupport ./internal/dataplane/uploadsession ./internal/dataplane/publishworker ./internal/dataplane/artifactcleanup`
+- `make verify`
+- `git diff --check`
+
+Статус: landed.
+
+Реально сделано:
+
+- staging S3 env wiring больше не живёт в `internal/cmdsupport`;
+- общий helper для upload-staging config теперь binpack'нут в
+  `cmd/ai-models-artifact-runtime`, где он и используется тремя subcommands;
+- `cmdsupport` больше не знает `uploadstaging/s3` adapter и больше не кодирует
+  `artifactbackend.Result` как shared helper;
+- termination result encoding для publish-worker теперь живёт в самом runtime
+  command path, а shared `cmdsupport` снова ближе к process-level glue.
+
+Фактические проверки:
+
+- `cd images/controller && go test ./cmd/ai-models-artifact-runtime ./internal/cmdsupport ./internal/dataplane/uploadsession ./internal/dataplane/publishworker ./internal/dataplane/artifactcleanup`
 
 ## Rollback point
 

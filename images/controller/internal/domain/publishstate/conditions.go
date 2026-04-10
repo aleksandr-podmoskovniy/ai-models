@@ -134,13 +134,20 @@ func failedStatus(
 
 func readyStatus(
 	current modelsv1alpha1.ModelStatus,
+	spec modelsv1alpha1.ModelSpec,
 	generation int64,
 	sourceType modelsv1alpha1.ModelSourceType,
 	snapshot publicationdata.Snapshot,
 ) modelsv1alpha1.ModelStatus {
+	validation := validatePublishedModel(spec, snapshot)
+	phase := modelsv1alpha1.ModelPhaseReady
+	if !validation.Valid {
+		phase = modelsv1alpha1.ModelPhaseFailed
+	}
+
 	status := modelsv1alpha1.ModelStatus{
 		ObservedGeneration: generation,
-		Phase:              modelsv1alpha1.ModelPhaseReady,
+		Phase:              phase,
 		Source: &modelsv1alpha1.ResolvedSourceStatus{
 			ResolvedType:     sourceType,
 			ResolvedRevision: snapshot.Source.ResolvedRevision,
@@ -218,22 +225,36 @@ func readyStatus(
 	})
 	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
 		Type:               string(modelsv1alpha1.ModelConditionValidated),
-		Status:             metav1.ConditionTrue,
-		Reason:             string(modelsv1alpha1.ModelConditionReasonValidationSucceeded),
-		Message:            "controller validated the published model record successfully",
+		Status:             conditionStatus(validation.Valid),
+		Reason:             string(validation.Reason),
+		Message:            validation.Message,
 		ObservedGeneration: generation,
 		LastTransitionTime: metav1.Now(),
 	})
 	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
 		Type:               string(modelsv1alpha1.ModelConditionReady),
-		Status:             metav1.ConditionTrue,
-		Reason:             string(modelsv1alpha1.ModelConditionReasonValidationSucceeded),
-		Message:            "model is ready for platform consumption",
+		Status:             conditionStatus(validation.Valid),
+		Reason:             string(validation.Reason),
+		Message:            readyMessage(validation),
 		ObservedGeneration: generation,
 		LastTransitionTime: metav1.Now(),
 	})
 
 	return status
+}
+
+func conditionStatus(ok bool) metav1.ConditionStatus {
+	if ok {
+		return metav1.ConditionTrue
+	}
+	return metav1.ConditionFalse
+}
+
+func readyMessage(validation policyValidationResult) string {
+	if validation.Valid {
+		return "model is ready for platform consumption"
+	}
+	return validation.Message
 }
 
 func keepNonPublishConditions(conditions []metav1.Condition) []metav1.Condition {

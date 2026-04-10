@@ -31,8 +31,9 @@ const (
 )
 
 type StartPublicationInput struct {
-	Source       modelsv1alpha1.ModelSourceSpec
-	RuntimeHints *modelsv1alpha1.ModelRuntimeHints
+	Source             modelsv1alpha1.ModelSourceSpec
+	RuntimeHints       *modelsv1alpha1.ModelRuntimeHints
+	UploadStagePresent bool
 }
 
 func StartPublication(input StartPublicationInput) (ExecutionMode, error) {
@@ -50,6 +51,9 @@ func StartPublication(input StartPublicationInput) (ExecutionMode, error) {
 		}
 		if input.RuntimeHints == nil || strings.TrimSpace(input.RuntimeHints.Task) == "" {
 			return "", fmt.Errorf("upload source currently requires spec.runtimeHints.task")
+		}
+		if input.UploadStagePresent {
+			return ExecutionModeSourceWorker, nil
 		}
 		return ExecutionModeUpload, nil
 	default:

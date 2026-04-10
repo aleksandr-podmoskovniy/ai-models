@@ -19,8 +19,6 @@ package modelformat
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -75,94 +73,6 @@ func detectFormat(match func(modelsv1alpha1.ModelInputFormat) error) (modelsv1al
 	default:
 		return "", fmt.Errorf("failed to determine model input format uniquely: matches %s", strings.Join(stringFormats(matches), ", "))
 	}
-}
-
-func inspectSafetensorsDir(root string) error {
-	state := validationState{}
-	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if path == root {
-			return nil
-		}
-
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		relative = filepath.ToSlash(relative)
-
-		if entry.IsDir() {
-			if shouldDropDirectory(relative) {
-				return filepath.SkipDir
-			}
-			if strings.HasPrefix(filepath.Base(relative), ".") {
-				return fmt.Errorf("input format %q rejects hidden directory %q", modelsv1alpha1.ModelInputFormatSafetensors, relative)
-			}
-			return nil
-		}
-
-		action, isConfig, isAsset := classifySafetensorsFile(relative)
-		if action == fileActionReject {
-			return fmt.Errorf("input format %q rejects file %q", modelsv1alpha1.ModelInputFormatSafetensors, relative)
-		}
-		state.hasConfig = state.hasConfig || isConfig
-		state.hasAsset = state.hasAsset || isAsset
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	if !state.hasConfig {
-		return fmt.Errorf("input format %q requires root config.json", modelsv1alpha1.ModelInputFormatSafetensors)
-	}
-	if !state.hasAsset {
-		return fmt.Errorf("input format %q requires at least one .safetensors file", modelsv1alpha1.ModelInputFormatSafetensors)
-	}
-	return nil
-}
-
-func inspectGGUFDir(root string) error {
-	state := validationState{}
-	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if path == root {
-			return nil
-		}
-
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		relative = filepath.ToSlash(relative)
-
-		if entry.IsDir() {
-			if shouldDropDirectory(relative) {
-				return filepath.SkipDir
-			}
-			if strings.HasPrefix(filepath.Base(relative), ".") {
-				return fmt.Errorf("input format %q rejects hidden directory %q", modelsv1alpha1.ModelInputFormatGGUF, relative)
-			}
-			return nil
-		}
-
-		action, _, isAsset := classifyGGUFFile(relative)
-		if action == fileActionReject {
-			return fmt.Errorf("input format %q rejects file %q", modelsv1alpha1.ModelInputFormatGGUF, relative)
-		}
-		state.hasAsset = state.hasAsset || isAsset
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	if !state.hasAsset {
-		return fmt.Errorf("input format %q requires at least one .gguf file", modelsv1alpha1.ModelInputFormatGGUF)
-	}
-	return nil
 }
 
 func stringFormats(formats []modelsv1alpha1.ModelInputFormat) []string {

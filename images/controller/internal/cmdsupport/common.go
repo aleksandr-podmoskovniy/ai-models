@@ -26,7 +26,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -145,15 +144,6 @@ func SetDefaultLogger(logger *slog.Logger) {
 
 func WriteTerminationFailure(message string) {
 	WriteTerminationMessage(strings.TrimSpace(message))
-}
-
-func WriteTerminationResult(result artifactbackend.Result) error {
-	payload, err := artifactbackend.EncodeResult(result)
-	if err != nil {
-		return err
-	}
-	WriteTerminationMessage(payload)
-	return nil
 }
 
 func WriteTerminationMessage(message string) {

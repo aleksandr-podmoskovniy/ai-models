@@ -17,11 +17,13 @@ limitations under the License.
 package publishobserve
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 func ObserveUploadSession(
@@ -41,17 +43,17 @@ func ObserveUploadSession(
 		rawResult := strings.TrimSpace(handle.TerminationMessage)
 		if rawResult == "" {
 			input.State = publicationdomain.RuntimeStateFailed
-			input.Failure = "upload session completed without a publication result"
+			input.Failure = "upload session completed without a staging result"
 			break
 		}
-		success, err := decodeRuntimeResult(request, rawResult)
+		stageHandle, err := decodeUploadStagingHandle(rawResult)
 		if err != nil {
 			input.State = publicationdomain.RuntimeStateFailed
 			input.Failure = err.Error()
 			break
 		}
 		input.State = publicationdomain.RuntimeStateSucceeded
-		input.Success = success
+		input.StagedHandle = stageHandle
 	case handle.IsFailed():
 		input.State = publicationdomain.RuntimeStateFailed
 		input.Failure = defaultFailureMessage(handle.TerminationMessage, "upload session worker pod failed")
@@ -69,14 +71,12 @@ func ObserveUploadSession(
 	}
 
 	switch {
-	case decision.Success != nil:
-		handle := decision.Success.CleanupHandle
-		snapshot := decision.Success.Snapshot
+	case decision.StagedHandle != nil:
 		return RuntimeObservationDecision{
 			Observation: publicationdomain.Observation{
-				Phase:         publicationdomain.OperationPhaseSucceeded,
-				Snapshot:      &snapshot,
-				CleanupHandle: &handle,
+				Phase:         publicationdomain.OperationPhaseStaged,
+				RuntimeKind:   publicationdomain.RuntimeKindUploadSession,
+				CleanupHandle: decision.StagedHandle,
 			},
 			DeleteRuntime: decision.DeleteSession,
 		}, nil
@@ -88,11 +88,23 @@ func ObserveUploadSession(
 	default:
 		return RuntimeObservationDecision{
 			Observation: publicationdomain.Observation{
-				Phase:  publicationdomain.OperationPhaseRunning,
-				Upload: decision.UploadStatus,
+				Phase:       publicationdomain.OperationPhaseRunning,
+				RuntimeKind: publicationdomain.RuntimeKindUploadSession,
+				Upload:      decision.UploadStatus,
 			},
 		}, nil
 	}
+}
+
+func decodeUploadStagingHandle(rawResult string) (*cleanuphandle.Handle, error) {
+	handle, err := cleanuphandle.Decode(rawResult)
+	if err != nil {
+		return nil, err
+	}
+	if handle.Kind != cleanuphandle.KindUploadStaging || handle.UploadStaging == nil {
+		return nil, fmt.Errorf("upload session completed without a valid upload staging handle")
+	}
+	return &handle, nil
 }
 
 func failedObservation(message string) publicationdomain.Observation {

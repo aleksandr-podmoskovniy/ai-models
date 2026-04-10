@@ -11,8 +11,8 @@ spec:
     {{- include "ai-models.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: controller
   ports:
-    - name: metrics
+    - name: https-metrics
       port: {{ include "ai-models.controllerMetricsPort" . | int }}
-      targetPort: metrics
+      targetPort: https-metrics
       protocol: TCP
 {{- end }}

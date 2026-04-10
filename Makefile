@@ -36,7 +36,7 @@ BACKEND_NODE_MODULES_VOLUME ?= ai-models-backend-js-node-modules
 BACKEND_UI_MAX_OLD_SPACE_SIZE ?= 4096
 OIDC_AUTH_UPSTREAM_METADATA ?= $(ROOT)/images/backend/oidc-auth.lock
 
-.PHONY: ensure-bin-dir ensure-golangci-lint ensure-gocyclo ensure-deadcode ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools coverage-dir api-test controller-test hooks-test controller-coverage-artifacts fmt generate test lint-dmt lint-docs lint-shell lint-controller-complexity lint-controller-size lint-thin-reconcilers test-controller-coverage deadcode deadcode-controller deadcode-hooks check-controller-test-evidence lint helper-shell-check helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
+.PHONY: ensure-bin-dir ensure-golangci-lint ensure-gocyclo ensure-deadcode ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools coverage-dir api-test controller-test hooks-test dmcr-test controller-coverage-artifacts fmt generate test lint-dmt lint-docs lint-shell lint-controller-complexity lint-controller-size lint-thin-reconcilers test-controller-coverage deadcode deadcode-controller deadcode-hooks check-controller-test-evidence lint helper-shell-check helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
 
 ensure-bin-dir:
 	@mkdir -p $(BIN_DIR)
@@ -99,7 +99,11 @@ hooks-test: coverage-dir
 	@echo "==> go test (images/hooks)"
 	@cd images/hooks && $(GO) test $(GOFLAGS) -coverprofile $(COVERAGE_DIR)/hooks.out ./...
 
-test: api-test controller-test hooks-test
+dmcr-test:
+	@echo "==> go test (images/dmcr)"
+	@cd images/dmcr && $(GO) test $(GOFLAGS) ./...
+
+test: api-test controller-test hooks-test dmcr-test
 
 lint-dmt: ensure-dmt
 	@echo "==> dmt lint"

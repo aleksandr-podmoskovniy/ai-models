@@ -21,14 +21,16 @@ import (
 	"errors"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
+	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 type Options struct {
-	HandleJSON   string
-	DryRun       bool
-	Remover      modelpackports.Remover
-	RegistryAuth modelpackports.RegistryAuth
+	HandleJSON     string
+	DryRun         bool
+	Remover        modelpackports.Remover
+	StagingRemover uploadstagingports.Remover
+	RegistryAuth   modelpackports.RegistryAuth
 }
 
 func Run(ctx context.Context, options Options) error {
@@ -36,14 +38,30 @@ func Run(ctx context.Context, options Options) error {
 	if err != nil {
 		return err
 	}
-	if handle.Kind != cleanuphandle.KindBackendArtifact || handle.Backend == nil {
-		return errors.New("unsupported cleanup handle kind")
-	}
 	if options.DryRun {
 		return nil
 	}
-	if options.Remover == nil {
-		return errors.New("artifact cleanup remover must not be nil")
+	switch handle.Kind {
+	case cleanuphandle.KindBackendArtifact:
+		if handle.Backend == nil {
+			return errors.New("backend cleanup handle payload must not be empty")
+		}
+		if options.Remover == nil {
+			return errors.New("artifact cleanup remover must not be nil")
+		}
+		return options.Remover.Remove(ctx, handle.Backend.Reference, options.RegistryAuth)
+	case cleanuphandle.KindUploadStaging:
+		if handle.UploadStaging == nil {
+			return errors.New("upload staging cleanup handle payload must not be empty")
+		}
+		if options.StagingRemover == nil {
+			return errors.New("upload staging cleanup remover must not be nil")
+		}
+		return options.StagingRemover.Delete(ctx, uploadstagingports.DeleteInput{
+			Bucket: handle.UploadStaging.Bucket,
+			Key:    handle.UploadStaging.Key,
+		})
+	default:
+		return errors.New("unsupported cleanup handle kind")
 	}
-	return options.Remover.Remove(ctx, handle.Backend.Reference, options.RegistryAuth)
 }

@@ -29,6 +29,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
 )
 
 type HTTPMetadata struct {
@@ -99,6 +102,41 @@ func DownloadHTTPSource(
 		ETag:         response.Header.Get("ETag"),
 		LastModified: response.Header.Get("Last-Modified"),
 		ContentType:  response.Header.Get("Content-Type"),
+	}, nil
+}
+
+func fetchHTTPModel(ctx context.Context, options RemoteOptions) (RemoteResult, error) {
+	sourcePath, metadata, err := DownloadHTTPSource(
+		ctx,
+		options.URL,
+		options.HTTPCABundle,
+		options.HTTPAuthDir,
+		filepath.Join(options.Workspace, ".download"),
+	)
+	if err != nil {
+		return RemoteResult{}, err
+	}
+
+	modelDir, err := PrepareModelInput(sourcePath, filepath.Join(options.Workspace, "checkpoint"))
+	if err != nil {
+		return RemoteResult{}, err
+	}
+
+	inputFormat, err := resolveDirFormat(modelDir, options.RequestedFormat)
+	if err != nil {
+		return RemoteResult{}, err
+	}
+	if err := modelformat.ValidateDir(modelDir, inputFormat); err != nil {
+		return RemoteResult{}, err
+	}
+
+	return RemoteResult{
+		SourceType:        modelsv1alpha1.ModelSourceTypeHTTP,
+		ModelDir:          modelDir,
+		InputFormat:       inputFormat,
+		ExternalReference: options.URL,
+		ResolvedRevision:  metadata.ResolvedRevision(),
+		Framework:         "transformers",
 	}, nil
 }
 

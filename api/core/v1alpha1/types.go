@@ -22,14 +22,22 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // +kubebuilder:validation:XValidation:rule="self.source == oldSelf.source",message="spec.source is immutable"
 // +kubebuilder:validation:XValidation:rule="self.inputFormat == oldSelf.inputFormat",message="spec.inputFormat is immutable"
 // +kubebuilder:validation:XValidation:rule="self.runtimeHints == oldSelf.runtimeHints",message="spec.runtimeHints is immutable"
+// +kubebuilder:validation:XValidation:rule="self.modelType == oldSelf.modelType",message="spec.modelType is immutable"
+// +kubebuilder:validation:XValidation:rule="self.usagePolicy == oldSelf.usagePolicy",message="spec.usagePolicy is immutable"
+// +kubebuilder:validation:XValidation:rule="self.launchPolicy == oldSelf.launchPolicy",message="spec.launchPolicy is immutable"
+// +kubebuilder:validation:XValidation:rule="self.optimization == oldSelf.optimization",message="spec.optimization is immutable"
 type ModelSpec struct {
 	DisplayName string          `json:"displayName,omitempty"`
 	Description string          `json:"description,omitempty"`
+	ModelType   ModelType       `json:"modelType,omitempty"`
 	Source      ModelSourceSpec `json:"source"`
 	// InputFormat defines the input model format independently of the source.
 	// If omitted, the controller tries to determine the format automatically.
-	InputFormat  ModelInputFormat   `json:"inputFormat,omitempty"`
-	RuntimeHints *ModelRuntimeHints `json:"runtimeHints,omitempty"`
+	InputFormat  ModelInputFormat         `json:"inputFormat,omitempty"`
+	RuntimeHints *ModelRuntimeHints       `json:"runtimeHints,omitempty"`
+	UsagePolicy  *ModelUsagePolicy        `json:"usagePolicy,omitempty"`
+	LaunchPolicy *ModelLaunchPolicy       `json:"launchPolicy,omitempty"`
+	Optimization *ModelOptimizationPolicy `json:"optimization,omitempty"`
 }
 
 // ModelStatus is the shared observed state for both Model and ClusterModel.
@@ -87,9 +95,10 @@ type ResolvedSourceStatus struct {
 }
 
 type ModelUploadStatus struct {
-	ExpiresAt  *metav1.Time `json:"expiresAt,omitempty"`
-	Repository string       `json:"repository,omitempty"`
-	Command    string       `json:"command,omitempty"`
+	ExpiresAt    *metav1.Time `json:"expiresAt,omitempty"`
+	Repository   string       `json:"repository,omitempty"`
+	ExternalURL  string       `json:"externalURL,omitempty"`
+	InClusterURL string       `json:"inClusterURL,omitempty"`
 }
 
 type ModelArtifactStatus struct {

@@ -24,6 +24,9 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
 )
 
 const huggingFaceBaseURL = "https://huggingface.co"
@@ -72,6 +75,48 @@ func DownloadHuggingFaceFiles(
 		}
 	}
 	return nil
+}
+
+func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteResult, error) {
+	repoID, revision, err := modelsv1alpha1.ParseHuggingFaceURL(options.URL)
+	if err != nil {
+		return RemoteResult{}, err
+	}
+
+	info, err := FetchHuggingFaceInfo(ctx, repoID, revision, options.HFToken)
+	if err != nil {
+		return RemoteResult{}, err
+	}
+
+	inputFormat, err := resolveRemoteFormat(info.Files, options.RequestedFormat)
+	if err != nil {
+		return RemoteResult{}, err
+	}
+	selectedFiles, err := modelformat.SelectRemoteFiles(inputFormat, info.Files)
+	if err != nil {
+		return RemoteResult{}, err
+	}
+
+	modelDir := filepath.Join(options.Workspace, "checkpoint")
+	resolvedRevision := ResolveHuggingFaceRevision(info, revision)
+	if err := DownloadHuggingFaceFiles(ctx, repoID, resolvedRevision, options.HFToken, modelDir, selectedFiles); err != nil {
+		return RemoteResult{}, err
+	}
+	if err := modelformat.ValidateDir(modelDir, inputFormat); err != nil {
+		return RemoteResult{}, err
+	}
+
+	return RemoteResult{
+		SourceType:        modelsv1alpha1.ModelSourceTypeHuggingFace,
+		ModelDir:          modelDir,
+		InputFormat:       inputFormat,
+		ExternalReference: firstNonEmpty(info.ID, repoID),
+		ResolvedRevision:  resolvedRevision,
+		Framework:         firstNonEmpty(info.LibraryName, "transformers"),
+		PipelineTag:       info.PipelineTag,
+		License:           info.License,
+		SourceRepoID:      info.ID,
+	}, nil
 }
 
 func FetchHuggingFaceInfo(ctx context.Context, repoID, revision, token string) (HuggingFaceInfo, error) {

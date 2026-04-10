@@ -80,6 +80,7 @@ func mapSourceWorkerDecision(
 		return RuntimeObservationDecision{
 			Observation: publicationdomain.Observation{
 				Phase:         publicationdomain.OperationPhaseSucceeded,
+				RuntimeKind:   publicationdomain.RuntimeKindSourceWorker,
 				Snapshot:      &snapshot,
 				CleanupHandle: &handle,
 			},
@@ -93,7 +94,8 @@ func mapSourceWorkerDecision(
 	case decision.PersistRunning || decision.RequeueAfter > 0:
 		return RuntimeObservationDecision{
 			Observation: publicationdomain.Observation{
-				Phase: publicationdomain.OperationPhaseRunning,
+				Phase:       publicationdomain.OperationPhaseRunning,
+				RuntimeKind: publicationdomain.RuntimeKindSourceWorker,
 			},
 		}, nil
 	default:

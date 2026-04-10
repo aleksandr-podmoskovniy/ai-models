@@ -23,6 +23,7 @@ type OperationPhase string
 const (
 	OperationPhasePending   OperationPhase = "Pending"
 	OperationPhaseRunning   OperationPhase = "Running"
+	OperationPhaseStaged    OperationPhase = "Staged"
 	OperationPhaseFailed    OperationPhase = "Failed"
 	OperationPhaseSucceeded OperationPhase = "Succeeded"
 )
@@ -41,6 +42,13 @@ type OperationStatusView struct {
 	WorkerName string
 }
 
+type RuntimeKind string
+
+const (
+	RuntimeKindSourceWorker  RuntimeKind = "SourceWorker"
+	RuntimeKindUploadSession RuntimeKind = "UploadSession"
+)
+
 func IsTerminalOperationPhase(phase OperationPhase) bool {
 	switch phase {
 	case OperationPhaseSucceeded, OperationPhaseFailed:
@@ -58,7 +66,9 @@ func SameUploadStatus(current, desired *modelsv1alpha1.ModelUploadStatus) bool {
 		return false
 	}
 
-	if current.Command != desired.Command || current.Repository != desired.Repository {
+	if current.Repository != desired.Repository ||
+		current.ExternalURL != desired.ExternalURL ||
+		current.InClusterURL != desired.InClusterURL {
 		return false
 	}
 	switch {

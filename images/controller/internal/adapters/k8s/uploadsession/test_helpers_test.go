@@ -20,6 +20,7 @@ import (
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
@@ -60,7 +61,19 @@ func testUploadOptions() Options {
 			Image:                 "backend:latest",
 			ServiceAccountName:    "ai-models-controller",
 			OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-			OCIRegistrySecretName: "ai-models-publication-registry",
+			OCIRegistrySecretName: "ai-models-dmcr-auth-write",
+			ObjectStorage: objectstorage.Options{
+				Bucket:                "ai-models",
+				EndpointURL:           "https://s3.example.com",
+				Region:                "us-east-1",
+				UsePathStyle:          true,
+				CredentialsSecretName: "ai-models-artifacts",
+			},
+		},
+		Ingress: IngressOptions{
+			Host:          "ai-models.example.com",
+			ClassName:     "nginx",
+			TLSSecretName: "ingress-tls",
 		},
 		TokenTTL: 15 * time.Minute,
 	}

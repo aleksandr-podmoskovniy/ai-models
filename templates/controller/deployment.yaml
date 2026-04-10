@@ -1,4 +1,5 @@
 {{- if (include "ai-models.isEnabled" .) }}
+{{- $priorityClassName := include "ai-models.priorityClassName" . -}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -8,6 +9,13 @@ metadata:
   {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "controller")) | nindent 2 }}
 spec:
   replicas: {{ include "ai-models.controllerReplicas" . | int }}
+  {{- if (include "helm_lib_ha_enabled" .) }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  {{- end }}
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -18,6 +26,8 @@ spec:
       labels:
         {{- include "ai-models.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: controller
+      annotations:
+        kubectl.kubernetes.io/default-container: controller
     spec:
       {{- if (include "ai-models.hasRegistrySecret" .) }}
       imagePullSecrets:
@@ -25,12 +35,17 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "ai-models.controllerServiceAccountName" . }}
       {{- include "helm_lib_module_pod_security_context_run_as_user_deckhouse_with_writable_fs" . | nindent 6 }}
+      {{- include "helm_lib_pod_anti_affinity_for_ha" (list . (dict "app.kubernetes.io/name" (include "ai-models.fullname" .) "app.kubernetes.io/component" "controller")) | nindent 6 }}
+      {{- include "helm_lib_priority_class" (tuple . $priorityClassName) | nindent 6 }}
+      {{- include "ai-models.controlPlaneNodeSelector" . | nindent 6 }}
+      {{- include "ai-models.controlPlaneTolerations" . | nindent 6 }}
       containers:
         - name: controller
+          {{- include "helm_lib_module_container_security_context_read_only_root_filesystem_capabilities_drop_all_pss_restricted" . | nindent 10 }}
           image: {{ include "helm_lib_module_image" (list . "controller") }}
           imagePullPolicy: IfNotPresent
           args:
-            - --metrics-bind-address=:{{ include "ai-models.controllerMetricsPort" . }}
+            - --metrics-bind-address=127.0.0.1:{{ include "ai-models.controllerMetricsPort" . }}
             - --health-probe-bind-address=:{{ include "ai-models.controllerHealthPort" . }}
             - --leader-elect=true
             - --leader-election-id={{ include "ai-models.controllerLeaderElectionID" . }}
@@ -41,12 +56,20 @@ spec:
             - --publication-worker-image={{ include "helm_lib_module_image" (list . "controllerRuntime") }}
             - --publication-worker-namespace=$(POD_NAMESPACE)
             - --publication-worker-service-account={{ include "ai-models.controllerServiceAccountName" . }}
-            - --publication-oci-repository-prefix={{ include "ai-models.publicationRegistryRepositoryPrefix" . }}
-            - --publication-oci-insecure={{ include "ai-models.publicationRegistryInsecure" . }}
-            - --publication-oci-credentials-secret-name={{ include "ai-models.publicationRegistryResolvedSecretName" . }}
-            {{- if (include "ai-models.publicationRegistryMountedCASecretName" . | trim) }}
-            - --publication-oci-ca-secret-name={{ include "ai-models.publicationRegistryMountedCASecretName" . }}
-            {{- end }}
+            - --publication-oci-repository-prefix={{ include "ai-models.dmcrRepositoryPrefix" . }}
+            - --publication-oci-insecure=false
+            - --publication-oci-credentials-secret-name={{ include "ai-models.dmcrWriteAuthSecretName" . }}
+            - --publication-oci-ca-secret-name={{ include "ai-models.dmcrCASecretName" . }}
+            - --artifacts-bucket={{ include "ai-models.artifactsBucket" . }}
+            - --artifacts-s3-endpoint-url={{ include "ai-models.artifactsEndpoint" . }}
+            - --artifacts-s3-region={{ include "ai-models.artifactsRegion" . }}
+            - --artifacts-s3-use-path-style={{ include "ai-models.artifactsUsePathStyleBool" . }}
+            - --artifacts-s3-ignore-tls={{ include "ai-models.artifactsIgnoreTLS" . }}
+            - --artifacts-credentials-secret-name={{ include "ai-models.artifactsResolvedSecretName" . }}
+            - --artifacts-ca-secret-name={{ include "ai-models.artifactsMountedCASecretName" . }}
+            - --upload-public-host={{ include "ai-models.uploadPublicHost" . }}
+            - --upload-ingress-class={{ include "helm_lib_module_ingress_class" . }}
+            - --upload-ingress-tls-secret-name={{ include "ai-models.uploadIngressTLSSecretName" . }}
           env:
             - name: POD_NAMESPACE
               valueFrom:
@@ -69,19 +92,25 @@ spec:
               port: health
           resources:
             requests:
-              cpu: 50m
-              memory: 128Mi
+              {{- include "helm_lib_module_ephemeral_storage_only_logs" . | nindent 14 }}
+              {{- if not (.Values.global.enabledModules | has "vertical-pod-autoscaler-crd") }}
+              {{- include "ai-models.controllerResources" . | nindent 14 }}
+              {{- end }}
+            {{- if not (.Values.global.enabledModules | has "vertical-pod-autoscaler-crd") }}
             limits:
               cpu: 200m
               memory: 256Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            runAsNonRoot: true
-            runAsUser: 64535
-            runAsGroup: 64535
-            seccompProfile:
-              type: RuntimeDefault
+            {{- end }}
+        {{- $kubeRbacProxySettings := dict }}
+        {{- $_ := set $kubeRbacProxySettings "portName" "https-metrics" }}
+        {{- $_ := set $kubeRbacProxySettings "listenPort" "8443" }}
+        {{- $_ := set $kubeRbacProxySettings "upstreams" (list
+          (dict
+            "upstream" (printf "http://127.0.0.1:%s/metrics" (include "ai-models.controllerMetricsPort" .))
+            "path" "/metrics"
+            "name" (include "ai-models.controllerName" .)
+            "namespace" (include "ai-models.namespace" .)
+          )
+        ) }}
+        {{- include "kube_rbac_proxy.sidecar_container" (tuple . $kubeRbacProxySettings) | nindent 8 }}
 {{- end }}

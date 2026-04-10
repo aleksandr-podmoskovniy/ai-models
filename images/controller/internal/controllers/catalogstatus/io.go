@@ -89,6 +89,11 @@ func (r *baseReconciler) applyMutationPlan(
 			return ctrl.Result{}, err
 		}
 		if updated {
+			if deleteFn != nil && !plan.DeleteRuntimeBeforePersist {
+				if err := deleteFn(ctx); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
 			return ctrl.Result{Requeue: true}, nil
 		}
 	}
@@ -109,12 +114,14 @@ func (r *baseReconciler) applyMutationPlan(
 func (r *baseReconciler) applyRuntimeObservation(
 	ctx context.Context,
 	object client.Object,
+	spec modelsv1alpha1.ModelSpec,
 	current *modelsv1alpha1.ModelStatus,
 	sourceType modelsv1alpha1.ModelSourceType,
 	decision publicationapp.RuntimeObservationDecision,
 	deleteFn func(context.Context) error,
 ) (ctrl.Result, error) {
 	plan, err := publicationapp.PlanCatalogStatusMutation(publicationapp.CatalogStatusMutationInput{
+		Spec:    spec,
 		Current: *current,
 		Runtime: publicationapp.CatalogStatusRuntimeResult{
 			Generation:    object.GetGeneration(),

@@ -27,6 +27,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -82,6 +83,9 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 	if err := corev1.AddToScheme(scheme); err != nil {
+		return err
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
 		return err
 	}
 

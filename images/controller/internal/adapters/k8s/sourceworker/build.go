@@ -21,6 +21,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
@@ -51,7 +52,7 @@ func buildWithPlan(
 	projectedAuthSecretName string,
 ) (*corev1.Pod, error) {
 	options = workloadpod.NormalizeRuntimeOptions(options)
-	if err := validateOptions(options); err != nil {
+	if err := validateOptions(sourcePlan, options); err != nil {
 		return nil, err
 	}
 	if err := validateProjectedAuthSecretName(sourcePlan, projectedAuthSecretName); err != nil {
@@ -109,6 +110,7 @@ func buildEnv(
 	projectedAuthSecretName string,
 ) []corev1.EnvVar {
 	env := ociregistry.Env(options.OCIInsecure, options.OCIRegistrySecretName, options.OCIRegistryCASecretName)
+	env = append(env, objectstorage.Env(options.ObjectStorage)...)
 	if plan.HuggingFace != nil && plan.HuggingFace.AuthSecretRef != nil {
 		env = append(env, corev1.EnvVar{
 			Name: "HF_TOKEN",
@@ -132,6 +134,7 @@ func buildVolumeMounts(options Options, plan publicationapp.SourceWorkerPlan) []
 			ReadOnly:  true,
 		})
 	}
+	extra = objectstorage.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
 	return workloadpod.VolumeMounts(options.OCIRegistryCASecretName, extra...)
 }
 
@@ -151,6 +154,7 @@ func buildVolumes(
 			},
 		})
 	}
+	extra = objectstorage.Volumes(options.ObjectStorage.CASecretName, extra...)
 	return workloadpod.Volumes(options.OCIRegistryCASecretName, extra...)
 }
 
@@ -178,6 +182,9 @@ func sourceArgs(plan publicationapp.SourceWorkerPlan) []string {
 	if plan.HTTP != nil {
 		return httpArgs(plan.HTTP)
 	}
+	if plan.Upload != nil {
+		return uploadArgs(plan.Upload)
+	}
 	return nil
 }
 
@@ -196,6 +203,17 @@ func httpArgs(source *publicationapp.HTTPSourcePlan) []string {
 	}
 	if source.AuthSecretRef != nil {
 		args = append(args, "--http-auth-dir", httpAuthMountPath)
+	}
+	return args
+}
+
+func uploadArgs(source *publicationapp.UploadSourcePlan) []string {
+	args := []string{
+		"--upload-stage-bucket", source.Stage.Bucket,
+		"--upload-stage-key", source.Stage.Key,
+	}
+	if strings.TrimSpace(source.Stage.FileName) != "" {
+		args = append(args, "--upload-stage-file-name", source.Stage.FileName)
 	}
 	return args
 }

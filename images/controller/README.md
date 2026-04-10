@@ -68,16 +68,20 @@ Current phase-2 slice implemented here:
   through one direct `CreateOrUpdate` path instead of adapter-local CRUD;
 - `internal/adapters/k8s/uploadsession` for controller-owned upload session
   supplements:
-  worker `Pod`, `Service`, short-lived auth `Secret`, and user-facing upload
-  command projection for `spec.source.upload`; the package also implements
+  worker `Pod`, `Service`, short-lived auth `Secret`, optional session
+  `Ingress`, and user-facing upload URL projection for `spec.source.upload`;
+  the package also implements
   the shared upload-session runtime port directly, consumes the shared
   `publishop.OperationContext` without local request wrappers or a separate
   request-mapping file, and does not
   keep a second runtime-proxy layer or constructor path over the same concrete
   adapter; replay now goes through the same direct ensure/create-or-get path
-  for `Secret`, `Service`, and `Pod` instead of a separate pre-read branch;
-- `internal/adapters/k8s/ociregistry` for shared OCI registry auth/CA env and
-  volume rendering used by worker/session/cleanup paths;
+  for `Secret`, `Service`, `Ingress`, and `Pod` instead of a separate pre-read
+  branch;
+- `internal/adapters/k8s/ociregistry` for shared OCI registry auth/CA env,
+  volume rendering, and controller-owned write-auth / CA projection lifecycle
+  used by worker/session/cleanup paths against the module-local DMCR-style
+  publication backend;
 - `internal/adapters/k8s/ownedresource` for the single canonical
   owned-resource lifecycle shell reused by controlled worker/session
   supplements: create/reuse plus ignore-not-found delete;
@@ -89,8 +93,10 @@ Current phase-2 slice implemented here:
   `ModelPack`, and writes the final result into the worker Pod termination
   message;
 - `internal/dataplane/uploadsession` for the controller-owned HTTP upload
-  session runtime; it hands the final publication result back through the
-  upload Pod termination message after a successful upload;
+  session runtime; it only stages uploaded bytes into module-owned object
+  storage and returns an upload-staging cleanup handle through the upload Pod
+  termination message, after which controller requeues the object into the
+  normal publish-worker path;
 - `internal/dataplane/artifactcleanup` for the controller-owned published
   artifact removal runtime;
 - `internal/publishedsnapshot` for immutable published-artifact snapshots used
@@ -117,8 +123,9 @@ Current phase-2 slice implemented here:
   every controller package;
 - `internal/controllers/catalogcleanup` for minimal delete-only finalizer
   controller path for `Model` / `ClusterModel`; it now owns cleanup Job
-  materialization directly because there is no second cleanup adapter and the
-  old `adapters/k8s/cleanupjob` package was only an unnecessary extra boundary;
+  materialization and DMCR garbage-collection request lifecycle directly
+  because there is no second cleanup adapter and the old
+  `adapters/k8s/cleanupjob` package was only an unnecessary extra boundary;
 - `internal/application/publishobserve` for publication reconcile gating,
   runtime port orchestration, worker/session observation mapping, and backend
   result decoding plus status-mutation planning behind an application seam
@@ -141,7 +148,8 @@ Still intentionally out of scope:
   - `HuggingFace URL -> Safetensors`
   - `HTTP URL -> Safetensors archive or GGUF file/archive`
   - `Upload -> Safetensors archive or GGUF file/archive`
-  into internal `ModelPack/OCI` through the current Go dataplane and
+  into internal `ModelPack/OCI` served by the module-local DMCR-style backend
+  through the current Go dataplane and
   implementation adapter;
 - richer input formats beyond the current fail-closed `Safetensors` and `GGUF`
   rules shared across `HuggingFace`, `HTTP`, and `Upload` sources;

@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
@@ -111,7 +112,7 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 				request.Request.Spec.Source.URL = ""
 				request.Request.Spec.Source.Upload = &modelsv1alpha1.UploadModelSource{}
 			},
-			wantErr: "must be implemented as a session",
+			wantErr: "requires a staged upload handle",
 		},
 		{
 			name: "unsupported source scheme",
@@ -194,7 +195,7 @@ func TestOptionsValidateRejectsMissingRequiredFields(t *testing.T) {
 			options := testOptions()
 			tc.mutate(&options)
 
-			err := validateOptions(options)
+			err := validateOptions(publicationapp.SourceWorkerPlan{}, options)
 			if err == nil {
 				t.Fatal("expected validation error")
 			}

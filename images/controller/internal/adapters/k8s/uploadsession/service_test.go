@@ -24,6 +24,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,7 +40,10 @@ func TestServiceGetOrCreateCreatesOwnedUploadSessionResources(t *testing.T) {
 	owner.Name = "deepseek-r1-upload"
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(owner).
+		WithObjects(
+			owner,
+			testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write"),
+		).
 		Build()
 
 	service, err := NewService(kubeClient, scheme, testUploadOptions())
@@ -62,11 +66,16 @@ func TestServiceGetOrCreateCreatesOwnedUploadSessionResources(t *testing.T) {
 	if handle == nil || handle.WorkerName == "" {
 		t.Fatalf("expected upload session handle, got %#v", handle)
 	}
-	if !strings.Contains(handle.UploadStatus.Command, "port-forward service/") {
-		t.Fatalf("unexpected upload command %q", handle.UploadStatus.Command)
+	if !strings.HasPrefix(handle.UploadStatus.ExternalURL, "https://ai-models.example.com/upload/") {
+		t.Fatalf("unexpected upload external URL %q", handle.UploadStatus.ExternalURL)
 	}
-	if !strings.Contains(handle.UploadStatus.Command, "X-AI-MODELS-FILENAME") {
-		t.Fatalf("expected upload filename header in command %q", handle.UploadStatus.Command)
+	if !strings.HasPrefix(handle.UploadStatus.InClusterURL, "http://ai-model-upload-1111-2222.d8-ai-models.svc:8444/upload/") {
+		t.Fatalf("unexpected upload in-cluster URL %q", handle.UploadStatus.InClusterURL)
+	}
+	externalToken := strings.TrimPrefix(handle.UploadStatus.ExternalURL, "https://ai-models.example.com/upload/")
+	inClusterToken := strings.TrimPrefix(handle.UploadStatus.InClusterURL, "http://ai-model-upload-1111-2222.d8-ai-models.svc:8444/upload/")
+	if externalToken == "" || inClusterToken == "" || externalToken != inClusterToken {
+		t.Fatalf("expected matching upload token in URLs, external=%q inCluster=%q", externalToken, inClusterToken)
 	}
 	if got, want := handle.UploadStatus.Repository, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/1111-2222:published"; got != want {
 		t.Fatalf("unexpected upload repository %q", got)
@@ -83,11 +92,16 @@ func TestServiceGetOrCreateCreatesOwnedUploadSessionResources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UploadSessionSecretName() error = %v", err)
 	}
+	ingressName, err := resourcenames.UploadSessionIngressName(request.Request.Owner.UID)
+	if err != nil {
+		t.Fatalf("UploadSessionIngressName() error = %v", err)
+	}
 
 	for _, object := range []client.Object{
 		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: handle.WorkerName, Namespace: "d8-ai-models"}},
 		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: "d8-ai-models"}},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: "d8-ai-models"}},
+		&networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: ingressName, Namespace: "d8-ai-models"}},
 	} {
 		stored := object.DeepCopyObject().(client.Object)
 		if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(object), stored); err != nil {
@@ -120,7 +134,7 @@ func TestBuildPodUsesUploadSessionRuntime(t *testing.T) {
 	request.Request.Spec.Source.Upload.ExpectedSizeBytes = ptrTo[int64](128)
 
 	options := testUploadOptions()
-	options.Runtime.OCIRegistryCASecretName = "registry-ca"
+	options.Runtime.ObjectStorage.CASecretName = "artifacts-ca"
 
 	pod, err := BuildPod(request, options, "ai-model-upload-auth-1111-2222")
 	if err != nil {
@@ -133,14 +147,14 @@ func TestBuildPodUsesUploadSessionRuntime(t *testing.T) {
 	if !containsArg(pod.Spec.Containers[0].Args, "--expected-size-bytes", "128") {
 		t.Fatalf("expected size arg in %#v", pod.Spec.Containers[0].Args)
 	}
-	if !containsArg(pod.Spec.Containers[0].Args, "--task", "text-generation") {
-		t.Fatalf("expected task arg in %#v", pod.Spec.Containers[0].Args)
+	if !containsArg(pod.Spec.Containers[0].Args, "--staging-bucket", "ai-models") {
+		t.Fatalf("expected staging bucket arg in %#v", pod.Spec.Containers[0].Args)
 	}
-	if !hasEnv(pod.Spec.Containers[0].Env, "AI_MODELS_OCI_CA_FILE", "/etc/ai-models/registry-ca/ca.crt") {
-		t.Fatalf("expected registry CA env in %#v", pod.Spec.Containers[0].Env)
+	if !hasEnv(pod.Spec.Containers[0].Env, "AI_MODELS_S3_CA_FILE", "/etc/ai-models/artifacts-ca/ca.crt") {
+		t.Fatalf("expected object storage CA env in %#v", pod.Spec.Containers[0].Env)
 	}
-	if !hasVolume(pod.Spec.Volumes, "registry-ca") {
-		t.Fatalf("expected registry CA volume in %#v", pod.Spec.Volumes)
+	if !hasVolume(pod.Spec.Volumes, "artifacts-ca") {
+		t.Fatalf("expected object storage CA volume in %#v", pod.Spec.Volumes)
 	}
 }
 

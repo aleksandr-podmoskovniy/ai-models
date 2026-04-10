@@ -22,12 +22,13 @@ import (
 )
 
 type CatalogStatusReconcileInput struct {
-	Deleting         bool
-	Source           modelsv1alpha1.ModelSourceSpec
-	RuntimeHints     *modelsv1alpha1.ModelRuntimeHints
-	Current          modelsv1alpha1.ModelStatus
-	Generation       int64
-	HasCleanupHandle bool
+	Deleting           bool
+	Source             modelsv1alpha1.ModelSourceSpec
+	RuntimeHints       *modelsv1alpha1.ModelRuntimeHints
+	UploadStagePresent bool
+	Current            modelsv1alpha1.ModelStatus
+	Generation         int64
+	HasCleanupHandle   bool
 }
 
 type CatalogStatusReconcileDecision struct {
@@ -56,8 +57,9 @@ func DecideCatalogStatusReconcile(
 	}
 
 	mode, err := publicationapp.StartPublication(publicationapp.StartPublicationInput{
-		Source:       input.Source,
-		RuntimeHints: input.RuntimeHints,
+		Source:             input.Source,
+		RuntimeHints:       input.RuntimeHints,
+		UploadStagePresent: input.UploadStagePresent,
 	})
 	if err != nil {
 		return CatalogStatusReconcileDecision{}, err

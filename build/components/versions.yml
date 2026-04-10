@@ -4,6 +4,7 @@ core:
   deckhouse-lib-helm: "1.70.1"
   deckhouse-base-images: v0.5.55
   deckhouse-base-images-source: candi/base_images.yml
+  distribution: "3.0.0"
   werf: v2.63.1
 package:
   golang: go1.25.7

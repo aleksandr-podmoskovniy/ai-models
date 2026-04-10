@@ -72,7 +72,8 @@
 
 - `expiresAt`
 - `repository`
-- `command`
+- `inClusterURL`
+- `externalURL`
 
 ### status.artifact
 

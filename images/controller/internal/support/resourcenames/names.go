@@ -26,10 +26,14 @@ import (
 const (
 	sourceWorkerPodPrefix        = "ai-model-publish-"
 	sourceWorkerAuthSecretPrefix = "ai-model-publish-auth-"
+	ociRegistryAuthSecretPrefix  = "ai-model-oci-auth-"
+	ociRegistryCASecretPrefix    = "ai-model-oci-ca-"
 	uploadSessionPodPrefix       = "ai-model-upload-"
 	uploadSessionServicePrefix   = "ai-model-upload-"
+	uploadSessionIngressPrefix   = "ai-model-upload-"
 	uploadSessionSecretPrefix    = "ai-model-upload-auth-"
 	cleanupJobPrefix             = "ai-model-cleanup-"
+	uploadStagingPrefix          = "uploaded-model-staging"
 
 	AppNameLabelKey        = "app.kubernetes.io/name"
 	OwnerKindLabelKey      = "ai-models.deckhouse.io/owner-kind"
@@ -91,6 +95,14 @@ func SourceWorkerAuthSecretName(uid types.UID) (string, error) {
 	return PrefixedName(sourceWorkerAuthSecretPrefix, uid)
 }
 
+func OCIRegistryAuthSecretName(uid types.UID) (string, error) {
+	return PrefixedName(ociRegistryAuthSecretPrefix, uid)
+}
+
+func OCIRegistryCASecretName(uid types.UID) (string, error) {
+	return PrefixedName(ociRegistryCASecretPrefix, uid)
+}
+
 func UploadSessionPodName(uid types.UID) (string, error) {
 	return PrefixedName(uploadSessionPodPrefix, uid)
 }
@@ -99,12 +111,24 @@ func UploadSessionServiceName(uid types.UID) (string, error) {
 	return PrefixedName(uploadSessionServicePrefix, uid)
 }
 
+func UploadSessionIngressName(uid types.UID) (string, error) {
+	return PrefixedName(uploadSessionIngressPrefix, uid)
+}
+
 func UploadSessionSecretName(uid types.UID) (string, error) {
 	return PrefixedName(uploadSessionSecretPrefix, uid)
 }
 
 func CleanupJobName(uid types.UID) (string, error) {
 	return PrefixedName(cleanupJobPrefix, uid)
+}
+
+func UploadStagingObjectPrefix(uid types.UID) (string, error) {
+	suffix, err := OwnerSuffix(uid)
+	if err != nil {
+		return "", err
+	}
+	return uploadStagingPrefix + "/" + suffix, nil
 }
 
 func OwnerLabels(appName, kind, name string, uid types.UID, namespace string) map[string]string {

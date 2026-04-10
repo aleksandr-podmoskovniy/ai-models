@@ -17,11 +17,10 @@ limitations under the License.
 package main
 
 import (
-	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/kitops"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
-	"github.com/deckhouse/ai-models/controller/internal/dataplane/publishworker"
 	uploadsessionruntime "github.com/deckhouse/ai-models/controller/internal/dataplane/uploadsession"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 const uploadTokenEnv = "AI_MODELS_UPLOAD_TOKEN"
@@ -29,21 +28,17 @@ const uploadTokenEnv = "AI_MODELS_UPLOAD_TOKEN"
 func runUploadSession(args []string) int {
 	flags := cmdsupport.NewFlagSet(commandUploadSession)
 
-	var artifactURI string
-	var inputFormat string
 	var expectedSizeBytes int64
-	var task string
 	var listenPort int
+	var stagingBucket string
+	var stagingKeyPrefix string
 	var uploadToken string
-	var runtimeEngines cmdsupport.RepeatedStringFlag
 
-	flags.StringVar(&artifactURI, "artifact-uri", "", "Controller-owned destination OCI reference.")
-	flags.StringVar(&inputFormat, "input-format", "", "Model input format. Leave empty for auto-detection.")
 	flags.Int64Var(&expectedSizeBytes, "expected-size-bytes", 0, "Expected upload size in bytes.")
-	flags.StringVar(&task, "task", cmdsupport.EnvOr(publishTaskEnv, ""), "Runtime task.")
 	flags.IntVar(&listenPort, "listen-port", 8444, "Listen port.")
+	flags.StringVar(&stagingBucket, "staging-bucket", "", "Bucket used for staged uploads.")
+	flags.StringVar(&stagingKeyPrefix, "staging-key-prefix", "", "Object key prefix used for staged uploads.")
 	flags.StringVar(&uploadToken, "upload-token", cmdsupport.EnvOr(uploadTokenEnv, ""), "Bearer token for upload session.")
-	flags.Var(&runtimeEngines, "runtime-engine", "Compatible runtime engine. Repeat the flag for multiple engines.")
 
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -52,27 +47,29 @@ func runUploadSession(args []string) int {
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
 
+	stagingUploader, err := s3.New(uploadStagingS3ConfigFromEnv())
+	if err != nil {
+		cmdsupport.WriteTerminationFailure(err.Error())
+		return cmdsupport.CommandError(commandUploadSession, err)
+	}
+
 	result, err := uploadsessionruntime.Run(ctx, uploadsessionruntime.Options{
 		ListenPort:        listenPort,
 		UploadToken:       uploadToken,
 		ExpectedSizeBytes: expectedSizeBytes,
-		InputFormat:       modelsv1alpha1.ModelInputFormat(inputFormat),
-		Publish: publishworker.Options{
-			ArtifactURI:        artifactURI,
-			Task:               task,
-			RuntimeEngines:     []string(runtimeEngines),
-			ModelPackPublisher: kitops.New(),
-			RegistryAuth:       cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
-		},
+		StagingBucket:     stagingBucket,
+		StagingKeyPrefix:  stagingKeyPrefix,
+		StagingUploader:   stagingUploader,
 	})
 	if err != nil {
 		cmdsupport.WriteTerminationFailure(err.Error())
 		return cmdsupport.CommandError(commandUploadSession, err)
 	}
-	if err := cmdsupport.WriteTerminationResult(result); err != nil {
+	payload, err := cleanuphandle.Encode(result)
+	if err != nil {
 		cmdsupport.WriteTerminationFailure(err.Error())
 		return cmdsupport.CommandError(commandUploadSession, err)
 	}
-
+	cmdsupport.WriteTerminationMessage(payload)
 	return 0
 }

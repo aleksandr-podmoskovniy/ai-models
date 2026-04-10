@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -32,6 +33,7 @@ type RuntimeOptions struct {
 	OCIInsecure             bool
 	OCIRegistrySecretName   string
 	OCIRegistryCASecretName string
+	ObjectStorage           objectstorage.Options
 	ImagePullPolicy         corev1.PullPolicy
 }
 

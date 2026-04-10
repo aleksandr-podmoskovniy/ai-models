@@ -63,3 +63,18 @@ func TestDecodeRejectsIncompleteHandle(t *testing.T) {
 		t.Fatal("expected error for incomplete backend cleanup handle")
 	}
 }
+
+func TestDecodeAcceptsUploadStagingHandle(t *testing.T) {
+	t.Parallel()
+
+	handle, err := Decode(`{"kind":"UploadStaging","uploadStaging":{"bucket":"ai-models","key":"uploads/u1/payload.bin","fileName":"payload.bin","sizeBytes":123}}`)
+	if err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	if handle.UploadStaging == nil {
+		t.Fatal("expected upload staging payload")
+	}
+	if got, want := handle.UploadStaging.Key, "uploads/u1/payload.bin"; got != want {
+		t.Fatalf("unexpected staging key %q", got)
+	}
+}

@@ -19,24 +19,28 @@ package uploadsession
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func buildUploadStatus(
 	artifactURI string,
 	service *corev1.Service,
+	ingress *networkingv1.Ingress,
 	token string,
 	expiresAt metav1.Time,
 ) modelsv1alpha1.ModelUploadStatus {
 	return modelsv1alpha1.ModelUploadStatus{
-		ExpiresAt:  &expiresAt,
-		Repository: strings.TrimSpace(artifactURI),
-		Command:    buildUploadCommand(service.Namespace, service.Name, token),
+		ExpiresAt:    &expiresAt,
+		Repository:   strings.TrimSpace(artifactURI),
+		ExternalURL:  buildExternalUploadURL(ingress, token),
+		InClusterURL: buildInClusterUploadURL(service, token),
 	}
 }
 
@@ -52,11 +56,45 @@ func expiresAtFromSecret(secret *corev1.Secret) (metav1.Time, error) {
 	return metav1.NewTime(value.UTC()), nil
 }
 
-func buildUploadCommand(namespace, serviceName, token string) string {
+func buildInClusterUploadURL(service *corev1.Service, token string) string {
+	if service == nil {
+		return ""
+	}
+	port := int32(uploadPort)
+	if len(service.Spec.Ports) > 0 && service.Spec.Ports[0].Port > 0 {
+		port = service.Spec.Ports[0].Port
+	}
 	return fmt.Sprintf(
-		"MODEL_FILE=${MODEL_FILE:?set MODEL_FILE to the local model file or archive path}; kubectl -n %s port-forward service/%s 18444:8444 >/tmp/ai-model-upload-port-forward.log 2>&1 & PF_PID=$!; trap 'kill $PF_PID' EXIT; until curl -fsS http://127.0.0.1:18444/healthz >/dev/null; do sleep 1; done; curl -fsS -X PUT -H 'Authorization: Bearer %s' -H \"X-AI-MODELS-FILENAME: $(basename \"$MODEL_FILE\")\" --data-binary @\"$MODEL_FILE\" http://127.0.0.1:18444/upload",
-		namespace,
-		serviceName,
-		token,
+		"http://%s.%s.svc:%d%s",
+		service.Name,
+		service.Namespace,
+		port,
+		uploadSessionPath(token),
 	)
+}
+
+func buildExternalUploadURL(ingress *networkingv1.Ingress, token string) string {
+	if ingress == nil {
+		return ""
+	}
+	host := strings.TrimSpace(firstIngressHost(ingress))
+	if host == "" {
+		return ""
+	}
+	scheme := "http"
+	if len(ingress.Spec.TLS) > 0 {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s%s", scheme, host, uploadSessionPath(token))
+}
+
+func uploadSessionPath(token string) string {
+	return "/upload/" + url.PathEscape(strings.TrimSpace(token))
+}
+
+func firstIngressHost(ingress *networkingv1.Ingress) string {
+	if ingress == nil || len(ingress.Spec.Rules) == 0 {
+		return ""
+	}
+	return ingress.Spec.Rules[0].Host
 }

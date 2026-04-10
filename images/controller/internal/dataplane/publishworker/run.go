@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -30,7 +31,9 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
 	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
+	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 type Options struct {
@@ -42,11 +45,13 @@ type Options struct {
 	HTTPCABundle       []byte
 	HTTPAuthDir        string
 	UploadPath         string
+	UploadStage        *cleanuphandle.UploadStagingHandle
 	InputFormat        modelsv1alpha1.ModelInputFormat
 	Task               string
 	RuntimeEngines     []string
 	SnapshotDir        string
 	HFToken            string
+	UploadStaging      uploadstagingports.Client
 	ModelPackPublisher modelpackports.Publisher
 	RegistryAuth       modelpackports.RegistryAuth
 }
@@ -138,8 +143,8 @@ func publishFromHTTP(ctx context.Context, options Options) (artifactbackend.Resu
 }
 
 func publishFromUpload(ctx context.Context, options Options) (artifactbackend.Result, error) {
-	if strings.TrimSpace(options.UploadPath) == "" {
-		return artifactbackend.Result{}, errors.New("upload-path is required")
+	if strings.TrimSpace(options.UploadPath) == "" && options.UploadStage == nil {
+		return artifactbackend.Result{}, errors.New("upload source requires either upload-path or upload staging handle")
 	}
 	if strings.TrimSpace(options.Task) == "" {
 		return artifactbackend.Result{}, errors.New("task is required for upload source")
@@ -151,7 +156,13 @@ func publishFromUpload(ctx context.Context, options Options) (artifactbackend.Re
 	}
 	defer cleanupDir()
 
-	checkpointDir, err := sourcefetch.PrepareModelInput(options.UploadPath, filepath.Join(workspace, "checkpoint"))
+	uploadPath, cleanupUpload, err := ensureUploadPath(ctx, options, workspace)
+	if err != nil {
+		return artifactbackend.Result{}, err
+	}
+	defer cleanupUpload()
+
+	checkpointDir, err := sourcefetch.PrepareModelInput(uploadPath, filepath.Join(workspace, "checkpoint"))
 	if err != nil {
 		return artifactbackend.Result{}, err
 	}
@@ -171,6 +182,9 @@ func publishFromUpload(ctx context.Context, options Options) (artifactbackend.Re
 	if err != nil {
 		return artifactbackend.Result{}, err
 	}
+	if err := cleanupUploadStage(ctx, options); err != nil {
+		return artifactbackend.Result{}, err
+	}
 
 	return buildBackendResult(
 		publicationdata.SourceProvenance{
@@ -179,6 +193,47 @@ func publishFromUpload(ctx context.Context, options Options) (artifactbackend.Re
 		resolvedProfile,
 		publishResult,
 	), nil
+}
+
+func ensureUploadPath(ctx context.Context, options Options, workspace string) (string, func(), error) {
+	if strings.TrimSpace(options.UploadPath) != "" {
+		return options.UploadPath, func() {}, nil
+	}
+	if options.UploadStage == nil {
+		return "", nil, errors.New("upload staging handle must not be empty")
+	}
+	if options.UploadStaging == nil {
+		return "", nil, errors.New("upload staging client must not be nil")
+	}
+
+	fileName := strings.TrimSpace(options.UploadStage.FileName)
+	if fileName == "" {
+		fileName = "upload.bin"
+	}
+	localPath := filepath.Join(workspace, fileName)
+	if err := options.UploadStaging.Download(ctx, uploadstagingports.DownloadInput{
+		Bucket:          options.UploadStage.Bucket,
+		Key:             options.UploadStage.Key,
+		DestinationPath: localPath,
+	}); err != nil {
+		return "", nil, err
+	}
+	return localPath, func() {
+		_ = os.Remove(localPath)
+	}, nil
+}
+
+func cleanupUploadStage(ctx context.Context, options Options) error {
+	if options.UploadStage == nil {
+		return nil
+	}
+	if options.UploadStaging == nil {
+		return errors.New("upload staging client must not be nil")
+	}
+	return options.UploadStaging.Delete(ctx, uploadstagingports.DeleteInput{
+		Bucket: options.UploadStage.Bucket,
+		Key:    options.UploadStage.Key,
+	})
 }
 
 func fetchRemote(ctx context.Context, options Options, prefix string) (sourcefetch.RemoteResult, func(), error) {

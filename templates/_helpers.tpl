@@ -10,12 +10,118 @@ ai-models
 d8-ai-models
 {{- end -}}
 
+{{- define "ai-models.monitoringNamespace" -}}
+d8-monitoring
+{{- end -}}
+
+{{- define "ai-models.priorityClassName" -}}
+system-cluster-critical
+{{- end -}}
+
+{{- define "ai-models.vpaPolicyUpdateMode" -}}
+{{- $kubeVersion := .Values.global.discovery.kubernetesVersion -}}
+{{- if semverCompare ">=1.33.0" $kubeVersion -}}
+InPlaceOrRecreate
+{{- else -}}
+Recreate
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.controllerResources" -}}
+cpu: 50m
+memory: 128Mi
+{{- end -}}
+
+{{- define "ai-models.dmcrResources" -}}
+cpu: 50m
+memory: 128Mi
+{{- end -}}
+
+{{- define "ai-models.dmcrGarbageCollectionResources" -}}
+cpu: 50m
+memory: 64Mi
+{{- end -}}
+
+{{- define "ai-models.dmcrGCRequestLabelKey" -}}
+ai-models.deckhouse.io/dmcr-gc-request
+{{- end -}}
+
+{{- define "ai-models.dmcrGCSwitchAnnotationKey" -}}
+ai-models.deckhouse.io/dmcr-gc-switch
+{{- end -}}
+
+{{- define "ai-models.dmcrGCDoneAnnotationKey" -}}
+ai-models.deckhouse.io/dmcr-gc-done
+{{- end -}}
+
+{{- define "ai-models.dmcrGarbageCollectionModeEnabled" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $dmcr := (index $internal "dmcr") | default dict -}}
+{{- if and (hasKey $dmcr "garbageCollectionModeEnabled") (index $dmcr "garbageCollectionModeEnabled") -}}
+true
+{{- else -}}
+false
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.controlPlaneNodeSelector" -}}
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+{{- end -}}
+
+{{- define "ai-models.systemNodeSelector" -}}
+{{- $discovery := (.Values.global.discovery | default dict) -}}
+{{- $roles := ($discovery.d8SpecificNodeCountByRole | default dict) -}}
+{{- if gt (int (default 0 (index $roles "system"))) 0 -}}
+nodeSelector:
+  node-role.deckhouse.io/system: ""
+{{- else -}}
+{{- include "ai-models.controlPlaneNodeSelector" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.controlPlaneTolerations" -}}
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule
+{{- end -}}
+
+{{- define "ai-models.systemTolerations" -}}
+tolerations:
+  - key: node-role.deckhouse.io/system
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule
+{{- end -}}
+
 {{- define "ai-models.serviceName" -}}
 ai-models
 {{- end -}}
 
 {{- define "ai-models.serviceAccountName" -}}
 ai-models
+{{- end -}}
+
+{{- define "ai-models.dmcrName" -}}
+dmcr
+{{- end -}}
+
+{{- define "ai-models.dmcrServiceAccountName" -}}
+{{- include "ai-models.dmcrName" . -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrConfigMapName" -}}
+ai-models-dmcr
 {{- end -}}
 
 {{- define "ai-models.controllerName" -}}
@@ -42,8 +148,24 @@ ai-models-postgresql
 ai-models-artifacts
 {{- end -}}
 
-{{- define "ai-models.publicationRegistryManagedSecretName" -}}
-ai-models-publication-registry
+{{- define "ai-models.dmcrAuthSecretName" -}}
+ai-models-dmcr-auth
+{{- end -}}
+
+{{- define "ai-models.dmcrWriteAuthSecretName" -}}
+ai-models-dmcr-auth-write
+{{- end -}}
+
+{{- define "ai-models.dmcrReadAuthSecretName" -}}
+ai-models-dmcr-auth-read
+{{- end -}}
+
+{{- define "ai-models.dmcrTLSSecretName" -}}
+ai-models-dmcr-tls
+{{- end -}}
+
+{{- define "ai-models.dmcrCASecretName" -}}
+ai-models-dmcr-ca
 {{- end -}}
 
 {{- define "ai-models.backendCryptoSecretName" -}}
@@ -132,6 +254,20 @@ true
 
 {{- define "ai-models.publicHost" -}}
 {{- include "helm_lib_module_public_domain" (list . "ai-models") -}}
+{{- end -}}
+
+{{- define "ai-models.uploadPublicHost" -}}
+{{- $globalValues := (index .Values "global") | default dict -}}
+{{- $modulesValues := (index $globalValues "modules") | default dict -}}
+{{- if (default "" (index $modulesValues "publicDomainTemplate")) -}}
+{{- include "ai-models.publicHost" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.uploadIngressTLSSecretName" -}}
+{{- if and (include "ai-models.uploadPublicHost" . | trim) (include "helm_lib_module_https_ingress_tls_enabled" .) -}}
+{{- include "helm_lib_module_https_secret_name" (list . "ingress-tls") -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "ai-models.clusterDomain" -}}
@@ -504,6 +640,20 @@ Standalone
 {{- default "" (index $artifacts "endpoint") -}}
 {{- end -}}
 
+{{- define "ai-models.artifactsEndpointHost" -}}
+{{- $endpoint := include "ai-models.artifactsEndpoint" . | trim -}}
+{{- trimPrefix "http://" (trimPrefix "https://" $endpoint) -}}
+{{- end -}}
+
+{{- define "ai-models.artifactsEndpointSecure" -}}
+{{- $endpoint := include "ai-models.artifactsEndpoint" . | trim -}}
+{{- if hasPrefix "http://" $endpoint -}}
+false
+{{- else -}}
+true
+{{- end -}}
+{{- end -}}
+
 {{- define "ai-models.artifactsRegion" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
@@ -581,6 +731,16 @@ path
 {{- end -}}
 {{- end -}}
 
+{{- define "ai-models.artifactsUsePathStyleBool" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
+{{- if hasKey $artifacts "usePathStyle" -}}
+{{- ternary "true" "false" (index $artifacts "usePathStyle") -}}
+{{- else -}}
+true
+{{- end -}}
+{{- end -}}
+
 {{- define "ai-models.artifactsIgnoreTLS" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
@@ -601,78 +761,141 @@ false
 {{- end -}}
 {{- end -}}
 
-{{- define "ai-models.publicationRegistryRepositoryPrefix" -}}
+{{- define "ai-models.publicationStorageType" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
-{{- trimAll "/" (default "" (index $publicationRegistry "repositoryPrefix")) -}}
+{{- $publicationStorage := (index $moduleValues "publicationStorage") | default dict -}}
+{{- default "ObjectStorage" (index $publicationStorage "type") -}}
 {{- end -}}
 
-{{- define "ai-models.publicationRegistryInlineUsername" -}}
+{{- define "ai-models.publicationStorageBucket" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
-{{- default "" (index $publicationRegistry "username") -}}
+{{- $publicationStorage := (index $moduleValues "publicationStorage") | default dict -}}
+{{- $objectStorage := (index $publicationStorage "objectStorage") | default dict -}}
+{{- default (include "ai-models.artifactsBucket" . | trim) (index $objectStorage "bucket") -}}
 {{- end -}}
 
-{{- define "ai-models.publicationRegistryInlinePassword" -}}
+{{- define "ai-models.publicationStoragePathPrefix" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
-{{- default "" (index $publicationRegistry "password") -}}
+{{- $publicationStorage := (index $moduleValues "publicationStorage") | default dict -}}
+{{- $objectStorage := (index $publicationStorage "objectStorage") | default dict -}}
+{{- trimAll "/" (default "published-models" (index $objectStorage "pathPrefix")) -}}
 {{- end -}}
 
-{{- define "ai-models.publicationRegistryCredentialsSecretName" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
-{{- default "" (index $publicationRegistry "credentialsSecretName") -}}
-{{- end -}}
-
-{{- define "ai-models.publicationRegistryCASecretName" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
-{{- default "" (index $publicationRegistry "caSecretName") -}}
-{{- end -}}
-
-{{- define "ai-models.publicationRegistryHasInlineCredentials" -}}
-{{- $username := include "ai-models.publicationRegistryInlineUsername" . | trim -}}
-{{- $password := include "ai-models.publicationRegistryInlinePassword" . | trim -}}
-{{- if and $username $password -}}
-true
-{{- end -}}
-{{- end -}}
-
-{{- define "ai-models.publicationRegistryHasSecretReference" -}}
-{{- if (include "ai-models.publicationRegistryCredentialsSecretName" . | trim) -}}
-true
-{{- end -}}
-{{- end -}}
-
-{{- define "ai-models.publicationRegistryMountedCASecretName" -}}
-{{- $explicit := include "ai-models.publicationRegistryCASecretName" . | trim -}}
-{{- if $explicit -}}
-{{- $explicit -}}
+{{- define "ai-models.publicationStorageRootDirectory" -}}
+{{- $prefix := include "ai-models.publicationStoragePathPrefix" . | trim -}}
+{{- if $prefix -}}
+{{- printf "/%s" $prefix -}}
 {{- else -}}
-  {{- if (include "ai-models.hasPlatformTrustCA" . | trim) -}}
-{{- include "ai-models.backendTrustCASecretName" . -}}
-  {{- end -}}
+/
 {{- end -}}
 {{- end -}}
 
-{{- define "ai-models.publicationRegistryResolvedSecretName" -}}
-{{- $external := include "ai-models.publicationRegistryCredentialsSecretName" . | trim -}}
-{{- if $external -}}
-{{- $external -}}
-{{- else -}}
-{{- include "ai-models.publicationRegistryManagedSecretName" . -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "ai-models.publicationRegistryInsecure" -}}
+{{- define "ai-models.publicationStoragePVCStorageClassName" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $publicationRegistry := (index $moduleValues "publicationRegistry") | default dict -}}
-{{- if and (hasKey $publicationRegistry "insecure") (index $publicationRegistry "insecure") -}}
-true
-{{- else -}}
-false
+{{- $publicationStorage := (index $moduleValues "publicationStorage") | default dict -}}
+{{- $pvc := (index $publicationStorage "persistentVolumeClaim") | default dict -}}
+{{- default "" (index $pvc "storageClassName") -}}
 {{- end -}}
+
+{{- define "ai-models.publicationStoragePVCStorageSize" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $publicationStorage := (index $moduleValues "publicationStorage") | default dict -}}
+{{- $pvc := (index $publicationStorage "persistentVolumeClaim") | default dict -}}
+{{- default "50Gi" (index $pvc "storageSize") -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrServiceHost" -}}
+{{- printf "%s.%s.svc.%s" (include "ai-models.dmcrName" .) (include "ai-models.namespace" .) (include "ai-models.clusterDomain" .) -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrRepositoryPrefix" -}}
+{{- printf "%s/ai-models" (include "ai-models.dmcrServiceHost" .) -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrWriteAuthUsername" -}}
+ai-models
+{{- end -}}
+
+{{- define "ai-models.dmcrReadAuthUsername" -}}
+ai-models-reader
+{{- end -}}
+
+{{- define "ai-models.dmcrWriteAuthPassword" -}}
+{{- $namespace := include "ai-models.namespace" . -}}
+{{- $secretName := include "ai-models.dmcrWriteAuthSecretName" . -}}
+{{- $existingSecret := lookup "v1" "Secret" $namespace $secretName -}}
+{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
+{{- $existingPassword := (get $existingData "password" | default "" | b64dec) -}}
+{{- if not $existingPassword -}}
+  {{- $legacySecret := lookup "v1" "Secret" $namespace (include "ai-models.dmcrAuthSecretName" .) -}}
+  {{- $legacyData := (get (default (dict) $legacySecret) "data" | default (dict)) -}}
+  {{- $existingPassword = (get $legacyData "password" | default "" | b64dec) -}}
+{{- end -}}
+{{- $generatedPassword := printf "A1a%s" (randAlphaNum 37) -}}
+{{- coalesce $existingPassword $generatedPassword -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrReadAuthPassword" -}}
+{{- $secretName := include "ai-models.dmcrReadAuthSecretName" . -}}
+{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
+{{- $existingPassword := (get $existingData "password" | default "" | b64dec) -}}
+{{- $generatedPassword := printf "A1a%s" (randAlphaNum 37) -}}
+{{- coalesce $existingPassword $generatedPassword -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrDockerConfigJSON" -}}
+{{- $root := index . 0 -}}
+{{- $host := include "ai-models.dmcrServiceHost" $root -}}
+{{- $username := index . 1 -}}
+{{- $password := index . 2 -}}
+{{- $auth := printf "%s:%s" $username $password | b64enc -}}
+{{- dict "auths" (dict $host (dict "username" $username "password" $password "auth" $auth)) | toJson -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrWriteDockerConfigJSON" -}}
+{{- include "ai-models.dmcrDockerConfigJSON" (list . (include "ai-models.dmcrWriteAuthUsername" . | trim) (include "ai-models.dmcrWriteAuthPassword" . | trim)) -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrReadDockerConfigJSON" -}}
+{{- include "ai-models.dmcrDockerConfigJSON" (list . (include "ai-models.dmcrReadAuthUsername" . | trim) (include "ai-models.dmcrReadAuthPassword" . | trim)) -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrWriteHTPasswdEntry" -}}
+{{- $secretName := include "ai-models.dmcrAuthSecretName" . -}}
+{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
+{{- $existingEntry := (get $existingData "write.htpasswd" | default "" | b64dec) -}}
+{{- if $existingEntry -}}
+{{- $existingEntry -}}
+{{- else -}}
+{{- htpasswd (include "ai-models.dmcrWriteAuthUsername" . | trim) (include "ai-models.dmcrWriteAuthPassword" . | trim) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrReadHTPasswdEntry" -}}
+{{- $secretName := include "ai-models.dmcrAuthSecretName" . -}}
+{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
+{{- $existingEntry := (get $existingData "read.htpasswd" | default "" | b64dec) -}}
+{{- if $existingEntry -}}
+{{- $existingEntry -}}
+{{- else -}}
+{{- htpasswd (include "ai-models.dmcrReadAuthUsername" . | trim) (include "ai-models.dmcrReadAuthPassword" . | trim) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrHTPasswd" -}}
+{{- printf "%s\n%s" (include "ai-models.dmcrWriteHTPasswdEntry" . | trim) (include "ai-models.dmcrReadHTPasswdEntry" . | trim) -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrHTTPSalt" -}}
+{{- $secretName := include "ai-models.dmcrAuthSecretName" . -}}
+{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
+{{- $existingSalt := (get $existingData "salt" | default "" | b64dec) -}}
+{{- $generatedSalt := randAlphaNum 64 -}}
+{{- coalesce $existingSalt $generatedSalt -}}
 {{- end -}}
 
 {{- define "ai-models.hasAPI" -}}
@@ -726,20 +949,12 @@ true
   {{- if not (or (include "ai-models.artifactsHasInlineCredentials" . | trim) (include "ai-models.artifactsHasSecretReference" . | trim)) -}}
     {{- fail "ai-models.artifacts requires either credentialsSecretName or inline accessKey and secretKey" -}}
   {{- end -}}
-  {{- if not (include "ai-models.publicationRegistryRepositoryPrefix" . | trim) -}}
-    {{- fail "ai-models.publicationRegistry.repositoryPrefix is required" -}}
+  {{- $publicationStorageType := include "ai-models.publicationStorageType" . | trim -}}
+  {{- if not (or (eq $publicationStorageType "ObjectStorage") (eq $publicationStorageType "PersistentVolumeClaim")) -}}
+    {{- fail "ai-models.publicationStorage.type must be either ObjectStorage or PersistentVolumeClaim" -}}
   {{- end -}}
-  {{- if and (include "ai-models.publicationRegistryInlineUsername" . | trim) (not (include "ai-models.publicationRegistryInlinePassword" . | trim)) -}}
-    {{- fail "ai-models.publicationRegistry.password is required when ai-models.publicationRegistry.username is set" -}}
-  {{- end -}}
-  {{- if and (include "ai-models.publicationRegistryInlinePassword" . | trim) (not (include "ai-models.publicationRegistryInlineUsername" . | trim)) -}}
-    {{- fail "ai-models.publicationRegistry.username is required when ai-models.publicationRegistry.password is set" -}}
-  {{- end -}}
-  {{- if and (include "ai-models.publicationRegistryHasInlineCredentials" . | trim) (include "ai-models.publicationRegistryHasSecretReference" . | trim) -}}
-    {{- fail "ai-models.publicationRegistry.credentialsSecretName cannot be used together with inline username/password" -}}
-  {{- end -}}
-  {{- if not (or (include "ai-models.publicationRegistryHasInlineCredentials" . | trim) (include "ai-models.publicationRegistryHasSecretReference" . | trim)) -}}
-    {{- fail "ai-models.publicationRegistry requires either credentialsSecretName or inline username and password" -}}
+  {{- if and (eq $publicationStorageType "ObjectStorage") (not (include "ai-models.publicationStorageBucket" . | trim)) -}}
+    {{- fail "ai-models.publicationStorage.objectStorage.bucket resolves to empty; set ai-models.artifacts.bucket or ai-models.publicationStorage.objectStorage.bucket" -}}
   {{- end -}}
   {{- if not (has "user-authn" $enabledModules) -}}
     {{- fail "ai-models requires the user-authn module for browser SSO" -}}

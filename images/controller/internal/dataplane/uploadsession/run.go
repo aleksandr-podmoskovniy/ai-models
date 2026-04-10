@@ -18,18 +18,16 @@ package uploadsession
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
-	"github.com/deckhouse/ai-models/controller/internal/dataplane/publishworker"
+	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 const uploadFilenameHeader = "X-AI-MODELS-FILENAME"
@@ -38,29 +36,30 @@ type Options struct {
 	ListenPort        int
 	UploadToken       string
 	ExpectedSizeBytes int64
-	InputFormat       modelsv1alpha1.ModelInputFormat
-	Publish           publishworker.Options
+	StagingBucket     string
+	StagingKeyPrefix  string
+	StagingUploader   uploadstagingports.Uploader
 }
 
-func Run(ctx context.Context, options Options) (artifactbackend.Result, error) {
+func Run(ctx context.Context, options Options) (cleanuphandle.Handle, error) {
 	if strings.TrimSpace(options.UploadToken) == "" {
-		return artifactbackend.Result{}, errors.New("upload token must not be empty")
+		return cleanuphandle.Handle{}, errors.New("upload token must not be empty")
 	}
-	if strings.TrimSpace(options.Publish.Task) == "" {
-		return artifactbackend.Result{}, errors.New("task is required for upload session")
+	if strings.TrimSpace(options.StagingBucket) == "" {
+		return cleanuphandle.Handle{}, errors.New("staging bucket must not be empty")
 	}
-
-	uploadDir, err := os.MkdirTemp("", "ai-model-upload-session-")
-	if err != nil {
-		return artifactbackend.Result{}, err
+	if strings.TrimSpace(options.StagingKeyPrefix) == "" {
+		return cleanuphandle.Handle{}, errors.New("staging key prefix must not be empty")
 	}
-	defer os.RemoveAll(uploadDir)
+	if options.StagingUploader == nil {
+		return cleanuphandle.Handle{}, errors.New("staging uploader must not be nil")
+	}
 
 	server := &http.Server{
 		Addr: fmt.Sprintf(":%d", normalizePort(options.ListenPort)),
 	}
 	resultCh := make(chan runResult, 1)
-	server.Handler = newHandler(uploadDir, options, resultCh)
+	server.Handler = newHandler(options, resultCh)
 
 	serverErrCh := make(chan error, 1)
 	go func() {
@@ -75,99 +74,127 @@ func Run(ctx context.Context, options Options) (artifactbackend.Result, error) {
 	select {
 	case <-ctx.Done():
 		_ = server.Shutdown(context.Background())
-		return artifactbackend.Result{}, ctx.Err()
+		return cleanuphandle.Handle{}, ctx.Err()
 	case result := <-resultCh:
 		_ = server.Shutdown(context.Background())
 		if result.err != nil {
-			return artifactbackend.Result{}, result.err
+			return cleanuphandle.Handle{}, result.err
 		}
 		if err := <-serverErrCh; err != nil {
-			return artifactbackend.Result{}, err
+			return cleanuphandle.Handle{}, err
 		}
 		return result.value, nil
 	case err := <-serverErrCh:
-		return artifactbackend.Result{}, err
+		return cleanuphandle.Handle{}, err
 	}
 }
 
 type runResult struct {
-	value artifactbackend.Result
+	value cleanuphandle.Handle
 	err   error
 }
 
-func newHandler(uploadDir string, options Options, resultCh chan<- runResult) http.Handler {
+func newHandler(options Options, resultCh chan<- runResult) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(writer http.ResponseWriter, request *http.Request) {
 		writer.WriteHeader(http.StatusOK)
 		_, _ = writer.Write([]byte("ok\n"))
 	})
 	mux.HandleFunc("/upload", func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPut {
-			http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if auth := strings.TrimSpace(request.Header.Get("Authorization")); auth != "Bearer "+strings.TrimSpace(options.UploadToken) {
-			http.Error(writer, "invalid upload token", http.StatusUnauthorized)
-			return
-		}
-		contentLength := strings.TrimSpace(request.Header.Get("Content-Length"))
-		if contentLength == "" {
-			http.Error(writer, "Content-Length header is required", http.StatusLengthRequired)
-			return
-		}
-		length, err := strconv.ParseInt(contentLength, 10, 64)
-		if err != nil || length <= 0 {
-			http.Error(writer, "invalid Content-Length header", http.StatusBadRequest)
-			return
-		}
-		if options.ExpectedSizeBytes > 0 && length != options.ExpectedSizeBytes {
-			http.Error(writer, "uploaded payload size does not match expected-size-bytes", http.StatusBadRequest)
-			return
-		}
-
-		uploadPath := filepath.Join(uploadDir, sanitizedUploadFileName(request.Header.Get(uploadFilenameHeader)))
-		stream, err := os.OpenFile(uploadPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			resultCh <- runResult{err: err}
-			return
-		}
-		written, err := io.Copy(stream, io.LimitReader(request.Body, length))
-		closeErr := stream.Close()
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusBadRequest)
-			resultCh <- runResult{err: err}
-			return
-		}
-		if closeErr != nil {
-			http.Error(writer, closeErr.Error(), http.StatusInternalServerError)
-			resultCh <- runResult{err: closeErr}
-			return
-		}
-		if written != length {
-			err := errors.New("unexpected end of upload stream")
-			http.Error(writer, err.Error(), http.StatusBadRequest)
-			resultCh <- runResult{err: err}
-			return
-		}
-
-		publishOptions := options.Publish
-		publishOptions.SourceType = modelsv1alpha1.ModelSourceTypeUpload
-		publishOptions.UploadPath = uploadPath
-		publishOptions.InputFormat = options.InputFormat
-
-		result, err := publishworker.Run(request.Context(), publishOptions)
-		if err != nil {
-			http.Error(writer, "upload processing failed", http.StatusInternalServerError)
-			resultCh <- runResult{err: err}
-			return
-		}
-
-		writer.WriteHeader(http.StatusCreated)
-		_, _ = writer.Write([]byte("upload accepted\n"))
-		resultCh <- runResult{value: result}
+		handleUpload(writer, request, options, resultCh)
+	})
+	mux.HandleFunc("/upload/", func(writer http.ResponseWriter, request *http.Request) {
+		handleUpload(writer, request, options, resultCh)
 	})
 	return mux
+}
+
+func handleUpload(
+	writer http.ResponseWriter,
+	request *http.Request,
+	options Options,
+	resultCh chan<- runResult,
+) {
+	if request.Method != http.MethodPut {
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !matchesUploadToken(request, options.UploadToken) {
+		http.Error(writer, "invalid upload token", http.StatusUnauthorized)
+		return
+	}
+	contentLength := strings.TrimSpace(request.Header.Get("Content-Length"))
+	if contentLength == "" {
+		http.Error(writer, "Content-Length header is required", http.StatusLengthRequired)
+		return
+	}
+	length, err := strconv.ParseInt(contentLength, 10, 64)
+	if err != nil || length <= 0 {
+		http.Error(writer, "invalid Content-Length header", http.StatusBadRequest)
+		return
+	}
+	if options.ExpectedSizeBytes > 0 && length != options.ExpectedSizeBytes {
+		http.Error(writer, "uploaded payload size does not match expected-size-bytes", http.StatusBadRequest)
+		return
+	}
+
+	fileName := sanitizedUploadFileName(request.Header.Get(uploadFilenameHeader))
+	key, err := uploadKey(options.StagingKeyPrefix, fileName)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		resultCh <- runResult{err: err}
+		return
+	}
+
+	if err := options.StagingUploader.Upload(request.Context(), uploadstagingports.UploadInput{
+		Bucket:        options.StagingBucket,
+		Key:           key,
+		ContentLength: length,
+		Body:          request.Body,
+	}); err != nil {
+		http.Error(writer, "upload staging failed", http.StatusInternalServerError)
+		resultCh <- runResult{err: err}
+		return
+	}
+
+	result := cleanuphandle.Handle{
+		Kind: cleanuphandle.KindUploadStaging,
+		UploadStaging: &cleanuphandle.UploadStagingHandle{
+			Bucket:    options.StagingBucket,
+			Key:       key,
+			FileName:  fileName,
+			SizeBytes: length,
+		},
+	}
+	writer.WriteHeader(http.StatusCreated)
+	_, _ = writer.Write([]byte("upload accepted\n"))
+	resultCh <- runResult{value: result}
+}
+
+func matchesUploadToken(request *http.Request, expectedToken string) bool {
+	expectedToken = strings.TrimSpace(expectedToken)
+	if expectedToken == "" {
+		return false
+	}
+	if token, ok := uploadTokenFromPath(request.URL.Path); ok {
+		return subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) == 1
+	}
+	auth := strings.TrimSpace(request.Header.Get("Authorization"))
+	if auth == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(auth), []byte("Bearer "+expectedToken)) == 1
+}
+
+func uploadTokenFromPath(path string) (string, bool) {
+	if !strings.HasPrefix(path, "/upload/") {
+		return "", false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(path, "/upload/"))
+	if token == "" || strings.Contains(token, "/") {
+		return "", false
+	}
+	return token, true
 }
 
 func sanitizedUploadFileName(raw string) string {
@@ -185,6 +212,14 @@ func sanitizedUploadFileName(raw string) string {
 		return "upload.bin"
 	}
 	return base
+}
+
+func uploadKey(prefix string, fileName string) (string, error) {
+	prefix = strings.Trim(strings.TrimSpace(prefix), "/")
+	if prefix == "" {
+		return "", errors.New("upload staging key prefix must not be empty")
+	}
+	return prefix + "/" + fileName, nil
 }
 
 func normalizePort(port int) int {

@@ -18,8 +18,10 @@ package main
 
 import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/kitops"
+	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/dataplane/artifactcleanup"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 func runArtifactCleanup(args []string) int {
@@ -38,11 +40,20 @@ func runArtifactCleanup(args []string) int {
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
 
+	var stagingRemover *uploadstagings3.Adapter
+	if handle, err := cleanuphandle.Decode(handleJSON); err == nil && handle.Kind == cleanuphandle.KindUploadStaging {
+		stagingRemover, err = uploadstagings3.New(uploadStagingS3ConfigFromEnv())
+		if err != nil {
+			return cmdsupport.CommandError(commandArtifactCleanup, err)
+		}
+	}
+
 	if err := artifactcleanup.Run(ctx, artifactcleanup.Options{
-		HandleJSON:   handleJSON,
-		DryRun:       dryRun,
-		Remover:      kitops.New(),
-		RegistryAuth: cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
+		HandleJSON:     handleJSON,
+		DryRun:         dryRun,
+		Remover:        kitops.New(),
+		StagingRemover: stagingRemover,
+		RegistryAuth:   cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
 	}); err != nil {
 		return cmdsupport.CommandError(commandArtifactCleanup, err)
 	}

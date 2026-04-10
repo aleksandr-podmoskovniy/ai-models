@@ -22,6 +22,7 @@ import (
 	apiinstall "github.com/deckhouse/ai-models/api/core/install"
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,6 +39,9 @@ func NewScheme(t *testing.T, installers ...SchemeInstaller) *runtime.Scheme {
 	apiinstall.Install(scheme)
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatalf("AddToScheme(corev1) error = %v", err)
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("AddToScheme(networkingv1) error = %v", err)
 	}
 	for _, install := range installers {
 		if err := install(scheme); err != nil {
@@ -120,5 +124,33 @@ func NewClusterModel() *modelsv1alpha1.ClusterModel {
 			UID:  types.UID("11111111-2222-3333-4444-555555555555"),
 		},
 		Spec: HuggingFaceSpec(),
+	}
+}
+
+func NewOCIRegistryWriteAuthSecret(namespace, name string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			".dockerconfigjson": []byte(`{"auths":{"registry.internal.local":{"username":"ai-models","password":"secret"}}}`),
+			"username":          []byte("ai-models"),
+			"password":          []byte("secret"),
+		},
+	}
+}
+
+func NewOCIRegistryCASecret(namespace, name string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			"ca.crt": []byte("-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n"),
+		},
 	}
 }

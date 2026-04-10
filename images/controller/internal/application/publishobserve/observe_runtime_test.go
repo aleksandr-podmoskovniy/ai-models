@@ -189,9 +189,10 @@ func TestObserveUploadSession(t *testing.T) {
 		{
 			name: "running session projects upload wait status",
 			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodRunning, "", modelsv1alpha1.ModelUploadStatus{
-				Command:    "curl -T model.tar",
-				Repository: "registry.example/upload",
-				ExpiresAt:  &expiresAt,
+				ExternalURL:  "https://ai-models.example.com/upload/token",
+				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:   "registry.example/upload",
+				ExpiresAt:    &expiresAt,
 			}, nil),
 			now: time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
@@ -199,7 +200,7 @@ func TestObserveUploadSession(t *testing.T) {
 				if got.Observation.Phase != publicationdomain.OperationPhaseRunning {
 					t.Fatalf("unexpected phase %q", got.Observation.Phase)
 				}
-				if got.Observation.Upload == nil || got.Observation.Upload.Command == "" {
+				if got.Observation.Upload == nil || got.Observation.Upload.InClusterURL == "" {
 					t.Fatalf("unexpected upload observation %#v", got.Observation.Upload)
 				}
 				if got.DeleteRuntime {
@@ -210,9 +211,10 @@ func TestObserveUploadSession(t *testing.T) {
 		{
 			name: "expired session fails closed and deletes runtime",
 			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodRunning, "", modelsv1alpha1.ModelUploadStatus{
-				Command:    "curl -T model.tar",
-				Repository: "registry.example/upload",
-				ExpiresAt:  &expiresAt,
+				ExternalURL:  "https://ai-models.example.com/upload/token",
+				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:   "registry.example/upload",
+				ExpiresAt:    &expiresAt,
 			}, nil),
 			now: time.Date(2026, 4, 7, 13, 0, 0, 0, time.UTC),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
@@ -231,9 +233,10 @@ func TestObserveUploadSession(t *testing.T) {
 		{
 			name: "failed session uses default failure message",
 			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodFailed, "   ", modelsv1alpha1.ModelUploadStatus{
-				Command:    "curl -T model.tar",
-				Repository: "registry.example/upload",
-				ExpiresAt:  &expiresAt,
+				ExternalURL:  "https://ai-models.example.com/upload/token",
+				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:   "registry.example/upload",
+				ExpiresAt:    &expiresAt,
 			}, nil),
 			now: time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
@@ -252,9 +255,10 @@ func TestObserveUploadSession(t *testing.T) {
 		{
 			name: "completed session without result fails closed",
 			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodSucceeded, " ", modelsv1alpha1.ModelUploadStatus{
-				Command:    "curl -T model.tar",
-				Repository: "registry.example/upload",
-				ExpiresAt:  &expiresAt,
+				ExternalURL:  "https://ai-models.example.com/upload/token",
+				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:   "registry.example/upload",
+				ExpiresAt:    &expiresAt,
 			}, nil),
 			now: time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
@@ -262,7 +266,7 @@ func TestObserveUploadSession(t *testing.T) {
 				if got.Observation.Phase != publicationdomain.OperationPhaseFailed {
 					t.Fatalf("unexpected phase %q", got.Observation.Phase)
 				}
-				if got.Observation.Message != "upload session completed without a publication result" {
+				if got.Observation.Message != "upload session completed without a staging result" {
 					t.Fatalf("unexpected failure message %q", got.Observation.Message)
 				}
 				if !got.DeleteRuntime {
@@ -271,20 +275,21 @@ func TestObserveUploadSession(t *testing.T) {
 			},
 		},
 		{
-			name: "completed session decodes success payload",
-			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodSucceeded, succeededTerminationMessage(t), modelsv1alpha1.ModelUploadStatus{
-				Command:    "curl -T model.tar",
-				Repository: "registry.example/upload",
-				ExpiresAt:  &expiresAt,
+			name: "completed session decodes staging handle",
+			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodSucceeded, uploadStagingTerminationMessage(t), modelsv1alpha1.ModelUploadStatus{
+				ExternalURL:  "https://ai-models.example.com/upload/token",
+				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:   "registry.example/upload",
+				ExpiresAt:    &expiresAt,
 			}, nil),
 			now: time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
 				t.Helper()
-				if got.Observation.Phase != publicationdomain.OperationPhaseSucceeded {
+				if got.Observation.Phase != publicationdomain.OperationPhaseStaged {
 					t.Fatalf("unexpected phase %q", got.Observation.Phase)
 				}
-				if got.Observation.Snapshot == nil || got.Observation.Snapshot.Artifact.URI == "" {
-					t.Fatalf("unexpected snapshot %#v", got.Observation.Snapshot)
+				if got.Observation.CleanupHandle == nil || got.Observation.CleanupHandle.Kind != cleanuphandle.KindUploadStaging {
+					t.Fatalf("unexpected cleanup handle %#v", got.Observation.CleanupHandle)
 				}
 				if !got.DeleteRuntime {
 					t.Fatal("expected runtime delete after success")
@@ -365,6 +370,24 @@ func succeededTerminationMessage(t *testing.T) string {
 	})
 	if err != nil {
 		t.Fatalf("EncodeResult() error = %v", err)
+	}
+	return payload
+}
+
+func uploadStagingTerminationMessage(t *testing.T) string {
+	t.Helper()
+
+	payload, err := cleanuphandle.Encode(cleanuphandle.Handle{
+		Kind: cleanuphandle.KindUploadStaging,
+		UploadStaging: &cleanuphandle.UploadStagingHandle{
+			Bucket:    "ai-models",
+			Key:       "uploaded-model-staging/550e8400-e29b-41d4-a716-446655440000/model.gguf",
+			FileName:  "model.gguf",
+			SizeBytes: 42,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
 	}
 	return payload
 }

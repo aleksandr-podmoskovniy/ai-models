@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
@@ -44,7 +45,7 @@ func NewService(client client.Client, scheme *runtime.Scheme, options Options) (
 		return nil, errors.New("source worker service scheme must not be nil")
 	}
 	options = workloadpod.NormalizeRuntimeOptions(options)
-	if err := validateOptions(options); err != nil {
+	if err := workloadpod.ValidateRuntimeOptions("source worker", options); err != nil {
 		return nil, err
 	}
 
@@ -72,8 +73,24 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 	if err != nil {
 		return nil, false, err
 	}
+	projection, err := ociregistry.EnsureProjectedAccess(
+		ctx,
+		s.client,
+		s.scheme,
+		owner,
+		s.options.Namespace,
+		request.Request.Owner.UID,
+		s.options.OCIRegistrySecretName,
+		s.options.OCIRegistryCASecretName,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	options := s.options
+	options.OCIRegistrySecretName = projection.AuthSecretName
+	options.OCIRegistryCASecretName = projection.CASecretName
 
-	pod, err := buildWithPlan(request, plan, s.options, projectedAuthSecretName)
+	pod, err := buildWithPlan(request, plan, options, projectedAuthSecretName)
 	if err != nil {
 		return nil, false, err
 	}
@@ -100,6 +117,12 @@ func (s *Service) handleFromPod(pod *corev1.Pod) *publicationports.SourceWorkerH
 func (s *Service) deleteResources(ctx context.Context, pod *corev1.Pod) error {
 	if s == nil || pod == nil {
 		return nil
+	}
+	ownerUID, ok := resourcenames.OwnerUIDFromLabels(pod.Labels)
+	if ok {
+		if err := ociregistry.DeleteProjectedAccess(ctx, s.client, s.options.Namespace, ownerUID); err != nil {
+			return err
+		}
 	}
 	secret, err := s.projectedAuthSecretForPod(pod)
 	if err != nil {

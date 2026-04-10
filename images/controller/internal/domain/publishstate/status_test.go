@@ -41,6 +41,7 @@ func TestProjectStatusRunningNonUploadStaysPublishing(t *testing.T) {
 
 	projection, err := ProjectStatus(
 		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{},
 		5,
 		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		Observation{Phase: OperationPhaseRunning},
@@ -53,11 +54,12 @@ func TestProjectStatusRunningNonUploadStaysPublishing(t *testing.T) {
 	}
 }
 
-func TestProjectStatusRunningUploadWithoutSession(t *testing.T) {
+func TestProjectStatusRunningUploadWithoutSessionShowsPublishing(t *testing.T) {
 	t.Parallel()
 
 	projection, err := ProjectStatus(
 		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{},
 		5,
 		modelsv1alpha1.ModelSourceTypeUpload,
 		Observation{Phase: OperationPhaseRunning},
@@ -65,7 +67,7 @@ func TestProjectStatusRunningUploadWithoutSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProjectStatus() error = %v", err)
 	}
-	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhasePending; got != want {
+	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhasePublishing; got != want {
 		t.Fatalf("unexpected phase %q", got)
 	}
 	if !projection.Requeue {
@@ -79,14 +81,16 @@ func TestProjectStatusRunningUploadWithSession(t *testing.T) {
 	expiresAt := metav1.NewTime(time.Unix(1712345678, 0).UTC())
 	projection, err := ProjectStatus(
 		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{},
 		5,
 		modelsv1alpha1.ModelSourceTypeUpload,
 		Observation{
 			Phase: OperationPhaseRunning,
 			Upload: &modelsv1alpha1.ModelUploadStatus{
-				ExpiresAt:  &expiresAt,
-				Repository: "registry.example/upload",
-				Command:    "curl -T file",
+				ExpiresAt:    &expiresAt,
+				Repository:   "registry.example/upload",
+				ExternalURL:  "https://ai-models.example.com/upload/token",
+				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
 			},
 		},
 	)
@@ -96,12 +100,63 @@ func TestProjectStatusRunningUploadWithSession(t *testing.T) {
 	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhaseWaitForUpload; got != want {
 		t.Fatalf("unexpected phase %q", got)
 	}
-	if projection.Status.Upload == nil || projection.Status.Upload.Command != "curl -T file" {
+	if projection.Status.Upload == nil || projection.Status.Upload.InClusterURL != "http://upload-a.d8-ai-models.svc:8444/upload/token" {
 		t.Fatalf("unexpected upload status %#v", projection.Status.Upload)
 	}
 	uploadReady := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionUploadReady))
 	if uploadReady == nil || uploadReady.Status != metav1.ConditionTrue {
 		t.Fatalf("expected upload-ready condition, got %#v", uploadReady)
+	}
+}
+
+func TestProjectStatusStagedRequeuesIntoPublishPhase(t *testing.T) {
+	t.Parallel()
+
+	handle := cleanuphandle.Handle{
+		Kind: cleanuphandle.KindUploadStaging,
+		UploadStaging: &cleanuphandle.UploadStagingHandle{
+			Bucket:   "ai-models",
+			Key:      "uploaded-model-staging/1111-2222/model.gguf",
+			FileName: "model.gguf",
+		},
+	}
+
+	projection, err := ProjectStatus(
+		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{},
+		5,
+		modelsv1alpha1.ModelSourceTypeUpload,
+		Observation{
+			Phase:         OperationPhaseStaged,
+			CleanupHandle: &handle,
+		},
+	)
+	if err != nil {
+		t.Fatalf("ProjectStatus() error = %v", err)
+	}
+	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhasePublishing; got != want {
+		t.Fatalf("unexpected phase %q", got)
+	}
+	if !projection.Requeue {
+		t.Fatal("expected staged upload to requeue into publish worker")
+	}
+	if projection.CleanupHandle == nil || projection.CleanupHandle.Kind != cleanuphandle.KindUploadStaging {
+		t.Fatalf("unexpected cleanup handle %#v", projection.CleanupHandle)
+	}
+}
+
+func TestProjectStatusStagedRequiresCleanupHandle(t *testing.T) {
+	t.Parallel()
+
+	_, err := ProjectStatus(
+		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{},
+		5,
+		modelsv1alpha1.ModelSourceTypeUpload,
+		Observation{Phase: OperationPhaseStaged},
+	)
+	if err == nil {
+		t.Fatal("expected missing staged cleanup handle error")
 	}
 }
 
@@ -117,6 +172,7 @@ func TestProjectStatusFailed(t *testing.T) {
 
 	projection, err := ProjectStatus(
 		current,
+		modelsv1alpha1.ModelSpec{},
 		5,
 		modelsv1alpha1.ModelSourceTypeHTTP,
 		Observation{
@@ -151,6 +207,33 @@ func TestProjectStatusSucceeded(t *testing.T) {
 	}
 	projection, err := ProjectStatus(
 		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{
+			ModelType: modelsv1alpha1.ModelTypeLLM,
+			UsagePolicy: &modelsv1alpha1.ModelUsagePolicy{
+				AllowedEndpointTypes: []modelsv1alpha1.ModelEndpointType{
+					modelsv1alpha1.ModelEndpointTypeChat,
+				},
+			},
+			LaunchPolicy: &modelsv1alpha1.ModelLaunchPolicy{
+				AllowedRuntimes: []modelsv1alpha1.ModelRuntimeEngine{
+					modelsv1alpha1.ModelRuntimeEngineKServe,
+				},
+				PreferredRuntime: modelsv1alpha1.ModelRuntimeEngineKServe,
+				AllowedAcceleratorVendors: []modelsv1alpha1.ModelAcceleratorVendor{
+					modelsv1alpha1.ModelAcceleratorVendorNVIDIA,
+				},
+				AllowedPrecisions: []modelsv1alpha1.ModelPrecision{
+					modelsv1alpha1.ModelPrecisionINT4,
+				},
+			},
+			Optimization: &modelsv1alpha1.ModelOptimizationPolicy{
+				SpeculativeDecoding: &modelsv1alpha1.ModelSpeculativeDecodingPolicy{
+					DraftModelRefs: []modelsv1alpha1.ModelReference{
+						{Kind: modelsv1alpha1.ModelReferenceKindClusterModel, Name: "deepseek-r1-draft"},
+					},
+				},
+			},
+		},
 		5,
 		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		Observation{
@@ -223,11 +306,62 @@ func TestProjectStatusSucceeded(t *testing.T) {
 	}
 }
 
+func TestProjectStatusSucceededValidationFailure(t *testing.T) {
+	t.Parallel()
+
+	handle := cleanuphandle.Handle{
+		Kind: cleanuphandle.KindBackendArtifact,
+		Backend: &cleanuphandle.BackendArtifactHandle{
+			Reference: "registry.example/model@sha256:deadbeef",
+		},
+	}
+
+	projection, err := ProjectStatus(
+		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{
+			ModelType: modelsv1alpha1.ModelTypeEmbeddings,
+		},
+		5,
+		modelsv1alpha1.ModelSourceTypeHuggingFace,
+		Observation{
+			Phase: OperationPhaseSucceeded,
+			Snapshot: &publicationdata.Snapshot{
+				Source: publicationdata.SourceProvenance{Type: modelsv1alpha1.ModelSourceTypeHuggingFace},
+				Artifact: publicationdata.PublishedArtifact{
+					Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
+					URI:       "registry.example/model@sha256:deadbeef",
+					Digest:    "sha256:deadbeef",
+					MediaType: "application/vnd.cncf.model.manifest.v1+json",
+				},
+				Resolved: publicationdata.ResolvedProfile{
+					Task:                   "text-generation",
+					Framework:              "transformers",
+					Format:                 "Safetensors",
+					SupportedEndpointTypes: []string{"OpenAIChatCompletions", "OpenAICompletions"},
+					CompatibleRuntimes:     []string{"KServe"},
+				},
+			},
+			CleanupHandle: &handle,
+		},
+	)
+	if err != nil {
+		t.Fatalf("ProjectStatus() error = %v", err)
+	}
+	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhaseFailed; got != want {
+		t.Fatalf("unexpected phase %q", got)
+	}
+	validated := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionValidated))
+	if validated == nil || validated.Status != metav1.ConditionFalse || validated.Reason != string(modelsv1alpha1.ModelConditionReasonModelTypeMismatch) {
+		t.Fatalf("unexpected validated condition %#v", validated)
+	}
+}
+
 func TestProjectStatusSucceededRequiresSnapshot(t *testing.T) {
 	t.Parallel()
 
 	_, err := ProjectStatus(
 		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{},
 		5,
 		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		Observation{Phase: OperationPhaseSucceeded},
@@ -242,6 +376,7 @@ func TestProjectStatusSucceededRequiresCleanupHandle(t *testing.T) {
 
 	_, err := ProjectStatus(
 		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{},
 		5,
 		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		Observation{

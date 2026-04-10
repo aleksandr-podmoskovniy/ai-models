@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 func TestPlanSourceWorker(t *testing.T) {
@@ -158,6 +159,21 @@ func TestPlanSourceWorker(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "upload source with staged handle is accepted",
+			spec: modelsv1alpha1.ModelSpec{
+				Source: modelsv1alpha1.ModelSourceSpec{
+					Upload: &modelsv1alpha1.UploadModelSource{},
+				},
+				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
+			},
+			assert: func(t *testing.T, got SourceWorkerPlan) {
+				t.Helper()
+				if got.Upload == nil || got.Upload.Stage.Key != "uploaded-model-staging/1111-2222/model.gguf" {
+					t.Fatalf("unexpected upload plan %#v", got.Upload)
+				}
+			},
+		},
+		{
 			name: "upload source is rejected on worker path",
 			spec: modelsv1alpha1.ModelSpec{
 				Source: modelsv1alpha1.ModelSourceSpec{
@@ -173,7 +189,15 @@ func TestPlanSourceWorker(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := PlanSourceWorker(tc.spec, tc.ownerNS)
+			var uploadStage *cleanuphandle.UploadStagingHandle
+			if tc.name == "upload source with staged handle is accepted" {
+				uploadStage = &cleanuphandle.UploadStagingHandle{
+					Bucket:   "ai-models",
+					Key:      "uploaded-model-staging/1111-2222/model.gguf",
+					FileName: "model.gguf",
+				}
+			}
+			got, err := PlanSourceWorker(tc.spec, tc.ownerNS, uploadStage)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected error")

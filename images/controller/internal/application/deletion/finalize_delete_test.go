@@ -127,16 +127,49 @@ func TestFinalizeDelete(t *testing.T) {
 			},
 		},
 		{
-			name: "completed cleanup job removes finalizer",
+			name: "completed cleanup job requests garbage collection",
 			input: FinalizeDeleteInput{
-				HasFinalizer: true,
-				HandleFound:  true,
-				HandleKind:   cleanuphandle.KindBackendArtifact,
-				JobState:     CleanupJobStateComplete,
+				HasFinalizer:           true,
+				HandleFound:            true,
+				HandleKind:             cleanuphandle.KindBackendArtifact,
+				JobState:               CleanupJobStateComplete,
+				GarbageCollectionState: GarbageCollectionStateMissing,
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if !got.RemoveFinalizer || got.UpdateStatus {
+				if !got.EnsureGarbageCollectionRequest || !got.UpdateStatus || !got.Requeue {
+					t.Fatalf("unexpected decision %#v", got)
+				}
+			},
+		},
+		{
+			name: "requested garbage collection requeues",
+			input: FinalizeDeleteInput{
+				HasFinalizer:           true,
+				HandleFound:            true,
+				HandleKind:             cleanuphandle.KindBackendArtifact,
+				JobState:               CleanupJobStateComplete,
+				GarbageCollectionState: GarbageCollectionStateRequested,
+			},
+			assert: func(t *testing.T, got FinalizeDeleteDecision) {
+				t.Helper()
+				if got.EnsureGarbageCollectionRequest || !got.UpdateStatus || !got.Requeue {
+					t.Fatalf("unexpected decision %#v", got)
+				}
+			},
+		},
+		{
+			name: "completed cleanup and garbage collection removes finalizer",
+			input: FinalizeDeleteInput{
+				HasFinalizer:           true,
+				HandleFound:            true,
+				HandleKind:             cleanuphandle.KindBackendArtifact,
+				JobState:               CleanupJobStateComplete,
+				GarbageCollectionState: GarbageCollectionStateComplete,
+			},
+			assert: func(t *testing.T, got FinalizeDeleteDecision) {
+				t.Helper()
+				if !got.RemoveFinalizer || !got.DeleteGarbageCollectionRequest || got.UpdateStatus {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
@@ -147,6 +180,101 @@ func TestFinalizeDelete(t *testing.T) {
 				HasFinalizer: true,
 				HandleFound:  true,
 				HandleKind:   cleanuphandle.KindBackendArtifact,
+				JobState:     CleanupJobState("Unknown"),
+			},
+			assert: func(t *testing.T, got FinalizeDeleteDecision) {
+				t.Helper()
+				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonCleanupFailed || !got.Requeue {
+					t.Fatalf("unexpected decision %#v", got)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := FinalizeDelete(tc.input)
+			tc.assert(t, got)
+		})
+	}
+}
+
+func TestFinalizeDeleteUploadStagingLifecycle(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		input  FinalizeDeleteInput
+		assert func(t *testing.T, got FinalizeDeleteDecision)
+	}{
+		{
+			name: "upload staging missing job creates cleanup job",
+			input: FinalizeDeleteInput{
+				HasFinalizer: true,
+				HandleFound:  true,
+				HandleKind:   cleanuphandle.KindUploadStaging,
+				JobState:     CleanupJobStateMissing,
+			},
+			assert: func(t *testing.T, got FinalizeDeleteDecision) {
+				t.Helper()
+				if !got.CreateJob || !got.UpdateStatus || !got.Requeue {
+					t.Fatalf("unexpected decision %#v", got)
+				}
+			},
+		},
+		{
+			name: "upload staging running job requeues",
+			input: FinalizeDeleteInput{
+				HasFinalizer: true,
+				HandleFound:  true,
+				HandleKind:   cleanuphandle.KindUploadStaging,
+				JobState:     CleanupJobStateRunning,
+			},
+			assert: func(t *testing.T, got FinalizeDeleteDecision) {
+				t.Helper()
+				if got.CreateJob || !got.UpdateStatus || !got.Requeue {
+					t.Fatalf("unexpected decision %#v", got)
+				}
+			},
+		},
+		{
+			name: "upload staging failed job fails closed",
+			input: FinalizeDeleteInput{
+				HasFinalizer: true,
+				HandleFound:  true,
+				HandleKind:   cleanuphandle.KindUploadStaging,
+				JobState:     CleanupJobStateFailed,
+			},
+			assert: func(t *testing.T, got FinalizeDeleteDecision) {
+				t.Helper()
+				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonCleanupFailed || !got.Requeue {
+					t.Fatalf("unexpected decision %#v", got)
+				}
+			},
+		},
+		{
+			name: "upload staging completed job removes finalizer",
+			input: FinalizeDeleteInput{
+				HasFinalizer: true,
+				HandleFound:  true,
+				HandleKind:   cleanuphandle.KindUploadStaging,
+				JobState:     CleanupJobStateComplete,
+			},
+			assert: func(t *testing.T, got FinalizeDeleteDecision) {
+				t.Helper()
+				if !got.RemoveFinalizer || got.UpdateStatus || got.Requeue {
+					t.Fatalf("unexpected decision %#v", got)
+				}
+			},
+		},
+		{
+			name: "upload staging unknown job state fails closed",
+			input: FinalizeDeleteInput{
+				HasFinalizer: true,
+				HandleFound:  true,
+				HandleKind:   cleanuphandle.KindUploadStaging,
 				JobState:     CleanupJobState("Unknown"),
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {

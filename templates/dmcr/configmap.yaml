@@ -1,0 +1,62 @@
+{{- if (include "ai-models.isEnabled" .) }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ai-models.dmcrConfigMapName" . }}
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "dmcr")) | nindent 2 }}
+data:
+  config.yml: |-
+    version: 0.1
+    log:
+      fields:
+        service: ai-models-dmcr
+    storage:
+      cache:
+        blobdescriptor: inmemory
+      delete:
+        enabled: true
+{{- if eq (include "ai-models.dmcrGarbageCollectionModeEnabled" . | trim) "true" }}
+      maintenance:
+        readonly:
+          enabled: true
+{{- end }}
+      redirect:
+        disable: true
+{{- if eq (include "ai-models.publicationStorageType" . | trim) "PersistentVolumeClaim" }}
+      filesystem:
+        rootdirectory: /var/lib/registry
+{{- else }}
+      s3:
+        region: {{ include "ai-models.artifactsRegion" . | quote }}
+        bucket: {{ include "ai-models.publicationStorageBucket" . | quote }}
+        regionendpoint: {{ include "ai-models.artifactsEndpointHost" . | quote }}
+        rootdirectory: {{ include "ai-models.publicationStorageRootDirectory" . | quote }}
+        forcepathstyle: {{ eq (include "ai-models.artifactsUsePathStyleBool" . | trim) "true" }}
+        secure: {{ eq (include "ai-models.artifactsEndpointSecure" . | trim) "true" }}
+        skipverify: {{ eq (include "ai-models.artifactsIgnoreTLS" . | trim) "true" }}
+{{- end }}
+    auth:
+      htpasswd:
+        realm: Registry Realm
+        path: /auth/htpasswd
+    http:
+      addr: :5000
+      secret: placeholder-overridden-by-env
+      tls:
+        certificate: /etc/ssl/docker/tls.crt
+        key: /etc/ssl/docker/tls.key
+      headers:
+        X-Content-Type-Options: [nosniff]
+      debug:
+        addr: 127.0.0.1:5001
+        prometheus:
+          enabled: true
+          path: /metrics
+    health:
+      storagedriver:
+        enabled: true
+        interval: 10s
+        threshold: 3
+{{- end }}

@@ -44,9 +44,10 @@ type Owner struct {
 }
 
 type Request struct {
-	Owner    Owner                      `json:"owner"`
-	Identity publishedsnapshot.Identity `json:"identity"`
-	Spec     modelsv1alpha1.ModelSpec   `json:"spec"`
+	Owner       Owner                              `json:"owner"`
+	Identity    publishedsnapshot.Identity         `json:"identity"`
+	Spec        modelsv1alpha1.ModelSpec           `json:"spec"`
+	UploadStage *cleanuphandle.UploadStagingHandle `json:"uploadStage,omitempty"`
 }
 
 type Result struct {
@@ -72,6 +73,21 @@ func (r Request) Validate() error {
 	}
 	if err := r.Identity.Validate(); err != nil {
 		return err
+	}
+	sourceType, err := r.Spec.Source.DetectType()
+	if err != nil {
+		return err
+	}
+	if r.UploadStage != nil {
+		if sourceType != modelsv1alpha1.ModelSourceTypeUpload {
+			return errors.New("publication operation upload stage is only supported for upload source")
+		}
+		if err := (cleanuphandle.Handle{
+			Kind:          cleanuphandle.KindUploadStaging,
+			UploadStaging: r.UploadStage,
+		}).Validate(); err != nil {
+			return err
+		}
 	}
 	return validateRequestSource(r.Spec.Source)
 }

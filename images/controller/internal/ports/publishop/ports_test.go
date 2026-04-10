@@ -52,8 +52,9 @@ func TestUploadSessionHandleHelpers(t *testing.T) {
 
 	deleted := false
 	handle := NewUploadSessionHandle("upload-worker", corev1.PodFailed, "upload failed", modelsv1alpha1.ModelUploadStatus{
-		Command:    "curl ...",
-		Repository: "registry.example/upload",
+		ExternalURL:  "https://ai-models.example.com/upload/token",
+		InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+		Repository:   "registry.example/upload",
 	}, func(context.Context) error {
 		deleted = true
 		return nil

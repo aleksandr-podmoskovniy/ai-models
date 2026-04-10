@@ -75,6 +75,88 @@ spec:
                 - Safetensors
                 - GGUF
                 type: string
+              launchPolicy:
+                properties:
+                  allowedAcceleratorVendors:
+                    items:
+                      enum:
+                      - NVIDIA
+                      - AMD
+                      - Intel
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  allowedPrecisions:
+                    items:
+                      enum:
+                      - FP32
+                      - FP16
+                      - BF16
+                      - FP8
+                      - INT8
+                      - INT4
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  allowedRuntimes:
+                    items:
+                      enum:
+                      - KServe
+                      - KubeRay
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  preferredRuntime:
+                    enum:
+                    - KServe
+                    - KubeRay
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: launchPolicy.preferredRuntime must be included in launchPolicy.allowedRuntimes
+                  rule: '!has(self.preferredRuntime) || !(size(self.allowedRuntimes)
+                    > 0) || self.preferredRuntime in self.allowedRuntimes'
+              modelType:
+                enum:
+                - LLM
+                - Embeddings
+                - Reranker
+                - SpeechToText
+                - Translation
+                type: string
+              optimization:
+                properties:
+                  speculativeDecoding:
+                    properties:
+                      draftModelRefs:
+                        items:
+                          properties:
+                            kind:
+                              enum:
+                              - Model
+                              - ClusterModel
+                              type: string
+                            name:
+                              type: string
+                            namespace:
+                              description: For `Model`, empty namespace resolves to
+                                the owner's namespace.
+                              type: string
+                          required:
+                          - kind
+                          - name
+                          type: object
+                          x-kubernetes-validations:
+                          - message: optimization.speculativeDecoding.draftModelRefs
+                              items must contain kind and name
+                            rule: size(self.kind) > 0 && size(self.name) > 0
+                          - message: namespace must be empty for ClusterModel references
+                            rule: 'self.kind != ''ClusterModel'' ? true : size(self.namespace)
+                              == 0'
+                        type: array
+                        x-kubernetes-list-type: atomic
+                    type: object
+                type: object
               runtimeHints:
                 properties:
                   engines:
@@ -126,6 +208,21 @@ spec:
                   rule: 'has(self.upload) ? !has(self.authSecretRef) : true'
                 - message: source.caBundle is only allowed for source.url
                   rule: 'has(self.upload) ? size(self.caBundle) == 0 : true'
+              usagePolicy:
+                properties:
+                  allowedEndpointTypes:
+                    items:
+                      enum:
+                      - Chat
+                      - TextGeneration
+                      - Embeddings
+                      - Rerank
+                      - SpeechToText
+                      - Translation
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
             required:
             - source
             type: object
@@ -136,6 +233,14 @@ spec:
               rule: self.inputFormat == oldSelf.inputFormat
             - message: spec.runtimeHints is immutable
               rule: self.runtimeHints == oldSelf.runtimeHints
+            - message: spec.modelType is immutable
+              rule: self.modelType == oldSelf.modelType
+            - message: spec.usagePolicy is immutable
+              rule: self.usagePolicy == oldSelf.usagePolicy
+            - message: spec.launchPolicy is immutable
+              rule: self.launchPolicy == oldSelf.launchPolicy
+            - message: spec.optimization is immutable
+              rule: self.optimization == oldSelf.optimization
           status:
             description: |-
               ModelStatus is the shared observed state for both Model and ClusterModel.
@@ -304,10 +409,12 @@ spec:
                 type: object
               upload:
                 properties:
-                  command:
-                    type: string
                   expiresAt:
                     format: date-time
+                    type: string
+                  externalURL:
+                    type: string
+                  inClusterURL:
                     type: string
                   repository:
                     type: string

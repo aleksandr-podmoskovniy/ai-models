@@ -52,6 +52,7 @@ images/controller/
     ports/
       publishop/
       modelpack/
+      uploadstaging/
     artifactbackend/
     publishedsnapshot/
     controllers/
@@ -59,6 +60,7 @@ images/controller/
       catalogcleanup/
     adapters/
       k8s/
+        objectstorage/
         ociregistry/
         ownedresource/
         sourceworker/
@@ -72,6 +74,8 @@ images/controller/
         safetensors/
       modelpack/
         kitops/
+      uploadstaging/
+        s3/
     dataplane/
       publishworker/
       uploadsession/
@@ -120,6 +124,10 @@ images/controller/
   composition root manager runtime.
 - `KEEP` `internal/cmdsupport/`:
   shared process-level glue для manager и runtime binary.
+- `RULE` `internal/cmdsupport/` не должен знать concrete adapters или
+  domain-specific result payloads:
+  если helper нужен только `ai-models-artifact-runtime`, он живёт в `cmd/`
+  этой binary boundary, а не в shared glue.
 - `REJECT` возвращение generic пакета вроде `internal/app`:
   рядом уже есть `internal/application`, второй generic alias только портит
   карту дерева.
@@ -133,8 +141,14 @@ images/controller/
   `internal/application/publishobserve/` и
   `internal/application/deletion/`:
   use-case слой здесь реальный, а не декоративный.
+  `deletion/` теперь владеет и delete-time DMCR garbage-collection policy, а
+  не только созданием cleanup Job.
 - `KEEP` `internal/ports/publishop/` и `internal/ports/modelpack/`:
   это live runtime contracts, а не adapter-local types.
+- `KEEP` `internal/ports/uploadstaging/`:
+  staging handoff для upload path теперь отдельный runtime contract.
+  Его нельзя прятать внутрь `publishop`, потому что это уже другой storage
+  lifecycle и другой cleanup surface.
 - `KEEP` `internal/artifactbackend/` и `internal/publishedsnapshot/`:
   это разные handoff models. Backend transport contract и internal published
   snapshot нельзя смешивать в один generic пакет `publication`.
@@ -145,6 +159,8 @@ images/controller/
   это текущий live owner publication lifecycle для `Model` и `ClusterModel`.
 - `KEEP` `internal/controllers/catalogcleanup/`:
   это отдельный delete/finalizer owner.
+  После перехода на internal DMCR он владеет не только cleanup Job, но и
+  lifecycle garbage-collection request до снятия finalizer.
 - `KEEP` `internal/controllers/catalogcleanup/job.go` внутри controller package:
   отдельный `adapters/k8s/cleanupjob` был бы fake boundary без второго
   потребителя.
@@ -157,13 +173,15 @@ images/controller/
 - `KEEP` `internal/adapters/k8s/sourceworker/` и
   `internal/adapters/k8s/uploadsession/`:
   это concrete runtime adapters behind shared ports.
-- `KEEP` `internal/adapters/k8s/ociregistry/`,
+- `KEEP` `internal/adapters/k8s/objectstorage/`,
+  `internal/adapters/k8s/ociregistry/`,
   `internal/adapters/k8s/ownedresource/`,
   `internal/adapters/k8s/workloadpod/`:
   эти пакеты оправданы только потому, что убирают реальное повторение между
   несколькими K8s adapters.
 - `KEEP` `internal/adapters/sourcefetch/`, `internal/adapters/modelformat/`,
-  `internal/adapters/modelprofile/*`, `internal/adapters/modelpack/kitops/`:
+  `internal/adapters/modelprofile/*`, `internal/adapters/modelpack/kitops/`,
+  `internal/adapters/uploadstaging/s3/`:
   это concrete non-K8s adapters. Их нельзя утаскивать в `publishworker` или
   `support/*`.
 - `REJECT` adapter-local request wrappers, owner wrappers, local naming helpers
@@ -226,46 +244,97 @@ images/controller/
 ## 5. Текущие жёсткие findings по live tree
 
 Ниже не wishlist, а текущие hotspots по фактическому дереву на
-`2026-04-07`.
+`2026-04-10`.
 
-### 1. `internal/controllers/catalogstatus/` остаётся главным structural hotspot
+### 1. `internal/controllers/catalogcleanup/` всё ещё главный controller hotspot
 
-- Сейчас это самый тяжёлый controller package: примерно `562` non-test LOC.
-- После последних corrective cuts отсюда уже ушли runtime result decode,
-  upload-expiration policy, reconcile entry/skip gate и runtime
-  source-vs-upload orchestration вместе со status-mutation planning в
-  `application/publishobserve/`, но пакет всё ещё держит status persistence
-  shell.
+- Сейчас это самый тяжёлый controller package: примерно `836` non-test LOC.
+- Причина роста не cosmetic:
+  после internal DMCR slice delete lifecycle теперь реально включает
+  `cleanup Job -> GC request -> GC complete -> remove finalizer`.
+- Хорошая часть:
+  сам `Reconcile` остаётся тонким, а decision table живёт в
+  `application/deletion/`.
+- Плохая часть:
+  package уже больше не держит один generic `io.go`, но всё ещё тяжёлое:
+  observation, apply path, status updates и K8s-specific resource shaping
+  теперь честно разложены по `observe.go`, `apply.go`, `status.go`,
+  `job.go` и `gc_request.go`.
 - Вердикт:
-  пакет оставляем, но это первое место, куда нельзя бездумно добавлять новую
-  business branching. Следующий рост должен уходить в domain/application/ports,
-  а не в reconciler.
+  пакет оставляем, но это теперь первое место, куда нельзя добавлять новую
+  delete-time branching.
+  Если сюда пойдёт ещё рост, выносить надо не в новый fake adapter package, а
+  в более узкие helpers внутри той же boundary или в `application/deletion/`,
+  если меняется policy.
 
-### 2. `internal/adapters/sourcefetch/` велик, но пока ещё защищаем
+### 2. `internal/adapters/sourcefetch/` остаётся самым тяжёлым concrete adapter
 
-- Это самый крупный concrete adapter package: примерно `1019` non-test LOC.
-- Размер сам по себе уже тревожный, но boundary пока остаётся связной:
+- Пакет держит примерно `1024` non-test LOC и по-прежнему крупнейший во всём
+  controller tree.
+- Размер сам по себе тревожный, но boundary пока остаётся связной:
   remote ingest, provider-specific download и archive hardening действительно
   относятся к source acquisition.
 - Вердикт:
   пакет пока оставляем, но запрещаем складывать сюда format validation,
-  profiling и worker orchestration. При добавлении новых providers резать надо
-  по provider/transport seams, а не бесконечно наращивать один пакет.
+  profiling, publication orchestration и status logic.
+  При добавлении новых providers резать надо по provider/transport seams, а не
+  бесконечно наращивать один пакет.
 
-### 3. `internal/adapters/k8s/sourceworker/` и `uploadsession/` ещё живы, но уже на грани
+### 3. `internal/adapters/k8s/uploadsession/` теперь главный concrete K8s hotspot upload path
 
-- `sourceworker/` держит примерно `571` non-test LOC.
-- `uploadsession/` держит примерно `554` non-test LOC.
-- Оба пакета всё ещё оправданы:
-  каждый реализует один concrete runtime port и владеет своей группой K8s
-  supplements.
-- Дублирующий runtime options contract уже вынесен в
-  `internal/adapters/k8s/workloadpod/`; возвращать локальные копии этих полей
-  назад в adapters нельзя.
+- Пакет уже держит примерно `676` non-test LOC и перегнал `sourceworker/`.
+- Причина роста не случайная:
+  session `Secret/Service/Ingress/Pod`, public URL projection, replay/reuse и
+  object-storage staging wiring теперь действительно живут в одной adapter
+  boundary.
 - Вердикт:
-  новые фичи сюда вносить можно только через shared helpers или прямой binpack
-  fake seams. Нельзя возвращать adapter-local request models, proxy runtimes,
-  local naming policy и предварительные replay-only read branches.
+  пакет оставляем, но запрещаем тащить сюда publication policy, staging cleanup
+  semantics и source/profile logic.
+  Если будет следующий рост, резать надо по object-shaping helpers внутри этой
+  же boundary, а не возвращать fake runtime proxies или local request mirrors.
+
+### 4. `internal/application/publishobserve/` большой, но это правильный рост
+
+- Пакет держит примерно `570` non-test LOC.
+- Это не повод дробить его на шумовые подпакеты:
+  reconcile gate, runtime observation, staged-upload transition,
+  status-mutation planning и runtime orchestration действительно составляют
+  один application seam.
+- Вердикт:
+  пакет оставляем как единый use-case owner.
+  Следующий рост допустим только пока он не тащит назад K8s object shaping,
+  concrete Pod wiring или controller status persistence.
+
+### 5. `internal/adapters/modelformat/` стал отдельным живым hotspot и это надо признать
+
+- Пакет уже держит примерно `593` non-test LOC.
+- Это не generic dump:
+  detect/validate logic действительно образует один input-format adapter seam.
+  После текущего corrective slice он хотя бы разложен по честным
+  format-centric файлам:
+  `common`, `safetensors`, `gguf`, `detect`, `validation`.
+- Но здесь легко начать складывать то, чему не место рядом с validation:
+  profiling, runtime metadata, source-specific heuristics и backend-specific
+  packaging exceptions.
+- Вердикт:
+  boundary оставляем, но держим её жёстко format-centric.
+  Любая логика про endpoint types, accelerator compatibility или publish result
+  сюда попадать не должна.
+
+### 6. `internal/adapters/k8s/objectstorage/` и `internal/adapters/uploadstaging/s3/` малы, но это уже не шум
+
+- `internal/adapters/k8s/objectstorage/` держит примерно `126` non-test LOC.
+- `internal/adapters/uploadstaging/s3/` держит примерно `211` non-test LOC.
+- `internal/ports/uploadstaging/` держит примерно `58` non-test LOC.
+- Это не временный слой ради красоты:
+  staging-first upload path теперь реально использует отдельный storage
+  contract, отдельный cleanup handle kind и отдельный runtime handoff между
+  upload session и publish worker.
+- Вердикт:
+  эти seams оставляем.
+  Их нельзя схлопывать обратно в `uploadsession/` или `cmdsupport/`, потому что
+  тогда controller снова потеряет честную границу между upload edge, durable
+  staging и publish execution.
 
 ## 6. Практическое правило на следующий slice
 

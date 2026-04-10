@@ -20,6 +20,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
@@ -27,8 +28,14 @@ import (
 
 type Options = workloadpod.RuntimeOptions
 
-func validateOptions(options Options) error {
-	return workloadpod.ValidateRuntimeOptions("source worker", options)
+func validateOptions(plan publicationapp.SourceWorkerPlan, options Options) error {
+	if err := workloadpod.ValidateRuntimeOptions("source worker", options); err != nil {
+		return err
+	}
+	if plan.Upload != nil {
+		return objectstorage.ValidateOptions("source worker", options.ObjectStorage)
+	}
+	return nil
 }
 
 func sourcePlan(request publicationports.OperationContext) (publicationapp.SourceWorkerPlan, error) {
@@ -38,7 +45,7 @@ func sourcePlan(request publicationports.OperationContext) (publicationapp.Sourc
 	if err := request.Request.Identity.Validate(); err != nil {
 		return publicationapp.SourceWorkerPlan{}, err
 	}
-	return publicationapp.PlanSourceWorker(request.Request.Spec, request.Request.Owner.Namespace)
+	return publicationapp.PlanSourceWorker(request.Request.Spec, request.Request.Owner.Namespace, request.Request.UploadStage)
 }
 
 func validateOwner(owner publicationports.Owner) error {

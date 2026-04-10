@@ -37,6 +37,7 @@ func TestServiceGetOrCreateEncodesOwnerIdentityOnPod(t *testing.T) {
 	scheme := testkit.NewScheme(t)
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
+		WithObjects(testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write")).
 		Build()
 
 	service, err := NewService(kubeClient, scheme, Options{
@@ -44,7 +45,7 @@ func TestServiceGetOrCreateEncodesOwnerIdentityOnPod(t *testing.T) {
 		Image:                 "backend:latest",
 		ServiceAccountName:    "ai-models-controller",
 		OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-		OCIRegistrySecretName: "ai-models-publication-registry",
+		OCIRegistrySecretName: "ai-models-dmcr-auth-write",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -100,7 +101,7 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(modelOwner, sourceSecret).
+		WithObjects(modelOwner, sourceSecret, testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write")).
 		Build()
 
 	service, err := NewService(kubeClient, scheme, Options{
@@ -108,7 +109,7 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 		Image:                 "backend:latest",
 		ServiceAccountName:    "ai-models-controller",
 		OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-		OCIRegistrySecretName: "ai-models-publication-registry",
+		OCIRegistrySecretName: "ai-models-dmcr-auth-write",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -149,11 +150,28 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 	if len(projected.OwnerReferences) != 0 {
 		t.Fatalf("expected no cross-namespace owner reference on projected secret, got %d", len(projected.OwnerReferences))
 	}
+	registrySecretName, err := resourcenames.OCIRegistryAuthSecretName(request.Request.Owner.UID)
+	if err != nil {
+		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
+	}
+	registrySecret := &corev1.Secret{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: registrySecretName, Namespace: "d8-ai-models"}, registrySecret); err != nil {
+		t.Fatalf("Get(projected OCI auth secret) error = %v", err)
+	}
+	if got, want := string(registrySecret.Data["username"]), "ai-models"; got != want {
+		t.Fatalf("unexpected projected OCI username %q", got)
+	}
+	if got, want := string(registrySecret.Data["password"]), "secret"; got != want {
+		t.Fatalf("unexpected projected OCI password %q", got)
+	}
 
 	if err := handle.Delete(context.Background()); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: secretName, Namespace: "d8-ai-models"}, projected); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected projected secret to be deleted, got err=%v", err)
+	}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: registrySecretName, Namespace: "d8-ai-models"}, registrySecret); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected projected OCI auth secret to be deleted, got err=%v", err)
 	}
 }

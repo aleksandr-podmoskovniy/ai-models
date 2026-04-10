@@ -4,6 +4,11 @@ global:
     - cert-manager
     - managed-postgres
     - user-authn
+  internal:
+    modules:
+      kubeRBACProxyCA:
+        cert: KUBE-RBAC-PROXY-CA-CERT
+        key: KUBE-RBAC-PROXY-CA-KEY
   modules:
     publicDomainTemplate: "%s.platform.local"
     https:
@@ -15,10 +20,13 @@ global:
       base: dev-registry.deckhouse.io/sys/deckhouse-oss/modules/ai-models
       dockercfg: eyJhdXRocyI6e319
     digests:
+      common:
+        kubeRbacProxy: sha256:0000000000000000000000000000000000000000000000000000000000000000
       aiModels:
         backend: sha256:1111111111111111111111111111111111111111111111111111111111111111
         controller: sha256:2222222222222222222222222222222222222222222222222222222222222222
         controllerRuntime: sha256:3333333333333333333333333333333333333333333333333333333333333333
+        dmcr: sha256:4444444444444444444444444444444444444444444444444444444444444444
   discovery:
     clusterDomain: cluster.local
   clusterConfiguration:
@@ -31,7 +39,5 @@ aiModels:
     endpoint: https://s3.internal.local
     accessKey: ai-models-storage
     secretKey: ai-models-storage-secret
-  publicationRegistry:
-    repositoryPrefix: registry.internal.local/ai-models
-    username: ai-models-publisher
-    password: ai-models-publisher-secret
+  publicationStorage:
+    type: ObjectStorage

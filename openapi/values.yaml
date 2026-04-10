@@ -143,36 +143,51 @@ properties:
       usePathStyle:
         type: boolean
         default: true
-  publicationRegistry:
+  publicationStorage:
     type: object
-    description: Stable OCI publication registry settings exposed by ai-models.
+    description: Stable storage settings for the internal publication backend exposed by ai-models.
     additionalProperties: false
     default:
-      repositoryPrefix: ""
-      credentialsSecretName: ""
-      caSecretName: ""
-      username: ""
-      password: ""
-      insecure: false
+      type: ObjectStorage
+      objectStorage:
+        bucket: ""
+        pathPrefix: published-models
+      persistentVolumeClaim:
+        storageClassName: ""
+        storageSize: 50Gi
     properties:
-      repositoryPrefix:
+      type:
         type: string
-        default: ""
-      credentialsSecretName:
-        type: string
-        default: ""
-      caSecretName:
-        type: string
-        default: ""
-      username:
-        type: string
-        default: ""
-      password:
-        type: string
-        default: ""
-      insecure:
-        type: boolean
-        default: false
+        enum:
+          - ObjectStorage
+          - PersistentVolumeClaim
+        default: ObjectStorage
+      objectStorage:
+        type: object
+        additionalProperties: false
+        default:
+          bucket: ""
+          pathPrefix: published-models
+        properties:
+          bucket:
+            type: string
+            default: ""
+          pathPrefix:
+            type: string
+            default: published-models
+      persistentVolumeClaim:
+        type: object
+        additionalProperties: false
+        default:
+          storageClassName: ""
+          storageSize: 50Gi
+        properties:
+          storageClassName:
+            type: string
+            default: ""
+          storageSize:
+            type: string
+            default: 50Gi
   auth:
     type: object
     description: Stable authentication settings exposed by the ai-models module.
@@ -280,13 +295,14 @@ properties:
             secretKey: ""
             insecure: false
             usePathStyle: true
-          publicationRegistry:
-            repositoryPrefix: ""
-            credentialsSecretName: ""
-            caSecretName: ""
-            username: ""
-            password: ""
-            insecure: false
+          publicationStorage:
+            type: ObjectStorage
+            objectStorage:
+              bucket: ""
+              pathPrefix: published-models
+            persistentVolumeClaim:
+              storageClassName: ""
+              storageSize: 50Gi
         additionalProperties: true
       conditions:
         type: array

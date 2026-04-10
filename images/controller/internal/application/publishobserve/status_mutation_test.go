@@ -65,6 +65,7 @@ func TestPlanCatalogStatusMutation(t *testing.T) {
 		{
 			name: "running remote observation requeues without delete",
 			input: CatalogStatusMutationInput{
+				Spec: modelsv1alpha1.ModelSpec{},
 				Runtime: CatalogStatusRuntimeResult{
 					Generation: 7,
 					SourceType: modelsv1alpha1.ModelSourceTypeHuggingFace,
@@ -86,15 +87,17 @@ func TestPlanCatalogStatusMutation(t *testing.T) {
 		{
 			name: "running upload observation projects wait-for-upload",
 			input: CatalogStatusMutationInput{
+				Spec: modelsv1alpha1.ModelSpec{},
 				Runtime: CatalogStatusRuntimeResult{
 					Generation: 7,
 					SourceType: modelsv1alpha1.ModelSourceTypeUpload,
 					Observation: publicationdomain.Observation{
 						Phase: publicationdomain.OperationPhaseRunning,
 						Upload: &modelsv1alpha1.ModelUploadStatus{
-							Command:    "curl -T model.tar",
-							Repository: "registry.example/upload",
-							ExpiresAt:  &expiresAt,
+							ExternalURL:  "https://ai-models.example.com/upload/token",
+							InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+							Repository:   "registry.example/upload",
+							ExpiresAt:    &expiresAt,
 						},
 					},
 				},
@@ -109,6 +112,7 @@ func TestPlanCatalogStatusMutation(t *testing.T) {
 		{
 			name: "failed terminal observation deletes runtime before persist",
 			input: CatalogStatusMutationInput{
+				Spec: modelsv1alpha1.ModelSpec{},
 				Runtime: CatalogStatusRuntimeResult{
 					Generation:    7,
 					SourceType:    modelsv1alpha1.ModelSourceTypeHTTP,
@@ -132,6 +136,7 @@ func TestPlanCatalogStatusMutation(t *testing.T) {
 		{
 			name: "successful terminal observation keeps cleanup handle",
 			input: CatalogStatusMutationInput{
+				Spec: modelsv1alpha1.ModelSpec{},
 				Runtime: CatalogStatusRuntimeResult{
 					Generation:    7,
 					SourceType:    modelsv1alpha1.ModelSourceTypeHuggingFace,
