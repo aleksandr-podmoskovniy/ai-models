@@ -305,8 +305,35 @@ properties:
           pathPrefix: ai-models
           endpoint: ""
           region: us-east-1
+          syncedCredentialsSecretName: ai-models-artifacts
+          mountedCASecretName: ""
           insecure: false
           usePathStyle: true
+        properties:
+          bucket:
+            type: string
+            default: ""
+          pathPrefix:
+            type: string
+            default: ai-models
+          endpoint:
+            type: string
+            default: ""
+          region:
+            type: string
+            default: us-east-1
+          syncedCredentialsSecretName:
+            type: string
+            default: ai-models-artifacts
+          mountedCASecretName:
+            type: string
+            default: ""
+          insecure:
+            type: boolean
+            default: false
+          usePathStyle:
+            type: boolean
+            default: true
         additionalProperties: true
       dmcr:
         type: object

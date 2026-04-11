@@ -34,12 +34,16 @@ path prefix, endpoint URL, region, TLS policy, addressing style и credentials.
 
 Учётные данные для artifact storage теперь задаются только через
 `credentialsSecretName`, указывающий на уже существующий Secret в
-`d8-ai-models` с фиксированными ключами `accessKey` и `secretKey`.
+`d8-system` с фиксированными ключами `accessKey` и `secretKey`.
 Inline `accessKey` / `secretKey` в ModuleConfig больше не поддерживаются.
+Сам модуль копирует только эти ключи в свой namespace `d8-ai-models` перед
+рендером workload'ов, поэтому пользователь не управляет storage secrets
+напрямую в service namespace.
 
 Custom CA для S3-compatible endpoint задаётся отдельно через
-`artifacts.caSecretName`. Этот Secret должен находиться в `d8-ai-models` и
-содержать ключ `ca.crt`. Если `caSecretName` пустой, ai-models сначала
+`artifacts.caSecretName`. Этот Secret должен находиться в `d8-system` и
+содержать ключ `ca.crt`; модуль при необходимости копирует этот CA в
+`d8-ai-models`. Если `caSecretName` пустой, ai-models сначала
 автоматически reuse'ит `credentialsSecretName`, если тот же Secret также
 содержит `ca.crt`, а иначе fallback'ится на общий platform CA, который уже
 discovered для Dex или скопирован из global HTTPS `CustomCertificate` path.

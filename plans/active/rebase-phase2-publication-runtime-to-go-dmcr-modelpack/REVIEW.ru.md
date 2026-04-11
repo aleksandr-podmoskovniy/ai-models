@@ -860,3 +860,20 @@ Checks:
     pretending that PVC-backed DMCR remains a supported product path.
 - Observability no longer overpromises PVC capacity monitoring for a storage
   mode that the module no longer supports.
+
+## Slice 52 review notes
+
+- No blocking findings for the new artifact-secret delivery pattern. Moving the
+  user-facing source Secret to `d8-system` and copying only the required keys
+  into module-owned Secrets in `d8-ai-models` is materially safer than asking
+  users to hand-manage credentials inside the service namespace.
+- Medium: the hook keeps the blast radius bounded. It does not use global
+  `secret-copier` distribution, so the S3 credentials are not sprayed into
+  unrelated namespaces.
+- Medium: the runtime shell now depends only on fixed module-owned Secret names,
+  which removes install-time ambiguity around "where exactly should the Secret
+  live" and matches the service-namespace ownership model better.
+- Residual risk: the source Secret still has to exist in `d8-system` before a
+  successful enable, and the hook currently watches all Secrets in `d8-system`
+  because the source names are user-configured. That is acceptable for this
+  bounded slice, but it is still broader than a static name selector.

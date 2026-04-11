@@ -142,14 +142,18 @@ properties:
       credentialsSecretName:
         type: string
         description: |
-          Existing Secret in `d8-ai-models` with `accessKey` and `secretKey`.
-          This Secret is required; inline credentials are not supported.
+          Existing Secret in `d8-system` with `accessKey` and `secretKey`.
+          The module copies only these keys into its own service namespace
+          before rendering workloads, so users do not manage credentials
+          directly in `d8-ai-models`. This Secret is required; inline
+          credentials are not supported.
         default: ""
       caSecretName:
         type: string
         description: |
-          Optional existing Secret in `d8-ai-models` with key `ca.crt` used to trust
-          a custom CA for the S3-compatible endpoint. When empty, ai-models reuses
+          Optional existing Secret in `d8-system` with key `ca.crt` used to trust
+          a custom CA for the S3-compatible endpoint. The module copies that CA
+          into its own service namespace. When empty, ai-models first reuses
           `credentialsSecretName` if that Secret also contains `ca.crt`.
         default: ""
       insecure:

@@ -35,11 +35,15 @@ bucket, path prefix, endpoint URL, region, TLS policy, addressing style, and
 credentials.
 
 Artifact credentials are provided only through `credentialsSecretName`.
-That Secret must live in `d8-ai-models` and expose fixed `accessKey` and
-`secretKey` keys. Inline S3 credentials are no longer supported.
+That Secret must live in `d8-system` and expose fixed `accessKey` and
+`secretKey` keys. Inline S3 credentials are no longer supported. The module
+copies only these keys into its own `d8-ai-models` namespace before rendering
+workloads, so users do not manage storage credentials directly in the service
+namespace.
 
 Custom S3 CAs are configured separately through `artifacts.caSecretName`.
-That Secret must live in `d8-ai-models` and expose `ca.crt`. When
+That Secret must live in `d8-system` and expose `ca.crt`. The module copies
+that CA into `d8-ai-models` when needed. When
 `caSecretName` is empty, ai-models first reuses `credentialsSecretName` if the
 same Secret also contains `ca.crt`, and otherwise falls back to the shared
 platform CA that is already discovered for Dex or copied from the global

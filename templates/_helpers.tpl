@@ -781,22 +781,27 @@ true
 {{- default "" (index $artifacts "caSecretName") -}}
 {{- end -}}
 
+{{- define "ai-models.artifactsSyncedCredentialsSecretName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $artifacts := (index $internal "artifacts") | default dict -}}
+{{- default "ai-models-artifacts" (index $artifacts "syncedCredentialsSecretName") -}}
+{{- end -}}
+
 {{- define "ai-models.artifactsMountedCASecretName" -}}
-{{- $explicit := include "ai-models.artifactsCASecretName" . | trim -}}
-{{- if $explicit -}}
-{{- $explicit -}}
-{{- else -}}
-  {{- $credentialsSecretName := include "ai-models.artifactsCredentialsSecretName" . | trim -}}
-  {{- if $credentialsSecretName -}}
-{{- $credentialsSecretName -}}
-  {{- else if (include "ai-models.hasPlatformTrustCA" . | trim) -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $artifacts := (index $internal "artifacts") | default dict -}}
+{{- $mounted := default "" (index $artifacts "mountedCASecretName") -}}
+{{- if $mounted -}}
+{{- $mounted -}}
+{{- else if (include "ai-models.hasPlatformTrustCA" . | trim) -}}
 {{- include "ai-models.backendTrustCASecretName" . -}}
-  {{- end -}}
 {{- end -}}
 {{- end -}}
 
 {{- define "ai-models.artifactsResolvedSecretName" -}}
-{{- include "ai-models.artifactsCredentialsSecretName" . -}}
+{{- include "ai-models.artifactsSyncedCredentialsSecretName" . -}}
 {{- end -}}
 
 {{- define "ai-models.artifactsUsePathStyle" -}}

@@ -45,6 +45,9 @@
   - internal DMCR publication bytes;
 - inline object-storage credentials are not supported anymore; module users
   must provide an existing Secret reference;
+- that Secret now belongs in `d8-system`, while ai-models copies only the
+  required keys into `d8-ai-models` as module-owned runtime state instead of
+  asking users to manage credentials inside the service namespace;
 - PVC-backed internal publication storage is no longer part of the live
   user-facing contract.
 

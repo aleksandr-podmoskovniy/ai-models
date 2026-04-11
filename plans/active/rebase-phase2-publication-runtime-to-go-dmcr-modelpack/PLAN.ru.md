@@ -2394,3 +2394,37 @@ replacement has landed yet.
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
+
+## Slice 52 landed
+
+- artifact secret delivery now follows a safer Deckhouse-style pattern for a
+  module-owned service namespace:
+  - user-facing `artifacts.credentialsSecretName` and optional
+    `artifacts.caSecretName` now explicitly point to existing Secrets in
+    `d8-system`, not in `d8-ai-models`;
+  - a new module hook `sync_artifacts_secrets` copies only the required
+    keys into module-owned Secrets in `d8-ai-models` before workloads render;
+  - users no longer have to create or maintain storage credentials directly in
+    the service namespace.
+- the runtime shell now consumes fixed module-owned Secret names:
+  - `ai-models-artifacts` for `accessKey` / `secretKey`;
+  - optional `ai-models-artifacts-ca` when a separate CA Secret is configured;
+  - the embedded `ca.crt` path in the credentials Secret still works and is
+    detected by the hook.
+- the cut stayed bounded:
+  - no return of inline credentials;
+  - no global secret-copier blast radius from `default`;
+  - no change to S3 endpoint/bucket contract;
+  - no new public values beyond corrected namespace ownership semantics.
+- repo memory was synced in:
+  - `openapi/config-values.yaml`
+  - `openapi/values.yaml`
+  - `docs/CONFIGURATION.md`
+  - `docs/CONFIGURATION.ru.md`
+
+Проверки:
+
+- `cd images/hooks && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./...`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`

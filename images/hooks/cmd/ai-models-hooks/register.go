@@ -23,6 +23,7 @@ import (
 	_ "hooks/pkg/hooks/copy_custom_certificate"
 	_ "hooks/pkg/hooks/dmcr_garbage_collection"
 	_ "hooks/pkg/hooks/discover_dex_ca"
+	_ "hooks/pkg/hooks/sync_artifacts_secrets"
 )
 
 func init() {

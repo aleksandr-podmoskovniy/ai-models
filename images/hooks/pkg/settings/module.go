@@ -16,4 +16,8 @@ limitations under the License.
 
 package settings
 
-const ModuleName = "aiModels"
+const (
+	ModuleName         = "aiModels"
+	ModuleNamespace    = "d8-ai-models"
+	DeckhouseNamespace = "d8-system"
+)
