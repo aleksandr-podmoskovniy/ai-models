@@ -17,21 +17,14 @@ limitations under the License.
 package uploadsession
 
 import (
-	"testing"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"crypto/rand"
+	"encoding/hex"
 )
 
-func TestExpiresAtFromSecretFailsClosedOnMalformedValue(t *testing.T) {
-	t.Parallel()
-
-	_, err := expiresAtFromSecret(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Annotations: map[string]string{"ai-models.deckhouse.io/upload-expires-at": "not-a-time"},
-		},
-	})
-	if err == nil {
-		t.Fatal("expected error")
+func randomToken() (string, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
 	}
+	return hex.EncodeToString(buf), nil
 }

@@ -20,12 +20,15 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-func TestVolumeMountsIncludeWorkspaceAndRegistryCA(t *testing.T) {
+func TestVolumeMountsIncludeWorkVolumeAndRegistryCA(t *testing.T) {
 	t.Parallel()
 
-	mounts := VolumeMounts("registry-ca", corev1.VolumeMount{
+	mounts := VolumeMounts(withValidRuntimeOptions(RuntimeOptions{
+		OCIRegistryCASecretName: "registry-ca",
+	}), corev1.VolumeMount{
 		Name:      "http-auth",
 		MountPath: "/etc/http-auth",
 		ReadOnly:  true,
@@ -34,8 +37,8 @@ func TestVolumeMountsIncludeWorkspaceAndRegistryCA(t *testing.T) {
 	if len(mounts) != 3 {
 		t.Fatalf("unexpected mount count %d", len(mounts))
 	}
-	if mounts[0].Name != WorkspaceVolumeName || mounts[0].MountPath != WorkspaceMountPath {
-		t.Fatalf("unexpected workspace mount %#v", mounts[0])
+	if mounts[0].Name != WorkVolumeName || mounts[0].MountPath != WorkVolumeMountPath {
+		t.Fatalf("unexpected work volume mount %#v", mounts[0])
 	}
 	if mounts[1].Name != "registry-ca" {
 		t.Fatalf("unexpected registry ca mount %#v", mounts[1])
@@ -45,10 +48,12 @@ func TestVolumeMountsIncludeWorkspaceAndRegistryCA(t *testing.T) {
 	}
 }
 
-func TestVolumesIncludeWorkspaceAndRegistryCA(t *testing.T) {
+func TestVolumesIncludeBoundedEmptyDirAndRegistryCA(t *testing.T) {
 	t.Parallel()
 
-	volumes := Volumes("registry-ca", corev1.Volume{
+	volumes := Volumes(withValidRuntimeOptions(RuntimeOptions{
+		OCIRegistryCASecretName: "registry-ca",
+	}), corev1.Volume{
 		Name: "http-auth",
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{SecretName: "projected-http-auth"},
@@ -58,13 +63,35 @@ func TestVolumesIncludeWorkspaceAndRegistryCA(t *testing.T) {
 	if len(volumes) != 3 {
 		t.Fatalf("unexpected volume count %d", len(volumes))
 	}
-	if volumes[0].Name != WorkspaceVolumeName || volumes[0].EmptyDir == nil {
-		t.Fatalf("unexpected workspace volume %#v", volumes[0])
+	if volumes[0].Name != WorkVolumeName || volumes[0].EmptyDir == nil {
+		t.Fatalf("unexpected work volume %#v", volumes[0])
+	}
+	if got, want := volumes[0].EmptyDir.SizeLimit.String(), "2Ti"; got != want {
+		t.Fatalf("unexpected work volume size limit %q", got)
 	}
 	if volumes[1].Name != "registry-ca" {
 		t.Fatalf("unexpected registry ca volume %#v", volumes[1])
 	}
 	if volumes[2].Name != "http-auth" || volumes[2].Secret == nil {
 		t.Fatalf("unexpected extra volume %#v", volumes[2])
+	}
+}
+
+func TestVolumesSupportPersistentVolumeClaimWorkVolume(t *testing.T) {
+	t.Parallel()
+
+	volumes := Volumes(withValidRuntimeOptions(RuntimeOptions{
+		WorkVolume: WorkVolumeOptions{
+			Type:                      WorkVolumeTypePersistentVolumeClaim,
+			PersistentVolumeClaimName: "ai-models-publication-work",
+			EmptyDirSizeLimit:         resource.MustParse("2Ti"),
+		},
+	}), corev1.Volume{})
+
+	if volumes[0].PersistentVolumeClaim == nil {
+		t.Fatalf("expected pvc-backed work volume, got %#v", volumes[0])
+	}
+	if got, want := volumes[0].PersistentVolumeClaim.ClaimName, "ai-models-publication-work"; got != want {
+		t.Fatalf("unexpected pvc claim name %q", got)
 	}
 }

@@ -20,35 +20,31 @@ import (
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"k8s.io/apimachinery/pkg/types"
 )
 
-func testUploadOperationContext() publicationports.OperationContext {
-	return publicationports.OperationContext{
-		Request: publicationports.Request{
-			Owner: publicationports.Owner{
-				Kind:      modelsv1alpha1.ModelKind,
-				Name:      "deepseek-r1-upload",
-				Namespace: "team-a",
-				UID:       types.UID("1111-2224"),
+func testUploadRequest() publicationports.Request {
+	return publicationports.Request{
+		Owner: publicationports.Owner{
+			Kind:      modelsv1alpha1.ModelKind,
+			Name:      "deepseek-r1-upload",
+			Namespace: "team-a",
+			UID:       types.UID("1111-2224"),
+		},
+		Identity: publication.Identity{
+			Scope:     publication.ScopeNamespaced,
+			Namespace: "team-a",
+			Name:      "deepseek-r1-upload",
+		},
+		Spec: modelsv1alpha1.ModelSpec{
+			InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
+			Source: modelsv1alpha1.ModelSourceSpec{
+				Upload: &modelsv1alpha1.UploadModelSource{},
 			},
-			Identity: publication.Identity{
-				Scope:     publication.ScopeNamespaced,
-				Namespace: "team-a",
-				Name:      "deepseek-r1-upload",
-			},
-			Spec: modelsv1alpha1.ModelSpec{
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
-				Source: modelsv1alpha1.ModelSourceSpec{
-					Upload: &modelsv1alpha1.UploadModelSource{},
-				},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
-					Task: "text-generation",
-				},
+			RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
+				Task: "text-generation",
 			},
 		},
 	}
@@ -56,29 +52,14 @@ func testUploadOperationContext() publicationports.OperationContext {
 
 func testUploadOptions() Options {
 	return Options{
-		Runtime: workloadpod.RuntimeOptions{
-			Namespace:             "d8-ai-models",
-			Image:                 "backend:latest",
-			ServiceAccountName:    "ai-models-controller",
-			OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-			OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-			ObjectStorage: objectstorage.Options{
-				Bucket:                "ai-models",
-				EndpointURL:           "https://s3.example.com",
-				Region:                "us-east-1",
-				UsePathStyle:          true,
-				CredentialsSecretName: "ai-models-artifacts",
-			},
+		Runtime: RuntimeOptions{
+			Namespace:           "d8-ai-models",
+			OCIRepositoryPrefix: "registry.internal.local/ai-models",
 		},
-		Ingress: IngressOptions{
-			Host:          "ai-models.example.com",
-			ClassName:     "nginx",
-			TLSSecretName: "ingress-tls",
+		Gateway: GatewayOptions{
+			ServiceName: "ai-models-controller",
+			PublicHost:  "ai-models.example.com",
 		},
 		TokenTTL: 15 * time.Minute,
 	}
-}
-
-func ptrTo[T any](value T) *T {
-	return &value
 }

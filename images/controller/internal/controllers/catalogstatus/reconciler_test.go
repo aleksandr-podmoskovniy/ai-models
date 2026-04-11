@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	auditapp "github.com/deckhouse/ai-models/controller/internal/application/publishaudit"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -94,6 +95,9 @@ func TestModelReconcilerPublishesReadyStatusFromSucceededWorker(t *testing.T) {
 	if !result.Requeue {
 		t.Fatalf("expected requeue after writing cleanup handle, got %#v", result)
 	}
+	if deleted {
+		t.Fatal("worker must not be deleted before ready status is persisted")
+	}
 
 	var annotated modelsv1alpha1.Model
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &annotated); err != nil {
@@ -125,6 +129,34 @@ func TestModelReconcilerPublishesReadyStatusFromSucceededWorker(t *testing.T) {
 	if !deleted {
 		t.Fatal("expected worker delete callback to run after successful projection")
 	}
+}
+
+func TestModelReconcilerRecordsPublicationSucceededAuditEvent(t *testing.T) {
+	t.Parallel()
+
+	model := testModel()
+	deleted := false
+	auditSink := &fakeAuditSink{}
+	sourceWorkers := &fakeSourceWorkerRuntime{handle: succeededSourceWorkerHandle(t, &deleted)}
+	reconciler, _ := newModelReconcilerWithSink(t, sourceWorkers, &fakeUploadSessionRuntime{}, auditSink, model)
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(model),
+	}); err != nil {
+		t.Fatalf("first Reconcile() error = %v", err)
+	}
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(model),
+	}); err != nil {
+		t.Fatalf("second Reconcile() error = %v", err)
+	}
+
+	for _, record := range auditSink.records {
+		if record.Reason == auditapp.ReasonPublicationSuccess {
+			return
+		}
+	}
+	t.Fatalf("expected %s event in %#v", auditapp.ReasonPublicationSuccess, auditSink.records)
 }
 
 func TestModelReconcilerMarksFailureFromFailedWorker(t *testing.T) {
@@ -172,4 +204,176 @@ func TestModelReconcilerProjectsWaitForUploadStatus(t *testing.T) {
 	if updated.Status.Upload == nil || updated.Status.Upload.InClusterURL != "http://upload-worker.d8-ai-models.svc:8444/upload/token" {
 		t.Fatalf("unexpected upload status %#v", updated.Status.Upload)
 	}
+}
+
+func TestModelReconcilerKeepsUploadSessionAndMarksPublishingOnRawStageHandoff(t *testing.T) {
+	t.Parallel()
+
+	model := testUploadModel()
+	deleted := false
+	uploadSessions := &fakeUploadSessionRuntime{handle: succeededUploadSessionHandle(t, &deleted)}
+	reconciler, kubeClient := newModelReconciler(t, &fakeSourceWorkerRuntime{}, uploadSessions, model)
+
+	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(model),
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if !result.Requeue {
+		t.Fatalf("expected requeue after persisting raw stage handle, got %#v", result)
+	}
+	if deleted {
+		t.Fatal("upload session must not be deleted during raw-stage handoff")
+	}
+	if uploadSessions.markPublishingCalls != 1 {
+		t.Fatalf("expected publishing session phase sync, got %d", uploadSessions.markPublishingCalls)
+	}
+
+	var updated modelsv1alpha1.Model
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &updated); err != nil {
+		t.Fatalf("Get(model) error = %v", err)
+	}
+	handle, found, err := cleanuphandle.FromObject(&updated)
+	if err != nil || !found {
+		t.Fatalf("expected upload cleanup handle annotation, found=%v err=%v", found, err)
+	}
+	if handle.Kind != cleanuphandle.KindUploadStaging || handle.UploadStaging == nil {
+		t.Fatalf("unexpected cleanup handle %#v", handle)
+	}
+}
+
+func TestModelReconcilerMarksCompletedUploadSessionAfterReadyProjection(t *testing.T) {
+	t.Parallel()
+
+	model := testUploadModel()
+	if err := cleanuphandle.SetOnObject(model, cleanuphandle.Handle{
+		Kind: cleanuphandle.KindUploadStaging,
+		UploadStaging: &cleanuphandle.UploadStagingHandle{
+			Bucket:    "ai-models",
+			Key:       "raw/1111-2222/model.gguf",
+			FileName:  "model.gguf",
+			SizeBytes: 128,
+		},
+	}); err != nil {
+		t.Fatalf("SetOnObject() error = %v", err)
+	}
+	model.Status = modelsv1alpha1.ModelStatus{
+		ObservedGeneration: model.GetGeneration(),
+		Phase:              modelsv1alpha1.ModelPhasePublishing,
+		Source: &modelsv1alpha1.ResolvedSourceStatus{
+			ResolvedType: modelsv1alpha1.ModelSourceTypeUpload,
+		},
+	}
+
+	deleted := false
+	sourceWorkers := &fakeSourceWorkerRuntime{handle: succeededSourceWorkerHandle(t, &deleted)}
+	uploadSessions := &fakeUploadSessionRuntime{}
+	reconciler, kubeClient := newModelReconciler(t, sourceWorkers, uploadSessions, model)
+
+	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(model),
+	})
+	if err != nil {
+		t.Fatalf("first Reconcile() error = %v", err)
+	}
+	if !result.Requeue {
+		t.Fatalf("expected requeue after backend cleanup handle handoff, got %#v", result)
+	}
+	if deleted {
+		t.Fatal("source worker must not be deleted before ready status is persisted")
+	}
+	if uploadSessions.markCompletedCalls != 0 {
+		t.Fatalf("upload session must not be marked completed before ready projection, got %d", uploadSessions.markCompletedCalls)
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(model),
+	}); err != nil {
+		t.Fatalf("second Reconcile() error = %v", err)
+	}
+	if uploadSessions.markCompletedCalls != 1 {
+		t.Fatalf("expected completed session phase sync, got %d", uploadSessions.markCompletedCalls)
+	}
+	if deleted != true {
+		t.Fatal("expected worker delete callback after ready projection")
+	}
+
+	var ready modelsv1alpha1.Model
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &ready); err != nil {
+		t.Fatalf("Get(model) error = %v", err)
+	}
+	if got, want := ready.Status.Phase, modelsv1alpha1.ModelPhaseReady; got != want {
+		t.Fatalf("unexpected phase %q", got)
+	}
+}
+
+func TestModelReconcilerMarksFailedUploadSessionWhenUploadPublishFails(t *testing.T) {
+	t.Parallel()
+
+	model := testUploadModel()
+	if err := cleanuphandle.SetOnObject(model, cleanuphandle.Handle{
+		Kind: cleanuphandle.KindUploadStaging,
+		UploadStaging: &cleanuphandle.UploadStagingHandle{
+			Bucket:    "ai-models",
+			Key:       "raw/1111-2222/model.gguf",
+			FileName:  "model.gguf",
+			SizeBytes: 128,
+		},
+	}); err != nil {
+		t.Fatalf("SetOnObject() error = %v", err)
+	}
+	model.Status = modelsv1alpha1.ModelStatus{
+		ObservedGeneration: model.GetGeneration(),
+		Phase:              modelsv1alpha1.ModelPhasePublishing,
+		Source: &modelsv1alpha1.ResolvedSourceStatus{
+			ResolvedType: modelsv1alpha1.ModelSourceTypeUpload,
+		},
+	}
+
+	sourceWorkers := &fakeSourceWorkerRuntime{handle: failedSourceWorkerHandle("upload publish failed")}
+	uploadSessions := &fakeUploadSessionRuntime{}
+	reconciler, kubeClient := newModelReconciler(t, sourceWorkers, uploadSessions, model)
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(model),
+	}); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if uploadSessions.markFailedCalls != 1 {
+		t.Fatalf("expected failed session phase sync, got %d", uploadSessions.markFailedCalls)
+	}
+	if len(uploadSessions.failedMessages) != 1 || uploadSessions.failedMessages[0] != "upload publish failed" {
+		t.Fatalf("unexpected failed messages %#v", uploadSessions.failedMessages)
+	}
+
+	var failed modelsv1alpha1.Model
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &failed); err != nil {
+		t.Fatalf("Get(model) error = %v", err)
+	}
+	if got, want := failed.Status.Phase, modelsv1alpha1.ModelPhaseFailed; got != want {
+		t.Fatalf("unexpected phase %q", got)
+	}
+}
+
+func TestModelReconcilerRecordsUploadSessionIssuedAuditEvent(t *testing.T) {
+	t.Parallel()
+
+	model := testUploadModel()
+	auditSink := &fakeAuditSink{}
+	uploadSessions := &fakeUploadSessionRuntime{handle: runningUploadSessionHandle()}
+	reconciler, _ := newModelReconcilerWithSink(t, &fakeSourceWorkerRuntime{}, uploadSessions, auditSink, model)
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(model),
+	}); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	for _, record := range auditSink.records {
+		if record.Reason == auditapp.ReasonUploadSessionIssued {
+			return
+		}
+	}
+	t.Fatalf("expected %s event in %#v", auditapp.ReasonUploadSessionIssued, auditSink.records)
 }

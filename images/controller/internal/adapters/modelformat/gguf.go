@@ -17,128 +17,18 @@ limitations under the License.
 package modelformat
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 )
 
-func validateGGUFDir(root string) error {
-	state := validationState{}
-	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if path == root {
-			return nil
-		}
-
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		relative = filepath.ToSlash(relative)
-
-		if entry.IsDir() {
-			if shouldDropDirectory(relative) {
-				if err := os.RemoveAll(path); err != nil {
-					return err
-				}
-				return filepath.SkipDir
-			}
-			if strings.HasPrefix(filepath.Base(relative), ".") {
-				return fmt.Errorf("input format %q rejects hidden directory %q", modelsv1alpha1.ModelInputFormatGGUF, relative)
-			}
-			return nil
-		}
-
-		action, _, isAsset := classifyGGUFFile(relative)
-		switch action {
-		case fileActionKeep:
-			state.hasAsset = state.hasAsset || isAsset
-			return nil
-		case fileActionDrop:
-			return os.Remove(path)
-		default:
-			return fmt.Errorf("input format %q rejects file %q", modelsv1alpha1.ModelInputFormatGGUF, relative)
-		}
-	}); err != nil {
-		return err
+func ggufRules() formatRules {
+	return formatRules{
+		format:              modelsv1alpha1.ModelInputFormatGGUF,
+		classify:            classifyGGUFFile,
+		requiredAssetErrMsg: "requires at least one .gguf file",
 	}
-
-	if !state.hasAsset {
-		return fmt.Errorf("input format %q requires at least one .gguf file", modelsv1alpha1.ModelInputFormatGGUF)
-	}
-	return nil
-}
-
-func inspectGGUFDir(root string) error {
-	state := validationState{}
-	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if path == root {
-			return nil
-		}
-
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		relative = filepath.ToSlash(relative)
-
-		if entry.IsDir() {
-			if shouldDropDirectory(relative) {
-				return filepath.SkipDir
-			}
-			if strings.HasPrefix(filepath.Base(relative), ".") {
-				return fmt.Errorf("input format %q rejects hidden directory %q", modelsv1alpha1.ModelInputFormatGGUF, relative)
-			}
-			return nil
-		}
-
-		action, _, isAsset := classifyGGUFFile(relative)
-		if action == fileActionReject {
-			return fmt.Errorf("input format %q rejects file %q", modelsv1alpha1.ModelInputFormatGGUF, relative)
-		}
-		state.hasAsset = state.hasAsset || isAsset
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	if !state.hasAsset {
-		return fmt.Errorf("input format %q requires at least one .gguf file", modelsv1alpha1.ModelInputFormatGGUF)
-	}
-	return nil
-}
-
-func selectGGUFFiles(files []string) ([]string, error) {
-	selected := make([]string, 0, len(files))
-	hasAsset := false
-	for _, raw := range files {
-		relative := normalizeRemotePath(raw)
-		if relative == "" {
-			continue
-		}
-		action, _, isAsset := classifyGGUFFile(relative)
-		switch action {
-		case fileActionKeep:
-			selected = append(selected, relative)
-			hasAsset = hasAsset || isAsset
-		case fileActionDrop:
-			continue
-		default:
-			return nil, fmt.Errorf("input format %q rejects source file %q", modelsv1alpha1.ModelInputFormatGGUF, relative)
-		}
-	}
-	if !hasAsset {
-		return nil, fmt.Errorf("input format %q requires at least one .gguf file", modelsv1alpha1.ModelInputFormatGGUF)
-	}
-	return selected, nil
 }
 
 func classifyGGUFFile(relative string) (fileAction, bool, bool) {

@@ -146,7 +146,7 @@ func TestNewTarReaderSupportsGzip(t *testing.T) {
 	}
 }
 
-func TestPrepareModelInputCopiesGGUFAndNormalizesExtension(t *testing.T) {
+func TestPrepareModelInputLinksGGUFWhenPossibleAndNormalizesExtension(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
@@ -162,8 +162,20 @@ func TestPrepareModelInputCopiesGGUFAndNormalizesExtension(t *testing.T) {
 	if got, want := root, filepath.Join(tempDir, "out"); got != want {
 		t.Fatalf("unexpected prepared root %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(root, "model-input.gguf")); err != nil {
+	target := filepath.Join(root, "model-input.gguf")
+	if _, err := os.Stat(target); err != nil {
 		t.Fatalf("Stat(model-input.gguf) error = %v", err)
+	}
+	sourceInfo, err := os.Stat(sourcePath)
+	if err != nil {
+		t.Fatalf("Stat(sourcePath) error = %v", err)
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("Stat(target) error = %v", err)
+	}
+	if !os.SameFile(sourceInfo, targetInfo) {
+		t.Fatalf("expected model input to be hard-linked when source and destination share the same filesystem")
 	}
 }
 

@@ -19,13 +19,68 @@ package uploadstaging
 import (
 	"context"
 	"io"
+	"time"
 )
 
-type UploadInput struct {
-	Bucket        string
-	Key           string
-	ContentLength int64
-	Body          io.Reader
+type StartMultipartUploadInput struct {
+	Bucket string
+	Key    string
+}
+
+type StartMultipartUploadOutput struct {
+	UploadID string
+}
+
+type PresignUploadPartInput struct {
+	Bucket     string
+	Key        string
+	UploadID   string
+	PartNumber int32
+	Expires    time.Duration
+}
+
+type PresignUploadPartOutput struct {
+	URL string
+}
+
+type UploadedPart struct {
+	PartNumber int32
+	ETag       string
+	SizeBytes  int64
+}
+
+type CompletedPart struct {
+	PartNumber int32
+	ETag       string
+}
+
+type ListMultipartUploadPartsInput struct {
+	Bucket   string
+	Key      string
+	UploadID string
+}
+
+type CompleteMultipartUploadInput struct {
+	Bucket   string
+	Key      string
+	UploadID string
+	Parts    []CompletedPart
+}
+
+type AbortMultipartUploadInput struct {
+	Bucket   string
+	Key      string
+	UploadID string
+}
+
+type StatInput struct {
+	Bucket string
+	Key    string
+}
+
+type ObjectStat struct {
+	SizeBytes int64
+	ETag      string
 }
 
 type DownloadInput struct {
@@ -34,17 +89,33 @@ type DownloadInput struct {
 	DestinationPath string
 }
 
+type UploadInput struct {
+	Bucket      string
+	Key         string
+	Body        io.Reader
+	ContentType string
+}
+
 type DeleteInput struct {
 	Bucket string
 	Key    string
 }
 
-type Uploader interface {
-	Upload(ctx context.Context, input UploadInput) error
+type MultipartStager interface {
+	StartMultipartUpload(ctx context.Context, input StartMultipartUploadInput) (StartMultipartUploadOutput, error)
+	PresignUploadPart(ctx context.Context, input PresignUploadPartInput) (PresignUploadPartOutput, error)
+	ListMultipartUploadParts(ctx context.Context, input ListMultipartUploadPartsInput) ([]UploadedPart, error)
+	CompleteMultipartUpload(ctx context.Context, input CompleteMultipartUploadInput) error
+	AbortMultipartUpload(ctx context.Context, input AbortMultipartUploadInput) error
+	Stat(ctx context.Context, input StatInput) (ObjectStat, error)
 }
 
 type Downloader interface {
 	Download(ctx context.Context, input DownloadInput) error
+}
+
+type Uploader interface {
+	Upload(ctx context.Context, input UploadInput) error
 }
 
 type Remover interface {
@@ -52,7 +123,8 @@ type Remover interface {
 }
 
 type Client interface {
-	Uploader
+	MultipartStager
 	Downloader
+	Uploader
 	Remover
 }

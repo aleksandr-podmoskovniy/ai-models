@@ -27,7 +27,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -51,21 +50,12 @@ func buildDMCRGCRequestSecret(namespace string, owner cleanupJobOwner) *corev1.S
 	annotations := map[string]string{
 		dmcrGCSwitchAnnotationKey: time.Now().UTC().Format(dmcrGCRequestTimestampRFC),
 	}
-	labels := map[string]string{
-		dmcrGCRequestLabelKey:               dmcrGCRequestLabelValue,
-		"ai-models.deckhouse.io/owner-kind": resourcenames.TruncateLabelValue(owner.Kind),
-		"ai-models.deckhouse.io/owner-name": resourcenames.TruncateLabelValue(owner.Name),
-		"ai-models.deckhouse.io/owner-uid":  resourcenames.TruncateLabelValue(string(owner.UID)),
-	}
-	if owner.Namespace != "" {
-		labels["ai-models.deckhouse.io/owner-namespace"] = resourcenames.TruncateLabelValue(owner.Namespace)
-	}
 
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        dmcrGCRequestSecretName(owner.UID),
 			Namespace:   namespace,
-			Labels:      labels,
+			Labels:      garbageCollectionRequestLabels(owner),
 			Annotations: annotations,
 		},
 		Type: corev1.SecretTypeOpaque,
@@ -86,10 +76,7 @@ func observeDMCRGCRequestState(secret *corev1.Secret) deletionapp.GarbageCollect
 }
 
 func (r *baseReconciler) ensureGarbageCollectionRequest(ctx context.Context, owner cleanupJobOwner) error {
-	key := client.ObjectKey{
-		Namespace: r.options.CleanupJob.Namespace,
-		Name:      dmcrGCRequestSecretName(owner.UID),
-	}
+	key := garbageCollectionRequestKey(r.options.CleanupJob.Namespace, owner.UID)
 	var existing corev1.Secret
 	switch err := r.client.Get(ctx, key, &existing); {
 	case apierrors.IsNotFound(err):
@@ -97,10 +84,7 @@ func (r *baseReconciler) ensureGarbageCollectionRequest(ctx context.Context, own
 	case err != nil:
 		return err
 	default:
-		if existing.Labels == nil {
-			existing.Labels = make(map[string]string, 1)
-		}
-		existing.Labels[dmcrGCRequestLabelKey] = dmcrGCRequestLabelValue
+		existing.Labels = mergeLabels(existing.Labels, garbageCollectionRequestLabels(owner))
 		if existing.Annotations == nil {
 			existing.Annotations = make(map[string]string, 2)
 		}
@@ -111,10 +95,11 @@ func (r *baseReconciler) ensureGarbageCollectionRequest(ctx context.Context, own
 }
 
 func (r *baseReconciler) deleteGarbageCollectionRequest(ctx context.Context, ownerUID types.UID) error {
+	key := garbageCollectionRequestKey(r.options.CleanupJob.Namespace, ownerUID)
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.options.CleanupJob.Namespace,
-			Name:      dmcrGCRequestSecretName(ownerUID),
+			Namespace: key.Namespace,
+			Name:      key.Name,
 		},
 	}
 	if err := r.client.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {

@@ -64,6 +64,9 @@ func DecideCatalogStatusReconcile(
 	if err != nil {
 		return CatalogStatusReconcileDecision{}, err
 	}
+	if sourceType == modelsv1alpha1.ModelSourceTypeUpload && shouldKeepUploadSourceWorker(input.Current, input.Generation, input.HasCleanupHandle) {
+		mode = publicationapp.ExecutionModeSourceWorker
+	}
 
 	return CatalogStatusReconcileDecision{
 		SourceType: sourceType,
@@ -88,4 +91,14 @@ func shouldSkipCatalogStatusReconcile(
 	default:
 		return false
 	}
+}
+
+func shouldKeepUploadSourceWorker(
+	current modelsv1alpha1.ModelStatus,
+	generation int64,
+	hasCleanupHandle bool,
+) bool {
+	return hasCleanupHandle &&
+		current.ObservedGeneration == generation &&
+		current.Phase == modelsv1alpha1.ModelPhasePublishing
 }

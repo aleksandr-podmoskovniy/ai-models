@@ -20,7 +20,10 @@ import (
 	"context"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	auditapp "github.com/deckhouse/ai-models/controller/internal/application/publishaudit"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishobserve"
+	publicationplan "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
+	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -71,44 +74,108 @@ func (r *baseReconciler) applyMutationPlan(
 	ctx context.Context,
 	object client.Object,
 	current *modelsv1alpha1.ModelStatus,
+	sourceType modelsv1alpha1.ModelSourceType,
+	observation publicationdomain.Observation,
 	plan publicationapp.CatalogStatusMutationPlan,
 	deleteFn func(context.Context) error,
+	uploadSync uploadSessionPhaseSync,
 ) (ctrl.Result, error) {
-	if !plan.DeleteRuntime {
-		deleteFn = nil
+	previousStatus := *current
+	deleteFn, err := prepareDeleteFn(ctx, plan, deleteFn)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
-	if plan.DeleteRuntimeBeforePersist && deleteFn != nil {
-		if err := deleteFn(ctx); err != nil {
-			return ctrl.Result{}, err
-		}
-		deleteFn = nil
-	}
-	if plan.CleanupHandle != nil {
-		updated, err := r.ensureCleanupHandle(ctx, object, *plan.CleanupHandle)
+
+	requeue, deleteFn, err := r.applyCleanupHandleMutation(ctx, object, plan, deleteFn)
+	if err != nil || requeue {
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		if updated {
-			if deleteFn != nil && !plan.DeleteRuntimeBeforePersist {
-				if err := deleteFn(ctx); err != nil {
-					return ctrl.Result{}, err
-				}
-			}
-			return ctrl.Result{Requeue: true}, nil
-		}
-	}
-	if err := r.updateStatus(ctx, object, current, plan.Status); err != nil {
-		return ctrl.Result{}, err
-	}
-	if deleteFn != nil {
-		if err := deleteFn(ctx); err != nil {
+		if err := runUploadSessionPhaseSync(ctx, uploadSync, true); err != nil {
 			return ctrl.Result{}, err
 		}
+		return ctrl.Result{Requeue: true}, nil
 	}
-	if plan.Requeue {
-		return ctrl.Result{RequeueAfter: statusPollInterval}, nil
+
+	if err := r.applyStatusMutation(ctx, object, current, previousStatus, sourceType, observation, plan.Status); err != nil {
+		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	if err := runUploadSessionPhaseSync(ctx, uploadSync, false); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := runDeleteFn(ctx, deleteFn); err != nil {
+		return ctrl.Result{}, err
+	}
+	return mutationResult(plan.Requeue), nil
+}
+
+func prepareDeleteFn(
+	ctx context.Context,
+	plan publicationapp.CatalogStatusMutationPlan,
+	deleteFn func(context.Context) error,
+) (func(context.Context) error, error) {
+	if !plan.DeleteRuntime {
+		return nil, nil
+	}
+	if !plan.DeleteRuntimeBeforePersist {
+		return deleteFn, nil
+	}
+	if err := runDeleteFn(ctx, deleteFn); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func (r *baseReconciler) applyCleanupHandleMutation(
+	ctx context.Context,
+	object client.Object,
+	plan publicationapp.CatalogStatusMutationPlan,
+	deleteFn func(context.Context) error,
+) (bool, func(context.Context) error, error) {
+	if plan.CleanupHandle == nil {
+		return false, deleteFn, nil
+	}
+
+	updated, err := r.ensureCleanupHandle(ctx, object, *plan.CleanupHandle)
+	if err != nil || !updated {
+		return false, deleteFn, err
+	}
+
+	r.recordAudit(object, auditapp.PlanPreStatusRecords(true, plan.CleanupHandle))
+	return true, deleteFn, nil
+}
+
+func (r *baseReconciler) applyStatusMutation(
+	ctx context.Context,
+	object client.Object,
+	current *modelsv1alpha1.ModelStatus,
+	previous modelsv1alpha1.ModelStatus,
+	sourceType modelsv1alpha1.ModelSourceType,
+	observation publicationdomain.Observation,
+	desired modelsv1alpha1.ModelStatus,
+) error {
+	statusChanged := !apiequality.Semantic.DeepEqual(previous, desired)
+	if err := r.updateStatus(ctx, object, current, desired); err != nil {
+		return err
+	}
+	if statusChanged {
+		r.recordAudit(object, auditapp.PlanPostStatusRecords(previous, desired, sourceType, observation))
+	}
+	return nil
+}
+
+func runDeleteFn(ctx context.Context, deleteFn func(context.Context) error) error {
+	if deleteFn == nil {
+		return nil
+	}
+	return deleteFn(ctx)
+}
+
+func mutationResult(requeue bool) ctrl.Result {
+	if requeue {
+		return ctrl.Result{RequeueAfter: statusPollInterval}
+	}
+	return ctrl.Result{}
 }
 
 func (r *baseReconciler) applyRuntimeObservation(
@@ -117,6 +184,7 @@ func (r *baseReconciler) applyRuntimeObservation(
 	spec modelsv1alpha1.ModelSpec,
 	current *modelsv1alpha1.ModelStatus,
 	sourceType modelsv1alpha1.ModelSourceType,
+	mode publicationplan.ExecutionMode,
 	decision publicationapp.RuntimeObservationDecision,
 	deleteFn func(context.Context) error,
 ) (ctrl.Result, error) {
@@ -131,9 +199,10 @@ func (r *baseReconciler) applyRuntimeObservation(
 		},
 	})
 	if err != nil {
-		return r.failPublication(ctx, object, current, sourceType, err.Error())
+		return r.failPublication(ctx, object, current, sourceType, mode, err.Error())
 	}
-	return r.applyMutationPlan(ctx, object, current, plan, deleteFn)
+	uploadSync := r.planUploadSessionPhaseSync(mode, object.GetUID(), sourceType, decision.Observation, plan.Status)
+	return r.applyMutationPlan(ctx, object, current, sourceType, decision.Observation, plan, deleteFn, uploadSync)
 }
 
 func (r *baseReconciler) failPublication(
@@ -141,11 +210,16 @@ func (r *baseReconciler) failPublication(
 	object client.Object,
 	current *modelsv1alpha1.ModelStatus,
 	sourceType modelsv1alpha1.ModelSourceType,
+	mode publicationplan.ExecutionMode,
 	message string,
 ) (ctrl.Result, error) {
 	plan, err := publicationapp.PlanFailedCatalogStatusMutation(*current, object.GetGeneration(), sourceType, message)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	return r.applyMutationPlan(ctx, object, current, plan, nil)
+	uploadSync := planFailedUploadSessionPhaseSync(r, mode, object.GetUID(), sourceType, plan.Status, message)
+	return r.applyMutationPlan(ctx, object, current, sourceType, publicationdomain.Observation{
+		Phase:   publicationdomain.OperationPhaseFailed,
+		Message: message,
+	}, plan, nil, uploadSync)
 }

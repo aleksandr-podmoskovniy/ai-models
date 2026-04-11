@@ -23,7 +23,15 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
+	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
+
+type RawStageOptions struct {
+	Bucket    string
+	KeyPrefix string
+	Client    uploadstagingports.Client
+}
 
 type RemoteOptions struct {
 	URL             string
@@ -32,6 +40,7 @@ type RemoteOptions struct {
 	HFToken         string
 	HTTPCABundle    []byte
 	HTTPAuthDir     string
+	RawStage        *RawStageOptions
 }
 
 type RemoteResult struct {
@@ -44,6 +53,7 @@ type RemoteResult struct {
 	PipelineTag       string
 	License           string
 	SourceRepoID      string
+	StagedObjects     []cleanuphandle.UploadStagingHandle
 }
 
 func FetchRemoteModel(ctx context.Context, options RemoteOptions) (RemoteResult, error) {

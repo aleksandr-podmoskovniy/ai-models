@@ -32,6 +32,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 type HTTPMetadata struct {
@@ -106,15 +107,34 @@ func DownloadHTTPSource(
 }
 
 func fetchHTTPModel(ctx context.Context, options RemoteOptions) (RemoteResult, error) {
-	sourcePath, metadata, err := DownloadHTTPSource(
-		ctx,
-		options.URL,
-		options.HTTPCABundle,
-		options.HTTPAuthDir,
-		filepath.Join(options.Workspace, ".download"),
+	var (
+		sourcePath    string
+		metadata      HTTPMetadata
+		stagedObjects []cleanuphandle.UploadStagingHandle
+		err           error
 	)
-	if err != nil {
-		return RemoteResult{}, err
+	if rawStageEnabled(options.RawStage) {
+		var handle cleanuphandle.UploadStagingHandle
+		handle, metadata, err = StageHTTPSource(ctx, options.URL, options.HTTPCABundle, options.HTTPAuthDir, *options.RawStage)
+		if err != nil {
+			return RemoteResult{}, err
+		}
+		sourcePath = filepath.Join(options.Workspace, ".raw", handle.FileName)
+		if err := downloadStagedObject(ctx, options.RawStage.Client, handle, sourcePath); err != nil {
+			return RemoteResult{}, err
+		}
+		stagedObjects = append(stagedObjects, handle)
+	} else {
+		sourcePath, metadata, err = DownloadHTTPSource(
+			ctx,
+			options.URL,
+			options.HTTPCABundle,
+			options.HTTPAuthDir,
+			filepath.Join(options.Workspace, ".download"),
+		)
+		if err != nil {
+			return RemoteResult{}, err
+		}
 	}
 
 	modelDir, err := PrepareModelInput(sourcePath, filepath.Join(options.Workspace, "checkpoint"))
@@ -137,6 +157,61 @@ func fetchHTTPModel(ctx context.Context, options RemoteOptions) (RemoteResult, e
 		ExternalReference: options.URL,
 		ResolvedRevision:  metadata.ResolvedRevision(),
 		Framework:         "transformers",
+		StagedObjects:     stagedObjects,
+	}, nil
+}
+
+func StageHTTPSource(
+	ctx context.Context,
+	rawURL string,
+	caBundle []byte,
+	authDir string,
+	rawStage RawStageOptions,
+) (cleanuphandle.UploadStagingHandle, HTTPMetadata, error) {
+	if !rawStageEnabled(&rawStage) {
+		return cleanuphandle.UploadStagingHandle{}, HTTPMetadata{}, errors.New("HTTP raw stage options must not be empty")
+	}
+
+	headers, err := HTTPAuthHeadersFromDir(authDir)
+	if err != nil {
+		return cleanuphandle.UploadStagingHandle{}, HTTPMetadata{}, err
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig(caBundle),
+		},
+	}
+	response, err := doGET(ctx, client, rawURL, headers)
+	if err != nil {
+		return cleanuphandle.UploadStagingHandle{}, HTTPMetadata{}, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return cleanuphandle.UploadStagingHandle{}, HTTPMetadata{}, unexpectedStatusError(response, "HTTP source")
+	}
+
+	filename := filenameFromHTTPResponse(rawURL, response)
+	handle, err := stageRawObject(
+		ctx,
+		rawStage,
+		filename,
+		filename,
+		response.ContentLength,
+		response.Header.Get("Content-Type"),
+		response.Body,
+	)
+	if err != nil {
+		return cleanuphandle.UploadStagingHandle{}, HTTPMetadata{}, err
+	}
+
+	return handle, HTTPMetadata{
+		URL:          rawURL,
+		Filename:     filename,
+		ETag:         response.Header.Get("ETag"),
+		LastModified: response.Header.Get("Last-Modified"),
+		ContentType:  response.Header.Get("Content-Type"),
 	}, nil
 }
 

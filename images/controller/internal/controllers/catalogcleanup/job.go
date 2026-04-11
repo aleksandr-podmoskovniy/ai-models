@@ -110,15 +110,7 @@ func buildCleanupJob(owner cleanupJobOwner, handle cleanuphandle.Handle, options
 		return nil, err
 	}
 
-	labels := map[string]string{
-		"app.kubernetes.io/name":            "ai-models-cleanup",
-		"ai-models.deckhouse.io/owner-kind": resourcenames.TruncateLabelValue(owner.Kind),
-		"ai-models.deckhouse.io/owner-name": resourcenames.TruncateLabelValue(owner.Name),
-		"ai-models.deckhouse.io/owner-uid":  resourcenames.TruncateLabelValue(string(owner.UID)),
-	}
-	if owner.Namespace != "" {
-		labels["ai-models.deckhouse.io/owner-namespace"] = resourcenames.TruncateLabelValue(owner.Namespace)
-	}
+	labels := cleanupJobLabels(owner)
 
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{

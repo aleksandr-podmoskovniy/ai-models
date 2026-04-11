@@ -61,9 +61,7 @@ func ensureSourceWorkerObservation(
 		return EnsureRuntimeObservationResult{}, fmt.Errorf("source worker runtime must not be nil")
 	}
 
-	handle, _, err := input.SourceWorkers.GetOrCreate(input.Context, input.Owner, publicationports.OperationContext{
-		Request: input.Request,
-	})
+	handle, _, err := input.SourceWorkers.GetOrCreate(input.Context, input.Owner, input.Request)
 	if err != nil {
 		return EnsureRuntimeObservationResult{}, err
 	}
@@ -91,9 +89,7 @@ func ensureUploadSessionObservation(
 		return EnsureRuntimeObservationResult{}, fmt.Errorf("upload session runtime must not be nil")
 	}
 
-	handle, _, err := input.UploadSessions.GetOrCreate(input.Context, input.Owner, publicationports.OperationContext{
-		Request: input.Request,
-	})
+	handle, _, err := input.UploadSessions.GetOrCreate(input.Context, input.Owner, input.Request)
 	if err != nil {
 		return EnsureRuntimeObservationResult{}, err
 	}

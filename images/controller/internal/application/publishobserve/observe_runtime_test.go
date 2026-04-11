@@ -21,9 +21,9 @@ import (
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
 	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	corev1 "k8s.io/api/core/v1"
@@ -335,7 +335,7 @@ func testRequest() publicationports.Request {
 func succeededTerminationMessage(t *testing.T) string {
 	t.Helper()
 
-	payload, err := artifactbackend.EncodeResult(artifactbackend.Result{
+	payload, err := publicationartifact.EncodeResult(publicationartifact.Result{
 		Artifact: publication.PublishedArtifact{
 			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
 			URI:       "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef",
@@ -381,7 +381,7 @@ func uploadStagingTerminationMessage(t *testing.T) string {
 		Kind: cleanuphandle.KindUploadStaging,
 		UploadStaging: &cleanuphandle.UploadStagingHandle{
 			Bucket:    "ai-models",
-			Key:       "uploaded-model-staging/550e8400-e29b-41d4-a716-446655440000/model.gguf",
+			Key:       "raw/550e8400-e29b-41d4-a716-446655440000/model.gguf",
 			FileName:  "model.gguf",
 			SizeBytes: 42,
 		},

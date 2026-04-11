@@ -30,20 +30,21 @@ func DetectDirFormat(root string) (modelsv1alpha1.ModelInputFormat, error) {
 	}
 
 	return detectFormat(func(format modelsv1alpha1.ModelInputFormat) error {
-		switch format {
-		case modelsv1alpha1.ModelInputFormatSafetensors:
-			return inspectSafetensorsDir(root)
-		case modelsv1alpha1.ModelInputFormatGGUF:
-			return inspectGGUFDir(root)
-		default:
-			return fmt.Errorf("unsupported model input format %q", format)
+		rules, err := rulesForFormat(format)
+		if err != nil {
+			return err
 		}
+		return inspectFormatDir(root, rules, false)
 	})
 }
 
 func DetectRemoteFormat(files []string) (modelsv1alpha1.ModelInputFormat, error) {
 	return detectFormat(func(format modelsv1alpha1.ModelInputFormat) error {
-		_, err := SelectRemoteFiles(format, files)
+		rules, err := rulesForFormat(format)
+		if err != nil {
+			return err
+		}
+		_, err = selectFormatRemoteFiles(files, rules)
 		return err
 	})
 }

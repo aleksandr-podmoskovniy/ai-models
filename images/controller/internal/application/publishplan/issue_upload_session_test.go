@@ -36,27 +36,33 @@ func TestIssueUploadSession(t *testing.T) {
 		{
 			name: "accepted upload returns expected size plan",
 			input: UploadSessionIssueRequest{
-				OwnerUID:  "1111-2222",
-				OwnerKind: modelsv1alpha1.ModelKind,
-				OwnerName: "deepseek-r1",
-				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				Source:    modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{ExpectedSizeBytes: &size}},
+				OwnerUID:       "1111-2222",
+				OwnerKind:      modelsv1alpha1.ModelKind,
+				OwnerName:      "deepseek-r1",
+				OwnerNamespace: "team-a",
+				Identity:       publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				InputFormat:    modelsv1alpha1.ModelInputFormatGGUF,
+				Source:         modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{ExpectedSizeBytes: &size}},
 			},
 			assert: func(t *testing.T, got UploadSessionPlan) {
 				t.Helper()
 				if got.ExpectedSizeBytes == nil || *got.ExpectedSizeBytes != size {
 					t.Fatalf("unexpected size %#v", got)
 				}
+				if got.DeclaredInputFormat != modelsv1alpha1.ModelInputFormatGGUF {
+					t.Fatalf("unexpected input format %#v", got)
+				}
 			},
 		},
 		{
 			name: "accepted upload without expected size returns empty size plan",
 			input: UploadSessionIssueRequest{
-				OwnerUID:  "1111-2222",
-				OwnerKind: modelsv1alpha1.ModelKind,
-				OwnerName: "deepseek-r1",
-				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				Source:    modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+				OwnerUID:       "1111-2222",
+				OwnerKind:      modelsv1alpha1.ModelKind,
+				OwnerName:      "deepseek-r1",
+				OwnerNamespace: "team-a",
+				Identity:       publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:         modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
 			},
 			assert: func(t *testing.T, got UploadSessionPlan) {
 				t.Helper()
@@ -78,20 +84,22 @@ func TestIssueUploadSession(t *testing.T) {
 		{
 			name: "missing owner kind fails closed",
 			input: UploadSessionIssueRequest{
-				OwnerUID:  "1111-2222",
-				OwnerName: "deepseek-r1",
-				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				Source:    modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+				OwnerUID:       "1111-2222",
+				OwnerName:      "deepseek-r1",
+				OwnerNamespace: "team-a",
+				Identity:       publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:         modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing owner name fails closed",
 			input: UploadSessionIssueRequest{
-				OwnerUID:  "1111-2222",
-				OwnerKind: modelsv1alpha1.ModelKind,
-				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				Source:    modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+				OwnerUID:       "1111-2222",
+				OwnerKind:      modelsv1alpha1.ModelKind,
+				OwnerNamespace: "team-a",
+				Identity:       publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:         modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
 			},
 			wantErr: true,
 		},
@@ -107,23 +115,37 @@ func TestIssueUploadSession(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "owner identity mismatch fails closed",
+			input: UploadSessionIssueRequest{
+				OwnerUID:       "1111-2222",
+				OwnerKind:      modelsv1alpha1.ModelKind,
+				OwnerName:      "deepseek-r1",
+				OwnerNamespace: "team-b",
+				Identity:       publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:         modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+			},
+			wantErr: true,
+		},
+		{
 			name: "non-upload source is rejected",
 			input: UploadSessionIssueRequest{
-				OwnerUID:  "1111-2222",
-				OwnerKind: modelsv1alpha1.ModelKind,
-				OwnerName: "deepseek-r1",
-				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				Source:    modelsv1alpha1.ModelSourceSpec{URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1"},
+				OwnerUID:       "1111-2222",
+				OwnerKind:      modelsv1alpha1.ModelKind,
+				OwnerName:      "deepseek-r1",
+				OwnerNamespace: "team-a",
+				Identity:       publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:         modelsv1alpha1.ModelSourceSpec{URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1"},
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing upload source is rejected",
 			input: UploadSessionIssueRequest{
-				OwnerUID:  "1111-2222",
-				OwnerKind: modelsv1alpha1.ModelKind,
-				OwnerName: "deepseek-r1",
-				Identity:  publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				OwnerUID:       "1111-2222",
+				OwnerKind:      modelsv1alpha1.ModelKind,
+				OwnerName:      "deepseek-r1",
+				OwnerNamespace: "team-a",
+				Identity:       publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
 			},
 			wantErr: true,
 		},

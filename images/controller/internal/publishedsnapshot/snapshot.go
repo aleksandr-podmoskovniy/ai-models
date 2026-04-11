@@ -41,6 +41,9 @@ type SourceProvenance struct {
 	Type              modelsv1alpha1.ModelSourceType
 	ExternalReference string
 	ResolvedRevision  string
+	RawURI            string
+	RawObjectCount    int64
+	RawSizeBytes      int64
 }
 
 type PublishedArtifact struct {
@@ -133,6 +136,12 @@ func (i Identity) Validate() error {
 func (s SourceProvenance) Validate() error {
 	if strings.TrimSpace(string(s.Type)) == "" {
 		return errors.New("source provenance type must not be empty")
+	}
+	if s.RawObjectCount < 0 {
+		return errors.New("source provenance raw object count must not be negative")
+	}
+	if s.RawSizeBytes < 0 {
+		return errors.New("source provenance raw size bytes must not be negative")
 	}
 
 	return nil

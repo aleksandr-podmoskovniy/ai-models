@@ -60,6 +60,12 @@ discovered для Dex или скопирован из global HTTPS `CustomCerti
 - `PersistentVolumeClaim`: internal DMCR-style backend хранит published models
   в module-owned PVC.
 
+Если используется тот же S3 bucket, ai-models всё равно держит byte-path
+разделённым явно: controller-owned raw ingest живёт под фиксированным
+`raw/` subtree, будущие append-only audit/provenance данные могут жить под
+`audit/`, а internal publication backend по умолчанию использует отдельный
+`dmcr/` subtree.
+
 Controller runtime всегда публикует в один и тот же внутренний registry
 service модуля. В user-facing config больше нет отдельного внешнего
 `publicationRegistry` endpoint/credentials wiring.
@@ -132,10 +138,15 @@ Controller-owned publication worker жёстко harden'ит tar/zip extraction 
 entries вместо raw `extractall`.
 
 `spec.source.upload` теперь идёт через controller-owned session flow, а не
-через batch import. Controller создаёт worker Pod, ClusterIP Service,
-short-lived auth Secret и, если настроен public host, session-specific
-Ingress. В `status.upload` controller теперь пишет session URLs:
+через batch import. Controller создаёт один short-lived session Secret на
+upload и пишет в `status.upload` shared upload-gateway URLs:
 `inClusterURL` всегда, `externalURL` при включённом public ingress.
+Footprint у gateway теперь общий:
+
+- один controller Deployment c `upload-gateway` sidecar;
+- один shared Service;
+- ноль или один shared external Ingress.
+
 Текущий live controller path принимает:
 
 - для `Safetensors`: архив с `config.json` и файлами весов;
@@ -143,14 +154,17 @@ Ingress. В `status.upload` controller теперь пишет session URLs:
 
 Дальше controller публикует их в тот же controller-owned `ModelPack`/OCI
 artifact plane через текущий Go dataplane и `ModelPack` adapter. Текущий live
-upload path теперь двухфазный: upload session runtime только валидирует
-request и пишет байты в module-owned object-storage staging, после чего
-controller удаляет upload runtime, requeue'ит объект и запускает отдельный
-publish worker. Уже он скачивает staged object, валидирует и профилирует
-модель, публикует финальный `ModelPack` в `DMCR` и при успешной публикации
-чистит staging object. `status.upload` больше не содержит legacy helper
-command; live public contract ограничен `expiresAt`, `repository`,
-`inClusterURL` и optional `externalURL`.
+upload path теперь двухфазный и staging-first: shared upload gateway больше
+не принимает финальные байты модели в cluster Pod path. Вместо этого он
+держит только session/control API за URL из `status.upload`, стартует
+multipart upload в module-owned object-storage staging, подписывает part URLs
+и завершает upload после client-side `complete`. После этого controller
+наблюдает staged result через session Secret, requeue'ит объект и запускает
+отдельный publish worker. Уже он скачивает staged object, валидирует и
+профилирует модель, публикует финальный `ModelPack` в `DMCR` и при успешной
+публикации чистит staging object.
+`status.upload` больше не содержит legacy helper command; live public contract
+ограничен `expiresAt`, `repository`, `inClusterURL` и optional `externalURL`.
 
 Поверх source contract в `spec` теперь снова есть живой policy layer:
 

@@ -22,8 +22,11 @@ import (
 	"testing"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
@@ -59,7 +62,24 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 					UsePathStyle:          true,
 					CredentialsSecretName: "ai-models-artifacts",
 				},
+				WorkVolume: workloadpod.WorkVolumeOptions{
+					Type:              workloadpod.WorkVolumeTypeEmptyDir,
+					EmptyDirSizeLimit: resource.MustParse("2Ti"),
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:              resource.MustParse("1"),
+						corev1.ResourceMemory:           resource.MustParse("8Gi"),
+						corev1.ResourceEphemeralStorage: resource.MustParse("2Ti"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:              resource.MustParse("4"),
+						corev1.ResourceMemory:           resource.MustParse("16Gi"),
+						corev1.ResourceEphemeralStorage: resource.MustParse("2Ti"),
+					},
+				},
 			},
+			MaxConcurrentWorkers: 1,
 		},
 	})
 	if err != nil {

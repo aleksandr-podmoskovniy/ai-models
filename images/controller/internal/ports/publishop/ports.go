@@ -21,19 +21,19 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type SourceWorkerRuntime interface {
-	GetOrCreate(ctx context.Context, owner client.Object, request OperationContext) (*SourceWorkerHandle, bool, error)
+	GetOrCreate(ctx context.Context, owner client.Object, request Request) (*SourceWorkerHandle, bool, error)
 }
 
 type UploadSessionRuntime interface {
-	GetOrCreate(ctx context.Context, owner client.Object, request OperationContext) (*UploadSessionHandle, bool, error)
-}
-
-type OperationContext struct {
-	Request Request
+	GetOrCreate(ctx context.Context, owner client.Object, request Request) (*UploadSessionHandle, bool, error)
+	MarkPublishing(ctx context.Context, ownerUID types.UID) error
+	MarkCompleted(ctx context.Context, ownerUID types.UID) error
+	MarkFailed(ctx context.Context, ownerUID types.UID, message string) error
 }
 
 type SourceWorkerHandle struct {

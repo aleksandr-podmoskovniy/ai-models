@@ -45,16 +45,24 @@ func (r *ClusterModelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 func (r *baseReconciler) reconcile(ctx context.Context, object client.Object) (ctrl.Result, error) {
 	if object.GetDeletionTimestamp().IsZero() {
-		decision, err := deletionapp.EnsureCleanupFinalizer(observeFinalizerGuard(object))
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		return r.applyEnsureFinalizerDecision(ctx, object, decision)
+		return r.reconcileActive(ctx, object)
 	}
 
-	handle, observation, err := r.observeDelete(ctx, object)
+	return r.reconcileDelete(ctx, object)
+}
+
+func (r *baseReconciler) reconcileActive(ctx context.Context, object client.Object) (ctrl.Result, error) {
+	decision, err := deletionapp.EnsureCleanupFinalizer(observeFinalizerGuard(object))
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	return r.applyFinalizeDeleteDecision(ctx, object, handle, deletionapp.FinalizeDelete(observation))
+	return r.applyEnsureFinalizerDecision(ctx, object, decision)
+}
+
+func (r *baseReconciler) reconcileDelete(ctx context.Context, object client.Object) (ctrl.Result, error) {
+	flow, err := r.observeFinalizeDeleteFlow(ctx, object)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	return r.applyFinalizeDeleteFlow(ctx, flow)
 }

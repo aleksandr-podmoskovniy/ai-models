@@ -20,60 +20,51 @@ import (
 	"errors"
 	"strings"
 	"time"
-
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 )
 
 const (
-	serviceLabelKey = "ai-models.deckhouse.io/upload-service"
 	uploadPort      = 8444
 	defaultTokenTTL = 30 * time.Minute
 )
 
 type Options struct {
-	Runtime  workloadpod.RuntimeOptions
-	Ingress  IngressOptions
+	Runtime  RuntimeOptions
+	Gateway  GatewayOptions
 	TokenTTL time.Duration
 }
 
-type IngressOptions struct {
-	Host          string
-	ClassName     string
-	TLSSecretName string
+type RuntimeOptions struct {
+	Namespace           string
+	OCIRepositoryPrefix string
+}
+
+type GatewayOptions struct {
+	ServiceName string
+	PublicHost  string
 }
 
 func normalizeOptions(options Options) Options {
-	options.Runtime = workloadpod.NormalizeRuntimeOptions(options.Runtime)
-	options.Ingress = normalizeIngressOptions(options.Ingress)
+	options.Runtime.Namespace = strings.TrimSpace(options.Runtime.Namespace)
+	options.Runtime.OCIRepositoryPrefix = strings.TrimSpace(options.Runtime.OCIRepositoryPrefix)
+	options.Gateway.ServiceName = strings.TrimSpace(options.Gateway.ServiceName)
+	options.Gateway.PublicHost = strings.TrimSpace(options.Gateway.PublicHost)
 	if options.TokenTTL <= 0 {
 		options.TokenTTL = defaultTokenTTL
 	}
-
 	return options
-}
-
-func normalizeIngressOptions(options IngressOptions) IngressOptions {
-	options.Host = strings.TrimSpace(options.Host)
-	options.ClassName = strings.TrimSpace(options.ClassName)
-	options.TLSSecretName = strings.TrimSpace(options.TLSSecretName)
-	return options
-}
-
-func (o IngressOptions) Enabled() bool {
-	return strings.TrimSpace(o.Host) != ""
 }
 
 func (o Options) Validate() error {
-	if err := workloadpod.ValidateRuntimeOptions("upload session", o.Runtime); err != nil {
-		return err
-	}
-	if err := objectstorage.ValidateOptions("upload session", o.Runtime.ObjectStorage); err != nil {
-		return err
-	}
-	if o.TokenTTL <= 0 {
+	switch {
+	case o.Runtime.Namespace == "":
+		return errors.New("upload session runtime namespace must not be empty")
+	case o.Runtime.OCIRepositoryPrefix == "":
+		return errors.New("upload session OCI repository prefix must not be empty")
+	case o.Gateway.ServiceName == "":
+		return errors.New("upload session gateway service name must not be empty")
+	case o.TokenTTL <= 0:
 		return errors.New("upload session token ttl must be positive")
+	default:
+		return nil
 	}
-
-	return nil
 }

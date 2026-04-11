@@ -116,7 +116,7 @@ func TestProjectStatusStagedRequeuesIntoPublishPhase(t *testing.T) {
 		Kind: cleanuphandle.KindUploadStaging,
 		UploadStaging: &cleanuphandle.UploadStagingHandle{
 			Bucket:   "ai-models",
-			Key:      "uploaded-model-staging/1111-2222/model.gguf",
+			Key:      "raw/1111-2222/model.gguf",
 			FileName: "model.gguf",
 		},
 	}

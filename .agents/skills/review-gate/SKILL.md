@@ -41,6 +41,23 @@ description: Use at the end of any substantial task. Reviews the diff against th
      `spec.publish` blocks, as a real finding
    - treat nested provider scaffolding in public `spec.source` as a real
      finding when the same UX can stay as `source.url` or `source.upload`
+   - for any storage/data-plane change, ask explicitly:
+     - what is the exact byte path end-to-end?
+     - how many full-size copies may exist at once?
+     - where do those copies live: object storage, PVC, `emptyDir`, temp dir?
+     - is the path streaming or does it require local materialization?
+     - what requests/limits/size limits protect the node?
+   - for any "metadata/history/lineage" change, ask explicitly:
+     - what exact fields are written?
+     - who consumes them?
+     - are they a source of truth or only audit/history?
+     - do they duplicate public `status` or another backend state machine?
+   - for any MLflow-vs-DMCR design, treat these as real findings:
+     - MLflow used as final published artifact source of truth
+     - blind 1:1 duplication of huge raw blobs in MLflow artifacts
+     - controller reconciliation relying on MLflow browser-oriented entities
+   - for any large-model claim, require a concrete worst-case resource answer
+     instead of prose like "uses staging" or "publishes asynchronously"
 7. If the task was substantial or used delegation, confirm whether a final `reviewer` pass is still required.
 8. Return only concrete findings, missing checks, and residual risks.
 

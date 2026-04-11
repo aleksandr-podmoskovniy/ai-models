@@ -19,33 +19,34 @@ package sourceworker
 import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 )
 
-func testOperationContext() publicationports.OperationContext {
-	return publicationports.OperationContext{
-		Request: publicationports.Request{
-			Owner: publicationports.Owner{
-				UID:       types.UID("1111-2222"),
-				Kind:      modelsv1alpha1.ModelKind,
-				Name:      "deepseek-r1",
-				Namespace: "team-a",
+func testOperationRequest() publicationports.Request {
+	return publicationports.Request{
+		Owner: publicationports.Owner{
+			UID:       types.UID("1111-2222"),
+			Kind:      modelsv1alpha1.ModelKind,
+			Name:      "deepseek-r1",
+			Namespace: "team-a",
+		},
+		Identity: publication.Identity{
+			Scope:     publication.ScopeNamespaced,
+			Namespace: "team-a",
+			Name:      "deepseek-r1",
+		},
+		Spec: modelsv1alpha1.ModelSpec{
+			InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
+			Source: modelsv1alpha1.ModelSourceSpec{
+				URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 			},
-			Identity: publication.Identity{
-				Scope:     publication.ScopeNamespaced,
-				Namespace: "team-a",
-				Name:      "deepseek-r1",
-			},
-			Spec: modelsv1alpha1.ModelSpec{
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
-				Source: modelsv1alpha1.ModelSourceSpec{
-					URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
-				},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
-					Task: "text-generation",
-				},
+			RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
+				Task: "text-generation",
 			},
 		},
 	}
@@ -53,17 +54,36 @@ func testOperationContext() publicationports.OperationContext {
 
 func testOptions() Options {
 	return Options{
-		Namespace:             "d8-ai-models",
-		Image:                 "backend:latest",
-		ServiceAccountName:    "ai-models-controller",
-		OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-		OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-		ObjectStorage: objectstorage.Options{
-			Bucket:                "ai-models",
-			EndpointURL:           "https://s3.example.com",
-			Region:                "us-east-1",
-			UsePathStyle:          true,
-			CredentialsSecretName: "ai-models-artifacts",
+		RuntimeOptions: workloadpod.RuntimeOptions{
+			Namespace:             "d8-ai-models",
+			Image:                 "backend:latest",
+			ServiceAccountName:    "ai-models-controller",
+			OCIRepositoryPrefix:   "registry.internal.local/ai-models",
+			OCIRegistrySecretName: "ai-models-dmcr-auth-write",
+			ObjectStorage: objectstorage.Options{
+				Bucket:                "ai-models",
+				EndpointURL:           "https://s3.example.com",
+				Region:                "us-east-1",
+				UsePathStyle:          true,
+				CredentialsSecretName: "ai-models-artifacts",
+			},
+			WorkVolume: workloadpod.WorkVolumeOptions{
+				Type:              workloadpod.WorkVolumeTypeEmptyDir,
+				EmptyDirSizeLimit: resource.MustParse("2Ti"),
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:              resource.MustParse("1"),
+					corev1.ResourceMemory:           resource.MustParse("8Gi"),
+					corev1.ResourceEphemeralStorage: resource.MustParse("2Ti"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:              resource.MustParse("4"),
+					corev1.ResourceMemory:           resource.MustParse("16Gi"),
+					corev1.ResourceEphemeralStorage: resource.MustParse("2Ti"),
+				},
+			},
 		},
+		MaxConcurrentWorkers: 1,
 	}
 }

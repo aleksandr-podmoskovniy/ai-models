@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestNormalizeRuntimeOptionsDefaultsImagePullPolicy(t *testing.T) {
@@ -29,6 +30,9 @@ func TestNormalizeRuntimeOptionsDefaultsImagePullPolicy(t *testing.T) {
 	options := NormalizeRuntimeOptions(RuntimeOptions{})
 	if options.ImagePullPolicy != corev1.PullIfNotPresent {
 		t.Fatalf("unexpected pull policy %q", options.ImagePullPolicy)
+	}
+	if got, want := options.WorkVolume.Type, WorkVolumeTypeEmptyDir; got != want {
+		t.Fatalf("unexpected work volume type %q", got)
 	}
 }
 
@@ -86,7 +90,21 @@ func TestValidateRuntimeOptionsRejectsMissingFields(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := ValidateRuntimeOptions("publication runtime", tc.options)
+			options := withValidRuntimeOptions(RuntimeOptions{})
+			switch tc.name {
+			case "missing namespace":
+				options.Namespace = ""
+			case "missing image":
+				options.Image = ""
+			case "missing service account":
+				options.ServiceAccountName = ""
+			case "missing repository prefix":
+				options.OCIRepositoryPrefix = ""
+			case "missing registry secret":
+				options.OCIRegistrySecretName = ""
+			}
+
+			err := ValidateRuntimeOptions("publication runtime", options)
 			if err == nil {
 				t.Fatal("expected validation error")
 			}
@@ -95,4 +113,107 @@ func TestValidateRuntimeOptionsRejectsMissingFields(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateRuntimeOptionsRejectsMissingBoundedWorkVolumeSettings(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		mutate  func(*RuntimeOptions)
+		wantErr string
+	}{
+		{
+			name: "missing emptydir size limit",
+			mutate: func(options *RuntimeOptions) {
+				options.WorkVolume.EmptyDirSizeLimit = resource.Quantity{}
+			},
+			wantErr: "emptyDir sizeLimit",
+		},
+		{
+			name: "missing pvc claim name",
+			mutate: func(options *RuntimeOptions) {
+				options.WorkVolume.Type = WorkVolumeTypePersistentVolumeClaim
+				options.WorkVolume.PersistentVolumeClaimName = ""
+			},
+			wantErr: "persistentVolumeClaim name",
+		},
+		{
+			name: "missing ephemeral storage request",
+			mutate: func(options *RuntimeOptions) {
+				delete(options.Resources.Requests, corev1.ResourceEphemeralStorage)
+			},
+			wantErr: "requests.ephemeral-storage",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			options := withValidRuntimeOptions(RuntimeOptions{})
+			tc.mutate(&options)
+
+			err := ValidateRuntimeOptions("publication runtime", options)
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if got := err.Error(); !strings.Contains(got, tc.wantErr) {
+				t.Fatalf("unexpected error %q", got)
+			}
+		})
+	}
+}
+
+func withValidRuntimeOptions(options RuntimeOptions) RuntimeOptions {
+	if strings.TrimSpace(options.Namespace) == "" {
+		options.Namespace = "d8-ai-models"
+	}
+	if strings.TrimSpace(options.Image) == "" {
+		options.Image = "controller-runtime:latest"
+	}
+	if strings.TrimSpace(options.ServiceAccountName) == "" {
+		options.ServiceAccountName = "ai-models-controller"
+	}
+	if strings.TrimSpace(options.OCIRepositoryPrefix) == "" {
+		options.OCIRepositoryPrefix = "registry.internal.local/ai-models"
+	}
+	if strings.TrimSpace(options.OCIRegistrySecretName) == "" {
+		options.OCIRegistrySecretName = "ai-models-dmcr-auth-write"
+	}
+	if strings.TrimSpace(string(options.WorkVolume.Type)) == "" {
+		options.WorkVolume.Type = WorkVolumeTypeEmptyDir
+	}
+	if options.WorkVolume.EmptyDirSizeLimit.Sign() <= 0 {
+		options.WorkVolume.EmptyDirSizeLimit = resource.MustParse("2Ti")
+	}
+	if strings.TrimSpace(options.WorkVolume.PersistentVolumeClaimName) == "" {
+		options.WorkVolume.PersistentVolumeClaimName = "ai-models-publication-work"
+	}
+	if options.Resources.Requests == nil {
+		options.Resources.Requests = corev1.ResourceList{}
+	}
+	if options.Resources.Limits == nil {
+		options.Resources.Limits = corev1.ResourceList{}
+	}
+	if _, ok := options.Resources.Requests[corev1.ResourceCPU]; !ok {
+		options.Resources.Requests[corev1.ResourceCPU] = resource.MustParse("1")
+	}
+	if _, ok := options.Resources.Requests[corev1.ResourceMemory]; !ok {
+		options.Resources.Requests[corev1.ResourceMemory] = resource.MustParse("8Gi")
+	}
+	if _, ok := options.Resources.Requests[corev1.ResourceEphemeralStorage]; !ok {
+		options.Resources.Requests[corev1.ResourceEphemeralStorage] = resource.MustParse("2Ti")
+	}
+	if _, ok := options.Resources.Limits[corev1.ResourceCPU]; !ok {
+		options.Resources.Limits[corev1.ResourceCPU] = resource.MustParse("4")
+	}
+	if _, ok := options.Resources.Limits[corev1.ResourceMemory]; !ok {
+		options.Resources.Limits[corev1.ResourceMemory] = resource.MustParse("16Gi")
+	}
+	if _, ok := options.Resources.Limits[corev1.ResourceEphemeralStorage]; !ok {
+		options.Resources.Limits[corev1.ResourceEphemeralStorage] = resource.MustParse("2Ti")
+	}
+	return options
 }

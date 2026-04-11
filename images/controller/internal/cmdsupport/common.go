@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -92,6 +93,19 @@ func EnvOrBool(name string, fallback bool) bool {
 	}
 }
 
+func EnvOrInt(name string, fallback int) int {
+	value, ok := os.LookupEnv(name)
+	if !ok || strings.TrimSpace(value) == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
 func PassThroughEnv(csv string) []corev1.EnvVar {
 	names := strings.Split(csv, ",")
 	result := make([]corev1.EnvVar, 0, len(names))
@@ -135,6 +149,20 @@ func NewLogger(format string) (*slog.Logger, error) {
 	}
 }
 
+func NewComponentLogger(format, component string) (*slog.Logger, error) {
+	logger, err := NewLogger(format)
+	if err != nil {
+		return nil, err
+	}
+
+	component = strings.TrimSpace(component)
+	if component == "" {
+		return logger, nil
+	}
+
+	return logger.With(slog.String("component", component)), nil
+}
+
 func SetDefaultLogger(logger *slog.Logger) {
 	slog.SetDefault(logger)
 	bridged := logr.FromSlogHandler(logger.Handler())
@@ -155,6 +183,6 @@ func WriteTerminationMessage(message string) {
 }
 
 func CommandError(name string, err error) int {
-	slog.New(slog.NewTextHandler(os.Stderr, nil)).Error(name+" exited with error", slog.Any("error", err))
+	slog.Default().Error(name+" exited with error", slog.Any("error", err))
 	return 1
 }

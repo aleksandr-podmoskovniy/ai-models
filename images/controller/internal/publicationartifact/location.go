@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package artifactbackend
+package publicationartifact
 
 import (
 	"errors"
@@ -34,15 +34,15 @@ func BuildOCIArtifactReference(root string, identity publication.Identity, uid t
 
 	root = strings.Trim(strings.TrimSpace(root), "/")
 	if root == "" {
-		return "", errors.New("artifact backend OCI root must not be empty")
+		return "", errors.New("publication artifact OCI root must not be empty")
 	}
 	if strings.Contains(root, "://") {
-		return "", fmt.Errorf("artifact backend OCI root must not use a URL scheme, got %q", root)
+		return "", fmt.Errorf("publication artifact OCI root must not use a URL scheme, got %q", root)
 	}
 
 	uidValue := strings.TrimSpace(string(uid))
 	if uidValue == "" {
-		return "", errors.New("artifact backend UID must not be empty")
+		return "", errors.New("publication artifact UID must not be empty")
 	}
 
 	segments := []string{root, "catalog"}

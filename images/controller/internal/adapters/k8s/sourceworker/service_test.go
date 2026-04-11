@@ -18,9 +18,11 @@ package sourceworker
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/application/sourceadmission"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
@@ -40,19 +42,13 @@ func TestServiceGetOrCreateEncodesOwnerIdentityOnPod(t *testing.T) {
 		WithObjects(testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write")).
 		Build()
 
-	service, err := NewService(kubeClient, scheme, Options{
-		Namespace:             "d8-ai-models",
-		Image:                 "backend:latest",
-		ServiceAccountName:    "ai-models-controller",
-		OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-		OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-	})
+	service, err := NewService(kubeClient, scheme, testOptions())
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
 	modelOwner := testkit.NewModel()
-	request := testOperationContext()
+	request := testOperationRequest()
 
 	handle, created, err := service.GetOrCreate(context.Background(), modelOwner, request)
 	if err != nil {
@@ -104,22 +100,22 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 		WithObjects(modelOwner, sourceSecret, testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write")).
 		Build()
 
-	service, err := NewService(kubeClient, scheme, Options{
-		Namespace:             "d8-ai-models",
-		Image:                 "backend:latest",
-		ServiceAccountName:    "ai-models-controller",
-		OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-		OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-	})
+	service, err := NewService(kubeClient, scheme, testOptions())
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
+	service.httpSourceProbe = &fakeHTTPSourceProbe{
+		result: sourceadmission.HTTPProbeResult{
+			FileName:    "deepseek-r1.gguf",
+			ContentType: "application/octet-stream",
+		},
+	}
 
-	request := testOperationContext()
-	request.Request.Owner.UID = types.UID("2222-3333")
-	request.Request.Owner.Name = "deepseek-r1-private"
-	request.Request.Identity.Name = "deepseek-r1-private"
-	request.Request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
+	request := testOperationRequest()
+	request.Owner.UID = types.UID("2222-3333")
+	request.Owner.Name = "deepseek-r1-private"
+	request.Identity.Name = "deepseek-r1-private"
+	request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
 
 	handle, created, err := service.GetOrCreate(context.Background(), modelOwner, request)
 	if err != nil {
@@ -132,7 +128,7 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 		t.Fatal("expected source worker handle")
 	}
 
-	secretName, err := resourcenames.SourceWorkerAuthSecretName(request.Request.Owner.UID)
+	secretName, err := resourcenames.SourceWorkerAuthSecretName(request.Owner.UID)
 	if err != nil {
 		t.Fatalf("SourceWorkerAuthSecretName() error = %v", err)
 	}
@@ -150,7 +146,7 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 	if len(projected.OwnerReferences) != 0 {
 		t.Fatalf("expected no cross-namespace owner reference on projected secret, got %d", len(projected.OwnerReferences))
 	}
-	registrySecretName, err := resourcenames.OCIRegistryAuthSecretName(request.Request.Owner.UID)
+	registrySecretName, err := resourcenames.OCIRegistryAuthSecretName(request.Owner.UID)
 	if err != nil {
 		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
 	}
@@ -174,4 +170,113 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: registrySecretName, Namespace: "d8-ai-models"}, registrySecret); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected projected OCI auth secret to be deleted, got err=%v", err)
 	}
+}
+
+func TestServiceGetOrCreateFailsClosedOnHTTPPreflightError(t *testing.T) {
+	t.Parallel()
+
+	scheme := testkit.NewScheme(t)
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write")).
+		Build()
+
+	service, err := NewService(kubeClient, scheme, testOptions())
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	service.httpSourceProbe = &fakeHTTPSourceProbe{err: errors.New("head failed")}
+
+	request := testOperationRequest()
+	request.Spec.Source.URL = "https://models.example.com/model.gguf"
+
+	handle, created, err := service.GetOrCreate(context.Background(), testkit.NewModel(), request)
+	if err == nil {
+		t.Fatal("expected preflight error")
+	}
+	if created {
+		t.Fatal("did not expect pod creation after preflight failure")
+	}
+	if handle != nil {
+		t.Fatalf("unexpected handle %#v", handle)
+	}
+}
+
+func TestServiceGetOrCreateQueuesWhenPublishConcurrencyLimitIsReached(t *testing.T) {
+	t.Parallel()
+
+	scheme := testkit.NewScheme(t)
+	request := testOperationRequest()
+	owner := testkit.NewModel()
+	owner.UID = request.Owner.UID
+	owner.Name = request.Owner.Name
+
+	busyPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ai-model-publish-busy",
+			Namespace: "d8-ai-models",
+			Labels: resourcenames.OwnerLabels(
+				"ai-models-publication",
+				modelsv1alpha1.ModelKind,
+				"busy-model",
+				types.UID("busy-owner"),
+				"team-a",
+			),
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(owner, busyPod, testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write")).
+		Build()
+
+	options := testOptions()
+	options.MaxConcurrentWorkers = 1
+
+	service, err := NewService(kubeClient, scheme, options)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	handle, created, err := service.GetOrCreate(context.Background(), owner, request)
+	if err != nil {
+		t.Fatalf("GetOrCreate() error = %v", err)
+	}
+	if created {
+		t.Fatal("did not expect pod creation while concurrency limit is reached")
+	}
+	if handle == nil {
+		t.Fatal("expected queued handle")
+	}
+	if got, want := handle.Phase, corev1.PodPending; got != want {
+		t.Fatalf("unexpected queued phase %q", got)
+	}
+	wantName, err := resourcenames.SourceWorkerPodName(request.Owner.UID)
+	if err != nil {
+		t.Fatalf("SourceWorkerPodName() error = %v", err)
+	}
+	if got := handle.Name; got != wantName {
+		t.Fatalf("unexpected queued worker name %q", got)
+	}
+
+	var pods corev1.PodList
+	if err := kubeClient.List(context.Background(), &pods, client.InNamespace("d8-ai-models")); err != nil {
+		t.Fatalf("List(pods) error = %v", err)
+	}
+	if got, want := len(pods.Items), 1; got != want {
+		t.Fatalf("unexpected pod count %d", got)
+	}
+}
+
+type fakeHTTPSourceProbe struct {
+	result sourceadmission.HTTPProbeResult
+	err    error
+}
+
+func (f *fakeHTTPSourceProbe) Probe(_ context.Context, _ sourceadmission.HTTPProbeRequest) (sourceadmission.HTTPProbeResult, error) {
+	if f.err != nil {
+		return sourceadmission.HTTPProbeResult{}, f.err
+	}
+	return f.result, nil
 }

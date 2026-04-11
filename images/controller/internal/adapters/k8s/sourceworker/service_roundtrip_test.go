@@ -42,18 +42,12 @@ func TestServiceRoundTripGetOrCreateAndDelete(t *testing.T) {
 		).
 		Build()
 
-	runtime, err := NewService(kubeClient, scheme, Options{
-		Namespace:             "d8-ai-models",
-		Image:                 "backend:latest",
-		ServiceAccountName:    "ai-models-controller",
-		OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-		OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-	})
+	runtime, err := NewService(kubeClient, scheme, testOptions())
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	handle, created, err := runtime.GetOrCreate(context.Background(), owner, testOperationContext())
+	handle, created, err := runtime.GetOrCreate(context.Background(), owner, testOperationRequest())
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}

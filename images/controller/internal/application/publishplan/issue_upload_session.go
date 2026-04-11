@@ -19,35 +19,39 @@ package publishplan
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/domain/ingestadmission"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
 type UploadSessionIssueRequest struct {
-	OwnerUID  string
-	OwnerKind string
-	OwnerName string
-	Identity  publicationdata.Identity
-	Source    modelsv1alpha1.ModelSourceSpec
+	OwnerUID       string
+	OwnerKind      string
+	OwnerName      string
+	OwnerNamespace string
+	Identity       publicationdata.Identity
+	InputFormat    modelsv1alpha1.ModelInputFormat
+	Source         modelsv1alpha1.ModelSourceSpec
 }
 
 type UploadSessionPlan struct {
-	ExpectedSizeBytes *int64
+	ExpectedSizeBytes   *int64
+	DeclaredInputFormat modelsv1alpha1.ModelInputFormat
 }
 
 func IssueUploadSession(request UploadSessionIssueRequest) (UploadSessionPlan, error) {
-	if strings.TrimSpace(request.OwnerUID) == "" {
-		return UploadSessionPlan{}, errors.New("upload session owner UID must not be empty")
-	}
-	if strings.TrimSpace(request.OwnerKind) == "" {
-		return UploadSessionPlan{}, errors.New("upload session owner kind must not be empty")
-	}
-	if strings.TrimSpace(request.OwnerName) == "" {
-		return UploadSessionPlan{}, errors.New("upload session owner name must not be empty")
-	}
-	if err := request.Identity.Validate(); err != nil {
+	if err := ingestadmission.ValidateUploadSession(ingestadmission.UploadSession{
+		Owner: ingestadmission.OwnerBinding{
+			Kind:      request.OwnerKind,
+			Name:      request.OwnerName,
+			Namespace: request.OwnerNamespace,
+			UID:       request.OwnerUID,
+		},
+		Identity:            request.Identity,
+		DeclaredInputFormat: request.InputFormat,
+		ExpectedSizeBytes:   expectedSizeBytes(request.Source),
+	}); err != nil {
 		return UploadSessionPlan{}, err
 	}
 	mode, err := uploadSessionMode(request.Source)
@@ -59,8 +63,16 @@ func IssueUploadSession(request UploadSessionIssueRequest) (UploadSessionPlan, e
 	}
 
 	return UploadSessionPlan{
-		ExpectedSizeBytes: request.Source.Upload.ExpectedSizeBytes,
+		ExpectedSizeBytes:   request.Source.Upload.ExpectedSizeBytes,
+		DeclaredInputFormat: request.InputFormat,
 	}, nil
+}
+
+func expectedSizeBytes(source modelsv1alpha1.ModelSourceSpec) int64 {
+	if source.Upload == nil || source.Upload.ExpectedSizeBytes == nil {
+		return 0
+	}
+	return *source.Upload.ExpectedSizeBytes
 }
 
 func uploadSessionMode(source modelsv1alpha1.ModelSourceSpec) (ExecutionMode, error) {

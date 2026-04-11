@@ -18,7 +18,6 @@ package modelformat
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -31,28 +30,20 @@ func ValidateDir(root string, format modelsv1alpha1.ModelInputFormat) error {
 	if strings.TrimSpace(string(format)) == "" {
 		return errors.New("model input format must not be empty")
 	}
-
-	switch format {
-	case modelsv1alpha1.ModelInputFormatSafetensors:
-		return validateSafetensorsDir(root)
-	case modelsv1alpha1.ModelInputFormatGGUF:
-		return validateGGUFDir(root)
-	default:
-		return fmt.Errorf("unsupported model input format %q", format)
+	rules, err := rulesForFormat(format)
+	if err != nil {
+		return err
 	}
+	return inspectFormatDir(root, rules, true)
 }
 
 func SelectRemoteFiles(format modelsv1alpha1.ModelInputFormat, files []string) ([]string, error) {
 	if strings.TrimSpace(string(format)) == "" {
 		return nil, errors.New("model input format must not be empty")
 	}
-
-	switch format {
-	case modelsv1alpha1.ModelInputFormatSafetensors:
-		return selectSafetensorsFiles(files)
-	case modelsv1alpha1.ModelInputFormatGGUF:
-		return selectGGUFFiles(files)
-	default:
-		return nil, fmt.Errorf("unsupported model input format %q", format)
+	rules, err := rulesForFormat(format)
+	if err != nil {
+		return nil, err
 	}
+	return selectFormatRemoteFiles(files, rules)
 }

@@ -22,26 +22,42 @@ import (
 )
 
 const (
-	WorkspaceVolumeName = "tmp"
-	WorkspaceMountPath  = "/tmp"
+	WorkVolumeName      = "work"
+	WorkVolumeMountPath = "/var/lib/ai-models/work"
 )
 
-func VolumeMounts(registryCASecretName string, extra ...corev1.VolumeMount) []corev1.VolumeMount {
+func VolumeMounts(options RuntimeOptions, extra ...corev1.VolumeMount) []corev1.VolumeMount {
 	mounts := []corev1.VolumeMount{{
-		Name:      WorkspaceVolumeName,
-		MountPath: WorkspaceMountPath,
+		Name:      WorkVolumeName,
+		MountPath: WorkVolumeMountPath,
 	}}
-	mounts = append(mounts, ociregistry.VolumeMounts(registryCASecretName)...)
+	mounts = append(mounts, ociregistry.VolumeMounts(options.OCIRegistryCASecretName)...)
 	return append(mounts, extra...)
 }
 
-func Volumes(registryCASecretName string, extra ...corev1.Volume) []corev1.Volume {
+func Volumes(options RuntimeOptions, extra ...corev1.Volume) []corev1.Volume {
 	volumes := []corev1.Volume{{
-		Name: WorkspaceVolumeName,
-		VolumeSource: corev1.VolumeSource{
-			EmptyDir: &corev1.EmptyDirVolumeSource{},
-		},
+		Name:         WorkVolumeName,
+		VolumeSource: workVolumeSource(options.WorkVolume),
 	}}
-	volumes = append(volumes, ociregistry.Volumes(registryCASecretName)...)
+	volumes = append(volumes, ociregistry.Volumes(options.OCIRegistryCASecretName)...)
 	return append(volumes, extra...)
+}
+
+func workVolumeSource(options WorkVolumeOptions) corev1.VolumeSource {
+	switch options.Type {
+	case WorkVolumeTypePersistentVolumeClaim:
+		return corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+				ClaimName: options.PersistentVolumeClaimName,
+			},
+		}
+	default:
+		sizeLimit := options.EmptyDirSizeLimit.DeepCopy()
+		return corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{
+				SizeLimit: &sizeLimit,
+			},
+		}
+	}
 }

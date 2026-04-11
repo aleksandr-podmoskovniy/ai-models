@@ -32,6 +32,111 @@ cpu: 50m
 memory: 128Mi
 {{- end -}}
 
+{{- define "ai-models.publicationMaxConcurrentWorkers" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- default 1 (index $runtime "maxConcurrentWorkers") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationWorkVolumeType" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- $workVolume := (index $runtime "workVolume") | default dict -}}
+{{- default "EmptyDir" (index $workVolume "type") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationWorkVolumeEmptyDirSizeLimit" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- $workVolume := (index $runtime "workVolume") | default dict -}}
+{{- $emptyDir := (index $workVolume "emptyDir") | default dict -}}
+{{- default "2Ti" (index $emptyDir "sizeLimit") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationWorkVolumePVCName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- $workVolume := (index $runtime "workVolume") | default dict -}}
+{{- $pvc := (index $workVolume "persistentVolumeClaim") | default dict -}}
+{{- default "ai-models-publication-work" (index $pvc "name") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationWorkVolumePVCStorageClassName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- $workVolume := (index $runtime "workVolume") | default dict -}}
+{{- $pvc := (index $workVolume "persistentVolumeClaim") | default dict -}}
+{{- default "" (index $pvc "storageClassName") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationWorkVolumePVCStorageSize" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- $workVolume := (index $runtime "workVolume") | default dict -}}
+{{- $pvc := (index $workVolume "persistentVolumeClaim") | default dict -}}
+{{- default "2Ti" (index $pvc "storageSize") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationWorkerCPURequest" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- $resources := (index $runtime "resources") | default dict -}}
+{{- $requests := (index $resources "requests") | default dict -}}
+{{- default "1" (index $requests "cpu") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationWorkerMemoryRequest" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- $resources := (index $runtime "resources") | default dict -}}
+{{- $requests := (index $resources "requests") | default dict -}}
+{{- default "8Gi" (index $requests "memory") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationWorkerEphemeralStorageRequest" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- $resources := (index $runtime "resources") | default dict -}}
+{{- $requests := (index $resources "requests") | default dict -}}
+{{- default "2Ti" (index $requests "ephemeral-storage") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationWorkerCPULimit" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- $resources := (index $runtime "resources") | default dict -}}
+{{- $limits := (index $resources "limits") | default dict -}}
+{{- default "4" (index $limits "cpu") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationWorkerMemoryLimit" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- $resources := (index $runtime "resources") | default dict -}}
+{{- $limits := (index $resources "limits") | default dict -}}
+{{- default "16Gi" (index $limits "memory") -}}
+{{- end -}}
+
+{{- define "ai-models.publicationWorkerEphemeralStorageLimit" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
+{{- $resources := (index $runtime "resources") | default dict -}}
+{{- $limits := (index $resources "limits") | default dict -}}
+{{- default "2Ti" (index $limits "ephemeral-storage") -}}
+{{- end -}}
+
 {{- define "ai-models.dmcrResources" -}}
 cpu: 50m
 memory: 128Mi
@@ -132,8 +237,12 @@ ai-models-controller
 {{- include "ai-models.controllerName" . -}}
 {{- end -}}
 
+{{- define "ai-models.controllerServiceName" -}}
+{{- include "ai-models.controllerName" . -}}
+{{- end -}}
+
 {{- define "ai-models.controllerMetricsServiceName" -}}
-{{- printf "%s-metrics" (include "ai-models.controllerName" .) -}}
+{{- include "ai-models.controllerServiceName" . -}}
 {{- end -}}
 
 {{- define "ai-models.configMapName" -}}
@@ -291,6 +400,10 @@ true
 
 {{- define "ai-models.controllerHealthPort" -}}
 8081
+{{- end -}}
+
+{{- define "ai-models.controllerUploadPort" -}}
+8444
 {{- end -}}
 
 {{- define "ai-models.controllerLeaderElectionID" -}}
@@ -778,7 +891,7 @@ false
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $publicationStorage := (index $moduleValues "publicationStorage") | default dict -}}
 {{- $objectStorage := (index $publicationStorage "objectStorage") | default dict -}}
-{{- trimAll "/" (default "published-models" (index $objectStorage "pathPrefix")) -}}
+{{- trimAll "/" (default "dmcr" (index $objectStorage "pathPrefix")) -}}
 {{- end -}}
 
 {{- define "ai-models.publicationStorageRootDirectory" -}}
@@ -955,6 +1068,13 @@ true
   {{- end -}}
   {{- if and (eq $publicationStorageType "ObjectStorage") (not (include "ai-models.publicationStorageBucket" . | trim)) -}}
     {{- fail "ai-models.publicationStorage.objectStorage.bucket resolves to empty; set ai-models.artifacts.bucket or ai-models.publicationStorage.objectStorage.bucket" -}}
+  {{- end -}}
+  {{- $publicationWorkVolumeType := include "ai-models.publicationWorkVolumeType" . | trim -}}
+  {{- if not (or (eq $publicationWorkVolumeType "EmptyDir") (eq $publicationWorkVolumeType "PersistentVolumeClaim")) -}}
+    {{- fail "ai-models.internal.publicationRuntime.workVolume.type must be either EmptyDir or PersistentVolumeClaim" -}}
+  {{- end -}}
+  {{- if and (eq $publicationWorkVolumeType "PersistentVolumeClaim") (gt (include "ai-models.publicationMaxConcurrentWorkers" . | int) 1) -}}
+    {{- fail "ai-models.internal.publicationRuntime.maxConcurrentWorkers must be 1 when workVolume.type=PersistentVolumeClaim" -}}
   {{- end -}}
   {{- if not (has "user-authn" $enabledModules) -}}
     {{- fail "ai-models requires the user-authn module for browser SSO" -}}

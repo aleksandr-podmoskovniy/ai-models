@@ -94,7 +94,7 @@ func (r *baseReconciler) reconcileObject(
 		Now:            time.Now().UTC(),
 	})
 	if err != nil {
-		return r.failPublication(ctx, object, status, decision.SourceType, err.Error())
+		return r.failPublication(ctx, object, status, decision.SourceType, decision.Mode, err.Error())
 	}
-	return r.applyRuntimeObservation(ctx, object, spec, status, decision.SourceType, result.Decision, result.DeleteFn)
+	return r.applyRuntimeObservation(ctx, object, spec, status, decision.SourceType, decision.Mode, result.Decision, result.DeleteFn)
 }

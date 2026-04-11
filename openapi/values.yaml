@@ -151,7 +151,7 @@ properties:
       type: ObjectStorage
       objectStorage:
         bucket: ""
-        pathPrefix: published-models
+        pathPrefix: dmcr
       persistentVolumeClaim:
         storageClassName: ""
         storageSize: 50Gi
@@ -167,14 +167,14 @@ properties:
         additionalProperties: false
         default:
           bucket: ""
-          pathPrefix: published-models
+          pathPrefix: dmcr
         properties:
           bucket:
             type: string
             default: ""
           pathPrefix:
             type: string
-            default: published-models
+            default: dmcr
       persistentVolumeClaim:
         type: object
         additionalProperties: false
@@ -299,7 +299,7 @@ properties:
             type: ObjectStorage
             objectStorage:
               bucket: ""
-              pathPrefix: published-models
+              pathPrefix: dmcr
             persistentVolumeClaim:
               storageClassName: ""
               storageSize: 50Gi
@@ -372,6 +372,29 @@ properties:
           secretKey: ""
           insecure: false
           usePathStyle: true
+        additionalProperties: true
+      publicationRuntime:
+        type: object
+        description: Runtime-only publish worker scheduling and bounded work-volume settings.
+        default:
+          maxConcurrentWorkers: 1
+          workVolume:
+            type: EmptyDir
+            emptyDir:
+              sizeLimit: 2Ti
+            persistentVolumeClaim:
+              name: ai-models-publication-work
+              storageClassName: ""
+              storageSize: 2Ti
+          resources:
+            requests:
+              cpu: "1"
+              memory: 8Gi
+              ephemeral-storage: 2Ti
+            limits:
+              cpu: "4"
+              memory: 16Gi
+              ephemeral-storage: 2Ti
         additionalProperties: true
       ingress:
         type: object

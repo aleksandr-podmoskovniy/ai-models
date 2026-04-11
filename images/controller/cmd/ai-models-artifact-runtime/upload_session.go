@@ -17,29 +17,30 @@ limitations under the License.
 package main
 
 import (
+	"context"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsessionstate"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	uploadsessionruntime "github.com/deckhouse/ai-models/controller/internal/dataplane/uploadsession"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
-const uploadTokenEnv = "AI_MODELS_UPLOAD_TOKEN"
-
 func runUploadSession(args []string) int {
-	flags := cmdsupport.NewFlagSet(commandUploadSession)
+	flags := cmdsupport.NewFlagSet(commandUploadGateway)
 
-	var expectedSizeBytes int64
 	var listenPort int
+	var partURLTTL time.Duration
+	var sessionSecretNamespace string
 	var stagingBucket string
-	var stagingKeyPrefix string
-	var uploadToken string
 
-	flags.Int64Var(&expectedSizeBytes, "expected-size-bytes", 0, "Expected upload size in bytes.")
 	flags.IntVar(&listenPort, "listen-port", 8444, "Listen port.")
+	flags.DurationVar(&partURLTTL, "part-url-ttl", 15*time.Minute, "Presigned multipart upload part URL TTL.")
+	flags.StringVar(&sessionSecretNamespace, "session-secret-namespace", "", "Namespace of upload session secrets.")
 	flags.StringVar(&stagingBucket, "staging-bucket", "", "Bucket used for staged uploads.")
-	flags.StringVar(&stagingKeyPrefix, "staging-key-prefix", "", "Object key prefix used for staged uploads.")
-	flags.StringVar(&uploadToken, "upload-token", cmdsupport.EnvOr(uploadTokenEnv, ""), "Bearer token for upload session.")
-
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -47,29 +48,129 @@ func runUploadSession(args []string) int {
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
 
-	stagingUploader, err := s3.New(uploadStagingS3ConfigFromEnv())
+	logger := slog.Default().With(
+		slog.Int("listenPort", listenPort),
+		slog.String("sessionSecretNamespace", strings.TrimSpace(sessionSecretNamespace)),
+		slog.String("stagingBucket", strings.TrimSpace(stagingBucket)),
+	)
+
+	stagingClient, err := s3.New(uploadStagingS3ConfigFromEnv())
 	if err != nil {
-		cmdsupport.WriteTerminationFailure(err.Error())
-		return cmdsupport.CommandError(commandUploadSession, err)
+		return cmdsupport.CommandError(commandUploadGateway, err)
+	}
+	sessions, err := uploadsessionstate.NewInCluster(strings.TrimSpace(sessionSecretNamespace))
+	if err != nil {
+		return cmdsupport.CommandError(commandUploadGateway, err)
 	}
 
-	result, err := uploadsessionruntime.Run(ctx, uploadsessionruntime.Options{
-		ListenPort:        listenPort,
-		UploadToken:       uploadToken,
-		ExpectedSizeBytes: expectedSizeBytes,
-		StagingBucket:     stagingBucket,
-		StagingKeyPrefix:  stagingKeyPrefix,
-		StagingUploader:   stagingUploader,
-	})
-	if err != nil {
-		cmdsupport.WriteTerminationFailure(err.Error())
-		return cmdsupport.CommandError(commandUploadSession, err)
+	logger.Info("upload gateway starting")
+	if err := uploadsessionruntime.Serve(ctx, uploadsessionruntime.Options{
+		ListenPort:    listenPort,
+		PartURLTTL:    partURLTTL,
+		StagingBucket: stagingBucket,
+		StagingClient: stagingClient,
+		Sessions:      sessionStoreAdapter{client: sessions},
+	}); err != nil && err != ctx.Err() {
+		logger.Error("upload gateway failed", slog.Any("error", err))
+		return 1
 	}
-	payload, err := cleanuphandle.Encode(result)
-	if err != nil {
-		cmdsupport.WriteTerminationFailure(err.Error())
-		return cmdsupport.CommandError(commandUploadSession, err)
-	}
-	cmdsupport.WriteTerminationMessage(payload)
+
+	logger.Info("upload gateway stopped")
 	return 0
+}
+
+type sessionStoreAdapter struct {
+	client *uploadsessionstate.Client
+}
+
+func (s sessionStoreAdapter) Load(ctx context.Context, sessionID string) (uploadsessionruntime.SessionRecord, bool, error) {
+	session, found, err := s.client.Load(ctx, sessionID)
+	if err != nil || !found {
+		return uploadsessionruntime.SessionRecord{}, found, err
+	}
+	record := uploadsessionruntime.SessionRecord{
+		SessionID:           session.Name,
+		UploadTokenHash:     session.UploadTokenHash,
+		ExpectedSizeBytes:   session.ExpectedSizeBytes,
+		StagingKeyPrefix:    session.StagingKeyPrefix,
+		DeclaredInputFormat: session.DeclaredInputFormat,
+		OwnerUID:            session.OwnerUID,
+		OwnerKind:           session.OwnerKind,
+		OwnerName:           session.OwnerName,
+		OwnerNamespace:      session.OwnerNamespace,
+		OwnerGeneration:     session.OwnerGeneration,
+		ExpiresAt:           session.ExpiresAt.Time,
+		FailureMessage:      session.FailureMessage,
+	}
+	switch session.Phase {
+	case uploadsessionstate.PhaseIssued:
+		record.Phase = uploadsessionruntime.SessionPhaseIssued
+	case uploadsessionstate.PhaseProbing:
+		record.Phase = uploadsessionruntime.SessionPhaseProbing
+	case uploadsessionstate.PhaseUploading:
+		record.Phase = uploadsessionruntime.SessionPhaseUploading
+	case uploadsessionstate.PhaseUploaded:
+		record.Phase = uploadsessionruntime.SessionPhaseUploaded
+	case uploadsessionstate.PhasePublishing:
+		record.Phase = uploadsessionruntime.SessionPhasePublishing
+	case uploadsessionstate.PhaseCompleted:
+		record.Phase = uploadsessionruntime.SessionPhaseCompleted
+	case uploadsessionstate.PhaseFailed:
+		record.Phase = uploadsessionruntime.SessionPhaseFailed
+	case uploadsessionstate.PhaseAborted:
+		record.Phase = uploadsessionruntime.SessionPhaseAborted
+	case uploadsessionstate.PhaseExpired:
+		record.Phase = uploadsessionruntime.SessionPhaseExpired
+	}
+	if session.Multipart != nil {
+		record.Multipart = &uploadsessionruntime.SessionState{
+			UploadID:      session.Multipart.UploadID,
+			Key:           session.Multipart.Key,
+			FileName:      session.Multipart.FileName,
+			UploadedParts: session.Multipart.UploadedParts,
+		}
+	}
+	if session.Probe != nil {
+		record.Probe = &uploadsessionruntime.ProbeState{
+			FileName:            session.Probe.FileName,
+			ResolvedInputFormat: session.Probe.ResolvedInputFormat,
+		}
+	}
+	if session.StagedHandle != nil {
+		handle := *session.StagedHandle
+		record.StagedHandle = &handle
+	}
+	return record, true, nil
+}
+
+func (s sessionStoreAdapter) SaveProbe(ctx context.Context, sessionID string, state uploadsessionruntime.ProbeState) error {
+	return s.client.SaveProbe(ctx, sessionID, state)
+}
+
+func (s sessionStoreAdapter) SaveMultipart(ctx context.Context, sessionID string, state uploadsessionruntime.SessionState) error {
+	return s.client.SaveMultipart(ctx, sessionID, state)
+}
+
+func (s sessionStoreAdapter) SaveMultipartParts(ctx context.Context, sessionID string, parts []uploadsessionruntime.UploadedPart) error {
+	return s.client.SaveMultipartParts(ctx, sessionID, parts)
+}
+
+func (s sessionStoreAdapter) ClearMultipart(ctx context.Context, sessionID string) error {
+	return s.client.ClearMultipart(ctx, sessionID)
+}
+
+func (s sessionStoreAdapter) MarkUploaded(ctx context.Context, sessionID string, handle cleanuphandle.Handle) error {
+	return s.client.MarkUploaded(ctx, sessionID, handle)
+}
+
+func (s sessionStoreAdapter) MarkFailed(ctx context.Context, sessionID string, message string) error {
+	return s.client.MarkFailed(ctx, sessionID, message)
+}
+
+func (s sessionStoreAdapter) MarkAborted(ctx context.Context, sessionID string, message string) error {
+	return s.client.MarkAborted(ctx, sessionID, message)
+}
+
+func (s sessionStoreAdapter) MarkExpired(ctx context.Context, sessionID string, message string) error {
+	return s.client.MarkExpired(ctx, sessionID, message)
 }

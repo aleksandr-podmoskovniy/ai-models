@@ -20,30 +20,31 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsessionstate"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestServiceGetOrCreateCreatesOwnedUploadSessionResources(t *testing.T) {
+func TestServiceGetOrCreateCreatesSharedGatewaySessionSecret(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
 	owner := testkit.NewUploadModel()
 	owner.UID = types.UID("1111-2222")
 	owner.Name = "deepseek-r1-upload"
+
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(
-			owner,
-			testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write"),
-		).
+		WithObjects(owner).
 		Build()
 
 	service, err := NewService(kubeClient, scheme, testUploadOptions())
@@ -51,136 +52,336 @@ func TestServiceGetOrCreateCreatesOwnedUploadSessionResources(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	request := testUploadOperationContext()
-	request.Request.Owner.UID = types.UID("1111-2222")
-	request.Request.Owner.Name = "deepseek-r1-upload"
-	request.Request.Identity.Name = "deepseek-r1-upload"
+	request := testUploadRequest()
+	request.Owner.UID = owner.UID
+	request.Owner.Name = owner.Name
+	request.Identity.Name = owner.Name
 
 	handle, created, err := service.GetOrCreate(context.Background(), owner, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}
 	if !created {
-		t.Fatal("expected upload session resources to be created")
+		t.Fatal("expected upload session secret to be created")
 	}
 	if handle == nil || handle.WorkerName == "" {
-		t.Fatalf("expected upload session handle, got %#v", handle)
+		t.Fatalf("unexpected upload session handle %#v", handle)
 	}
-	if !strings.HasPrefix(handle.UploadStatus.ExternalURL, "https://ai-models.example.com/upload/") {
-		t.Fatalf("unexpected upload external URL %q", handle.UploadStatus.ExternalURL)
+	if !strings.HasPrefix(handle.UploadStatus.ExternalURL, "https://ai-models.example.com/v1/upload/") {
+		t.Fatalf("unexpected external URL %q", handle.UploadStatus.ExternalURL)
 	}
-	if !strings.HasPrefix(handle.UploadStatus.InClusterURL, "http://ai-model-upload-1111-2222.d8-ai-models.svc:8444/upload/") {
-		t.Fatalf("unexpected upload in-cluster URL %q", handle.UploadStatus.InClusterURL)
-	}
-	externalToken := strings.TrimPrefix(handle.UploadStatus.ExternalURL, "https://ai-models.example.com/upload/")
-	inClusterToken := strings.TrimPrefix(handle.UploadStatus.InClusterURL, "http://ai-model-upload-1111-2222.d8-ai-models.svc:8444/upload/")
-	if externalToken == "" || inClusterToken == "" || externalToken != inClusterToken {
-		t.Fatalf("expected matching upload token in URLs, external=%q inCluster=%q", externalToken, inClusterToken)
-	}
-	if got, want := handle.UploadStatus.Repository, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/1111-2222:published"; got != want {
-		t.Fatalf("unexpected upload repository %q", got)
-	}
-	if handle.UploadStatus.ExpiresAt == nil {
-		t.Fatal("expected upload session expiration")
+	if !strings.Contains(handle.UploadStatus.InClusterURL, "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/") {
+		t.Fatalf("unexpected in-cluster URL %q", handle.UploadStatus.InClusterURL)
 	}
 
-	serviceName, err := resourcenames.UploadSessionServiceName(request.Request.Owner.UID)
-	if err != nil {
-		t.Fatalf("UploadSessionServiceName() error = %v", err)
-	}
-	secretName, err := resourcenames.UploadSessionSecretName(request.Request.Owner.UID)
+	secretName, err := resourcenames.UploadSessionSecretName(owner.UID)
 	if err != nil {
 		t.Fatalf("UploadSessionSecretName() error = %v", err)
 	}
-	ingressName, err := resourcenames.UploadSessionIngressName(request.Request.Owner.UID)
+	secret := &corev1.Secret{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: secretName, Namespace: "d8-ai-models"}, secret); err != nil {
+		t.Fatalf("Get(secret) error = %v", err)
+	}
+	session, err := uploadsessionstate.SessionFromSecret(secret)
 	if err != nil {
-		t.Fatalf("UploadSessionIngressName() error = %v", err)
+		t.Fatalf("SessionFromSecret() error = %v", err)
 	}
-
-	for _, object := range []client.Object{
-		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: handle.WorkerName, Namespace: "d8-ai-models"}},
-		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: "d8-ai-models"}},
-		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: "d8-ai-models"}},
-		&networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: ingressName, Namespace: "d8-ai-models"}},
-	} {
-		stored := object.DeepCopyObject().(client.Object)
-		if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(object), stored); err != nil {
-			t.Fatalf("Get(%T) error = %v", object, err)
-		}
-		if len(stored.GetOwnerReferences()) != 0 {
-			t.Fatalf("expected no cross-namespace owner references on %T", object)
-		}
+	if session.Phase != uploadsessionstate.PhaseIssued {
+		t.Fatalf("unexpected session phase %q", session.Phase)
 	}
-
-	pod := &corev1.Pod{}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: handle.WorkerName, Namespace: "d8-ai-models"}, pod); err != nil {
-		t.Fatalf("Get(pod) error = %v", err)
-	}
-	if got, want := pod.Annotations[resourcenames.OwnerNameAnnotationKey], owner.Name; got != want {
-		t.Fatalf("unexpected owner-name annotation %q", got)
-	}
-	if got, want := pod.Annotations[resourcenames.OwnerNamespaceAnnotationKey], owner.Namespace; got != want {
-		t.Fatalf("unexpected owner-namespace annotation %q", got)
+	if _, found := secret.Data["token"]; found {
+		t.Fatalf("raw upload token must not be stored in session secret: %#v", secret.Data)
 	}
 }
 
-func TestBuildPodUsesUploadSessionRuntime(t *testing.T) {
+func TestServiceGetOrCreateProjectsUploadedAndFailedSessionState(t *testing.T) {
 	t.Parallel()
 
-	request := testUploadOperationContext()
-	request.Request.Owner.UID = types.UID("1111-2222")
-	request.Request.Owner.Name = "deepseek-r1-upload"
-	request.Request.Identity.Name = "deepseek-r1-upload"
-	request.Request.Spec.Source.Upload.ExpectedSizeBytes = ptrTo[int64](128)
+	for _, tc := range []struct {
+		name           string
+		mutate         func(t *testing.T, secret *corev1.Secret)
+		wantPhase      corev1.PodPhase
+		wantTermSubstr string
+	}{
+		{
+			name: "uploaded",
+			mutate: func(t *testing.T, secret *corev1.Secret) {
+				t.Helper()
+				handle := cleanuphandle.Handle{
+					Kind: cleanuphandle.KindUploadStaging,
+					UploadStaging: &cleanuphandle.UploadStagingHandle{
+						Bucket:    "ai-models",
+						Key:       "raw/1111-2222/model.gguf",
+						FileName:  "model.gguf",
+						SizeBytes: 128,
+					},
+				}
+				encoded, err := cleanuphandle.Encode(handle)
+				if err != nil {
+					t.Fatalf("Encode() error = %v", err)
+				}
+				secret.Data["phase"] = []byte(string(uploadsessionstate.PhaseUploaded))
+				secret.Data["stagedHandle"] = []byte(encoded)
+			},
+			wantPhase:      corev1.PodSucceeded,
+			wantTermSubstr: "\"kind\":\"UploadStaging\"",
+		},
+		{
+			name: "failed",
+			mutate: func(t *testing.T, secret *corev1.Secret) {
+				t.Helper()
+				secret.Data["phase"] = []byte(string(uploadsessionstate.PhaseFailed))
+				secret.Data["failureMessage"] = []byte("upload failed")
+			},
+			wantPhase:      corev1.PodFailed,
+			wantTermSubstr: "upload failed",
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	options := testUploadOptions()
-	options.Runtime.ObjectStorage.CASecretName = "artifacts-ca"
+			scheme := testkit.NewScheme(t)
+			owner := testkit.NewUploadModel()
+			owner.UID = types.UID("1111-2222")
 
-	pod, err := BuildPod(request, options, "ai-model-upload-auth-1111-2222")
+			secret := mustUploadSessionSecret(t, owner.UID)
+			tc.mutate(t, secret)
+
+			kubeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(owner, secret).
+				Build()
+
+			service, err := NewService(kubeClient, scheme, testUploadOptions())
+			if err != nil {
+				t.Fatalf("NewService() error = %v", err)
+			}
+			request := testUploadRequest()
+			request.Owner.UID = owner.UID
+
+			handle, created, err := service.GetOrCreate(context.Background(), owner, request)
+			if err != nil {
+				t.Fatalf("GetOrCreate() error = %v", err)
+			}
+			if created {
+				t.Fatal("expected existing session to be reused")
+			}
+			if handle == nil || handle.Phase != tc.wantPhase {
+				t.Fatalf("unexpected handle %#v", handle)
+			}
+			if !strings.Contains(handle.TerminationMessage, tc.wantTermSubstr) {
+				t.Fatalf("unexpected termination message %q", handle.TerminationMessage)
+			}
+		})
+	}
+}
+
+func TestServiceDeleteRemovesOnlySessionSecret(t *testing.T) {
+	t.Parallel()
+
+	scheme := testkit.NewScheme(t)
+	owner := testkit.NewUploadModel()
+	owner.UID = types.UID("1111-2222")
+
+	secret := mustUploadSessionSecret(t, owner.UID)
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(owner, secret).
+		Build()
+
+	service, err := NewService(kubeClient, scheme, testUploadOptions())
 	if err != nil {
-		t.Fatalf("BuildPod() error = %v", err)
+		t.Fatalf("NewService() error = %v", err)
+	}
+	request := testUploadRequest()
+	request.Owner.UID = owner.UID
+
+	handle, _, err := service.GetOrCreate(context.Background(), owner, request)
+	if err != nil {
+		t.Fatalf("GetOrCreate() error = %v", err)
+	}
+	if err := handle.Delete(context.Background()); err != nil {
+		t.Fatalf("Delete() error = %v", err)
 	}
 
-	if got, want := pod.Spec.Containers[0].Args[0], "upload-session"; got != want {
-		t.Fatalf("unexpected subcommand %q", got)
-	}
-	if !containsArg(pod.Spec.Containers[0].Args, "--expected-size-bytes", "128") {
-		t.Fatalf("expected size arg in %#v", pod.Spec.Containers[0].Args)
-	}
-	if !containsArg(pod.Spec.Containers[0].Args, "--staging-bucket", "ai-models") {
-		t.Fatalf("expected staging bucket arg in %#v", pod.Spec.Containers[0].Args)
-	}
-	if !hasEnv(pod.Spec.Containers[0].Env, "AI_MODELS_S3_CA_FILE", "/etc/ai-models/artifacts-ca/ca.crt") {
-		t.Fatalf("expected object storage CA env in %#v", pod.Spec.Containers[0].Env)
-	}
-	if !hasVolume(pod.Spec.Volumes, "artifacts-ca") {
-		t.Fatalf("expected object storage CA volume in %#v", pod.Spec.Volumes)
+	err = kubeClient.Get(context.Background(), client.ObjectKey{Name: secret.Name, Namespace: secret.Namespace}, &corev1.Secret{})
+	if client.IgnoreNotFound(err) != nil || err == nil {
+		t.Fatalf("expected secret to be deleted, got err=%v", err)
 	}
 }
 
-func containsArg(args []string, flag, value string) bool {
-	for i := 0; i < len(args)-1; i++ {
-		if args[i] == flag && args[i+1] == value {
-			return true
-		}
+func TestServiceGetOrCreateMigratesLegacyTokenStorageAndReusesPersistedUploadURL(t *testing.T) {
+	t.Parallel()
+
+	scheme := testkit.NewScheme(t)
+	owner := testkit.NewUploadModel()
+	owner.UID = types.UID("1111-2222")
+	uploadStatus := testUploadStatus()
+	owner.Status.Upload = &uploadStatus
+
+	secret := mustUploadSessionSecret(t, owner.UID)
+	secret.Data["token"] = []byte("existing-token")
+	delete(secret.Data, "tokenHash")
+
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(owner, secret).
+		Build()
+
+	service, err := NewService(kubeClient, scheme, testUploadOptions())
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
 	}
-	return false
+	request := testUploadRequest()
+	request.Owner.UID = owner.UID
+
+	handle, created, err := service.GetOrCreate(context.Background(), owner, request)
+	if err != nil {
+		t.Fatalf("GetOrCreate() error = %v", err)
+	}
+	if created {
+		t.Fatal("expected existing session to be reused")
+	}
+	if handle.UploadStatus.InClusterURL != owner.Status.Upload.InClusterURL {
+		t.Fatalf("expected persisted in-cluster URL to be reused, got %q", handle.UploadStatus.InClusterURL)
+	}
+
+	updatedSecret := &corev1.Secret{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(secret), updatedSecret); err != nil {
+		t.Fatalf("Get(updated secret) error = %v", err)
+	}
+	if _, found := updatedSecret.Data["token"]; found {
+		t.Fatalf("raw upload token must be removed from secret after migration: %#v", updatedSecret.Data)
+	}
+	if strings.TrimSpace(string(updatedSecret.Data["tokenHash"])) == "" {
+		t.Fatalf("expected token hash to be persisted after migration: %#v", updatedSecret.Data)
+	}
 }
 
-func hasEnv(env []corev1.EnvVar, name, value string) bool {
-	for _, item := range env {
-		if item.Name == name && item.Value == value {
-			return true
-		}
+func TestServiceSyncsControllerOwnedSessionPhases(t *testing.T) {
+	t.Parallel()
+
+	scheme := testkit.NewScheme(t)
+	owner := testkit.NewUploadModel()
+	owner.UID = types.UID("1111-2222")
+
+	for _, tc := range []struct {
+		name          string
+		mark          func(context.Context, *Service, types.UID) error
+		wantPhase     uploadsessionstate.Phase
+		wantMessage   string
+		wantHandleSet bool
+	}{
+		{
+			name: "publishing",
+			mark: func(ctx context.Context, service *Service, ownerUID types.UID) error {
+				return service.MarkPublishing(ctx, ownerUID)
+			},
+			wantPhase:     uploadsessionstate.PhasePublishing,
+			wantHandleSet: true,
+		},
+		{
+			name: "completed",
+			mark: func(ctx context.Context, service *Service, ownerUID types.UID) error {
+				return service.MarkCompleted(ctx, ownerUID)
+			},
+			wantPhase: uploadsessionstate.PhaseCompleted,
+		},
+		{
+			name: "failed",
+			mark: func(ctx context.Context, service *Service, ownerUID types.UID) error {
+				return service.MarkFailed(ctx, ownerUID, "publish failed")
+			},
+			wantPhase:     uploadsessionstate.PhaseFailed,
+			wantMessage:   "publish failed",
+			wantHandleSet: true,
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			secret := mustUploadSessionSecret(t, owner.UID)
+			handle := cleanuphandle.Handle{
+				Kind: cleanuphandle.KindUploadStaging,
+				UploadStaging: &cleanuphandle.UploadStagingHandle{
+					Bucket:    "ai-models",
+					Key:       "raw/1111-2222/model.gguf",
+					FileName:  "model.gguf",
+					SizeBytes: 128,
+				},
+			}
+			if err := uploadsessionstate.MarkUploadedSecret(secret, handle); err != nil {
+				t.Fatalf("MarkUploadedSecret() error = %v", err)
+			}
+
+			kubeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(owner.DeepCopy(), secret).
+				Build()
+
+			service, err := NewService(kubeClient, scheme, testUploadOptions())
+			if err != nil {
+				t.Fatalf("NewService() error = %v", err)
+			}
+
+			if err := tc.mark(context.Background(), service, owner.UID); err != nil {
+				t.Fatalf("phase sync error = %v", err)
+			}
+
+			updatedSecret := &corev1.Secret{}
+			if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(secret), updatedSecret); err != nil {
+				t.Fatalf("Get(updated secret) error = %v", err)
+			}
+			session, err := uploadsessionstate.SessionFromSecret(updatedSecret)
+			if err != nil {
+				t.Fatalf("SessionFromSecret() error = %v", err)
+			}
+			if session.Phase != tc.wantPhase {
+				t.Fatalf("unexpected session phase %q", session.Phase)
+			}
+			if session.FailureMessage != tc.wantMessage {
+				t.Fatalf("unexpected failure message %q", session.FailureMessage)
+			}
+			if got := session.StagedHandle != nil; got != tc.wantHandleSet {
+				t.Fatalf("unexpected staged handle presence %v", got)
+			}
+		})
 	}
-	return false
 }
 
-func hasVolume(volumes []corev1.Volume, name string) bool {
-	for _, volume := range volumes {
-		if volume.Name == name {
-			return true
-		}
+func mustUploadSessionSecret(t *testing.T, ownerUID types.UID) *corev1.Secret {
+	t.Helper()
+	name, err := resourcenames.UploadSessionSecretName(ownerUID)
+	if err != nil {
+		t.Fatalf("UploadSessionSecretName() error = %v", err)
 	}
-	return false
+	stagingPrefix, err := resourcenames.UploadStagingObjectPrefix(ownerUID)
+	if err != nil {
+		t.Fatalf("UploadStagingObjectPrefix() error = %v", err)
+	}
+	secret, err := uploadsessionstate.NewSecret(uploadsessionstate.SessionSpec{
+		Name:              name,
+		Namespace:         "d8-ai-models",
+		Token:             "existing-token",
+		ExpectedSizeBytes: 128,
+		StagingKeyPrefix:  stagingPrefix,
+		ExpiresAt:         time.Date(2030, 4, 10, 13, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("NewSecret() error = %v", err)
+	}
+	secret.Annotations[uploadsessionstate.ExpiresAtAnnotationKey] = metav1.NewTime(time.Date(2030, 4, 10, 13, 0, 0, 0, time.UTC)).Format(time.RFC3339)
+	return secret
+}
+
+func testUploadStatus() modelsv1alpha1.ModelUploadStatus {
+	expiresAt := metav1.NewTime(time.Date(2030, 4, 10, 13, 0, 0, 0, time.UTC))
+	return modelsv1alpha1.ModelUploadStatus{
+		ExpiresAt:    &expiresAt,
+		Repository:   "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/1111-2222:published",
+		ExternalURL:  "https://ai-models.example.com/v1/upload/ai-model-upload-auth-1111-2222?token=existing-token",
+		InClusterURL: "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222?token=existing-token",
+	}
 }

@@ -22,13 +22,15 @@ import (
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
+	"github.com/deckhouse/ai-models/controller/internal/ports/auditsink"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -38,26 +40,56 @@ type fakeSourceWorkerRuntime struct {
 	calls  int
 }
 
-func (f *fakeSourceWorkerRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.OperationContext) (*publicationports.SourceWorkerHandle, bool, error) {
+func (f *fakeSourceWorkerRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.Request) (*publicationports.SourceWorkerHandle, bool, error) {
 	f.calls++
 	return f.handle, false, f.err
 }
 
 type fakeUploadSessionRuntime struct {
-	handle *publicationports.UploadSessionHandle
-	err    error
-	calls  int
+	handle              *publicationports.UploadSessionHandle
+	err                 error
+	calls               int
+	markPublishingCalls int
+	markCompletedCalls  int
+	markFailedCalls     int
+	failedMessages      []string
 }
 
-func (f *fakeUploadSessionRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.OperationContext) (*publicationports.UploadSessionHandle, bool, error) {
+func (f *fakeUploadSessionRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.Request) (*publicationports.UploadSessionHandle, bool, error) {
 	f.calls++
 	return f.handle, false, f.err
+}
+
+func (f *fakeUploadSessionRuntime) MarkPublishing(context.Context, types.UID) error {
+	f.markPublishingCalls++
+	return f.err
+}
+
+func (f *fakeUploadSessionRuntime) MarkCompleted(context.Context, types.UID) error {
+	f.markCompletedCalls++
+	return f.err
+}
+
+func (f *fakeUploadSessionRuntime) MarkFailed(_ context.Context, _ types.UID, message string) error {
+	f.markFailedCalls++
+	f.failedMessages = append(f.failedMessages, message)
+	return f.err
 }
 
 func newModelReconciler(
 	t *testing.T,
 	sourceWorkers publicationports.SourceWorkerRuntime,
 	uploadSessions publicationports.UploadSessionRuntime,
+	objects ...client.Object,
+) (*ModelReconciler, client.Client) {
+	return newModelReconcilerWithSink(t, sourceWorkers, uploadSessions, &fakeAuditSink{}, objects...)
+}
+
+func newModelReconcilerWithSink(
+	t *testing.T,
+	sourceWorkers publicationports.SourceWorkerRuntime,
+	uploadSessions publicationports.UploadSessionRuntime,
+	auditSink auditsink.Sink,
 	objects ...client.Object,
 ) (*ModelReconciler, client.Client) {
 	t.Helper()
@@ -75,6 +107,7 @@ func newModelReconciler(
 		options:        Options{},
 		sourceWorkers:  sourceWorkers,
 		uploadSessions: uploadSessions,
+		auditSink:      auditSink,
 	}}, kubeClient
 }
 
@@ -82,6 +115,16 @@ func newClusterModelReconciler(
 	t *testing.T,
 	sourceWorkers publicationports.SourceWorkerRuntime,
 	uploadSessions publicationports.UploadSessionRuntime,
+	objects ...client.Object,
+) (*ClusterModelReconciler, client.Client) {
+	return newClusterModelReconcilerWithSink(t, sourceWorkers, uploadSessions, &fakeAuditSink{}, objects...)
+}
+
+func newClusterModelReconcilerWithSink(
+	t *testing.T,
+	sourceWorkers publicationports.SourceWorkerRuntime,
+	uploadSessions publicationports.UploadSessionRuntime,
+	auditSink auditsink.Sink,
 	objects ...client.Object,
 ) (*ClusterModelReconciler, client.Client) {
 	t.Helper()
@@ -99,6 +142,7 @@ func newClusterModelReconciler(
 		options:        Options{},
 		sourceWorkers:  sourceWorkers,
 		uploadSessions: uploadSessions,
+		auditSink:      auditSink,
 	}}, kubeClient
 }
 
@@ -117,7 +161,7 @@ func testUploadModel() *modelsv1alpha1.Model {
 func succeededTerminationMessage(t *testing.T) string {
 	t.Helper()
 
-	payload, err := artifactbackend.EncodeResult(artifactbackend.Result{
+	payload, err := publicationartifact.EncodeResult(publicationartifact.Result{
 		Artifact: publication.PublishedArtifact{
 			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
 			URI:       "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef",
@@ -143,6 +187,8 @@ func succeededTerminationMessage(t *testing.T) string {
 			Type:              modelsv1alpha1.ModelSourceTypeHuggingFace,
 			ExternalReference: "deepseek-ai/DeepSeek-R1",
 			ResolvedRevision:  "abc123",
+			RawURI:            "s3://artifacts/raw/550e8400-e29b-41d4-a716-446655440000/source-url",
+			RawObjectCount:    4,
 		},
 		CleanupHandle: cleanuphandle.Handle{
 			Kind: cleanuphandle.KindBackendArtifact,
@@ -193,4 +239,43 @@ func runningUploadSessionHandle() *publicationports.UploadSessionHandle {
 		},
 		nil,
 	)
+}
+
+func succeededUploadSessionHandle(t *testing.T, deleted *bool) *publicationports.UploadSessionHandle {
+	t.Helper()
+
+	handle := cleanuphandle.Handle{
+		Kind: cleanuphandle.KindUploadStaging,
+		UploadStaging: &cleanuphandle.UploadStagingHandle{
+			Bucket:    "ai-models",
+			Key:       "raw/1111-2222/model.gguf",
+			FileName:  "model.gguf",
+			SizeBytes: 128,
+		},
+	}
+	encoded, err := cleanuphandle.Encode(handle)
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+
+	return publicationports.NewUploadSessionHandle(
+		"upload-worker",
+		corev1.PodSucceeded,
+		encoded,
+		modelsv1alpha1.ModelUploadStatus{},
+		func(context.Context) error {
+			if deleted != nil {
+				*deleted = true
+			}
+			return nil
+		},
+	)
+}
+
+type fakeAuditSink struct {
+	records []auditsink.Record
+}
+
+func (f *fakeAuditSink) Record(_ client.Object, record auditsink.Record) {
+	f.records = append(f.records, record)
 }

@@ -208,5 +208,46 @@ Controller work must stay aligned with the current model lifecycle direction:
 - runtime consumption through local materialization, not direct backend
   semantics
 
+## Large-upload discipline
+
+For large raw-model ingest, keep these rules stable:
+
+- `CRD.status` remains the only platform truth for publication state.
+- Raw storage and optional audit/provenance records are internal only and must
+  never become a second lifecycle truth beside `CRD + DMCR`.
+- For object-storage upload mode, prefer one shared upload gateway plus
+  short-lived per-upload session `Secret` state in the module namespace.
+- Use one exact control API for the shared upload gateway:
+  - `GET /v1/upload/<sessionID>`
+  - `POST /probe`
+  - `POST /init`
+  - `POST /parts`
+  - `POST /complete`
+  - `POST /abort`
+- Do not create one uploader Pod / Service / Ingress trio per upload when the
+  bytes can go directly to object storage through presigned multipart URLs.
+- Keep the gateway as a control-plane service only:
+  auth, bounded probe validation, presign, complete, abort.
+- Bulk bytes after probe must bypass the gateway and go directly to object
+  storage.
+- Upload concurrency and publish concurrency must be bounded separately.
+- Tens of concurrent uploads must primarily grow:
+  - session records;
+  - object-storage multipart uploads;
+  and not a matching number of heavy runtime Pods.
+- Preflight checks before full ingest must stay small and explicit:
+  - authz;
+  - owner binding;
+  - quota / declared size;
+  - allowed format / extension / lightweight source probe.
+- Deep malware/content scanning is a later async stage; do not describe
+  preflight as a security guarantee it cannot provide.
+- The copy budget for the multi-terabyte path is:
+  - one durable raw copy;
+  - one temporary bounded working copy;
+  - one durable published OCI copy.
+- Anything above that copy budget must be treated as debt and called out in
+  the task bundle and review.
+
 Use task-local bundles for slice-specific implementation detail, but keep these
 rules stable here.

@@ -14,45 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package artifactbackend
+package publicationartifact
 
 import (
 	"encoding/json"
 	"errors"
 	"strings"
 
-	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
-// Request is the backend-facing publication handoff. It is intentionally
-// independent from any concrete backend implementation so the current backend
-// can later be replaced without changing lifecycle controllers or public API.
-type Request struct {
-	Identity publication.Identity
-	Spec     modelsv1alpha1.ModelSpec
-}
-
-// Result is the backend-facing publication outcome consumed by the lifecycle
-// controller after the backend implementation stores the artifact and inspects
-// the model payload.
+// Result is the controller-owned publication runtime outcome encoded into the
+// worker termination payload and decoded by the lifecycle controller.
 type Result struct {
 	Artifact      publication.PublishedArtifact
 	Resolved      publication.ResolvedProfile
 	Source        publication.SourceProvenance
 	CleanupHandle cleanuphandle.Handle
-}
-
-func (r Request) Validate() error {
-	if err := r.Identity.Validate(); err != nil {
-		return err
-	}
-	if _, err := r.Spec.Source.DetectType(); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (r Result) Validate() error {
@@ -79,7 +58,7 @@ func EncodeResult(result Result) (string, error) {
 
 func DecodeResult(raw string) (Result, error) {
 	if strings.TrimSpace(raw) == "" {
-		return Result{}, errors.New("artifact backend result payload must not be empty")
+		return Result{}, errors.New("publication artifact result payload must not be empty")
 	}
 
 	var result Result

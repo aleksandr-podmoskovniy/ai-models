@@ -31,93 +31,93 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 
 	cases := []struct {
 		name    string
-		mutate  func(*publicationports.OperationContext)
+		mutate  func(*publicationports.Request)
 		wantErr string
 	}{
 		{
 			name: "missing owner kind",
-			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Owner.Kind = ""
+			mutate: func(request *publicationports.Request) {
+				request.Owner.Kind = ""
 			},
 			wantErr: "owner kind",
 		},
 		{
 			name: "invalid identity",
-			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Identity.Scope = publication.Scope("broken")
+			mutate: func(request *publicationports.Request) {
+				request.Identity.Scope = publication.Scope("broken")
 			},
 			wantErr: "unsupported publication scope",
 		},
 		{
 			name: "missing huggingface source",
-			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.URL = ""
+			mutate: func(request *publicationports.Request) {
+				request.Spec.Source.URL = ""
 			},
 			wantErr: "source.url or source.upload",
 		},
 		{
 			name: "cluster scoped huggingface auth secret without namespace",
-			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Owner.Namespace = ""
-				request.Request.Identity.Scope = publication.ScopeCluster
-				request.Request.Identity.Namespace = ""
-				request.Request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
+			mutate: func(request *publicationports.Request) {
+				request.Owner.Namespace = ""
+				request.Identity.Scope = publication.ScopeCluster
+				request.Identity.Namespace = ""
+				request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
 			},
 			wantErr: "authSecretRef namespace",
 		},
 		{
 			name: "http missing url",
-			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.URL = "https://example.invalid/model.tgz"
-				request.Request.Spec.Source.URL = ""
-				request.Request.Spec.RuntimeHints = &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"}
+			mutate: func(request *publicationports.Request) {
+				request.Spec.Source.URL = "https://example.invalid/model.tgz"
+				request.Spec.Source.URL = ""
+				request.Spec.RuntimeHints = &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"}
 			},
 			wantErr: "source.url or source.upload",
 		},
 		{
 			name: "cluster scoped http auth secret without namespace",
-			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Owner.Namespace = ""
-				request.Request.Identity.Scope = publication.ScopeCluster
-				request.Request.Identity.Namespace = ""
-				request.Request.Spec.Source.URL = "https://example.invalid/model.tgz"
-				request.Request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "http-auth"}
-				request.Request.Spec.RuntimeHints = &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"}
+			mutate: func(request *publicationports.Request) {
+				request.Owner.Namespace = ""
+				request.Identity.Scope = publication.ScopeCluster
+				request.Identity.Namespace = ""
+				request.Spec.Source.URL = "https://example.invalid/model.tgz"
+				request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "http-auth"}
+				request.Spec.RuntimeHints = &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"}
 			},
 			wantErr: "authSecretRef namespace",
 		},
 		{
 			name: "namespaced http auth secret rejects foreign namespace",
-			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.URL = "https://example.invalid/model.tgz"
-				request.Request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{
+			mutate: func(request *publicationports.Request) {
+				request.Spec.Source.URL = "https://example.invalid/model.tgz"
+				request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{
 					Namespace: "other-team",
 					Name:      "http-auth",
 				}
-				request.Request.Spec.RuntimeHints = &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"}
+				request.Spec.RuntimeHints = &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"}
 			},
 			wantErr: "must match owner namespace",
 		},
 		{
 			name: "http missing task",
-			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.URL = "https://example.invalid/model.tgz"
-				request.Request.Spec.RuntimeHints = nil
+			mutate: func(request *publicationports.Request) {
+				request.Spec.Source.URL = "https://example.invalid/model.tgz"
+				request.Spec.RuntimeHints = nil
 			},
 			wantErr: "runtimeHints.task",
 		},
 		{
 			name: "upload rejected",
-			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.URL = ""
-				request.Request.Spec.Source.Upload = &modelsv1alpha1.UploadModelSource{}
+			mutate: func(request *publicationports.Request) {
+				request.Spec.Source.URL = ""
+				request.Spec.Source.Upload = &modelsv1alpha1.UploadModelSource{}
 			},
 			wantErr: "requires a staged upload handle",
 		},
 		{
 			name: "unsupported source scheme",
-			mutate: func(request *publicationports.OperationContext) {
-				request.Request.Spec.Source.URL = "oci://example.invalid/model"
+			mutate: func(request *publicationports.Request) {
+				request.Spec.Source.URL = "oci://example.invalid/model"
 			},
 			wantErr: "unsupported source URL scheme",
 		},
@@ -128,7 +128,7 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			request := testOperationContext()
+			request := testOperationRequest()
 			tc.mutate(&request)
 
 			_, err := sourcePlan(request)
@@ -184,6 +184,13 @@ func TestOptionsValidateRejectsMissingRequiredFields(t *testing.T) {
 				options.OCIRegistrySecretName = ""
 			},
 			wantErr: "OCI registry secret name",
+		},
+		{
+			name: "missing publish concurrency limit",
+			mutate: func(options *Options) {
+				options.MaxConcurrentWorkers = 0
+			},
+			wantErr: "max concurrent workers",
 		},
 	}
 

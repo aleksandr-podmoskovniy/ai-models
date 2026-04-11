@@ -17,6 +17,8 @@ limitations under the License.
 package main
 
 import (
+	"log/slog"
+
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/kitops"
 	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
@@ -40,8 +42,19 @@ func runArtifactCleanup(args []string) int {
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
 
+	handle, err := cleanuphandle.Decode(handleJSON)
+	if err != nil {
+		return cmdsupport.CommandError(commandArtifactCleanup, err)
+	}
+
+	logger := slog.Default().With(
+		slog.String("handleKind", string(handle.Kind)),
+		slog.Bool("dryRun", dryRun),
+	)
+	logger.Info("artifact cleanup started")
+
 	var stagingRemover *uploadstagings3.Adapter
-	if handle, err := cleanuphandle.Decode(handleJSON); err == nil && handle.Kind == cleanuphandle.KindUploadStaging {
+	if handle.Kind == cleanuphandle.KindUploadStaging {
 		stagingRemover, err = uploadstagings3.New(uploadStagingS3ConfigFromEnv())
 		if err != nil {
 			return cmdsupport.CommandError(commandArtifactCleanup, err)
@@ -55,8 +68,10 @@ func runArtifactCleanup(args []string) int {
 		StagingRemover: stagingRemover,
 		RegistryAuth:   cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
 	}); err != nil {
-		return cmdsupport.CommandError(commandArtifactCleanup, err)
+		logger.Error("artifact cleanup failed", slog.Any("error", err))
+		return 1
 	}
 
+	logger.Info("artifact cleanup completed")
 	return 0
 }

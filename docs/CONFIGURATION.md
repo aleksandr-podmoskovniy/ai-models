@@ -61,6 +61,11 @@ published `ModelPack` artifacts:
 - `PersistentVolumeClaim`: the internal DMCR-style backend stores published
   models inside a module-owned PVC.
 
+When the same S3 bucket is reused, ai-models keeps the byte-path split
+explicit: controller-owned raw ingest lives under the fixed `raw/` subtree,
+future append-only audit/provenance data may live under `audit/`, and the
+internal publication backend defaults to the separate `dmcr/` subtree.
+
 The controller always publishes to the same internal registry service rendered
 by the module. There is no longer a separate external `publicationRegistry`
 user-facing endpoint/credentials contract.
@@ -129,11 +134,16 @@ path traversal, symlink, hard link, and other special archive entries instead
 of relying on raw `extractall`.
 
 `spec.source.upload` now follows a controller-owned session flow rather
-than a batch import. The controller creates a worker Pod, a ClusterIP Service,
-a short-lived auth Secret and, when a public host is configured, a
-session-specific Ingress. The controller now projects upload session URLs in
-`status.upload`: `inClusterURL` always, `externalURL` when public ingress is
-enabled. The current live controller path accepts
+than a batch import. The controller creates one short-lived session Secret per
+upload and projects shared upload-gateway URLs in `status.upload`:
+`inClusterURL` always, `externalURL` when public ingress is enabled. The
+gateway footprint is now shared:
+
+- one controller Deployment with the upload-gateway sidecar;
+- one shared Service;
+- zero or one shared external Ingress.
+
+The current live controller path accepts
 the following uploads:
 
 - for `Safetensors`: an archive with `config.json` and model weight files;
@@ -141,14 +151,18 @@ the following uploads:
 
 The controller then publishes them into the same controller-owned
 `ModelPack`/OCI artifact plane through the current Go dataplane and
-`ModelPack` adapter. The live upload path is now two-phase: the upload session
-runtime only validates the request and writes bytes into module-owned object
-storage staging, then the controller deletes the upload runtime, requeues the
-object, and starts a separate publish worker that downloads the staged object,
-validates/profiles it, publishes the final `ModelPack` into `DMCR`, and cleans
-the staging object on success. `status.upload` no longer exposes a legacy
-helper command; the live public contract is limited to `expiresAt`,
-`repository`, `inClusterURL`, and optional `externalURL`.
+`ModelPack` adapter. The live upload path is now two-phase and staging-first:
+the shared upload gateway no longer receives the final model bytes into the
+cluster Pod path. Instead, it owns only the session/control API behind the URL
+projected in `status.upload`, starts multipart upload in module-owned object
+storage staging, signs per-part URLs, and completes the upload after
+client-side multipart completion. The controller then observes the staged
+result from the session Secret, requeues the object, and starts a separate
+publish worker that downloads the staged object, validates/profiles it,
+publishes the final `ModelPack` into `DMCR`, and cleans the staging object on
+success. `status.upload` no longer exposes a legacy helper command; the live
+public contract is limited to `expiresAt`, `repository`, `inClusterURL`, and
+optional `externalURL`.
 
 On top of the source contract, `spec` now also carries a live policy layer:
 

@@ -114,6 +114,27 @@ func TestDecideCatalogStatusReconcile(t *testing.T) {
 			},
 		},
 		{
+			name: "upload source keeps source worker while publishing cleanup handoff is pending",
+			input: CatalogStatusReconcileInput{
+				Source: modelsv1alpha1.ModelSourceSpec{
+					Upload: &modelsv1alpha1.UploadModelSource{},
+				},
+				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
+				Current: modelsv1alpha1.ModelStatus{
+					ObservedGeneration: 7,
+					Phase:              modelsv1alpha1.ModelPhasePublishing,
+				},
+				Generation:       7,
+				HasCleanupHandle: true,
+			},
+			assert: func(t *testing.T, got CatalogStatusReconcileDecision) {
+				t.Helper()
+				if got.Skip || got.Mode != publicationapp.ExecutionModeSourceWorker || got.SourceType != modelsv1alpha1.ModelSourceTypeUpload {
+					t.Fatalf("unexpected decision %#v", got)
+				}
+			},
+		},
+		{
 			name: "upload without task fails closed",
 			input: CatalogStatusReconcileInput{
 				Source: modelsv1alpha1.ModelSourceSpec{

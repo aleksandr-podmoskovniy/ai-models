@@ -18,13 +18,16 @@ package catalogstatus
 
 import (
 	"errors"
+	"log/slog"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/auditevent"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/sourceworker"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsession"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
+	"github.com/deckhouse/ai-models/controller/internal/ports/auditsink"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,12 +36,13 @@ import (
 )
 
 type Options struct {
-	Runtime       PublicationRuntimeOptions
-	UploadIngress UploadIngressOptions
+	Runtime              PublicationRuntimeOptions
+	MaxConcurrentWorkers int
+	UploadGateway        UploadGatewayOptions
 }
 
 type PublicationRuntimeOptions = workloadpod.RuntimeOptions
-type UploadIngressOptions = uploadsession.IngressOptions
+type UploadGatewayOptions = uploadsession.GatewayOptions
 
 const (
 	modelControllerName        = "catalogstatus-model"
@@ -50,6 +54,7 @@ type baseReconciler struct {
 	options        Options
 	sourceWorkers  publicationports.SourceWorkerRuntime
 	uploadSessions publicationports.UploadSessionRuntime
+	auditSink      auditsink.Sink
 }
 
 type ModelReconciler struct{ baseReconciler }
@@ -67,11 +72,25 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 		return err
 	}
 
-	sourceWorkers, err := sourceworker.NewService(mgr.GetClient(), mgr.GetScheme(), sourceWorkerOptions(options.Runtime))
+	sourceWorkers, err := sourceworker.NewService(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		sourceWorkerOptions(options.Runtime, options.MaxConcurrentWorkers),
+	)
 	if err != nil {
 		return err
 	}
-	uploadSessions, err := uploadsession.NewService(mgr.GetClient(), mgr.GetScheme(), uploadSessionOptions(options.Runtime, options.UploadIngress))
+	uploadSessions, err := uploadsession.NewService(mgr.GetClient(), mgr.GetScheme(), uploadSessionOptions(options.Runtime, options.UploadGateway))
+	if err != nil {
+		return err
+	}
+	auditRecorder, err := auditevent.New(
+		mgr.GetEventRecorderFor(modelControllerName),
+		slog.Default().With(
+			slog.String("controller", "catalogstatus"),
+			slog.String("runtimeKind", "audit"),
+		),
+	)
 	if err != nil {
 		return err
 	}
@@ -81,6 +100,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 		options:        options,
 		sourceWorkers:  sourceWorkers,
 		uploadSessions: uploadSessions,
+		auditSink:      auditRecorder,
 	}
 
 	if err := ctrl.NewControllerManagedBy(mgr).
@@ -110,16 +130,25 @@ func (o Options) Validate() error {
 	if err := workloadpod.ValidateRuntimeOptions("publication runtime", o.Runtime); err != nil {
 		return err
 	}
+	if o.MaxConcurrentWorkers <= 0 {
+		return errors.New("publication runtime max concurrent workers must be greater than zero")
+	}
 	return objectstorage.ValidateOptions("publication runtime", o.Runtime.ObjectStorage)
 }
 
-func sourceWorkerOptions(o PublicationRuntimeOptions) sourceworker.Options {
-	return sourceworker.Options(o)
+func sourceWorkerOptions(o PublicationRuntimeOptions, maxConcurrentWorkers int) sourceworker.Options {
+	return sourceworker.Options{
+		RuntimeOptions:       o,
+		MaxConcurrentWorkers: maxConcurrentWorkers,
+	}
 }
 
-func uploadSessionOptions(o PublicationRuntimeOptions, ingress uploadsession.IngressOptions) uploadsession.Options {
+func uploadSessionOptions(o PublicationRuntimeOptions, gateway uploadsession.GatewayOptions) uploadsession.Options {
 	return uploadsession.Options{
-		Runtime: o,
-		Ingress: ingress,
+		Runtime: uploadsession.RuntimeOptions{
+			Namespace:           o.Namespace,
+			OCIRepositoryPrefix: o.OCIRepositoryPrefix,
+		},
+		Gateway: gateway,
 	}
 }

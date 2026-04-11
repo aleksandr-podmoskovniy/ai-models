@@ -25,12 +25,14 @@ import (
 	apiinstall "github.com/deckhouse/ai-models/api/core/install"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
+	"github.com/deckhouse/ai-models/controller/internal/monitoring/catalogmetrics"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
@@ -110,6 +112,11 @@ func (a *App) Run(ctx context.Context) error {
 	if err := catalogstatus.SetupWithManager(mgr, a.publicationRuntime); err != nil {
 		return err
 	}
+	catalogmetrics.SetupCollector(
+		mgr.GetCache(),
+		metrics.Registry,
+		a.logger.With(slog.String("runtimeKind", "metrics")),
+	)
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return err
 	}
@@ -132,6 +139,8 @@ func (a *App) Run(ctx context.Context) error {
 			"controller model publication configured",
 			slog.String("publicationRuntimeNamespace", a.publicationRuntime.Runtime.Namespace),
 			slog.String("publicationRuntimeImage", a.publicationRuntime.Runtime.Image),
+			slog.Int("publicationMaxConcurrentWorkers", a.publicationRuntime.MaxConcurrentWorkers),
+			slog.String("publicationWorkVolumeType", string(a.publicationRuntime.Runtime.WorkVolume.Type)),
 		)
 	}
 

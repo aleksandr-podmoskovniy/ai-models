@@ -43,27 +43,30 @@ Replacement landed:
 Remaining drift:
 
 - runtime moved to Go, the live edge now exposes session URLs instead of
-  `port-forward`, and the upload runtime now only writes bytes into staging
-  before a separate publish worker continues the flow.
+  `port-forward`, and the upload runtime is now only a session/control plane:
+  clients upload parts directly into object-storage staging through
+  presigned multipart URLs and a separate publish worker continues the flow.
 
 Remaining drift:
 
-- upload still flows through a controller-owned session Pod rather than direct
-  multipart/presigned upload into staging object storage;
-- there is still no resumable chunk/session protocol for interrupted large
-  uploads.
+- PVC-specific uploader/staging path is still not landed;
+- resumability exists only through the current multipart session API and secret
+  state, not through a richer standalone client protocol such as `tus`.
 
 Target replacement:
 
 - controller-owned upload session with:
-  - `Pod`
+  - shared upload gateway
   - `Service`
   - `Ingress`
   - short-lived upload auth/session state
 - user-facing `external` / `inCluster` upload URLs in status
 - staging-first upload flow
 - separate async publish worker after upload completion
-- optional direct multipart/presigned staging path for very large uploads
+- direct multipart/presigned staging path for very large uploads in
+  object-storage mode
+- dedicated uploader/staging path when a future PVC-specific upload backend
+  is actually needed
 
 ### Hard-coded `KitOps` path
 
@@ -141,3 +144,21 @@ Target replacement:
 - dedicated materializer/init runtime
 - read-only DMCR auth/trust projection into the consumer namespace
 - local expanded model path as the only consumer-facing runtime input
+
+### Phase-2 should stay independent from MLflow backend lifecycle
+
+Current drift:
+
+- some design notes tried to re-introduce `MLflow` runs/workspaces/registry
+  into the phase-2 publish path;
+- that would create a second lifecycle/state machine on top of `CRD + DMCR`;
+- current live Go path is cleaner precisely because it publishes directly to
+  `DMCR` without mandatory `MLflow` coupling.
+
+Target replacement:
+
+- controller-owned raw object URI allocation and deterministic storage layout;
+- `CRD.status` remains the only platform truth for final publication state;
+- optional future audit/log export stays append-only and non-authoritative;
+- `MLflow` may remain only a phase-1/backend concern and must not become a
+  required phase-2 publish dependency.

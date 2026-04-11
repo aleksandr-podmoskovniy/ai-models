@@ -24,8 +24,8 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
-	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
+	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
@@ -34,8 +34,8 @@ func buildBackendResult(
 	source publicationdata.SourceProvenance,
 	resolved publicationdata.ResolvedProfile,
 	publishResult modelpackports.PublishResult,
-) artifactbackend.Result {
-	return artifactbackend.Result{
+) publicationartifact.Result {
+	return publicationartifact.Result{
 		Source: source,
 		Artifact: publicationdata.PublishedArtifact{
 			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
@@ -59,7 +59,7 @@ func buildBackendResult(
 	}
 }
 
-func run(ctx context.Context, options Options) (artifactbackend.Result, error) {
+func run(ctx context.Context, options Options) (publicationartifact.Result, error) {
 	switch options.SourceType {
 	case modelsv1alpha1.ModelSourceTypeHuggingFace:
 		return publishFromHuggingFace(ctx, options)
@@ -68,7 +68,7 @@ func run(ctx context.Context, options Options) (artifactbackend.Result, error) {
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		return publishFromUpload(ctx, options)
 	default:
-		return artifactbackend.Result{}, fmt.Errorf("unsupported publish worker source type %q", options.SourceType)
+		return publicationartifact.Result{}, fmt.Errorf("unsupported publish worker source type %q", options.SourceType)
 	}
 }
 
@@ -77,7 +77,11 @@ func ensureWorkspace(snapshotDir, prefix string) (string, func(), error) {
 		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
 			return "", nil, err
 		}
-		return snapshotDir, func() {}, nil
+		dir, err := os.MkdirTemp(snapshotDir, prefix)
+		if err != nil {
+			return "", nil, err
+		}
+		return dir, func() { _ = os.RemoveAll(dir) }, nil
 	}
 
 	dir, err := os.MkdirTemp("", prefix)

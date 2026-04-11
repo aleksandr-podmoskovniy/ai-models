@@ -48,65 +48,55 @@ func (r *baseReconciler) applyEnsureFinalizerDecision(
 	}
 }
 
-func (r *baseReconciler) applyFinalizeDeleteDecision(
-	ctx context.Context,
-	object client.Object,
-	handle cleanuphandle.Handle,
-	decision deletionapp.FinalizeDeleteDecision,
-) (ctrl.Result, error) {
-	if result, handled, err := r.maybeCreateCleanupJob(ctx, object, handle, decision.CreateJob); handled || err != nil {
+func (r *baseReconciler) applyFinalizeDeleteFlow(ctx context.Context, flow finalizeDeleteFlow) (ctrl.Result, error) {
+	if result, handled, err := r.maybeCreateCleanupJob(ctx, flow.runtime, flow.decision.CreateJob); handled || err != nil {
 		return result, err
 	}
-	if result, handled, err := r.maybeEnsureGarbageCollectionRequest(ctx, object, decision.EnsureGarbageCollectionRequest); handled || err != nil {
+	if result, handled, err := r.maybeEnsureGarbageCollectionRequest(ctx, flow.runtime, flow.decision.EnsureGarbageCollectionRequest); handled || err != nil {
 		return result, err
 	}
-	if err := r.maybeUpdateDeleteStatus(ctx, object, decision); err != nil {
+	if err := r.maybeUpdateDeleteStatus(ctx, flow.runtime.object, flow.decision); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.maybeDeleteGarbageCollectionRequest(ctx, object.GetUID(), decision.DeleteGarbageCollectionRequest); err != nil {
+	if err := r.maybeDeleteGarbageCollectionRequest(ctx, flow.runtime.object.GetUID(), flow.decision.DeleteGarbageCollectionRequest); err != nil {
 		return ctrl.Result{}, err
 	}
-	if result, handled, err := r.maybeRemoveDeleteFinalizer(ctx, object, decision.RemoveFinalizer); handled || err != nil {
+	if result, handled, err := r.maybeRemoveDeleteFinalizer(ctx, flow.runtime, flow.decision.RemoveFinalizer); handled || err != nil {
 		return result, err
 	}
-	return requeueResult(decision.Requeue, r.options.RequeueAfter), nil
+	return requeueResult(flow.decision.Requeue, r.options.RequeueAfter), nil
 }
 
 func (r *baseReconciler) maybeCreateCleanupJob(
 	ctx context.Context,
-	object client.Object,
-	handle cleanuphandle.Handle,
+	runtime finalizeDeleteRuntime,
 	enabled bool,
 ) (ctrl.Result, bool, error) {
 	if !enabled {
 		return ctrl.Result{}, false, nil
 	}
 
-	owner, err := cleanupOwnerFor(object)
-	if err != nil {
-		return ctrl.Result{}, false, err
-	}
 	options := r.options.CleanupJob
-	if handle.Kind == cleanuphandle.KindBackendArtifact {
+	if runtime.handle.Kind == cleanuphandle.KindBackendArtifact {
 		projection, err := ociregistry.EnsureProjectedAccess(
 			ctx,
 			r.client,
 			r.scheme,
-			object,
+			runtime.object,
 			r.options.CleanupJob.Namespace,
-			object.GetUID(),
+			runtime.object.GetUID(),
 			r.options.CleanupJob.OCIRegistrySecretName,
 			r.options.CleanupJob.OCIRegistryCASecretName,
 		)
 		if err != nil {
-			return r.failDeleteStatus(ctx, object, err)
+			return r.failDeleteStatus(ctx, runtime.object, err)
 		}
 		options.OCIRegistrySecretName = projection.AuthSecretName
 		options.OCIRegistryCASecretName = projection.CASecretName
 	}
-	job, err := buildCleanupJob(owner, handle, options)
+	job, err := buildCleanupJob(runtime.owner, runtime.handle, options)
 	if err != nil {
-		return r.failDeleteStatus(ctx, object, err)
+		return r.failDeleteStatus(ctx, runtime.object, err)
 	}
 	if err := r.client.Create(ctx, job); err != nil && !apierrors.IsAlreadyExists(err) {
 		return ctrl.Result{}, false, err
@@ -116,19 +106,15 @@ func (r *baseReconciler) maybeCreateCleanupJob(
 
 func (r *baseReconciler) maybeEnsureGarbageCollectionRequest(
 	ctx context.Context,
-	object client.Object,
+	runtime finalizeDeleteRuntime,
 	enabled bool,
 ) (ctrl.Result, bool, error) {
 	if !enabled {
 		return ctrl.Result{}, false, nil
 	}
 
-	owner, err := cleanupOwnerFor(object)
-	if err != nil {
-		return ctrl.Result{}, false, err
-	}
-	if err := r.ensureGarbageCollectionRequest(ctx, owner); err != nil {
-		return r.failDeleteStatus(ctx, object, err)
+	if err := r.ensureGarbageCollectionRequest(ctx, runtime.owner); err != nil {
+		return r.failDeleteStatus(ctx, runtime.object, err)
 	}
 	return ctrl.Result{}, false, nil
 }
@@ -157,23 +143,19 @@ func (r *baseReconciler) maybeDeleteGarbageCollectionRequest(
 
 func (r *baseReconciler) maybeRemoveDeleteFinalizer(
 	ctx context.Context,
-	object client.Object,
+	runtime finalizeDeleteRuntime,
 	enabled bool,
 ) (ctrl.Result, bool, error) {
 	if !enabled {
 		return ctrl.Result{}, false, nil
 	}
-	handle, found, err := cleanuphandle.FromObject(object)
-	if err != nil {
-		return ctrl.Result{}, true, err
-	}
-	if found && handle.Kind == cleanuphandle.KindBackendArtifact {
-		if err := ociregistry.DeleteProjectedAccess(ctx, r.client, r.options.CleanupJob.Namespace, object.GetUID()); err != nil {
+	if runtime.handle.Kind == cleanuphandle.KindBackendArtifact {
+		if err := ociregistry.DeleteProjectedAccess(ctx, r.client, r.options.CleanupJob.Namespace, runtime.object.GetUID()); err != nil {
 			return ctrl.Result{}, true, err
 		}
 	}
-	controllerutil.RemoveFinalizer(object, Finalizer)
-	return ctrl.Result{}, true, r.client.Update(ctx, object)
+	controllerutil.RemoveFinalizer(runtime.object, Finalizer)
+	return ctrl.Result{}, true, r.client.Update(ctx, runtime.object)
 }
 
 func cleanupOwnerFor(object client.Object) (cleanupJobOwner, error) {

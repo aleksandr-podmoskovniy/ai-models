@@ -23,18 +23,22 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
+	"github.com/deckhouse/ai-models/controller/internal/application/sourceadmission"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type Service struct {
-	client  client.Client
-	scheme  *runtime.Scheme
-	options Options
+	client          client.Client
+	scheme          *runtime.Scheme
+	options         Options
+	httpSourceProbe sourceadmission.HTTPSourceProber
 }
 
 func NewService(client client.Client, scheme *runtime.Scheme, options Options) (*Service, error) {
@@ -44,19 +48,20 @@ func NewService(client client.Client, scheme *runtime.Scheme, options Options) (
 	if scheme == nil {
 		return nil, errors.New("source worker service scheme must not be nil")
 	}
-	options = workloadpod.NormalizeRuntimeOptions(options)
-	if err := workloadpod.ValidateRuntimeOptions("source worker", options); err != nil {
+	options = normalizeOptions(options)
+	if err := validateServiceOptions(options); err != nil {
 		return nil, err
 	}
 
 	return &Service{
-		client:  client,
-		scheme:  scheme,
-		options: options,
+		client:          client,
+		scheme:          scheme,
+		options:         options,
+		httpSourceProbe: httpSourcePreflightProber{},
 	}, nil
 }
 
-func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.OperationContext) (*publicationports.SourceWorkerHandle, bool, error) {
+func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.Request) (*publicationports.SourceWorkerHandle, bool, error) {
 	if s == nil {
 		return nil, false, errors.New("source worker service must not be nil")
 	}
@@ -68,8 +73,21 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 	if err != nil {
 		return nil, false, err
 	}
+	if err := s.preflight(ctx, request, plan); err != nil {
+		return nil, false, err
+	}
+	if existingPod, found, err := s.lookupPod(ctx, request.Owner.UID); err != nil {
+		return nil, false, err
+	} else if found {
+		return s.handleFromPod(existingPod), false, nil
+	}
+	if blocked, err := s.publishConcurrencyBlocked(ctx); err != nil {
+		return nil, false, err
+	} else if blocked {
+		return queuedHandle(request.Owner.UID)
+	}
 
-	projectedAuthSecretName, err := s.ensureProjectedAuthSecret(ctx, owner, request.Request.Owner, plan)
+	projectedAuthSecretName, err := s.ensureProjectedAuthSecret(ctx, owner, request.Owner, plan)
 	if err != nil {
 		return nil, false, err
 	}
@@ -79,7 +97,7 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 		s.scheme,
 		owner,
 		s.options.Namespace,
-		request.Request.Owner.UID,
+		request.Owner.UID,
 		s.options.OCIRegistrySecretName,
 		s.options.OCIRegistryCASecretName,
 	)
@@ -129,6 +147,59 @@ func (s *Service) deleteResources(ctx context.Context, pod *corev1.Pod) error {
 		return err
 	}
 	return ownedresource.DeleteAll(ctx, s.client, secret, pod)
+}
+
+func (s *Service) lookupPod(ctx context.Context, ownerUID types.UID) (*corev1.Pod, bool, error) {
+	name, err := resourcenames.SourceWorkerPodName(ownerUID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	var pod corev1.Pod
+	if err := s.client.Get(ctx, client.ObjectKey{Name: name, Namespace: s.options.Namespace}, &pod); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+
+	return &pod, true, nil
+}
+
+func (s *Service) publishConcurrencyBlocked(ctx context.Context) (bool, error) {
+	var pods corev1.PodList
+	if err := s.client.List(ctx, &pods,
+		client.InNamespace(s.options.Namespace),
+		client.MatchingLabels{resourcenames.AppNameLabelKey: "ai-models-publication"},
+	); err != nil {
+		return false, err
+	}
+
+	active := 0
+	for i := range pods.Items {
+		if isActiveWorkerPhase(pods.Items[i].Status.Phase) {
+			active++
+		}
+	}
+
+	return active >= s.options.MaxConcurrentWorkers, nil
+}
+
+func queuedHandle(ownerUID types.UID) (*publicationports.SourceWorkerHandle, bool, error) {
+	name, err := resourcenames.SourceWorkerPodName(ownerUID)
+	if err != nil {
+		return nil, false, err
+	}
+	return publicationports.NewSourceWorkerHandle(name, corev1.PodPending, "", nil), false, nil
+}
+
+func isActiveWorkerPhase(phase corev1.PodPhase) bool {
+	switch phase {
+	case corev1.PodSucceeded, corev1.PodFailed:
+		return false
+	default:
+		return true
+	}
 }
 
 func (s *Service) projectedAuthSecretForPod(pod *corev1.Pod) (*corev1.Secret, error) {

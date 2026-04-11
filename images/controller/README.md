@@ -38,9 +38,13 @@ Current phase-2 slice implemented here:
   `gpu-control-plane` and `virtualization`;
 - `cmd/ai-models-controller/*` for thin manager-only shell;
 - `cmd/ai-models-artifact-runtime/*` for thin one-shot phase-2 runtime shell:
-  `publish-worker`, `upload-session`, and `artifact-cleanup`;
-- `internal/artifactbackend` for backend-facing publication requests and
-  results that stay independent from any concrete artifact backend product;
+  `publish-worker`, `upload-session`, and `artifact-cleanup`; the shell now
+  also owns one shared component-aware logger setup for all runtime commands
+  instead of letting each subcommand fall back to ad-hoc process logging;
+- `internal/publicationartifact` for controller-owned publication runtime
+  result payloads and OCI destination-reference policy; this is no longer the
+  old misleading `artifactbackend` seam and no longer keeps a dead request
+  contract;
 - `internal/ports/modelpack` for replaceable `ModelPack` publication/removal
   contract;
 - `internal/adapters/modelpack/kitops` for the current `KitOps`-based
@@ -48,36 +52,53 @@ Current phase-2 slice implemented here:
 - `internal/adapters/sourcefetch` for safe `HuggingFace` and `HTTP` source
   acquisition and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport and archive preparation instead of split
-  orchestration in the worker;
+  orchestration in the worker; remote `source.url` bytes now land in the
+  controller-owned `raw/` object subtree first and only then materialize into
+  the bounded publish-worker work volume; shared raw-stage upload/download
+  glue now lives in package-local `rawstage.go` instead of being repeated in
+  both provider files;
 - `internal/adapters/modelformat` for source-agnostic input-format validation
-  rules applied before packaging;
+  rules applied before packaging; inspect/validate/select flow now reuses one
+  package-local runner over format-specific rule sets, instead of repeating the
+  same traversal in both `Safetensors` and `GGUF`;
+- `internal/domain/ingestadmission` and
+  `internal/application/sourceadmission` for the bounded fail-fast admission
+  stage before heavy raw ingest starts;
 - `internal/adapters/modelprofile/safetensors` and
   `internal/adapters/modelprofile/gguf` for ai-inference-oriented metadata
   extraction from normalized model directories, with current live logic based
   on real weight sizes, task-to-endpoint mapping, quantization/precision
   inference, and minimum-launch estimation;
 - `internal/adapters/k8s/sourceworker` for controller-owned worker Pods that turn
-  accepted remote URLs into backend-owned stored artifacts, while reserving
+  accepted remote URLs into internal published artifacts, while reserving
   `Upload` for a dedicated session workflow;
   the package also implements the shared source-worker runtime port directly,
-  consumes the shared `publishop.OperationContext` without adapter-local
-  request mirrors, and does not keep a second runtime-proxy layer or
+  consumes the shared `publishop.Request` without adapter-local request
+  mirrors, and does not keep a second runtime-proxy layer or
   constructor path over the same concrete adapter; it now drives the concrete
   Pod through one direct `CreateOrGet` cycle instead of a separate replay read
   path before the same create/reuse flow, and projected auth supplements now go
   through one direct `CreateOrUpdate` path instead of adapter-local CRUD;
+  active publish-worker concurrency is now capped explicitly before Pod
+  creation, and the worker Pod always carries explicit CPU, memory and
+  ephemeral-storage requests/limits together with a bounded work volume;
 - `internal/adapters/k8s/uploadsession` for controller-owned upload session
   supplements:
-  worker `Pod`, `Service`, short-lived auth `Secret`, optional session
-  `Ingress`, and user-facing upload URL projection for `spec.source.upload`;
-  the package also implements
-  the shared upload-session runtime port directly, consumes the shared
-  `publishop.OperationContext` without local request wrappers or a separate
-  request-mapping file, and does not
-  keep a second runtime-proxy layer or constructor path over the same concrete
-  adapter; replay now goes through the same direct ensure/create-or-get path
-  for `Secret`, `Service`, `Ingress`, and `Pod` instead of a separate pre-read
-  branch;
+  one short-lived session `Secret` per upload plus user-facing upload URL
+  projection for `spec.source.upload`, while the shared gateway footprint now
+  lives in the controller deployment shell instead of per-upload runtime
+  objects; the package also implements the shared upload-session runtime port
+  directly, consumes the shared `publishop.Request` without local request
+  wrappers or a separate request-mapping file, and does not keep a
+  second runtime-proxy layer or constructor path over the same concrete
+  adapter;
+- `internal/adapters/k8s/uploadsessionstate` for the secret-backed multipart
+  session and lifecycle store used by the shared upload gateway; this keeps
+  K8s Secret CRUD out of the dataplane use case and out of shared
+  `cmdsupport`; the store now owns hash-only upload auth, explicit
+  `issued/probing/uploading/uploaded/failed/aborted/expired` phases, and the
+  persisted multipart part manifest instead of keeping resumability only in
+  `uploadID`;
 - `internal/adapters/k8s/ociregistry` for shared OCI registry auth/CA env,
   volume rendering, and controller-owned write-auth / CA projection lifecycle
   used by worker/session/cleanup paths against the module-local DMCR-style
@@ -85,30 +106,58 @@ Current phase-2 slice implemented here:
 - `internal/adapters/k8s/ownedresource` for the single canonical
   owned-resource lifecycle shell reused by controlled worker/session
   supplements: create/reuse plus ignore-not-found delete;
-- `internal/adapters/k8s/workloadpod` for the single canonical workspace
-  `EmptyDir` + `/tmp` mount and registry-CA volume/mount shell reused by
-  worker/upload pod adapters;
+- `internal/ports/auditsink` plus `internal/adapters/k8s/auditevent` for the
+  append-only internal audit sink over `Kubernetes Events`, without creating a
+  second lifecycle truth; the concrete sink now mirrors the same lifecycle
+  edges into structured controller logs so operator audit trail no longer
+  lives only in Event resources;
+- `internal/adapters/k8s/workloadpod` for the single canonical bounded
+  work-volume contract reused by worker/upload pod adapters:
+  either sized `EmptyDir` scratch or an explicit work PVC, plus registry-CA
+  volume/mount rendering and the fixed publish-worker work mount path;
 - `internal/dataplane/publishworker` for the controller-owned publication
   runtime that fetches sources, computes resolved metadata, publishes a
   `ModelPack`, and writes the final result into the worker Pod termination
-  message;
-- `internal/dataplane/uploadsession` for the controller-owned HTTP upload
-  session runtime; it only stages uploaded bytes into module-owned object
-  storage and returns an upload-staging cleanup handle through the upload Pod
-  termination message, after which controller requeues the object into the
-  normal publish-worker path;
+  message; when the controller provides a bounded snapshot root, the runtime
+  now allocates a per-run workspace under that root and cleans it up after the
+  run instead of treating the whole mount path as one long-lived directory;
+  direct single-file inputs now avoid a second full local byte copy by
+  materializing into the checkpoint tree via link-first staging when possible;
+- `internal/dataplane/uploadsession` for the controller-owned upload session
+  runtime; it now serves the shared `/v1/upload/<sessionID>` multipart
+  session/control API, persists session state in the upload Secret, and marks
+  the staged upload result back into that Secret after multipart completion,
+  after which controller requeues the object into the normal publish-worker
+  path; the runtime now also syncs the server-side multipart part manifest
+  from object storage for resumability/state inspection and persists explicit
+  `probing` / `expired` edges instead of keeping them only implicit in probe
+  data or expiry timestamps; once controller takes ownership after raw-stage
+  handoff, the gateway now also treats `publishing/completed` as closed
+  session phases and rejects any late multipart mutation attempts instead of
+  letting the preserved manifest imply a still-open upload;
 - `internal/dataplane/artifactcleanup` for the controller-owned published
   artifact removal runtime;
 - `internal/publishedsnapshot` for immutable published-artifact snapshots used
   as controller handoff between publish, cleanup, and delete steps;
 - `internal/ports/publishop` for shared publication operation runtime
-  contracts, operation contract primitives, and worker/session handles reused
-  across adapters; both concrete runtime adapters now use one `GetOrCreate`
-  contract instead of diverging by extra read-only methods;
+  contracts and worker/session handles reused across adapters; the live handoff
+  is now one direct `publishop.Request`, not a wrapper over the same request;
 - `internal/domain/publishstate` for publication lifecycle state, condition and
   observation decisions;
 - `internal/application/publishplan` for source-worker and upload-session
   planning use cases;
+- `internal/application/publishaudit` for append-only internal audit/event
+  planning: one-time lifecycle edge detection and message shaping for upload
+  session issue, raw staging, remote ingest start, and final publication
+  outcome without introducing a second lifecycle engine;
+- `internal/application/deletion` for delete-time finalizer policy and
+  package-local step decisions over cleanup-job progress and registry
+  garbage-collection progress instead of hand-assembling the same
+  `FinalizeDeleteDecision` payload shape in multiple branches;
+- `internal/monitoring/catalogmetrics` for module-owned Prometheus collectors
+  over public `Model` / `ClusterModel` state: phase one-hot gauges,
+  ready/validated booleans, small info metrics, and artifact size from
+  public `spec/status` instead of runtime-local counters or log parsing;
 - `internal/support/cleanuphandle` for controller-owned backend-specific delete
   state
   that must not leak into public status;
@@ -126,22 +175,34 @@ Current phase-2 slice implemented here:
   materialization and DMCR garbage-collection request lifecycle directly
   because there is no second cleanup adapter and the old
   `adapters/k8s/cleanupjob` package was only an unnecessary extra boundary;
+  cleanup job and GC request metadata now also reuse one package-local
+  owner-label seam over shared `resourcenames` policy instead of duplicating
+  raw label maps; delete apply prerequisites are now precomputed once per
+  reconcile step, and finalizer release reuses the observed cleanup handle
+  instead of reparsing annotations; delete reconcile itself now carries one
+  package-local finalize flow object from observation to apply, and
+  upload-staging cleanup completion no longer performs irrelevant DMCR GC
+  observation;
 - `internal/application/publishobserve` for publication reconcile gating,
-  runtime port orchestration, worker/session observation mapping, and backend
+  runtime port orchestration, worker/session observation mapping, and runtime
   result decoding plus status-mutation planning behind an application seam
   instead of inside reconciler files;
 - `internal/controllers/catalogstatus` for thin `Model` / `ClusterModel`
   publication lifecycle ownership: calling application use cases and
   persisting planned status / cleanup-handle mutations without an intermediate
-  persisted bus;
+  persisted bus; successful runtime cleanup-handle handoff now also keeps the
+  runtime object alive until the post-status reconcile that projects final
+  state, and upload-source reconciles sync the session lifecycle through
+  `publishing/completed/failed` without inventing a second persisted state
+  machine;
 - `internal/bootstrap` for manager/bootstrap wiring.
 
 Naming rule:
 - do not keep four different packages named `publication` across
   `application/`, `domain/`, `ports/` and `internal/`; role-based names such
-  as `publishplan`, `publishstate`, `publishop`, and `publishedsnapshot` are
-  required so the tree stays explicit and closer to virtualization-style
-  ownership.
+  as `publishplan`, `publishstate`, `publishop`, `publishedsnapshot`, and
+  `publicationartifact` are required so the tree stays explicit and closer to
+  virtualization-style ownership.
 
 Still intentionally out of scope:
 - publication paths beyond the current live input matrix:

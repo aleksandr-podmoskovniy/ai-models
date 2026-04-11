@@ -1,0 +1,29 @@
+{{- if and (include "ai-models.isEnabled" .) (include "ai-models.uploadPublicHost" . | trim) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "ai-models.controllerName" . }}
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "controller")) | nindent 2 }}
+spec:
+  ingressClassName: {{ include "helm_lib_module_ingress_class" . | quote }}
+  rules:
+    - host: {{ include "ai-models.uploadPublicHost" . }}
+      http:
+        paths:
+          - path: /v1/upload
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ai-models.controllerServiceName" . }}
+                port:
+                  name: upload
+  {{- if (include "ai-models.uploadIngressTLSSecretName" . | trim) }}
+  tls:
+    - hosts:
+        - {{ include "ai-models.uploadPublicHost" . }}
+      secretName: {{ include "ai-models.uploadIngressTLSSecretName" . }}
+  {{- end }}
+{{ include "helm_lib_module_https_copy_custom_certificate" (list . (include "ai-models.namespace" .) "ingress-tls") }}
+{{- end }}

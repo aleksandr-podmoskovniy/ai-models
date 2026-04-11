@@ -58,6 +58,9 @@
   какие остаются phase-1/backend-adjacent shell.
 - Начать bounded implementation cuts в сторону Go-first publication/runtime
   path без возврата к старой patchwork structure.
+- Держать phase-2 publish path независимым от internal `MLflow` backend и не
+  превращать backend metadata plane в обязательную часть platform publication
+  lifecycle.
 - Убрать external-registry-centric module contract и заменить его на
   module-owned internal publication plane contract.
 - Выровнять module build/deploy shell с DKP module patterns из
@@ -68,6 +71,12 @@
   - явное разделение между phase-2 controller runtime shell и phase-1 backend
     packaging shell.
 - Синхронизировать repo memory, docs и controller structure rationale.
+- Зафиксировать module-owned observability contract для phase-2 runtime path:
+  - какие logging patterns обязательны;
+  - какие product/state metrics действительно нужны;
+  - какие alerts должны быть у модуля на уровне platform integration;
+  - что нельзя копировать из virtualization blindly и не нужно тащить в
+    `ai-models`.
 - Добить текущие structural hotspots внутри уже landed runtime tree без
   выдумывания новых fake boundaries:
   - `catalogcleanup`
@@ -118,6 +127,8 @@
 - `docs/*`
 - `plans/active/*`
 - `.agents/skills/*` если потребуется закрепить durable discipline
+- platform observability contract and monitoring integration notes derived from
+  the sibling `virtualization` module patterns
 
 ## Критерии приёмки
 
@@ -145,6 +156,30 @@
 - Upload path больше не заставляет один и тот же runtime pod держать
   пользовательский upload stream и publication pipeline в одной synchronous
   critical section.
+- Object-storage upload target масштабируется через shared upload gateway и
+  short-lived session records, а не через one-Pod-per-upload shell.
+- Upload session state keeps controller-owned resumability data instead of
+  relying only on `multipartUploadID`: persisted multipart part manifest and
+  explicit session phases must exist at least through the raw-ingest stage.
+- Для multi-TB target scenario cluster footprint при десятках concurrent
+  uploads растёт session state и S3 multipart uploads, а не линейным числом
+  uploader Pods.
+- phase-2 publish path не требует `MLflow` run/model/version lifecycle для
+  normal operation;
+- raw ingest, publish status и final OCI reference остаются controller-owned
+  concerns under `CRD.status`, а не backend entity model.
+- Internal audit/provenance hooks, if present, remain append-only and
+  non-authoritative:
+  initial implementation may use controller-owned `Kubernetes Events` and
+  minimal internal raw provenance (`RawURI`, object count, total size) without
+  expanding public `status` or creating a second lifecycle engine.
+- Primary preflight checks before full ingest explicitly cover only:
+  authz, quota, declared size/format allowlist and lightweight source probes;
+  future malware/content scanners stay a later async stage and are not
+  misrepresented as first-release guarantees.
+- Same object-storage backend may be reused for raw ingest and `DMCR`, but
+  logical separation between `raw/`, optional `audit/`, and `dmcr/` storage
+  areas is explicit.
 - Phase-2 runtime больше не зависит от external `KitOps` CLI binary inside the
   runtime image, если native replacement slice landed safely.
 - `sourcefetch` и `modelformat` уменьшаются как hotspots через explicit
@@ -165,6 +200,19 @@
   - `dmcr-cleaner` command package becomes a thin CLI shell and moves runtime
     garbage-collection lifecycle logic into an explicit internal implementation
     seam under `images/dmcr`.
+- Controller structure docs stay aligned with the live runtime tree:
+  shared worker/session adapters consume one direct `publishop.Request`,
+  and legacy backend-centric package names do not survive once the live
+  boundary becomes controller-owned.
+- Observability contract is explicit and bounded:
+  - module scrape shell stays protected through `ServiceMonitor` and
+    `kube-rbac-proxy` style access;
+  - alerts focus on target availability, pod readiness/running state and
+    module-owned storage risk, not on noisy internal counters;
+  - product metrics are anchored in `Model` / `ClusterModel` status truth and
+    a small number of actionable booleans/sizes, not in per-step debug churn;
+  - runtime-local progress/debug metrics may exist for worker internals, but
+    are not misrepresented as the platform monitoring contract.
 
 ## Риски
 

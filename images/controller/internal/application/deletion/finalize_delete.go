@@ -87,81 +87,107 @@ func FinalizeDelete(input FinalizeDeleteInput) FinalizeDeleteDecision {
 	}
 }
 
+type cleanupJobMessages struct {
+	created     string
+	running     string
+	failed      string
+	unsupported string
+}
+
 func finalizeUploadStagingDelete(jobState CleanupJobState) FinalizeDeleteDecision {
-	switch jobState {
-	case CleanupJobStateMissing:
-		return FinalizeDeleteDecision{
-			CreateJob:     true,
-			UpdateStatus:  true,
-			StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
-			StatusMessage: "upload staging cleanup job created and waiting for completion",
-			Requeue:       true,
-		}
-	case CleanupJobStateRunning:
-		return FinalizeDeleteDecision{
-			UpdateStatus:  true,
-			StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
-			StatusMessage: "upload staging cleanup job is still running",
-			Requeue:       true,
-		}
-	case CleanupJobStateFailed:
-		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "upload staging cleanup job failed")
-	case CleanupJobStateComplete:
-		return FinalizeDeleteDecision{RemoveFinalizer: true}
-	default:
-		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "upload staging cleanup job entered an unsupported state")
+	decision, terminal := cleanupJobProgressDecision(jobState, cleanupJobMessages{
+		created:     "upload staging cleanup job created and waiting for completion",
+		running:     "upload staging cleanup job is still running",
+		failed:      "upload staging cleanup job failed",
+		unsupported: "upload staging cleanup job entered an unsupported state",
+	})
+	if terminal {
+		return decision
 	}
+	return removeFinalizerDecision()
 }
 
 func finalizeBackendArtifactDelete(
 	jobState CleanupJobState,
 	garbageCollectionState GarbageCollectionState,
 ) FinalizeDeleteDecision {
+	decision, terminal := cleanupJobProgressDecision(jobState, cleanupJobMessages{
+		created:     "cleanup job created and waiting for completion",
+		running:     "cleanup job is still running",
+		failed:      "cleanup job failed",
+		unsupported: "cleanup job entered an unsupported state",
+	})
+	if terminal {
+		return decision
+	}
+	return garbageCollectionProgressDecision(garbageCollectionState)
+}
+
+func cleanupJobProgressDecision(jobState CleanupJobState, messages cleanupJobMessages) (FinalizeDeleteDecision, bool) {
 	switch jobState {
 	case CleanupJobStateMissing:
-		return FinalizeDeleteDecision{
-			CreateJob:     true,
-			UpdateStatus:  true,
-			StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
-			StatusMessage: "cleanup job created and waiting for completion",
-			Requeue:       true,
-		}
+		return createJobDecision(messages.created), true
 	case CleanupJobStateRunning:
-		return FinalizeDeleteDecision{
-			UpdateStatus:  true,
-			StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
-			StatusMessage: "cleanup job is still running",
-			Requeue:       true,
-		}
+		return pendingDecision(messages.running), true
 	case CleanupJobStateFailed:
-		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "cleanup job failed")
+		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, messages.failed), true
 	case CleanupJobStateComplete:
-		switch garbageCollectionState {
-		case GarbageCollectionStateMissing:
-			return FinalizeDeleteDecision{
-				EnsureGarbageCollectionRequest: true,
-				UpdateStatus:                   true,
-				StatusReason:                   modelsv1alpha1.ModelConditionReasonCleanupPending,
-				StatusMessage:                  "registry garbage collection requested",
-				Requeue:                        true,
-			}
-		case GarbageCollectionStateRequested:
-			return FinalizeDeleteDecision{
-				UpdateStatus:  true,
-				StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
-				StatusMessage: "registry garbage collection is still running",
-				Requeue:       true,
-			}
-		case GarbageCollectionStateComplete:
-			return FinalizeDeleteDecision{
-				DeleteGarbageCollectionRequest: true,
-				RemoveFinalizer:                true,
-			}
-		default:
-			return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "registry garbage collection entered an unsupported state")
-		}
+		return FinalizeDeleteDecision{}, false
 	default:
-		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "cleanup job entered an unsupported state")
+		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, messages.unsupported), true
+	}
+}
+
+func garbageCollectionProgressDecision(state GarbageCollectionState) FinalizeDeleteDecision {
+	switch state {
+	case GarbageCollectionStateMissing:
+		return ensureGarbageCollectionDecision("registry garbage collection requested")
+	case GarbageCollectionStateRequested:
+		return pendingDecision("registry garbage collection is still running")
+	case GarbageCollectionStateComplete:
+		return deleteGarbageCollectionAndRemoveFinalizerDecision()
+	default:
+		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "registry garbage collection entered an unsupported state")
+	}
+}
+
+func createJobDecision(message string) FinalizeDeleteDecision {
+	return FinalizeDeleteDecision{
+		CreateJob:     true,
+		UpdateStatus:  true,
+		StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
+		StatusMessage: message,
+		Requeue:       true,
+	}
+}
+
+func ensureGarbageCollectionDecision(message string) FinalizeDeleteDecision {
+	return FinalizeDeleteDecision{
+		EnsureGarbageCollectionRequest: true,
+		UpdateStatus:                   true,
+		StatusReason:                   modelsv1alpha1.ModelConditionReasonCleanupPending,
+		StatusMessage:                  message,
+		Requeue:                        true,
+	}
+}
+
+func pendingDecision(message string) FinalizeDeleteDecision {
+	return FinalizeDeleteDecision{
+		UpdateStatus:  true,
+		StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
+		StatusMessage: message,
+		Requeue:       true,
+	}
+}
+
+func removeFinalizerDecision() FinalizeDeleteDecision {
+	return FinalizeDeleteDecision{RemoveFinalizer: true}
+}
+
+func deleteGarbageCollectionAndRemoveFinalizerDecision() FinalizeDeleteDecision {
+	return FinalizeDeleteDecision{
+		DeleteGarbageCollectionRequest: true,
+		RemoveFinalizer:                true,
 	}
 }
 

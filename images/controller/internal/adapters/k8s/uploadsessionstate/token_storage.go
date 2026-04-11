@@ -1,0 +1,109 @@
+/*
+Copyright 2026 Flant JSC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package uploadsessionstate
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/deckhouse/ai-models/controller/internal/support/uploadsessiontoken"
+	corev1 "k8s.io/api/core/v1"
+)
+
+func MigrateLegacyToken(secret *corev1.Secret) (string, bool, error) {
+	if secret == nil {
+		return "", false, errors.New("upload session secret must not be nil")
+	}
+	if len(secret.Data) == 0 {
+		return "", false, errors.New("upload session secret data must not be empty")
+	}
+	if tokenHash := strings.TrimSpace(string(secret.Data[tokenHashKey])); tokenHash != "" {
+		if !isValidTokenHash(tokenHash) {
+			return "", false, fmt.Errorf("upload session token hash must be a 64-character lowercase hex string")
+		}
+		delete(secret.Data, tokenKey)
+		return "", false, nil
+	}
+
+	legacyToken := strings.TrimSpace(string(secret.Data[tokenKey]))
+	if legacyToken == "" {
+		return "", false, errors.New("upload session token hash must not be empty")
+	}
+	if err := setToken(secretDataAccessor{data: secret.Data}, legacyToken); err != nil {
+		return "", false, err
+	}
+	return legacyToken, true, nil
+}
+
+func SetToken(secret *corev1.Secret, rawToken string) error {
+	if secret == nil {
+		return errors.New("upload session secret must not be nil")
+	}
+	if len(secret.Data) == 0 {
+		secret.Data = make(map[string][]byte, 1)
+	}
+	return setToken(secretDataAccessor{data: secret.Data}, rawToken)
+}
+
+func tokenHashFromSecret(secret *corev1.Secret) (string, error) {
+	tokenHash := strings.TrimSpace(string(secret.Data[tokenHashKey]))
+	if tokenHash != "" {
+		if !isValidTokenHash(tokenHash) {
+			return "", fmt.Errorf("upload session token hash must be a 64-character lowercase hex string")
+		}
+		return tokenHash, nil
+	}
+
+	legacyToken := strings.TrimSpace(string(secret.Data[tokenKey]))
+	if legacyToken == "" {
+		return "", errors.New("upload session token hash must not be empty")
+	}
+	return uploadsessiontoken.Hash(legacyToken), nil
+}
+
+type secretDataAccessor struct {
+	data map[string][]byte
+}
+
+func setToken(target secretDataAccessor, rawToken string) error {
+	rawToken = strings.TrimSpace(rawToken)
+	if rawToken == "" {
+		return errors.New("upload session token must not be empty")
+	}
+	if target.data == nil {
+		target.data = make(map[string][]byte, 1)
+	}
+	target.data[tokenHashKey] = []byte(uploadsessiontoken.Hash(rawToken))
+	delete(target.data, tokenKey)
+	return nil
+}
+
+func isValidTokenHash(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, ch := range value {
+		switch {
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		default:
+			return false
+		}
+	}
+	return true
+}

@@ -18,7 +18,9 @@ package cmdsupport
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 
@@ -50,6 +52,69 @@ func TestSetDefaultLoggerBridgesControllerRuntimeAndKlog(t *testing.T) {
 		"slog message",
 		"controller-runtime message",
 		"klog message",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected output to contain %q, got %q", expected, output)
+		}
+	}
+}
+
+func TestNewComponentLoggerAddsComponentAttr(t *testing.T) {
+	var buffer bytes.Buffer
+
+	previousStderr := os.Stderr
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe returned error: %v", err)
+	}
+	os.Stderr = writePipe
+	t.Cleanup(func() {
+		os.Stderr = previousStderr
+		_ = readPipe.Close()
+		_ = writePipe.Close()
+	})
+
+	logger, err := NewComponentLogger("text", "publish-worker")
+	if err != nil {
+		t.Fatalf("NewComponentLogger returned error: %v", err)
+	}
+	logger.Info("component test message")
+	_ = writePipe.Close()
+	_, _ = buffer.ReadFrom(readPipe)
+
+	output := buffer.String()
+	for _, expected := range []string{
+		"component=publish-worker",
+		"component test message",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected output to contain %q, got %q", expected, output)
+		}
+	}
+}
+
+func TestCommandErrorUsesDefaultLogger(t *testing.T) {
+	var buffer bytes.Buffer
+
+	previousSlog := slog.Default()
+	previousControllerRuntime := logf.Log
+	previousKlog := klog.Background()
+	t.Cleanup(func() {
+		slog.SetDefault(previousSlog)
+		logf.SetLogger(previousControllerRuntime)
+		klog.SetLogger(previousKlog)
+	})
+
+	SetDefaultLogger(slog.New(slog.NewTextHandler(&buffer, nil)).With("component", "artifact-cleanup"))
+
+	if code := CommandError("artifact-cleanup", errors.New("boom")); code != 1 {
+		t.Fatalf("unexpected exit code %d", code)
+	}
+
+	output := buffer.String()
+	for _, expected := range []string{
+		"component=artifact-cleanup",
+		"artifact-cleanup exited with error",
 	} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("expected output to contain %q, got %q", expected, output)

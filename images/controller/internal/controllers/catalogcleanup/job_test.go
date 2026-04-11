@@ -21,6 +21,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
+	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -60,5 +61,11 @@ func TestBuildCleanupJob(t *testing.T) {
 	}
 	if got, want := job.Spec.Template.Spec.Containers[0].Args[0], "artifact-cleanup"; got != want {
 		t.Fatalf("unexpected cleanup subcommand %q", got)
+	}
+	if got, want := job.Labels[resourcenames.AppNameLabelKey], cleanupJobAppName; got != want {
+		t.Fatalf("unexpected app label %q", got)
+	}
+	if got, want := job.Labels[resourcenames.OwnerNamespaceLabelKey], "team-a"; got != want {
+		t.Fatalf("unexpected owner namespace label %q", got)
 	}
 }

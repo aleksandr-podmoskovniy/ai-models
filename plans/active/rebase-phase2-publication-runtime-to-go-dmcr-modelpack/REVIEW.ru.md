@@ -52,6 +52,13 @@ scripts. Live path теперь controller-owned and Go-first:
 - controller bootstrap now sets the root `slog` logger as the default logger
   for both `controller-runtime` and `klog`, so controller-runtime internals no
   longer fall back to the empty promised logger and emit the 30-second warning
+- controller and phase-2 runtime commands now share the same component-aware
+  logger shell, so structured logs no longer diverge between
+  `ai-models-controller`, `publish-worker`, `upload-gateway`, and
+  `artifact-cleanup`
+- append-only publication audit no longer exists only as `Kubernetes Events`:
+  the same lifecycle edges are now mirrored into structured controller logs
+  with stable object/reason/event-type attrs
 - controller and DMCR metrics no longer scrape directly from plaintext pod
   endpoints:
   - controller metrics now bind to `127.0.0.1` inside the Pod
@@ -106,6 +113,10 @@ scripts. Live path теперь controller-owned and Go-first:
     package boundary
   - `dmcr-cleaner/cmd` is back to a thin CLI shell, while the actual garbage
     collection loop moved into `images/dmcr/internal/garbagecollection`
+  - `uploadsession` is no longer a raw byte receiver:
+    it now exposes a small multipart session API and persists multipart state
+    in the existing upload Secret while staged bytes go directly to object
+    storage over presigned part URLs
 
 ## Проверки
 
@@ -129,6 +140,12 @@ Validation note:
 - the structural cleanup slice additionally passed focused tests for
   `catalogcleanup` and the new `images/dmcr/internal/garbagecollection`
   package;
+- the observability logging slice additionally passed focused tests for:
+  - `internal/cmdsupport`
+  - `internal/adapters/k8s/auditevent`
+  - `internal/dataplane/uploadsession`
+  - `internal/dataplane/publishworker`
+  - `internal/controllers/catalogstatus`
 - a rerun of targeted end-to-end image build for
   `dmcr/controller/controller-runtime` could not be completed in this session
   because local Docker daemon access was unavailable
@@ -202,14 +219,14 @@ Validation note:
 ## Остаточный долг
 
 - runtime delivery to `ai-inference` is still not wired
-- upload path is still a real architectural debt:
-  `uploadsession` keeps `receive bytes -> publish` in one synchronous runtime
-  critical section, so large uploads still occupy one ephemeral pod for the
-  whole ingest+publish path
 - `KitOps` still remains an external CLI adapter inside the phase-2 runtime
   image; this is now explicit and isolated, but it is still a process
   boundary and a failure source until a native modelpack publication path
   lands
+- upload path still has remaining work, but the debt moved:
+  direct multipart staging is landed for object storage; the honest remaining
+  gap is a future PVC-specific uploader/staging path and richer resumable
+  client protocol if product requirements ever demand it
 - restored public policy fields already have live semantics, but
   `optimization.speculativeDecoding.draftModelRefs` is intentionally narrow:
   the current slice only validates local profile compatibility and does not yet
@@ -238,6 +255,50 @@ Checks:
 - `cd images/controller && go test ./internal/adapters/modelformat ./internal/adapters/sourcefetch`
 - `cd images/controller && go test ./...`
 - `make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 28
+
+Findings:
+
+1. Medium: `uploadsession` now matches the intended boundary much better.
+   The Pod is no longer a raw byte ingress plus heavy publication worker in one
+   process. It is a session/control-plane runtime over a real multipart
+   staging contract, which is materially closer to the `virtualization`
+   uploader pattern.
+2. Medium: the new `internal/adapters/k8s/uploadsessionstate` package is
+   justified. It is not a fake helper bucket; it is the concrete K8s adapter
+   for the upload-session state-store port and keeps Secret CRUD out of both
+   `cmdsupport` and the dataplane use case.
+3. Medium: the remaining honest gap is no longer “direct multipart staging”.
+
+## Дополнительный review по slice 31
+
+Findings:
+
+1. No blocking findings for the landed fail-fast cut. The new admission code is
+   bounded, lives in explicit `application/` and `domain/` seams, and does not
+   reintroduce per-upload Pod drift or fake helper buckets.
+2. Medium: the current concurrency guardrail is still only structural
+   per-owner single-session reuse via one session `Secret` per object. A real
+   namespace-wide upload quota/budget knob is still absent and remains future
+   work if product policy requires it.
+3. Medium: upload-session auth still uses the raw session token stored in the
+   session `Secret`. This slice improved owner binding and probe admission, but
+   it did not yet switch the shared gateway to token-hash-only persistence from
+   the target-architecture notes.
+
+Checks:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH /opt/homebrew/bin/go test ./internal/domain/ingestadmission ./internal/application/sourceadmission ./internal/application/publishplan ./internal/adapters/sourcefetch ./internal/adapters/k8s/sourceworker ./internal/adapters/k8s/uploadsession ./internal/adapters/k8s/uploadsessionstate ./internal/dataplane/uploadsession ./cmd/ai-models-artifact-runtime`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+   That is landed for object storage. The remaining gap is a future
+   PVC-specific uploader/staging path plus consumer-side runtime delivery.
+
+Checks:
+
+- `cd images/controller && go test ./internal/dataplane/uploadsession ./internal/adapters/uploadstaging/s3 ./internal/adapters/k8s/uploadsession ./internal/adapters/k8s/uploadsessionstate ./cmd/ai-models-artifact-runtime`
 - `git diff --check`
 
 ## Дополнительный review по slice 23
@@ -343,7 +404,7 @@ Findings:
    Moving it back under `cmd/ai-models-artifact-runtime` is the correct
    binpack.
 2. Medium: removing `WriteTerminationResult` from `cmdsupport` is correct for
-   the same reason. Encoding `artifactbackend.Result` is publish-worker shell
+   the same reason. Encoding `publicationartifact.Result` is publish-worker shell
    logic, not shared command support.
 3. Medium: this slice intentionally does not claim that all runtime-shell drift
    is gone. It only removes the concrete fake seam that had already appeared
@@ -356,6 +417,260 @@ Checks:
 - `git diff --check`
 - `make kubeconform`
 - `make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 30
+
+Findings:
+
+1. Medium: the main structural drift is actually removed here. Upload
+   concurrency now scales through one shared gateway shell plus one session
+   `Secret` per upload, instead of one `Pod/Service/Ingress` trio per model.
+2. Medium: the session `Secret` is now the only per-upload control-plane state
+   seam, which is the correct replacement for the former upload runtime Pod
+   lifecycle. This keeps `CRD.status` as the platform truth while removing the
+   fake runtime-object source of truth.
+3. Medium: `/probe` is intentionally only a control-API placeholder in this
+   slice. That is acceptable only because Slice 31 is explicitly next and the
+   docs do not misrepresent probe as a finished security/preflight stage.
+
+Checks:
+
+- `cd images/controller && go test ./internal/adapters/k8s/uploadsession ./internal/adapters/k8s/uploadsessionstate ./internal/dataplane/uploadsession ./internal/controllers/catalogstatus ./cmd/ai-models-controller ./cmd/ai-models-artifact-runtime`
+- `make helm-template`
+  - scenario renders completed
+  - final Python validator step is blocked by local interpreter compatibility
+- `make verify`
+  - controller-specific gates passed until coverage collection
+  - coverage artifact step is blocked by local shell PATH not resolving `go`
+- `git diff --check`
+
+## Дополнительный review по slice 34
+
+Findings:
+
+1. Medium: publish runtime semantics are now explicit end-to-end.
+   Controller shell, worker Pod builder and shared `workloadpod` helper all
+   agree on one bounded work-volume contract plus explicit
+   `cpu`/`memory`/`ephemeral-storage` requests and limits, so the old
+   “implicit `/tmp` and hope” drift is gone.
+2. Medium: upload concurrency and publish concurrency are now materially
+   separated. Active publish workers are capped before Pod creation, and the
+   controller keeps requeueing the deterministic worker name instead of
+   inventing a second queue/state owner.
+3. Medium: Slice 34 is honest but intentionally incomplete on the byte path.
+   The bounded work volume now contains the full materialized publication
+   working set, but current `sourcefetch` + `KitOps` behavior may still spend
+   most of that budget inside the same volume until Slice 35 removes the
+   remaining unnecessary local full-copy paths.
+
+Checks:
+
+- `cd images/controller && go test ./internal/adapters/k8s/workloadpod ./internal/adapters/k8s/sourceworker ./internal/controllers/catalogstatus ./internal/bootstrap ./internal/dataplane/publishworker ./internal/cmdsupport ./cmd/ai-models-controller`
+- `make helm-template`
+- `make kubeconform`
+- `make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 35
+
+Findings:
+
+1. Medium: the byte path is now materially aligned with the target architecture.
+   Upload staging and remote `source.url` acquisition both use the
+   controller-owned `raw/` subtree before local materialization, and the
+   publication backend default is now an explicit `dmcr/` subtree instead of a
+   vague generic prefix.
+2. Medium: the remaining local copy amplification is narrower and honest.
+   Direct single-file inputs now materialize into `checkpoint/` via link-first
+   staging when possible, so the former unavoidable second full local copy is
+   gone on the normal same-filesystem path.
+3. Medium: the residual large-model cost is now mostly a network budget, not a
+   node-disk ambiguity. Remote raw-first staging still happens inside the same
+   bounded publish worker, so `source.url -> raw -> workdir -> DMCR` pays an
+   extra object-storage hop even though the node no longer keeps the extra full
+   local copy for direct-file inputs.
+
+Checks:
+
+- `cd images/controller && go test ./...`
+- `make helm-template`
+- `make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 32
+
+Findings:
+
+1. No blocking findings for the landed append-only cut. The new seam is
+   internal, keeps public `status` unchanged, and records only small lifecycle
+   facts instead of building a second publication state machine.
+2. Medium: the concrete implementation is intentionally modest.
+   Controller-owned `Kubernetes Events` plus minimal internal raw provenance
+   (`RawURI`, raw object count, total raw size) are acceptable precisely
+   because they are emitted only after persisted lifecycle edges and are not
+   consumed as readiness truth.
+3. Medium: this is not async scanner execution. Real post-ingest scanners
+   still require a later dedicated runtime boundary between raw ingest
+   completion and final `Ready`, especially for remote `source.url` flows.
+
+Checks:
+
+- `cd images/controller && go test ./...`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 36
+
+Findings:
+
+1. No blocking findings for the landed structure refactor. The controller tree
+   is now more honest: live docs were synchronized to the actual packages, the
+   dead `publishop.OperationContext` wrapper is gone, and the old
+   backend-centric `artifactbackend` name no longer survives in a
+   controller-owned boundary.
+2. Medium: keeping `publishedsnapshot` and `publicationartifact` separate is
+   correct. They are close, but they are not duplicates:
+   one is the full internal publication snapshot, the other is the narrower
+   runtime payload plus OCI reference policy.
+3. Medium: the main remaining structural hotspots are still the same real
+   ones, not naming accidents:
+   `catalogcleanup`, `sourcefetch`, and `modelformat`.
+   Future work should keep shrinking them in place instead of inventing new
+   generic packages.
+
+Checks:
+
+- `cd images/controller && go test ./...`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 37
+
+Findings:
+
+1. No blocking findings for the landed `sourcefetch` cleanup. The new helper
+   stays inside the same package boundary and removes real duplication instead
+   of inventing a new generic utility bucket.
+2. Medium: the cut improves package honesty, not architecture scope.
+   `http.go` and `huggingface.go` now carry more clearly provider-specific
+   logic, while shared raw-stage object handoff lives in `rawstage.go`.
+3. Medium: the main remaining `sourcefetch` debt is still size and provider
+   growth pressure, not the raw-stage flow itself. If new providers land later,
+   they should keep reusing the same package-local raw-stage seam instead of
+   cloning upload/download glue again.
+
+Checks:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 38
+
+Findings:
+
+1. No blocking findings for the landed `catalogcleanup` cut. The package keeps
+   the same delete-only controller ownership while removing a real metadata
+   drift: cleanup job and GC request objects no longer build owner labels
+   through separate raw string maps.
+2. Medium: refreshing full owner metadata on existing GC request secrets is the
+   right semantics. Re-arming only the request label was too narrow because it
+   left older or partially populated request secrets with stale controller
+   metadata.
+3. Medium: this slice intentionally does not split `catalogcleanup` further.
+   The main remaining controller debt is still package size and decision flow
+   density, not object-metadata duplication.
+
+Checks:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/application/deletion ./internal/controllers/catalogcleanup ./internal/bootstrap ./cmd/ai-models-controller`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 39
+
+Findings:
+
+1. No blocking findings for the landed `modelformat` cleanup. The new runner
+   stays package-local and removes real duplication instead of inventing a new
+   generic support layer outside the adapter boundary.
+2. Medium: the cut is correct because ownership stayed explicit.
+   `Safetensors` and `GGUF` files still define their own classification and
+   required-file semantics; only the repeated traversal and state aggregation
+   moved into one local seam.
+3. Medium: this does not make `modelformat` "done".
+   The remaining future pressure is new format families, not the old duplicate
+   inspect/validate/select loops.
+
+Checks:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/modelformat ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 40
+
+Findings:
+
+1. No blocking findings for the landed `catalogcleanup` apply cleanup. The new
+   runtime seam stays inside the same controller package and removes real
+   duplicate prerequisite work instead of inventing another controller or
+   adapter layer.
+2. Medium: reusing the observed cleanup handle for finalizer release is the
+   correct semantics. The previous extra annotation parse was not adding new
+   information and made the final step depend on a second decode of data that
+   had already been observed.
+3. Medium: this slice intentionally does not redesign the delete decision
+   protocol. The main remaining debt in `catalogcleanup` is still decision-flow
+   density, not prerequisite recomputation.
+
+Checks:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/application/deletion ./internal/controllers/catalogcleanup ./internal/bootstrap ./cmd/ai-models-controller`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 41
+
+Findings:
+
+1. No blocking findings for the landed `application/deletion` cleanup. The
+   refactor stayed inside the same policy seam and made the delete protocol
+   more explicit without inventing another controller or adapter boundary.
+2. Medium: extracting package-local step helpers is the correct granularity
+   here. `cleanupJobProgressDecision` and `garbageCollectionProgressDecision`
+   remove real repetition while preserving one canonical `FinalizeDeleteDecision`
+   shape for both upload-staging and backend-artifact delete flows.
+3. Medium: this slice intentionally does not redesign `catalogcleanup`
+   ownership. The remaining delete-path pressure is still in controller-level
+   orchestration density, not in the application-layer decision table.
+
+Checks:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/application/deletion ./internal/controllers/catalogcleanup ./internal/bootstrap ./cmd/ai-models-controller`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 42
+
+Findings:
+
+1. No blocking findings for the landed `catalogcleanup` flow cleanup. The
+   refactor stayed inside the same delete-only controller owner and made the
+   observe/decide/apply handoff more explicit instead of spreading partial
+   delete state across reconcile calls.
+2. Medium: skipping DMCR GC observation for completed upload-staging cleanup is
+   the correct semantics. That branch has no registry artifact to garbage
+   collect, so reading the GC request secret there was pure controller drift.
+3. Medium: this slice intentionally does not split `catalogcleanup` into
+   another package. The remaining pressure is still controller size and
+   lifecycle density, not missing helper abstractions.
+
+Checks:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/application/deletion ./internal/controllers/catalogcleanup ./internal/bootstrap ./cmd/ai-models-controller`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
 
 ## Оставшиеся drifts против virtualization / gpu-control-plane
@@ -377,3 +692,158 @@ Checks:
 - сам ADR сейчас нельзя считать точным описанием текущего public contract;
 - в самом CRD главный remaining drift уже не в dead knobs, а в общем
   расхождении текущего `spec` с историческим ADR.
+
+## Дополнительный review по slice 45
+
+Findings:
+
+1. No blocking findings for the landed product-state metrics baseline. The new
+   collector reads only public `Model` / `ClusterModel` truth from manager
+   cache and does not introduce another persisted or runtime-local source of
+   observability truth.
+2. Medium: falling back from unresolved `status` to public `spec` for source
+   type / format / task is the correct tradeoff for this slice. It keeps new
+   objects visible in dashboards without inventing hidden controller-side state
+   labels.
+3. Medium: including `Deleting` in the phase one-hot set is more correct than
+   silently dropping that public phase. The observability contract note was
+   synced accordingly.
+4. Medium: this slice intentionally stops before alerts and dashboards. The
+   remaining observability debt is now in `PrometheusRule` and dashboard
+   materialization, not in missing public catalog metrics.
+
+Checks:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/monitoring/catalogmetrics ./internal/bootstrap`
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/cmdsupport ./internal/adapters/k8s/auditevent ./internal/dataplane/uploadsession ./internal/dataplane/publishworker ./internal/controllers/catalogstatus ./cmd/ai-models-artifact-runtime ./cmd/ai-models-controller`
+- `git diff --check`
+
+## Дополнительный review по slice 46
+
+Findings:
+
+1. No blocking findings for the landed health-rule baseline. The rules stay in
+   the normal module monitoring shell and alert only on platform symptoms:
+   scrape availability, Pod readiness/running, and DMCR PVC pressure.
+2. Medium: keeping the DMCR storage-risk rule on `kubelet_volume_stats_*`
+   instead of inventing a custom capacity metric is the correct
+   virtualization-style choice. This preserves one platform source of truth for
+   PVC pressure.
+3. Medium: backend Pod match uses the concrete deployment pod-name shape
+   (`ai-models-<hash>-<suffix>`) to avoid colliding with
+   `ai-models-controller-*`. This is acceptable for the current fixed module
+   shell, but any future backend deployment rename must update the rule.
+4. Medium: this slice intentionally stops before overview dashboards. The main
+   remaining observability debt is dashboard materialization over the new
+   `d8_ai_models_*` state metrics.
+
+Checks:
+
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 47
+
+Findings:
+
+1. No blocking findings for the landed overview dashboard baseline. It reads
+   only the already landed public `d8_ai_models_*` catalog metrics and normal
+   platform health/storage series; it does not introduce a second
+   observability source of truth.
+2. Medium: using `max by (namespace, name, uid, ...)` /
+   `max by (name, uid, ...)` before `sum`/`count` is the correct dedupe pattern
+   here. The controller metrics endpoint may be scraped from more than one pod,
+   so naive aggregation would overcount catalog objects.
+3. Medium: surfacing `WaitForUpload` directly in overview stats is the correct
+   platform signal. It shows catalog objects blocked on user upload without
+   turning ordinary user wait states into alerts.
+4. Medium: this slice intentionally stays at one module overview dashboard.
+   The remaining observability debt is drilldown/dashboard depth only if a real
+   operator use case appears later, not a missing baseline overview.
+
+Checks:
+
+- `jq empty monitoring/grafana-dashboards/main/ai-models-overview.json`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 48
+
+Findings:
+
+1. No blocking findings for the landed upload-session token hardening. New
+   session secrets no longer persist the raw bearer token, and the gateway now
+   authenticates by comparing `hash(request token)` with the stored hash.
+2. Medium: in-place legacy secret migration is the correct bounded choice here.
+   Existing sessions are upgraded lazily on first reuse instead of breaking
+   active uploads during rollout.
+3. Medium: recovering the raw token from already persisted `status.upload`
+   during later reconciles is acceptable for this slice. It preserves the
+   current UX without reintroducing raw-token persistence in the session
+   secret.
+4. Medium: this slice intentionally does not redesign the public upload URL
+   contract. The remaining honest security debt is that the bearer-equivalent
+   token still lives in `status.upload` URL query parameters until a separate
+   API/UX change replaces that contract.
+
+Checks:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/k8s/uploadsessionstate ./internal/adapters/k8s/uploadsession ./internal/dataplane/uploadsession ./cmd/ai-models-artifact-runtime`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 49
+
+Findings:
+
+1. No blocking findings for the landed upload-session state hardening. The
+   session `Secret` now keeps a real server-side multipart manifest and
+   explicit raw-ingest lifecycle phases instead of relying only on
+   `multipartUploadID` plus implicit timestamps.
+2. Medium: pulling uploaded-part state from object storage through
+   `ListMultipartUploadParts` is the correct bounded fix here. It gives the
+   gateway/controller one server-owned resumability view without inventing a
+   second custom upload database or an extra API endpoint.
+3. Medium: persisting explicit `expired` state both from gateway requests and
+   from controller-side session reuse is the right fail-closed choice. Expiry
+   is no longer only inferred from `ExpiresAt` at observation time.
+4. Medium: this slice honestly stops at raw-ingest stage ownership. The
+   remaining lifecycle gap is still `publishing/completed`: as long as the
+   controller deletes the upload session right after raw staging handoff, those
+   phases cannot be claimed as a real persisted contract.
+
+Checks:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/adapters/k8s/uploadsessionstate ./internal/adapters/k8s/uploadsession ./internal/dataplane/uploadsession ./internal/adapters/uploadstaging/s3 ./cmd/ai-models-artifact-runtime`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Дополнительный review по slice 50
+
+Findings:
+
+1. No blocking findings for the landed upload-session handoff fix. The
+   controller no longer deletes successful runtime state before final status
+   projection, so upload sources can now carry session lifecycle truth through
+   `publishing/completed` without reopening the upload path.
+2. Medium: keeping the source worker alive through the cleanup-handle requeue
+   is the correct fix. Deleting it earlier risks either recreating runtime on
+   the next reconcile or dropping the successful upload-source handoff before
+   `Ready` is persisted.
+3. Medium: the new controller-owned upload-session phase sync stays bounded.
+   It updates only the existing session `Secret` via the upload-session runtime
+   seam and does not introduce a second public status engine or another
+   persisted bus.
+4. Medium: preserving the multipart manifest while treating
+   `uploaded/publishing/completed` as closed mutation phases is the correct
+   balance here. Operators keep server-owned inspection state, but late client
+   writes are now fail-closed after controller ownership begins.
+5. Residual risk: completed upload session secrets still stay with the owner
+   object lifecycle. There is still no separate session-retention janitor, so
+   this slice closes lifecycle correctness, not retention policy.
+
+Checks:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/application/publishobserve ./internal/controllers/catalogstatus ./internal/adapters/k8s/uploadsession ./internal/adapters/k8s/uploadsessionstate ./internal/dataplane/uploadsession`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`

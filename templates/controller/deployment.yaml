@@ -56,6 +56,16 @@ spec:
             - --publication-worker-image={{ include "helm_lib_module_image" (list . "controllerRuntime") }}
             - --publication-worker-namespace=$(POD_NAMESPACE)
             - --publication-worker-service-account={{ include "ai-models.controllerServiceAccountName" . }}
+            - --publication-max-concurrent-workers={{ include "ai-models.publicationMaxConcurrentWorkers" . }}
+            - --publication-work-volume-type={{ include "ai-models.publicationWorkVolumeType" . }}
+            - --publication-work-volume-size-limit={{ include "ai-models.publicationWorkVolumeEmptyDirSizeLimit" . }}
+            - --publication-work-volume-claim-name={{ include "ai-models.publicationWorkVolumePVCName" . }}
+            - --publication-worker-cpu-request={{ include "ai-models.publicationWorkerCPURequest" . }}
+            - --publication-worker-cpu-limit={{ include "ai-models.publicationWorkerCPULimit" . }}
+            - --publication-worker-memory-request={{ include "ai-models.publicationWorkerMemoryRequest" . }}
+            - --publication-worker-memory-limit={{ include "ai-models.publicationWorkerMemoryLimit" . }}
+            - --publication-worker-ephemeral-storage-request={{ include "ai-models.publicationWorkerEphemeralStorageRequest" . }}
+            - --publication-worker-ephemeral-storage-limit={{ include "ai-models.publicationWorkerEphemeralStorageLimit" . }}
             - --publication-oci-repository-prefix={{ include "ai-models.dmcrRepositoryPrefix" . }}
             - --publication-oci-insecure=false
             - --publication-oci-credentials-secret-name={{ include "ai-models.dmcrWriteAuthSecretName" . }}
@@ -67,9 +77,8 @@ spec:
             - --artifacts-s3-ignore-tls={{ include "ai-models.artifactsIgnoreTLS" . }}
             - --artifacts-credentials-secret-name={{ include "ai-models.artifactsResolvedSecretName" . }}
             - --artifacts-ca-secret-name={{ include "ai-models.artifactsMountedCASecretName" . }}
+            - --upload-service-name={{ include "ai-models.controllerServiceName" . }}
             - --upload-public-host={{ include "ai-models.uploadPublicHost" . }}
-            - --upload-ingress-class={{ include "helm_lib_module_ingress_class" . }}
-            - --upload-ingress-tls-secret-name={{ include "ai-models.uploadIngressTLSSecretName" . }}
           env:
             - name: POD_NAMESPACE
               valueFrom:
@@ -101,6 +110,74 @@ spec:
               cpu: 200m
               memory: 256Mi
             {{- end }}
+        - name: upload-gateway
+          {{- include "helm_lib_module_container_security_context_read_only_root_filesystem_capabilities_drop_all_pss_restricted" . | nindent 10 }}
+          image: {{ include "helm_lib_module_image" (list . "controllerRuntime") }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - upload-gateway
+            - --listen-port={{ include "ai-models.controllerUploadPort" . }}
+            - --session-secret-namespace=$(POD_NAMESPACE)
+            - --staging-bucket={{ include "ai-models.artifactsBucket" . }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: AI_MODELS_S3_ENDPOINT_URL
+              value: {{ include "ai-models.artifactsEndpoint" . | quote }}
+            - name: AI_MODELS_S3_REGION
+              value: {{ include "ai-models.artifactsRegion" . | quote }}
+            - name: AI_MODELS_S3_USE_PATH_STYLE
+              value: {{ include "ai-models.artifactsUsePathStyleBool" . | quote }}
+            - name: AI_MODELS_S3_IGNORE_TLS
+              value: {{ include "ai-models.artifactsIgnoreTLS" . | quote }}
+            - name: AWS_REGION
+              value: {{ include "ai-models.artifactsRegion" . | quote }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ include "ai-models.artifactsRegion" . | quote }}
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
+                  key: accessKey
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
+                  key: secretKey
+            {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+            - name: AI_MODELS_S3_CA_FILE
+              value: /etc/ai-models/artifacts-ca/ca.crt
+            {{- end }}
+          ports:
+            - name: upload
+              containerPort: {{ include "ai-models.controllerUploadPort" . | int }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: upload
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: upload
+          {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+          volumeMounts:
+            - name: artifacts-ca
+              mountPath: /etc/ai-models/artifacts-ca
+              readOnly: true
+          {{- end }}
+          resources:
+            requests:
+              {{- include "helm_lib_module_ephemeral_storage_only_logs" . | nindent 14 }}
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
         {{- $kubeRbacProxySettings := dict }}
         {{- $_ := set $kubeRbacProxySettings "portName" "https-metrics" }}
         {{- $_ := set $kubeRbacProxySettings "listenPort" "8443" }}
@@ -113,4 +190,10 @@ spec:
           )
         ) }}
         {{- include "kube_rbac_proxy.sidecar_container" (tuple . $kubeRbacProxySettings) | nindent 8 }}
+      {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+      volumes:
+        - name: artifacts-ca
+          secret:
+            secretName: {{ include "ai-models.artifactsMountedCASecretName" . }}
+      {{- end }}
 {{- end }}

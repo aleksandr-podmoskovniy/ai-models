@@ -18,213 +18,155 @@ package uploadsession
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
-	"path/filepath"
-	"strconv"
 	"strings"
+	"sync"
+	"time"
 
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
-const uploadFilenameHeader = "X-AI-MODELS-FILENAME"
+const (
+	defaultPartURLTTL             = 15 * time.Minute
+	minimumMultipartPartSizeBytes = 5 * 1024 * 1024
+	maximumMultipartPartCount     = 10000
+)
 
-type Options struct {
-	ListenPort        int
-	UploadToken       string
-	ExpectedSizeBytes int64
-	StagingBucket     string
-	StagingKeyPrefix  string
-	StagingUploader   uploadstagingports.Uploader
+type SessionPhase string
+
+const (
+	SessionPhaseIssued     SessionPhase = "issued"
+	SessionPhaseProbing    SessionPhase = "probing"
+	SessionPhaseUploading  SessionPhase = "uploading"
+	SessionPhaseUploaded   SessionPhase = "uploaded"
+	SessionPhasePublishing SessionPhase = "publishing"
+	SessionPhaseCompleted  SessionPhase = "completed"
+	SessionPhaseFailed     SessionPhase = "failed"
+	SessionPhaseAborted    SessionPhase = "aborted"
+	SessionPhaseExpired    SessionPhase = "expired"
+)
+
+type UploadedPart struct {
+	PartNumber int32
+	ETag       string
+	SizeBytes  int64
 }
 
-func Run(ctx context.Context, options Options) (cleanuphandle.Handle, error) {
-	if strings.TrimSpace(options.UploadToken) == "" {
-		return cleanuphandle.Handle{}, errors.New("upload token must not be empty")
-	}
-	if strings.TrimSpace(options.StagingBucket) == "" {
-		return cleanuphandle.Handle{}, errors.New("staging bucket must not be empty")
-	}
-	if strings.TrimSpace(options.StagingKeyPrefix) == "" {
-		return cleanuphandle.Handle{}, errors.New("staging key prefix must not be empty")
-	}
-	if options.StagingUploader == nil {
-		return cleanuphandle.Handle{}, errors.New("staging uploader must not be nil")
+type SessionState struct {
+	UploadID      string
+	Key           string
+	FileName      string
+	UploadedParts []UploadedPart
+}
+
+type ProbeState struct {
+	FileName            string
+	ResolvedInputFormat modelsv1alpha1.ModelInputFormat
+}
+
+type SessionRecord struct {
+	SessionID           string
+	UploadTokenHash     string
+	ExpectedSizeBytes   int64
+	StagingKeyPrefix    string
+	DeclaredInputFormat modelsv1alpha1.ModelInputFormat
+	OwnerUID            string
+	OwnerKind           string
+	OwnerName           string
+	OwnerNamespace      string
+	OwnerGeneration     int64
+	ExpiresAt           time.Time
+	Phase               SessionPhase
+	Probe               *ProbeState
+	Multipart           *SessionState
+	FailureMessage      string
+	StagedHandle        *cleanuphandle.Handle
+}
+
+type SessionStore interface {
+	Load(ctx context.Context, sessionID string) (SessionRecord, bool, error)
+	SaveProbe(ctx context.Context, sessionID string, state ProbeState) error
+	SaveMultipart(ctx context.Context, sessionID string, state SessionState) error
+	SaveMultipartParts(ctx context.Context, sessionID string, parts []UploadedPart) error
+	ClearMultipart(ctx context.Context, sessionID string) error
+	MarkUploaded(ctx context.Context, sessionID string, handle cleanuphandle.Handle) error
+	MarkFailed(ctx context.Context, sessionID string, message string) error
+	MarkAborted(ctx context.Context, sessionID string, message string) error
+	MarkExpired(ctx context.Context, sessionID string, message string) error
+}
+
+type Options struct {
+	ListenPort    int
+	PartURLTTL    time.Duration
+	StagingBucket string
+	StagingClient uploadstagingports.Client
+	Sessions      SessionStore
+}
+
+type sessionAPI struct {
+	options Options
+	mu      sync.Mutex
+}
+
+func Serve(ctx context.Context, options Options) error {
+	options = normalizeOptions(options)
+	if err := validateOptions(options); err != nil {
+		return err
 	}
 
 	server := &http.Server{
-		Addr: fmt.Sprintf(":%d", normalizePort(options.ListenPort)),
+		Addr:    fmt.Sprintf(":%d", normalizePort(options.ListenPort)),
+		Handler: newHandler(&sessionAPI{options: options}),
 	}
-	resultCh := make(chan runResult, 1)
-	server.Handler = newHandler(options, resultCh)
 
 	serverErrCh := make(chan error, 1)
 	go func() {
 		err := server.ListenAndServe()
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErrCh <- err
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			serverErrCh <- nil
 			return
 		}
-		serverErrCh <- nil
+		serverErrCh <- err
 	}()
 
 	select {
 	case <-ctx.Done():
 		_ = server.Shutdown(context.Background())
-		return cleanuphandle.Handle{}, ctx.Err()
-	case result := <-resultCh:
-		_ = server.Shutdown(context.Background())
-		if result.err != nil {
-			return cleanuphandle.Handle{}, result.err
-		}
-		if err := <-serverErrCh; err != nil {
-			return cleanuphandle.Handle{}, err
-		}
-		return result.value, nil
+		return ctx.Err()
 	case err := <-serverErrCh:
-		return cleanuphandle.Handle{}, err
+		return err
 	}
 }
 
-type runResult struct {
-	value cleanuphandle.Handle
-	err   error
+func normalizeOptions(options Options) Options {
+	if options.PartURLTTL <= 0 {
+		options.PartURLTTL = defaultPartURLTTL
+	}
+	return options
 }
 
-func newHandler(options Options, resultCh chan<- runResult) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(writer http.ResponseWriter, request *http.Request) {
-		writer.WriteHeader(http.StatusOK)
-		_, _ = writer.Write([]byte("ok\n"))
-	})
-	mux.HandleFunc("/upload", func(writer http.ResponseWriter, request *http.Request) {
-		handleUpload(writer, request, options, resultCh)
-	})
-	mux.HandleFunc("/upload/", func(writer http.ResponseWriter, request *http.Request) {
-		handleUpload(writer, request, options, resultCh)
-	})
-	return mux
-}
-
-func handleUpload(
-	writer http.ResponseWriter,
-	request *http.Request,
-	options Options,
-	resultCh chan<- runResult,
-) {
-	if request.Method != http.MethodPut {
-		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
-		return
+func validateOptions(options Options) error {
+	switch {
+	case strings.TrimSpace(options.StagingBucket) == "":
+		return errors.New("staging bucket must not be empty")
+	case options.StagingClient == nil:
+		return errors.New("staging client must not be nil")
+	case options.Sessions == nil:
+		return errors.New("session store must not be nil")
+	case options.PartURLTTL <= 0:
+		return errors.New("part URL ttl must be positive")
+	default:
+		return nil
 	}
-	if !matchesUploadToken(request, options.UploadToken) {
-		http.Error(writer, "invalid upload token", http.StatusUnauthorized)
-		return
-	}
-	contentLength := strings.TrimSpace(request.Header.Get("Content-Length"))
-	if contentLength == "" {
-		http.Error(writer, "Content-Length header is required", http.StatusLengthRequired)
-		return
-	}
-	length, err := strconv.ParseInt(contentLength, 10, 64)
-	if err != nil || length <= 0 {
-		http.Error(writer, "invalid Content-Length header", http.StatusBadRequest)
-		return
-	}
-	if options.ExpectedSizeBytes > 0 && length != options.ExpectedSizeBytes {
-		http.Error(writer, "uploaded payload size does not match expected-size-bytes", http.StatusBadRequest)
-		return
-	}
-
-	fileName := sanitizedUploadFileName(request.Header.Get(uploadFilenameHeader))
-	key, err := uploadKey(options.StagingKeyPrefix, fileName)
-	if err != nil {
-		http.Error(writer, err.Error(), http.StatusBadRequest)
-		resultCh <- runResult{err: err}
-		return
-	}
-
-	if err := options.StagingUploader.Upload(request.Context(), uploadstagingports.UploadInput{
-		Bucket:        options.StagingBucket,
-		Key:           key,
-		ContentLength: length,
-		Body:          request.Body,
-	}); err != nil {
-		http.Error(writer, "upload staging failed", http.StatusInternalServerError)
-		resultCh <- runResult{err: err}
-		return
-	}
-
-	result := cleanuphandle.Handle{
-		Kind: cleanuphandle.KindUploadStaging,
-		UploadStaging: &cleanuphandle.UploadStagingHandle{
-			Bucket:    options.StagingBucket,
-			Key:       key,
-			FileName:  fileName,
-			SizeBytes: length,
-		},
-	}
-	writer.WriteHeader(http.StatusCreated)
-	_, _ = writer.Write([]byte("upload accepted\n"))
-	resultCh <- runResult{value: result}
-}
-
-func matchesUploadToken(request *http.Request, expectedToken string) bool {
-	expectedToken = strings.TrimSpace(expectedToken)
-	if expectedToken == "" {
-		return false
-	}
-	if token, ok := uploadTokenFromPath(request.URL.Path); ok {
-		return subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) == 1
-	}
-	auth := strings.TrimSpace(request.Header.Get("Authorization"))
-	if auth == "" {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(auth), []byte("Bearer "+expectedToken)) == 1
-}
-
-func uploadTokenFromPath(path string) (string, bool) {
-	if !strings.HasPrefix(path, "/upload/") {
-		return "", false
-	}
-	token := strings.TrimSpace(strings.TrimPrefix(path, "/upload/"))
-	if token == "" || strings.Contains(token, "/") {
-		return "", false
-	}
-	return token, true
-}
-
-func sanitizedUploadFileName(raw string) string {
-	trimmed := strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/"))
-	if trimmed == "" {
-		return "upload.bin"
-	}
-
-	base := strings.TrimSpace(filepath.Base(trimmed))
-	switch base {
-	case "", ".", "..", string(filepath.Separator):
-		return "upload.bin"
-	}
-	if strings.HasPrefix(base, ".") {
-		return "upload.bin"
-	}
-	return base
-}
-
-func uploadKey(prefix string, fileName string) (string, error) {
-	prefix = strings.Trim(strings.TrimSpace(prefix), "/")
-	if prefix == "" {
-		return "", errors.New("upload staging key prefix must not be empty")
-	}
-	return prefix + "/" + fileName, nil
 }
 
 func normalizePort(port int) int {
-	if port > 0 {
-		return port
+	if port <= 0 {
+		return 8444
 	}
-	return 8444
+	return port
 }

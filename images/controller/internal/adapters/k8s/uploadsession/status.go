@@ -17,84 +17,113 @@ limitations under the License.
 package uploadsession
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func buildUploadStatus(
 	artifactURI string,
-	service *corev1.Service,
-	ingress *networkingv1.Ingress,
+	options Options,
+	sessionID string,
 	token string,
 	expiresAt metav1.Time,
 ) modelsv1alpha1.ModelUploadStatus {
 	return modelsv1alpha1.ModelUploadStatus{
 		ExpiresAt:    &expiresAt,
 		Repository:   strings.TrimSpace(artifactURI),
-		ExternalURL:  buildExternalUploadURL(ingress, token),
-		InClusterURL: buildInClusterUploadURL(service, token),
+		ExternalURL:  buildExternalUploadURL(options.Gateway.PublicHost, sessionID, token),
+		InClusterURL: buildInClusterUploadURL(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID, token),
 	}
 }
 
-func expiresAtFromSecret(secret *corev1.Secret) (metav1.Time, error) {
-	raw := strings.TrimSpace(secret.Annotations["ai-models.deckhouse.io/upload-expires-at"])
-	if raw == "" {
-		return metav1.Time{}, errors.New("upload session expiry annotation is missing")
-	}
-	value, err := time.Parse(time.RFC3339, raw)
-	if err != nil {
-		return metav1.Time{}, fmt.Errorf("parse upload session expiry: %w", err)
-	}
-	return metav1.NewTime(value.UTC()), nil
-}
-
-func buildInClusterUploadURL(service *corev1.Service, token string) string {
-	if service == nil {
+func buildInClusterUploadURL(serviceName, namespace, sessionID, token string) string {
+	base := buildInClusterUploadURLBase(serviceName, namespace, sessionID)
+	if base == "" {
 		return ""
 	}
-	port := int32(uploadPort)
-	if len(service.Spec.Ports) > 0 && service.Spec.Ports[0].Port > 0 {
-		port = service.Spec.Ports[0].Port
+	return base + "?token=" + url.QueryEscape(strings.TrimSpace(token))
+}
+
+func buildExternalUploadURL(publicHost, sessionID, token string) string {
+	base := buildExternalUploadURLBase(publicHost, sessionID)
+	if base == "" {
+		return ""
+	}
+	return base + "?token=" + url.QueryEscape(strings.TrimSpace(token))
+}
+
+func sessionPath(sessionID string) string {
+	return "/v1/upload/" + url.PathEscape(strings.TrimSpace(sessionID))
+}
+
+func buildInClusterUploadURLBase(serviceName, namespace, sessionID string) string {
+	if strings.TrimSpace(serviceName) == "" || strings.TrimSpace(namespace) == "" {
+		return ""
 	}
 	return fmt.Sprintf(
 		"http://%s.%s.svc:%d%s",
-		service.Name,
-		service.Namespace,
-		port,
-		uploadSessionPath(token),
+		serviceName,
+		namespace,
+		uploadPort,
+		sessionPath(sessionID),
 	)
 }
 
-func buildExternalUploadURL(ingress *networkingv1.Ingress, token string) string {
-	if ingress == nil {
+func buildExternalUploadURLBase(publicHost, sessionID string) string {
+	publicHost = strings.TrimSpace(publicHost)
+	if publicHost == "" {
 		return ""
 	}
-	host := strings.TrimSpace(firstIngressHost(ingress))
-	if host == "" {
-		return ""
-	}
-	scheme := "http"
-	if len(ingress.Spec.TLS) > 0 {
-		scheme = "https"
-	}
-	return fmt.Sprintf("%s://%s%s", scheme, host, uploadSessionPath(token))
+	return fmt.Sprintf("https://%s%s", publicHost, sessionPath(sessionID))
 }
 
-func uploadSessionPath(token string) string {
-	return "/upload/" + url.PathEscape(strings.TrimSpace(token))
+func tokenFromPersistedUploadStatus(
+	status *modelsv1alpha1.ModelUploadStatus,
+	artifactURI string,
+	options Options,
+	sessionID string,
+	expiresAt metav1.Time,
+) (string, bool) {
+	if status == nil || status.ExpiresAt == nil {
+		return "", false
+	}
+	if strings.TrimSpace(status.Repository) != strings.TrimSpace(artifactURI) {
+		return "", false
+	}
+	if !status.ExpiresAt.Equal(&expiresAt) {
+		return "", false
+	}
+
+	if token, ok := tokenFromUploadURL(status.InClusterURL, buildInClusterUploadURLBase(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID)); ok {
+		return token, true
+	}
+	if token, ok := tokenFromUploadURL(status.ExternalURL, buildExternalUploadURLBase(options.Gateway.PublicHost, sessionID)); ok {
+		return token, true
+	}
+
+	return "", false
 }
 
-func firstIngressHost(ingress *networkingv1.Ingress) string {
-	if ingress == nil || len(ingress.Spec.Rules) == 0 {
-		return ""
+func tokenFromUploadURL(rawURL, expectedBase string) (string, bool) {
+	rawURL = strings.TrimSpace(rawURL)
+	expectedBase = strings.TrimSpace(expectedBase)
+	if rawURL == "" || expectedBase == "" {
+		return "", false
 	}
-	return ingress.Spec.Rules[0].Host
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", false
+	}
+	if strings.TrimSpace(parsed.Scheme)+"://"+strings.TrimSpace(parsed.Host)+strings.TrimSpace(parsed.Path) != expectedBase {
+		return "", false
+	}
+	token := strings.TrimSpace(parsed.Query().Get("token"))
+	if token == "" {
+		return "", false
+	}
+	return token, true
 }

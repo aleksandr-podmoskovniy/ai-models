@@ -30,10 +30,9 @@ const (
 	ociRegistryCASecretPrefix    = "ai-model-oci-ca-"
 	uploadSessionPodPrefix       = "ai-model-upload-"
 	uploadSessionServicePrefix   = "ai-model-upload-"
-	uploadSessionIngressPrefix   = "ai-model-upload-"
 	uploadSessionSecretPrefix    = "ai-model-upload-auth-"
 	cleanupJobPrefix             = "ai-model-cleanup-"
-	uploadStagingPrefix          = "uploaded-model-staging"
+	uploadStagingPrefix          = "raw"
 
 	AppNameLabelKey        = "app.kubernetes.io/name"
 	OwnerKindLabelKey      = "ai-models.deckhouse.io/owner-kind"
@@ -109,10 +108,6 @@ func UploadSessionPodName(uid types.UID) (string, error) {
 
 func UploadSessionServiceName(uid types.UID) (string, error) {
 	return PrefixedName(uploadSessionServicePrefix, uid)
-}
-
-func UploadSessionIngressName(uid types.UID) (string, error) {
-	return PrefixedName(uploadSessionIngressPrefix, uid)
 }
 
 func UploadSessionSecretName(uid types.UID) (string, error) {

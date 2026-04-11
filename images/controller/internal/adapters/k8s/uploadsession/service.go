@@ -19,12 +19,19 @@ package uploadsession
 import (
 	"context"
 	"errors"
+	"time"
 
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsessionstate"
+	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
+	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
+	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -51,7 +58,7 @@ func NewService(client client.Client, scheme *runtime.Scheme, options Options) (
 	return &Service{client: client, scheme: scheme, options: options}, nil
 }
 
-func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.OperationContext) (*publicationports.UploadSessionHandle, bool, error) {
+func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.Request) (*publicationports.UploadSessionHandle, bool, error) {
 	if owner == nil {
 		return nil, false, errors.New("upload session owner must not be nil")
 	}
@@ -60,41 +67,235 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 	if err != nil {
 		return nil, false, err
 	}
+	sessionSecret, rawToken, created, err := s.ensureSecret(ctx, owner, request, plan)
+	if err != nil {
+		return nil, false, err
+	}
+	session, err := uploadsessionstate.SessionFromSecret(sessionSecret)
+	if err != nil {
+		return nil, false, err
+	}
+	session, err = s.ensureExplicitTerminalPhase(ctx, sessionSecret, session)
+	if err != nil {
+		return nil, false, err
+	}
+	handle, err := s.buildHandle(ctx, owner, request, sessionSecret, session, rawToken)
+	if err != nil {
+		return nil, false, err
+	}
+	return handle, created, nil
+}
 
-	secret, token, expiresAt, createdSecret, err := s.ensureSecret(ctx, owner, request.Request.Owner.UID)
+func (s *Service) ensureSecret(
+	ctx context.Context,
+	owner client.Object,
+	request publicationports.Request,
+	plan publicationapp.UploadSessionPlan,
+) (*corev1.Secret, string, bool, error) {
+	ownerUID := request.Owner.UID
+	name, err := resourcenames.UploadSessionSecretName(ownerUID)
 	if err != nil {
-		return nil, false, err
+		return nil, "", false, err
 	}
-	service, createdService, err := s.ensureService(ctx, owner, request.Request.Owner.UID)
+	token, err := randomToken()
 	if err != nil {
-		return nil, false, err
+		return nil, "", false, err
 	}
-	ingress, createdIngress, err := s.ensureIngress(ctx, owner, request.Request.Owner.UID, token)
+	stagingPrefix, err := resourcenames.UploadStagingObjectPrefix(ownerUID)
 	if err != nil {
-		return nil, false, err
+		return nil, "", false, err
 	}
-	pod, artifactURI, createdPod, err := s.ensurePod(ctx, owner, request, plan, secret.Name, s.options)
+	expectedSizeBytes := int64(0)
+	if plan.ExpectedSizeBytes != nil {
+		expectedSizeBytes = *plan.ExpectedSizeBytes
+	}
+	secret, err := uploadsessionstate.NewSecret(uploadsessionstate.SessionSpec{
+		Name:                name,
+		Namespace:           s.options.Runtime.Namespace,
+		Token:               token,
+		ExpectedSizeBytes:   expectedSizeBytes,
+		StagingKeyPrefix:    stagingPrefix,
+		DeclaredInputFormat: plan.DeclaredInputFormat,
+		OwnerGeneration:     owner.GetGeneration(),
+		ExpiresAt:           time.Now().Add(s.options.TokenTTL).UTC(),
+	})
 	if err != nil {
-		return nil, false, err
+		return nil, "", false, err
+	}
+	secret.Labels = mergeMaps(
+		secret.Labels,
+		resourcenames.OwnerLabels("ai-models-upload-session", request.Owner.Kind, request.Owner.Name, request.Owner.UID, request.Owner.Namespace),
+	)
+	secret.Annotations = mergeMaps(
+		secret.Annotations,
+		resourcenames.OwnerAnnotations(request.Owner.Kind, request.Owner.Name, request.Owner.Namespace),
+	)
+
+	created, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, owner, secret)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if !created {
+		legacyToken, migrated, err := uploadsessionstate.MigrateLegacyToken(secret)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if migrated {
+			if err := s.client.Update(ctx, secret); err != nil {
+				return nil, "", false, err
+			}
+		}
+		return secret, legacyToken, false, nil
+	}
+	return secret, token, true, nil
+}
+
+func (s *Service) buildHandle(
+	ctx context.Context,
+	owner client.Object,
+	request publicationports.Request,
+	secret *corev1.Secret,
+	session *uploadsessionstate.Session,
+	rawToken string,
+) (*publicationports.UploadSessionHandle, error) {
+	if session == nil {
+		return nil, errors.New("upload session must not be nil")
+	}
+	artifactURI, err := publicationartifact.BuildOCIArtifactReference(
+		s.options.Runtime.OCIRepositoryPrefix,
+		request.Identity,
+		request.Owner.UID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	phase := corev1.PodRunning
+	message := ""
+	switch session.Phase {
+	case uploadsessionstate.PhaseUploaded, uploadsessionstate.PhaseCompleted:
+		phase = corev1.PodSucceeded
+		if session.StagedHandle != nil {
+			message, err = cleanuphandle.Encode(*session.StagedHandle)
+			if err != nil {
+				return nil, err
+			}
+		}
+	case uploadsessionstate.PhaseFailed, uploadsessionstate.PhaseAborted, uploadsessionstate.PhaseExpired:
+		phase = corev1.PodFailed
+		message = session.FailureMessage
+	}
+
+	uploadStatus := modelsv1alpha1.ModelUploadStatus{}
+	if phase == corev1.PodRunning {
+		rawToken, err = s.resolveActiveSessionToken(ctx, owner, secret, artifactURI, session, rawToken)
+		if err != nil {
+			return nil, err
+		}
+		uploadStatus = buildUploadStatus(artifactURI, s.options, session.Name, rawToken, session.ExpiresAt)
 	}
 
 	return publicationports.NewUploadSessionHandle(
-		pod.Name,
-		pod.Status.Phase,
-		workloadpod.TerminationMessage(pod, "upload"),
-		buildUploadStatus(artifactURI, service, ingress, token, expiresAt),
+		session.Name,
+		phase,
+		message,
+		uploadStatus,
 		func(ctx context.Context) error {
-			return s.deleteResources(ctx, pod, service, secret, ingress)
+			return ownedresource.DeleteAll(ctx, s.client, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: session.Name, Namespace: s.options.Runtime.Namespace},
+			})
 		},
-	), createdSecret || createdService || createdIngress || createdPod, nil
+	), nil
 }
 
-func (s *Service) deleteResources(
+func (s *Service) resolveActiveSessionToken(
 	ctx context.Context,
-	pod *corev1.Pod,
-	service *corev1.Service,
+	owner client.Object,
 	secret *corev1.Secret,
-	ingress *networkingv1.Ingress,
-) error {
-	return ownedresource.DeleteAll(ctx, s.client, pod, service, secret, ingress)
+	artifactURI string,
+	session *uploadsessionstate.Session,
+	rawToken string,
+) (string, error) {
+	if secret == nil {
+		return "", errors.New("upload session secret must not be nil")
+	}
+	if session == nil {
+		return "", errors.New("upload session must not be nil")
+	}
+	if rawToken != "" {
+		return rawToken, nil
+	}
+
+	currentStatus, err := modelobject.GetStatus(owner)
+	if err != nil {
+		return "", err
+	}
+	if token, ok := tokenFromPersistedUploadStatus(currentStatus.Upload, artifactURI, s.options, session.Name, session.ExpiresAt); ok {
+		return token, nil
+	}
+
+	rawToken, err = randomToken()
+	if err != nil {
+		return "", err
+	}
+	if err := uploadsessionstate.SetToken(secret, rawToken); err != nil {
+		return "", err
+	}
+	if err := s.client.Update(ctx, secret); err != nil {
+		return "", err
+	}
+	return rawToken, nil
+}
+
+func (s *Service) ensureExplicitTerminalPhase(
+	ctx context.Context,
+	secret *corev1.Secret,
+	session *uploadsessionstate.Session,
+) (*uploadsessionstate.Session, error) {
+	if secret == nil || session == nil || session.ExpiresAt.IsZero() {
+		return session, nil
+	}
+	if session.ExpiresAt.After(time.Now().UTC()) {
+		return session, nil
+	}
+	switch session.Phase {
+	case uploadsessionstate.PhaseIssued, uploadsessionstate.PhaseProbing, uploadsessionstate.PhaseUploading:
+	default:
+		return session, nil
+	}
+
+	if err := uploadsessionstate.MarkExpiredSecret(secret, "upload session expired"); err != nil {
+		return nil, err
+	}
+	if err := s.client.Update(ctx, secret); err != nil {
+		return nil, err
+	}
+	session.Phase = uploadsessionstate.PhaseExpired
+	session.FailureMessage = "upload session expired"
+	return session, nil
+}
+
+func requestPlan(request publicationports.Request) (publicationapp.UploadSessionPlan, error) {
+	return publicationapp.IssueUploadSession(publicationapp.UploadSessionIssueRequest{
+		OwnerUID:       string(request.Owner.UID),
+		OwnerKind:      request.Owner.Kind,
+		OwnerName:      request.Owner.Name,
+		OwnerNamespace: request.Owner.Namespace,
+		Identity:       request.Identity,
+		InputFormat:    request.Spec.InputFormat,
+		Source:         request.Spec.Source,
+	})
+}
+
+func mergeMaps(base map[string]string, extra map[string]string) map[string]string {
+	if len(extra) == 0 {
+		return base
+	}
+	if base == nil {
+		base = make(map[string]string, len(extra))
+	}
+	for key, value := range extra {
+		base[key] = value
+	}
+	return base
 }

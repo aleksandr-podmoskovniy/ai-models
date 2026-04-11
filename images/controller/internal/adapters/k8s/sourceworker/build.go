@@ -25,11 +25,12 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
-	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
@@ -37,7 +38,7 @@ const (
 	httpAuthMountPath  = "/etc/ai-models/http-auth"
 )
 
-func Build(request publicationports.OperationContext, options Options, projectedAuthSecretName string) (*corev1.Pod, error) {
+func Build(request publicationports.Request, options Options, projectedAuthSecretName string) (*corev1.Pod, error) {
 	sourcePlan, err := sourcePlan(request)
 	if err != nil {
 		return nil, err
@@ -46,12 +47,12 @@ func Build(request publicationports.OperationContext, options Options, projected
 }
 
 func buildWithPlan(
-	request publicationports.OperationContext,
+	request publicationports.Request,
 	sourcePlan publicationapp.SourceWorkerPlan,
 	options Options,
 	projectedAuthSecretName string,
 ) (*corev1.Pod, error) {
-	options = workloadpod.NormalizeRuntimeOptions(options)
+	options = normalizeOptions(options)
 	if err := validateOptions(sourcePlan, options); err != nil {
 		return nil, err
 	}
@@ -59,11 +60,11 @@ func buildWithPlan(
 		return nil, err
 	}
 
-	name, err := resourcenames.SourceWorkerPodName(request.Request.Owner.UID)
+	name, err := resourcenames.SourceWorkerPodName(request.Owner.UID)
 	if err != nil {
 		return nil, err
 	}
-	artifactURI, err := artifactbackend.BuildOCIArtifactReference(options.OCIRepositoryPrefix, request.Request.Identity, request.Request.Owner.UID)
+	artifactURI, err := publicationartifact.BuildOCIArtifactReference(options.OCIRepositoryPrefix, request.Identity, request.Owner.UID)
 	if err != nil {
 		return nil, err
 	}
@@ -72,17 +73,18 @@ func buildWithPlan(
 		Name:            "publish",
 		Image:           options.Image,
 		ImagePullPolicy: imagePullPolicyFor(options),
-		Args:            append([]string{"publish-worker"}, buildArgs(request, sourcePlan, artifactURI)...),
+		Args:            append([]string{"publish-worker"}, buildArgs(request, sourcePlan, artifactURI, options)...),
 		Env:             buildEnv(options, sourcePlan, projectedAuthSecretName),
 		VolumeMounts:    buildVolumeMounts(options, sourcePlan),
+		Resources:       options.Resources,
 	}
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Namespace:   options.Namespace,
-			Labels:      buildLabels(request.Request.Owner),
-			Annotations: resourcenames.OwnerAnnotations(request.Request.Owner.Kind, request.Request.Owner.Name, request.Request.Owner.Namespace),
+			Labels:      buildLabels(request.Owner),
+			Annotations: resourcenames.OwnerAnnotations(request.Owner.Kind, request.Owner.Name, request.Owner.Namespace),
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy:      corev1.RestartPolicyNever,
@@ -110,6 +112,10 @@ func buildEnv(
 	projectedAuthSecretName string,
 ) []corev1.EnvVar {
 	env := ociregistry.Env(options.OCIInsecure, options.OCIRegistrySecretName, options.OCIRegistryCASecretName)
+	env = append(env, corev1.EnvVar{
+		Name:  "TMPDIR",
+		Value: workloadpod.WorkVolumeMountPath,
+	})
 	env = append(env, objectstorage.Env(options.ObjectStorage)...)
 	if plan.HuggingFace != nil && plan.HuggingFace.AuthSecretRef != nil {
 		env = append(env, corev1.EnvVar{
@@ -135,7 +141,7 @@ func buildVolumeMounts(options Options, plan publicationapp.SourceWorkerPlan) []
 		})
 	}
 	extra = objectstorage.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
-	return workloadpod.VolumeMounts(options.OCIRegistryCASecretName, extra...)
+	return workloadpod.VolumeMounts(options.RuntimeOptions, extra...)
 }
 
 func buildVolumes(
@@ -155,13 +161,19 @@ func buildVolumes(
 		})
 	}
 	extra = objectstorage.Volumes(options.ObjectStorage.CASecretName, extra...)
-	return workloadpod.Volumes(options.OCIRegistryCASecretName, extra...)
+	return workloadpod.Volumes(options.RuntimeOptions, extra...)
 }
 
-func buildArgs(request publicationports.OperationContext, plan publicationapp.SourceWorkerPlan, artifactURI string) []string {
+func buildArgs(
+	request publicationports.Request,
+	plan publicationapp.SourceWorkerPlan,
+	artifactURI string,
+	options Options,
+) []string {
 	args := []string{
 		"--artifact-uri", artifactURI,
 		"--source-type", string(plan.SourceType),
+		"--snapshot-dir", workloadpod.WorkVolumeMountPath,
 	}
 	if strings.TrimSpace(string(plan.InputFormat)) != "" {
 		args = append(args, "--input-format", string(plan.InputFormat))
@@ -172,15 +184,15 @@ func buildArgs(request publicationports.OperationContext, plan publicationapp.So
 	for _, engine := range plan.RuntimeEngines {
 		args = append(args, "--runtime-engine", engine)
 	}
-	return append(args, sourceArgs(plan)...)
+	return append(args, sourceArgs(plan, request.Owner.UID, options.ObjectStorage.Bucket)...)
 }
 
-func sourceArgs(plan publicationapp.SourceWorkerPlan) []string {
+func sourceArgs(plan publicationapp.SourceWorkerPlan, ownerUID types.UID, rawBucket string) []string {
 	if plan.HuggingFace != nil {
-		return huggingFaceArgs(plan.HuggingFace)
+		return append(huggingFaceArgs(plan.HuggingFace), remoteRawStageArgs(ownerUID, rawBucket)...)
 	}
 	if plan.HTTP != nil {
-		return httpArgs(plan.HTTP)
+		return append(httpArgs(plan.HTTP), remoteRawStageArgs(ownerUID, rawBucket)...)
 	}
 	if plan.Upload != nil {
 		return uploadArgs(plan.Upload)
@@ -216,6 +228,22 @@ func uploadArgs(source *publicationapp.UploadSourcePlan) []string {
 		args = append(args, "--upload-stage-file-name", source.Stage.FileName)
 	}
 	return args
+}
+
+func remoteRawStageArgs(ownerUID types.UID, rawBucket string) []string {
+	if strings.TrimSpace(rawBucket) == "" {
+		return nil
+	}
+
+	keyPrefix, err := resourcenames.UploadStagingObjectPrefix(ownerUID)
+	if err != nil {
+		return nil
+	}
+
+	return []string{
+		"--raw-stage-bucket", rawBucket,
+		"--raw-stage-key-prefix", keyPrefix + "/source-url",
+	}
 }
 
 func validateProjectedAuthSecretName(

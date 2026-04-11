@@ -27,6 +27,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 const huggingFaceBaseURL = "https://huggingface.co"
@@ -99,8 +100,24 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 
 	modelDir := filepath.Join(options.Workspace, "checkpoint")
 	resolvedRevision := ResolveHuggingFaceRevision(info, revision)
-	if err := DownloadHuggingFaceFiles(ctx, repoID, resolvedRevision, options.HFToken, modelDir, selectedFiles); err != nil {
-		return RemoteResult{}, err
+	var stagedObjects []cleanuphandle.UploadStagingHandle
+	if rawStageEnabled(options.RawStage) {
+		stagedObjects, err = downloadHuggingFaceFilesViaRawStage(
+			ctx,
+			repoID,
+			resolvedRevision,
+			options.HFToken,
+			modelDir,
+			selectedFiles,
+			*options.RawStage,
+		)
+		if err != nil {
+			return RemoteResult{}, err
+		}
+	} else {
+		if err := DownloadHuggingFaceFiles(ctx, repoID, resolvedRevision, options.HFToken, modelDir, selectedFiles); err != nil {
+			return RemoteResult{}, err
+		}
 	}
 	if err := modelformat.ValidateDir(modelDir, inputFormat); err != nil {
 		return RemoteResult{}, err
@@ -116,6 +133,7 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 		PipelineTag:       info.PipelineTag,
 		License:           info.License,
 		SourceRepoID:      info.ID,
+		StagedObjects:     stagedObjects,
 	}, nil
 }
 
@@ -180,6 +198,61 @@ func downloadHuggingFaceFile(ctx context.Context, repoID, revision, token, path,
 
 	target := filepath.Join(destination, filepath.Clean(path))
 	return writeResponseBody(target, response.Body)
+}
+
+func downloadHuggingFaceFilesViaRawStage(
+	ctx context.Context,
+	repoID, revision, token, destination string,
+	files []string,
+	rawStage RawStageOptions,
+) ([]cleanuphandle.UploadStagingHandle, error) {
+	if !rawStageEnabled(&rawStage) {
+		return nil, errors.New("huggingface raw stage options must not be empty")
+	}
+
+	stagedObjects := make([]cleanuphandle.UploadStagingHandle, 0, len(files))
+	for _, relativePath := range files {
+		handle, err := downloadHuggingFaceFileToRawStage(ctx, repoID, revision, token, relativePath, rawStage)
+		if err != nil {
+			return nil, err
+		}
+		stagedObjects = append(stagedObjects, handle)
+		if err := downloadStagedObject(ctx, rawStage.Client, handle, filepath.Join(destination, filepath.Clean(relativePath))); err != nil {
+			return nil, err
+		}
+	}
+
+	return stagedObjects, nil
+}
+
+func downloadHuggingFaceFileToRawStage(
+	ctx context.Context,
+	repoID, revision, token, filePath string,
+	rawStage RawStageOptions,
+) (cleanuphandle.UploadStagingHandle, error) {
+	endpoint, err := huggingFaceResolveURL(repoID, revision, filePath)
+	if err != nil {
+		return cleanuphandle.UploadStagingHandle{}, err
+	}
+	response, err := doGET(ctx, nil, endpoint, bearerAuthHeaders(token))
+	if err != nil {
+		return cleanuphandle.UploadStagingHandle{}, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return cleanuphandle.UploadStagingHandle{}, unexpectedStatusError(response, fmt.Sprintf("huggingface download for %q", filePath))
+	}
+
+	return stageRawObject(
+		ctx,
+		rawStage,
+		filePath,
+		filepath.Base(filePath),
+		response.ContentLength,
+		response.Header.Get("Content-Type"),
+		response.Body,
+	)
 }
 
 func huggingFaceInfoURL(repoID, revision string) (string, error) {

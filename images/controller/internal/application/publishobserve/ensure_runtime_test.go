@@ -28,6 +28,7 @@ import (
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -219,7 +220,7 @@ type fakeSourceWorkerRuntime struct {
 	calls  int
 }
 
-func (f *fakeSourceWorkerRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.OperationContext) (*publicationports.SourceWorkerHandle, bool, error) {
+func (f *fakeSourceWorkerRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.Request) (*publicationports.SourceWorkerHandle, bool, error) {
 	f.calls++
 	return f.handle, false, f.err
 }
@@ -230,9 +231,21 @@ type fakeUploadSessionRuntime struct {
 	calls  int
 }
 
-func (f *fakeUploadSessionRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.OperationContext) (*publicationports.UploadSessionHandle, bool, error) {
+func (f *fakeUploadSessionRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.Request) (*publicationports.UploadSessionHandle, bool, error) {
 	f.calls++
 	return f.handle, false, f.err
+}
+
+func (f *fakeUploadSessionRuntime) MarkPublishing(context.Context, types.UID) error {
+	return nil
+}
+
+func (f *fakeUploadSessionRuntime) MarkCompleted(context.Context, types.UID) error {
+	return nil
+}
+
+func (f *fakeUploadSessionRuntime) MarkFailed(context.Context, types.UID, string) error {
+	return nil
 }
 
 func uploadRequest() publicationports.Request {

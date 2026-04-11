@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package artifactbackend
+package publicationartifact
 
 import (
 	"testing"
@@ -23,27 +23,6 @@ import (
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
-
-func TestRequestValidateAcceptsNamespacedSourceFirstPublication(t *testing.T) {
-	t.Parallel()
-
-	request := Request{
-		Identity: publication.Identity{
-			Scope:     publication.ScopeNamespaced,
-			Namespace: "team-a",
-			Name:      "deepseek-r1",
-		},
-		Spec: modelsv1alpha1.ModelSpec{
-			Source: modelsv1alpha1.ModelSourceSpec{
-				URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
-			},
-		},
-	}
-
-	if err := request.Validate(); err != nil {
-		t.Fatalf("Validate() error = %v", err)
-	}
-}
 
 func TestResultValidateRequiresArtifactAndCleanupHandle(t *testing.T) {
 	t.Parallel()

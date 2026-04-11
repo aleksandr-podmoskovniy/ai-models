@@ -23,25 +23,57 @@ import (
 )
 
 const (
+	logFormatEnv              = "LOG_FORMAT"
 	publicationOCIInsecureEnv = "PUBLICATION_OCI_INSECURE"
 	commandPublishWorker      = "publish-worker"
 	commandUploadSession      = "upload-session"
+	commandUploadGateway      = "upload-gateway"
 	commandArtifactCleanup    = "artifact-cleanup"
 )
 
-var errMissingCommand = errors.New("expected one of: publish-worker, upload-session, artifact-cleanup")
+var errMissingCommand = errors.New("expected one of: publish-worker, upload-gateway, artifact-cleanup")
 
 func run(args []string) int {
+	if err := configureRuntimeLogger(runtimeComponent(args)); err != nil {
+		return cmdsupport.CommandError("ai-models-artifact-runtime", err)
+	}
+
 	switch {
 	case len(args) == 0:
 		return cmdsupport.CommandError("ai-models-artifact-runtime", errMissingCommand)
 	case args[0] == commandPublishWorker:
 		return runPublishWorker(args[1:])
-	case args[0] == commandUploadSession:
+	case args[0] == commandUploadSession || args[0] == commandUploadGateway:
 		return runUploadSession(args[1:])
 	case args[0] == commandArtifactCleanup:
 		return runArtifactCleanup(args[1:])
 	default:
 		return cmdsupport.CommandError("ai-models-artifact-runtime", errMissingCommand)
+	}
+}
+
+func configureRuntimeLogger(component string) error {
+	logger, err := cmdsupport.NewComponentLogger(cmdsupport.EnvOr(logFormatEnv, "text"), component)
+	if err != nil {
+		return err
+	}
+	cmdsupport.SetDefaultLogger(logger)
+	return nil
+}
+
+func runtimeComponent(args []string) string {
+	if len(args) == 0 {
+		return "artifact-runtime"
+	}
+
+	switch args[0] {
+	case commandPublishWorker:
+		return "publish-worker"
+	case commandUploadSession, commandUploadGateway:
+		return "upload-gateway"
+	case commandArtifactCleanup:
+		return "artifact-cleanup"
+	default:
+		return "artifact-runtime"
 	}
 }

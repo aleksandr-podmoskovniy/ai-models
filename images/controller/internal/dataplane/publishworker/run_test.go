@@ -159,6 +159,31 @@ func TestPublishFromHTTPAcceptsDirectGGUFFile(t *testing.T) {
 	}
 }
 
+func TestEnsureWorkspaceCreatesAndCleansSubdirectoryUnderSnapshotRoot(t *testing.T) {
+	t.Parallel()
+
+	snapshotRoot := t.TempDir()
+	workspace, cleanupDir, err := ensureWorkspace(snapshotRoot, "ai-model-publish-")
+	if err != nil {
+		t.Fatalf("ensureWorkspace() error = %v", err)
+	}
+	if got, want := filepath.Dir(workspace), snapshotRoot; got != want {
+		t.Fatalf("unexpected workspace parent %q", got)
+	}
+	if _, err := os.Stat(workspace); err != nil {
+		t.Fatalf("Stat(workspace) error = %v", err)
+	}
+
+	cleanupDir()
+
+	if _, err := os.Stat(workspace); !os.IsNotExist(err) {
+		t.Fatalf("expected workspace cleanup, got err=%v", err)
+	}
+	if _, err := os.Stat(snapshotRoot); err != nil {
+		t.Fatalf("expected snapshot root to remain, got err=%v", err)
+	}
+}
+
 type tarEntry struct {
 	name    string
 	content []byte

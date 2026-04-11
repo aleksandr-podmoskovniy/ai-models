@@ -168,7 +168,7 @@ func TestPlanSourceWorker(t *testing.T) {
 			},
 			assert: func(t *testing.T, got SourceWorkerPlan) {
 				t.Helper()
-				if got.Upload == nil || got.Upload.Stage.Key != "uploaded-model-staging/1111-2222/model.gguf" {
+				if got.Upload == nil || got.Upload.Stage.Key != "raw/1111-2222/model.gguf" {
 					t.Fatalf("unexpected upload plan %#v", got.Upload)
 				}
 			},
@@ -193,7 +193,7 @@ func TestPlanSourceWorker(t *testing.T) {
 			if tc.name == "upload source with staged handle is accepted" {
 				uploadStage = &cleanuphandle.UploadStagingHandle{
 					Bucket:   "ai-models",
-					Key:      "uploaded-model-staging/1111-2222/model.gguf",
+					Key:      "raw/1111-2222/model.gguf",
 					FileName: "model.gguf",
 				}
 			}

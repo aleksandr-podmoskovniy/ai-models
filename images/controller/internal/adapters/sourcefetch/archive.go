@@ -247,7 +247,7 @@ func materializeSingleFile(sourcePath, destination string) (string, error) {
 	}
 
 	target := filepath.Join(destination, name)
-	if err := copyFile(sourcePath, target); err != nil {
+	if err := linkOrCopyFile(sourcePath, target); err != nil {
 		return "", err
 	}
 
@@ -313,4 +313,14 @@ func copyFile(sourcePath, target string) error {
 		return err
 	}
 	return stream.Close()
+}
+
+func linkOrCopyFile(sourcePath, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	if err := os.Link(sourcePath, target); err == nil {
+		return nil
+	}
+	return copyFile(sourcePath, target)
 }

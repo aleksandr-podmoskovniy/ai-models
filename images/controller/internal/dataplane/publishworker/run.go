@@ -20,18 +20,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
 	ggufprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/gguf"
 	safetensorsprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/safetensors"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
-	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
+	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
@@ -46,6 +43,8 @@ type Options struct {
 	HTTPAuthDir        string
 	UploadPath         string
 	UploadStage        *cleanuphandle.UploadStagingHandle
+	RawStageBucket     string
+	RawStageKeyPrefix  string
 	InputFormat        modelsv1alpha1.ModelInputFormat
 	Task               string
 	RuntimeEngines     []string
@@ -56,34 +55,34 @@ type Options struct {
 	RegistryAuth       modelpackports.RegistryAuth
 }
 
-func Run(ctx context.Context, options Options) (artifactbackend.Result, error) {
+func Run(ctx context.Context, options Options) (publicationartifact.Result, error) {
 	if strings.TrimSpace(options.ArtifactURI) == "" {
-		return artifactbackend.Result{}, errors.New("artifact URI must not be empty")
+		return publicationartifact.Result{}, errors.New("artifact URI must not be empty")
 	}
 	if options.ModelPackPublisher == nil {
-		return artifactbackend.Result{}, errors.New("ModelPack publisher must not be nil")
+		return publicationartifact.Result{}, errors.New("ModelPack publisher must not be nil")
 	}
 
 	result, err := run(ctx, options)
 	if err != nil {
-		return artifactbackend.Result{}, err
+		return publicationartifact.Result{}, err
 	}
 	return result, nil
 }
 
-func publishFromHuggingFace(ctx context.Context, options Options) (artifactbackend.Result, error) {
+func publishFromHuggingFace(ctx context.Context, options Options) (publicationartifact.Result, error) {
 	if strings.TrimSpace(options.HFModelID) == "" {
-		return artifactbackend.Result{}, errors.New("hf-model-id is required")
+		return publicationartifact.Result{}, errors.New("hf-model-id is required")
 	}
 	remote, cleanupDir, err := fetchRemote(ctx, options, "ai-model-hf-publish-")
 	if err != nil {
-		return artifactbackend.Result{}, err
+		return publicationartifact.Result{}, err
 	}
 	defer cleanupDir()
 
 	task := firstNonEmpty(options.Task, remote.PipelineTag)
 	if task == "" {
-		return artifactbackend.Result{}, errors.New("task is required either explicitly or from Hugging Face metadata")
+		return publicationartifact.Result{}, errors.New("task is required either explicitly or from Hugging Face metadata")
 	}
 
 	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, remote.ModelDir, remote.InputFormat, sourceProfileInput{
@@ -94,32 +93,39 @@ func publishFromHuggingFace(ctx context.Context, options Options) (artifactbacke
 		RuntimeEngines: options.RuntimeEngines,
 	}, fmt.Sprintf("Published from Hugging Face source %s", options.HFModelID))
 	if err != nil {
-		return artifactbackend.Result{}, err
+		return publicationartifact.Result{}, err
 	}
+	if err := cleanupRemoteStagedObjects(ctx, options, remote.StagedObjects); err != nil {
+		return publicationartifact.Result{}, err
+	}
+	rawSource := remoteRawProvenance(options, remote.StagedObjects)
 
 	return buildBackendResult(
 		publicationdata.SourceProvenance{
 			Type:              modelsv1alpha1.ModelSourceTypeHuggingFace,
 			ExternalReference: remote.ExternalReference,
 			ResolvedRevision:  remote.ResolvedRevision,
+			RawURI:            rawSource.RawURI,
+			RawObjectCount:    rawSource.RawObjectCount,
+			RawSizeBytes:      rawSource.RawSizeBytes,
 		},
 		resolvedProfile,
 		publishResult,
 	), nil
 }
 
-func publishFromHTTP(ctx context.Context, options Options) (artifactbackend.Result, error) {
+func publishFromHTTP(ctx context.Context, options Options) (publicationartifact.Result, error) {
 	if strings.TrimSpace(options.HTTPURL) == "" {
-		return artifactbackend.Result{}, errors.New("http-url is required")
+		return publicationartifact.Result{}, errors.New("http-url is required")
 	}
 	remote, cleanupDir, err := fetchRemote(ctx, options, "ai-model-http-publish-")
 	if err != nil {
-		return artifactbackend.Result{}, err
+		return publicationartifact.Result{}, err
 	}
 	defer cleanupDir()
 
 	if strings.TrimSpace(options.Task) == "" {
-		return artifactbackend.Result{}, errors.New("task is required for HTTP source")
+		return publicationartifact.Result{}, errors.New("task is required for HTTP source")
 	}
 
 	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, remote.ModelDir, remote.InputFormat, sourceProfileInput{
@@ -128,112 +134,25 @@ func publishFromHTTP(ctx context.Context, options Options) (artifactbackend.Resu
 		RuntimeEngines: options.RuntimeEngines,
 	}, fmt.Sprintf("Published from HTTP source %s", options.HTTPURL))
 	if err != nil {
-		return artifactbackend.Result{}, err
+		return publicationartifact.Result{}, err
 	}
+	if err := cleanupRemoteStagedObjects(ctx, options, remote.StagedObjects); err != nil {
+		return publicationartifact.Result{}, err
+	}
+	rawSource := remoteRawProvenance(options, remote.StagedObjects)
 
 	return buildBackendResult(
 		publicationdata.SourceProvenance{
 			Type:              modelsv1alpha1.ModelSourceTypeHTTP,
 			ExternalReference: remote.ExternalReference,
 			ResolvedRevision:  remote.ResolvedRevision,
+			RawURI:            rawSource.RawURI,
+			RawObjectCount:    rawSource.RawObjectCount,
+			RawSizeBytes:      rawSource.RawSizeBytes,
 		},
 		resolvedProfile,
 		publishResult,
 	), nil
-}
-
-func publishFromUpload(ctx context.Context, options Options) (artifactbackend.Result, error) {
-	if strings.TrimSpace(options.UploadPath) == "" && options.UploadStage == nil {
-		return artifactbackend.Result{}, errors.New("upload source requires either upload-path or upload staging handle")
-	}
-	if strings.TrimSpace(options.Task) == "" {
-		return artifactbackend.Result{}, errors.New("task is required for upload source")
-	}
-
-	workspace, cleanupDir, err := ensureWorkspace(options.SnapshotDir, "ai-model-upload-publish-")
-	if err != nil {
-		return artifactbackend.Result{}, err
-	}
-	defer cleanupDir()
-
-	uploadPath, cleanupUpload, err := ensureUploadPath(ctx, options, workspace)
-	if err != nil {
-		return artifactbackend.Result{}, err
-	}
-	defer cleanupUpload()
-
-	checkpointDir, err := sourcefetch.PrepareModelInput(uploadPath, filepath.Join(workspace, "checkpoint"))
-	if err != nil {
-		return artifactbackend.Result{}, err
-	}
-	inputFormat, err := resolveUploadInputFormat(checkpointDir, options.InputFormat)
-	if err != nil {
-		return artifactbackend.Result{}, err
-	}
-	if err := modelformat.ValidateDir(checkpointDir, inputFormat); err != nil {
-		return artifactbackend.Result{}, err
-	}
-
-	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, checkpointDir, inputFormat, sourceProfileInput{
-		Task:           options.Task,
-		Framework:      "transformers",
-		RuntimeEngines: options.RuntimeEngines,
-	}, "Published from uploaded model input")
-	if err != nil {
-		return artifactbackend.Result{}, err
-	}
-	if err := cleanupUploadStage(ctx, options); err != nil {
-		return artifactbackend.Result{}, err
-	}
-
-	return buildBackendResult(
-		publicationdata.SourceProvenance{
-			Type: modelsv1alpha1.ModelSourceTypeUpload,
-		},
-		resolvedProfile,
-		publishResult,
-	), nil
-}
-
-func ensureUploadPath(ctx context.Context, options Options, workspace string) (string, func(), error) {
-	if strings.TrimSpace(options.UploadPath) != "" {
-		return options.UploadPath, func() {}, nil
-	}
-	if options.UploadStage == nil {
-		return "", nil, errors.New("upload staging handle must not be empty")
-	}
-	if options.UploadStaging == nil {
-		return "", nil, errors.New("upload staging client must not be nil")
-	}
-
-	fileName := strings.TrimSpace(options.UploadStage.FileName)
-	if fileName == "" {
-		fileName = "upload.bin"
-	}
-	localPath := filepath.Join(workspace, fileName)
-	if err := options.UploadStaging.Download(ctx, uploadstagingports.DownloadInput{
-		Bucket:          options.UploadStage.Bucket,
-		Key:             options.UploadStage.Key,
-		DestinationPath: localPath,
-	}); err != nil {
-		return "", nil, err
-	}
-	return localPath, func() {
-		_ = os.Remove(localPath)
-	}, nil
-}
-
-func cleanupUploadStage(ctx context.Context, options Options) error {
-	if options.UploadStage == nil {
-		return nil
-	}
-	if options.UploadStaging == nil {
-		return errors.New("upload staging client must not be nil")
-	}
-	return options.UploadStaging.Delete(ctx, uploadstagingports.DeleteInput{
-		Bucket: options.UploadStage.Bucket,
-		Key:    options.UploadStage.Key,
-	})
 }
 
 func fetchRemote(ctx context.Context, options Options, prefix string) (sourcefetch.RemoteResult, func(), error) {
@@ -254,6 +173,7 @@ func fetchRemote(ctx context.Context, options Options, prefix string) (sourcefet
 		HFToken:         options.HFToken,
 		HTTPCABundle:    options.HTTPCABundle,
 		HTTPAuthDir:     options.HTTPAuthDir,
+		RawStage:        remoteRawStage(options),
 	})
 	if err != nil {
 		cleanupDir()

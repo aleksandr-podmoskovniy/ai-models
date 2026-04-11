@@ -26,10 +26,21 @@ import (
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 )
 
-type Options = workloadpod.RuntimeOptions
+type Options struct {
+	workloadpod.RuntimeOptions
+	MaxConcurrentWorkers int
+}
+
+func normalizeOptions(options Options) Options {
+	options.RuntimeOptions = workloadpod.NormalizeRuntimeOptions(options.RuntimeOptions)
+	if options.MaxConcurrentWorkers <= 0 {
+		options.MaxConcurrentWorkers = 1
+	}
+	return options
+}
 
 func validateOptions(plan publicationapp.SourceWorkerPlan, options Options) error {
-	if err := workloadpod.ValidateRuntimeOptions("source worker", options); err != nil {
+	if err := validateServiceOptions(options); err != nil {
 		return err
 	}
 	if plan.Upload != nil {
@@ -38,14 +49,24 @@ func validateOptions(plan publicationapp.SourceWorkerPlan, options Options) erro
 	return nil
 }
 
-func sourcePlan(request publicationports.OperationContext) (publicationapp.SourceWorkerPlan, error) {
-	if err := validateOwner(request.Request.Owner); err != nil {
+func validateServiceOptions(options Options) error {
+	if err := workloadpod.ValidateRuntimeOptions("source worker", options.RuntimeOptions); err != nil {
+		return err
+	}
+	if options.MaxConcurrentWorkers <= 0 {
+		return errors.New("source worker max concurrent workers must be greater than zero")
+	}
+	return nil
+}
+
+func sourcePlan(request publicationports.Request) (publicationapp.SourceWorkerPlan, error) {
+	if err := validateOwner(request.Owner); err != nil {
 		return publicationapp.SourceWorkerPlan{}, err
 	}
-	if err := request.Request.Identity.Validate(); err != nil {
+	if err := request.Identity.Validate(); err != nil {
 		return publicationapp.SourceWorkerPlan{}, err
 	}
-	return publicationapp.PlanSourceWorker(request.Request.Spec, request.Request.Owner.Namespace, request.Request.UploadStage)
+	return publicationapp.PlanSourceWorker(request.Spec, request.Owner.Namespace, request.UploadStage)
 }
 
 func validateOwner(owner publicationports.Owner) error {

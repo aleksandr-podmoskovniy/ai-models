@@ -17,9 +17,9 @@ limitations under the License.
 package publishobserve
 
 import (
-	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
 	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
@@ -27,7 +27,7 @@ func decodeRuntimeResult(
 	request publicationports.Request,
 	rawResult string,
 ) (*publicationdomain.PublicationSuccess, error) {
-	backendResult, err := artifactbackend.DecodeResult(rawResult)
+	backendResult, err := publicationartifact.DecodeResult(rawResult)
 	if err != nil {
 		return nil, err
 	}

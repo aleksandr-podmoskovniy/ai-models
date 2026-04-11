@@ -17,13 +17,17 @@ limitations under the License.
 package main
 
 import (
+	"log/slog"
+	"net/url"
+	"strings"
+
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/kitops"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
 	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
-	"github.com/deckhouse/ai-models/controller/internal/artifactbackend"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/dataplane/publishworker"
+	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
@@ -37,6 +41,8 @@ const (
 	publishUploadStageBucketEnv   = "AI_MODELS_IMPORT_UPLOAD_STAGE_BUCKET"
 	publishUploadStageKeyEnv      = "AI_MODELS_IMPORT_UPLOAD_STAGE_KEY"
 	publishUploadStageFileNameEnv = "AI_MODELS_IMPORT_UPLOAD_STAGE_FILE_NAME"
+	publishRawStageBucketEnv      = "AI_MODELS_IMPORT_RAW_STAGE_BUCKET"
+	publishRawStageKeyPrefixEnv   = "AI_MODELS_IMPORT_RAW_STAGE_KEY_PREFIX"
 	publishInputFormatEnv         = "AI_MODELS_IMPORT_INPUT_FORMAT"
 	publishRevisionEnv            = "AI_MODELS_IMPORT_HF_REVISION"
 	publishTaskEnv                = "AI_MODELS_IMPORT_TASK"
@@ -56,6 +62,8 @@ func runPublishWorker(args []string) int {
 	var uploadStageBucket string
 	var uploadStageKey string
 	var uploadStageFileName string
+	var rawStageBucket string
+	var rawStageKeyPrefix string
 	var inputFormat string
 	var revision string
 	var task string
@@ -72,6 +80,8 @@ func runPublishWorker(args []string) int {
 	flags.StringVar(&uploadStageBucket, "upload-stage-bucket", cmdsupport.EnvOr(publishUploadStageBucketEnv, ""), "Bucket containing staged upload input.")
 	flags.StringVar(&uploadStageKey, "upload-stage-key", cmdsupport.EnvOr(publishUploadStageKeyEnv, ""), "Object key containing staged upload input.")
 	flags.StringVar(&uploadStageFileName, "upload-stage-file-name", cmdsupport.EnvOr(publishUploadStageFileNameEnv, ""), "Original staged upload file name.")
+	flags.StringVar(&rawStageBucket, "raw-stage-bucket", cmdsupport.EnvOr(publishRawStageBucketEnv, ""), "Bucket used for controller-owned raw staging of remote sources.")
+	flags.StringVar(&rawStageKeyPrefix, "raw-stage-key-prefix", cmdsupport.EnvOr(publishRawStageKeyPrefixEnv, ""), "Object key prefix used for controller-owned raw staging of remote sources.")
 	flags.StringVar(&inputFormat, "input-format", cmdsupport.EnvOr(publishInputFormatEnv, ""), "Model input format. Leave empty for auto-detection.")
 	flags.StringVar(&revision, "revision", cmdsupport.EnvOr(publishRevisionEnv, ""), "Resolved source revision.")
 	flags.StringVar(&task, "task", cmdsupport.EnvOr(publishTaskEnv, ""), "Runtime task.")
@@ -96,6 +106,8 @@ func runPublishWorker(args []string) int {
 			Key:      uploadStageKey,
 			FileName: uploadStageFileName,
 		}
+	}
+	if uploadStage != nil || rawStageBucket != "" || rawStageKeyPrefix != "" {
 		uploadStagingClient, err = uploadstagings3.New(uploadStagingS3ConfigFromEnv())
 		if err != nil {
 			cmdsupport.WriteTerminationFailure(err.Error())
@@ -105,6 +117,17 @@ func runPublishWorker(args []string) int {
 
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
+
+	logger := publishWorkerLogger(
+		modelsv1alpha1.ModelSourceType(sourceType),
+		artifactURI,
+		hfModelID,
+		httpURL,
+		uploadStageFileName,
+		modelsv1alpha1.ModelInputFormat(inputFormat),
+		task,
+	)
+	logger.Info("publication worker started")
 
 	result, err := publishworker.Run(ctx, publishworker.Options{
 		SourceType:         modelsv1alpha1.ModelSourceType(sourceType),
@@ -116,6 +139,8 @@ func runPublishWorker(args []string) int {
 		HTTPAuthDir:        httpAuthDir,
 		UploadPath:         uploadPath,
 		UploadStage:        uploadStage,
+		RawStageBucket:     rawStageBucket,
+		RawStageKeyPrefix:  rawStageKeyPrefix,
 		InputFormat:        modelsv1alpha1.ModelInputFormat(inputFormat),
 		Task:               task,
 		RuntimeEngines:     []string(runtimeEngines),
@@ -127,14 +152,69 @@ func runPublishWorker(args []string) int {
 	})
 	if err != nil {
 		cmdsupport.WriteTerminationFailure(err.Error())
-		return cmdsupport.CommandError(commandPublishWorker, err)
+		logger.Error("publication worker failed", slog.Any("error", err))
+		return 1
 	}
-	payload, err := artifactbackend.EncodeResult(result)
+	payload, err := publicationartifact.EncodeResult(result)
 	if err != nil {
 		cmdsupport.WriteTerminationFailure(err.Error())
-		return cmdsupport.CommandError(commandPublishWorker, err)
+		logger.Error("publication worker result encoding failed", slog.Any("error", err))
+		return 1
 	}
 	cmdsupport.WriteTerminationMessage(payload)
+	logger.Info(
+		"publication worker completed",
+		slog.String("resolvedFormat", strings.TrimSpace(result.Resolved.Format)),
+		slog.String("resolvedTask", strings.TrimSpace(result.Resolved.Task)),
+		slog.String("artifactDigest", strings.TrimSpace(result.Artifact.Digest)),
+		slog.Int64("artifactSizeBytes", result.Artifact.SizeBytes),
+	)
 
 	return 0
+}
+
+func publishWorkerLogger(
+	sourceType modelsv1alpha1.ModelSourceType,
+	artifactURI string,
+	hfModelID string,
+	httpURL string,
+	uploadFileName string,
+	inputFormat modelsv1alpha1.ModelInputFormat,
+	task string,
+) *slog.Logger {
+	logger := slog.Default().With(
+		slog.String("sourceType", strings.TrimSpace(string(sourceType))),
+		slog.String("artifactURI", strings.TrimSpace(artifactURI)),
+	)
+	if strings.TrimSpace(string(inputFormat)) != "" {
+		logger = logger.With(slog.String("requestedInputFormat", strings.TrimSpace(string(inputFormat))))
+	}
+	if strings.TrimSpace(task) != "" {
+		logger = logger.With(slog.String("task", strings.TrimSpace(task)))
+	}
+
+	switch sourceType {
+	case modelsv1alpha1.ModelSourceTypeHuggingFace:
+		if strings.TrimSpace(hfModelID) != "" {
+			logger = logger.With(slog.String("sourceRepoID", strings.TrimSpace(hfModelID)))
+		}
+	case modelsv1alpha1.ModelSourceTypeHTTP:
+		if host := publishWorkerHTTPHost(httpURL); host != "" {
+			logger = logger.With(slog.String("sourceHost", host))
+		}
+	case modelsv1alpha1.ModelSourceTypeUpload:
+		if strings.TrimSpace(uploadFileName) != "" {
+			logger = logger.With(slog.String("fileName", strings.TrimSpace(uploadFileName)))
+		}
+	}
+
+	return logger
+}
+
+func publishWorkerHTTPHost(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Host)
 }

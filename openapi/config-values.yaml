@@ -199,7 +199,7 @@ properties:
           pathPrefix:
             type: string
             description: Prefix inside the bucket used by the internal publication backend.
-            default: published-models
+            default: dmcr
       persistentVolumeClaim:
         type: object
         description: |

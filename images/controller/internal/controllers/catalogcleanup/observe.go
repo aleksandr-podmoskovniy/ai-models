@@ -62,7 +62,7 @@ func (r *baseReconciler) observeDelete(
 	observation.HandleFound = true
 	observation.HandleKind = handle.Kind
 
-	if handle.Kind != cleanuphandle.KindBackendArtifact && handle.Kind != cleanuphandle.KindUploadStaging {
+	if !needsCleanupJobObservation(handle) {
 		return handle, observation, nil
 	}
 
@@ -71,7 +71,7 @@ func (r *baseReconciler) observeDelete(
 		return cleanuphandle.Handle{}, deletionapp.FinalizeDeleteInput{}, err
 	}
 	observation.JobState = jobState
-	if jobState == deletionapp.CleanupJobStateComplete {
+	if needsGarbageCollectionObservation(handle, jobState) {
 		gcState, err := r.observeGarbageCollectionState(ctx, object.GetUID())
 		if err != nil {
 			return cleanuphandle.Handle{}, deletionapp.FinalizeDeleteInput{}, err
@@ -79,6 +79,38 @@ func (r *baseReconciler) observeDelete(
 		observation.GarbageCollectionState = gcState
 	}
 	return handle, observation, nil
+}
+
+func (r *baseReconciler) observeFinalizeDeleteFlow(
+	ctx context.Context,
+	object client.Object,
+) (finalizeDeleteFlow, error) {
+	handle, observation, err := r.observeDelete(ctx, object)
+	if err != nil {
+		return finalizeDeleteFlow{}, err
+	}
+
+	decision := deletionapp.FinalizeDelete(observation)
+	runtime, err := buildFinalizeDeleteRuntime(object, handle, decision)
+	if err != nil {
+		return finalizeDeleteFlow{}, err
+	}
+
+	return finalizeDeleteFlow{
+		runtime:  runtime,
+		decision: decision,
+	}, nil
+}
+
+func needsCleanupJobObservation(handle cleanuphandle.Handle) bool {
+	return handle.Kind == cleanuphandle.KindBackendArtifact || handle.Kind == cleanuphandle.KindUploadStaging
+}
+
+func needsGarbageCollectionObservation(
+	handle cleanuphandle.Handle,
+	jobState deletionapp.CleanupJobState,
+) bool {
+	return handle.Kind == cleanuphandle.KindBackendArtifact && jobState == deletionapp.CleanupJobStateComplete
 }
 
 func (r *baseReconciler) observeCleanupJobState(
@@ -111,10 +143,7 @@ func (r *baseReconciler) observeGarbageCollectionState(
 	ownerUID types.UID,
 ) (deletionapp.GarbageCollectionState, error) {
 	var secret corev1.Secret
-	key := client.ObjectKey{
-		Namespace: r.options.CleanupJob.Namespace,
-		Name:      dmcrGCRequestSecretName(ownerUID),
-	}
+	key := garbageCollectionRequestKey(r.options.CleanupJob.Namespace, ownerUID)
 	switch err := r.client.Get(ctx, key, &secret); {
 	case apierrors.IsNotFound(err):
 		return deletionapp.GarbageCollectionStateMissing, nil
