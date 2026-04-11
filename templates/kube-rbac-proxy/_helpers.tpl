@@ -46,6 +46,16 @@
     - containerPort: {{ $settings.listenPort | default "8443" }}
       name: {{ $settings.portName | default "https-metrics" }}
       protocol: TCP
+  {{- with $settings.volumeMounts }}
+  volumeMounts:
+    {{- range . }}
+    - name: {{ .name }}
+      mountPath: {{ .mountPath }}
+      {{- if hasKey . "readOnly" }}
+      readOnly: {{ .readOnly }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
   livenessProbe:
     tcpSocket:
       port: {{ $settings.portName | default "https-metrics" }}

@@ -120,6 +120,13 @@ spec:
         {{- $kubeRbacProxySettings := dict }}
         {{- $_ := set $kubeRbacProxySettings "portName" "https-metrics" }}
         {{- $_ := set $kubeRbacProxySettings "listenPort" "8443" }}
+        {{- $_ := set $kubeRbacProxySettings "volumeMounts" (list
+          (dict
+            "name" "dmcr-kube-api-access"
+            "mountPath" "/var/run/secrets/kubernetes.io/serviceaccount"
+            "readOnly" true
+          )
+        ) }}
         {{- $_ := set $kubeRbacProxySettings "upstreams" (list
           (dict
             "upstream" "http://127.0.0.1:5001/metrics"

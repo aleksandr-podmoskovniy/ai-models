@@ -877,3 +877,20 @@ Checks:
   successful enable, and the hook currently watches all Secrets in `d8-system`
   because the source names are user-configured. That is acceptable for this
   bounded slice, but it is still broader than a static name selector.
+
+## Slice 53 review notes
+
+- No blocking findings for the DMCR metrics-shell fix. Giving
+  `kube-rbac-proxy` the existing projected `dmcr-kube-api-access` volume is
+  the correct narrow repair for the live crash.
+- Medium: keeping `automountServiceAccountToken: false` at the pod level is
+  better than flipping it on globally. The registry container still runs
+  without a Kubernetes API token, and only the containers that need cluster API
+  access mount the projected token volume.
+- Medium: extending the local `kube-rbac-proxy` helper with optional
+  `volumeMounts` is acceptable here. The helper already owns the ai-models
+  sidecar render contract, and the new field is bounded and opt-in.
+- Residual risk: the repeated `TLS handshake error ... EOF` lines from the main
+  `dmcr` container are not the same failure. They are secondary probe/client
+  noise while the sidecar is unhealthy; this slice targets the actual startup
+  blocker in `kube-rbac-proxy`.

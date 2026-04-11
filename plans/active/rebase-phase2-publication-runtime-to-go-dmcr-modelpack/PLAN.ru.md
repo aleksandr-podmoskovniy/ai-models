@@ -2428,3 +2428,28 @@ replacement has landed yet.
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
+
+## Slice 53 landed
+
+- DMCR protected metrics shell now gets the serviceaccount token it actually
+  needs without widening token exposure for the whole pod:
+  - `templates/kube-rbac-proxy/_helpers.tpl` now supports bounded optional
+    `volumeMounts` for sidecars rendered through the local helper;
+  - `templates/dmcr/deployment.yaml` mounts the already existing projected
+    `dmcr-kube-api-access` volume into `kube-rbac-proxy` at the standard
+    in-cluster token path.
+- the fix stays narrow and honest:
+  - `automountServiceAccountToken: false` remains in the DMCR pod spec;
+  - the registry container still does not receive a Kubernetes API token;
+  - no public values, API, or storage contract changed.
+- live cluster symptom behind this slice:
+  - `kube-rbac-proxy` in the `dmcr` pod crashed on startup with
+    `cannot find Service Account in pod to build in-cluster rest config`,
+    which kept the `dmcr` deployment unavailable even though the main registry
+    container itself was healthy.
+
+Проверки:
+
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
