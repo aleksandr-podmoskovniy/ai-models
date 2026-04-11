@@ -253,10 +253,6 @@ ai-models-runtime
 ai-models-postgresql
 {{- end -}}
 
-{{- define "ai-models.artifactsManagedSecretName" -}}
-ai-models-artifacts
-{{- end -}}
-
 {{- define "ai-models.dmcrAuthSecretName" -}}
 ai-models-dmcr-auth
 {{- end -}}
@@ -773,18 +769,6 @@ true
 {{- default "us-east-1" (index $artifacts "region") -}}
 {{- end -}}
 
-{{- define "ai-models.artifactsInlineAccessKey" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
-{{- default "" (index $artifacts "accessKey") -}}
-{{- end -}}
-
-{{- define "ai-models.artifactsInlineSecretKey" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
-{{- default "" (index $artifacts "secretKey") -}}
-{{- end -}}
-
 {{- define "ai-models.artifactsCredentialsSecretName" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
@@ -795,20 +779,6 @@ true
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
 {{- default "" (index $artifacts "caSecretName") -}}
-{{- end -}}
-
-{{- define "ai-models.artifactsHasInlineCredentials" -}}
-{{- $accessKey := include "ai-models.artifactsInlineAccessKey" . | trim -}}
-{{- $secretKey := include "ai-models.artifactsInlineSecretKey" . | trim -}}
-{{- if and $accessKey $secretKey -}}
-true
-{{- end -}}
-{{- end -}}
-
-{{- define "ai-models.artifactsHasSecretReference" -}}
-{{- if (include "ai-models.artifactsCredentialsSecretName" . | trim) -}}
-true
-{{- end -}}
 {{- end -}}
 
 {{- define "ai-models.artifactsMountedCASecretName" -}}
@@ -826,12 +796,7 @@ true
 {{- end -}}
 
 {{- define "ai-models.artifactsResolvedSecretName" -}}
-{{- $external := include "ai-models.artifactsCredentialsSecretName" . | trim -}}
-{{- if $external -}}
-{{- $external -}}
-{{- else -}}
-{{- include "ai-models.artifactsManagedSecretName" . -}}
-{{- end -}}
+{{- include "ai-models.artifactsCredentialsSecretName" . -}}
 {{- end -}}
 
 {{- define "ai-models.artifactsUsePathStyle" -}}
@@ -874,47 +839,8 @@ false
 {{- end -}}
 {{- end -}}
 
-{{- define "ai-models.publicationStorageType" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $publicationStorage := (index $moduleValues "publicationStorage") | default dict -}}
-{{- default "ObjectStorage" (index $publicationStorage "type") -}}
-{{- end -}}
-
-{{- define "ai-models.publicationStorageBucket" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $publicationStorage := (index $moduleValues "publicationStorage") | default dict -}}
-{{- $objectStorage := (index $publicationStorage "objectStorage") | default dict -}}
-{{- default (include "ai-models.artifactsBucket" . | trim) (index $objectStorage "bucket") -}}
-{{- end -}}
-
-{{- define "ai-models.publicationStoragePathPrefix" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $publicationStorage := (index $moduleValues "publicationStorage") | default dict -}}
-{{- $objectStorage := (index $publicationStorage "objectStorage") | default dict -}}
-{{- trimAll "/" (default "dmcr" (index $objectStorage "pathPrefix")) -}}
-{{- end -}}
-
-{{- define "ai-models.publicationStorageRootDirectory" -}}
-{{- $prefix := include "ai-models.publicationStoragePathPrefix" . | trim -}}
-{{- if $prefix -}}
-{{- printf "/%s" $prefix -}}
-{{- else -}}
-/
-{{- end -}}
-{{- end -}}
-
-{{- define "ai-models.publicationStoragePVCStorageClassName" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $publicationStorage := (index $moduleValues "publicationStorage") | default dict -}}
-{{- $pvc := (index $publicationStorage "persistentVolumeClaim") | default dict -}}
-{{- default "" (index $pvc "storageClassName") -}}
-{{- end -}}
-
-{{- define "ai-models.publicationStoragePVCStorageSize" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $publicationStorage := (index $moduleValues "publicationStorage") | default dict -}}
-{{- $pvc := (index $publicationStorage "persistentVolumeClaim") | default dict -}}
-{{- default "50Gi" (index $pvc "storageSize") -}}
+{{- define "ai-models.dmcrRootDirectory" -}}
+/dmcr
 {{- end -}}
 
 {{- define "ai-models.dmcrServiceHost" -}}
@@ -1050,24 +976,8 @@ true
   {{- if not (include "ai-models.artifactsEndpoint" . | trim) -}}
     {{- fail "ai-models.artifacts.endpoint is required" -}}
   {{- end -}}
-  {{- if and (include "ai-models.artifactsInlineAccessKey" . | trim) (not (include "ai-models.artifactsInlineSecretKey" . | trim)) -}}
-    {{- fail "ai-models.artifacts.secretKey is required when ai-models.artifacts.accessKey is set" -}}
-  {{- end -}}
-  {{- if and (include "ai-models.artifactsInlineSecretKey" . | trim) (not (include "ai-models.artifactsInlineAccessKey" . | trim)) -}}
-    {{- fail "ai-models.artifacts.accessKey is required when ai-models.artifacts.secretKey is set" -}}
-  {{- end -}}
-  {{- if and (include "ai-models.artifactsHasInlineCredentials" . | trim) (include "ai-models.artifactsHasSecretReference" . | trim) -}}
-    {{- fail "ai-models.artifacts.credentialsSecretName cannot be used together with inline accessKey/secretKey" -}}
-  {{- end -}}
-  {{- if not (or (include "ai-models.artifactsHasInlineCredentials" . | trim) (include "ai-models.artifactsHasSecretReference" . | trim)) -}}
-    {{- fail "ai-models.artifacts requires either credentialsSecretName or inline accessKey and secretKey" -}}
-  {{- end -}}
-  {{- $publicationStorageType := include "ai-models.publicationStorageType" . | trim -}}
-  {{- if not (or (eq $publicationStorageType "ObjectStorage") (eq $publicationStorageType "PersistentVolumeClaim")) -}}
-    {{- fail "ai-models.publicationStorage.type must be either ObjectStorage or PersistentVolumeClaim" -}}
-  {{- end -}}
-  {{- if and (eq $publicationStorageType "ObjectStorage") (not (include "ai-models.publicationStorageBucket" . | trim)) -}}
-    {{- fail "ai-models.publicationStorage.objectStorage.bucket resolves to empty; set ai-models.artifacts.bucket or ai-models.publicationStorage.objectStorage.bucket" -}}
+  {{- if not (include "ai-models.artifactsCredentialsSecretName" . | trim) -}}
+    {{- fail "ai-models.artifacts.credentialsSecretName is required" -}}
   {{- end -}}
   {{- $publicationWorkVolumeType := include "ai-models.publicationWorkVolumeType" . | trim -}}
   {{- if not (or (eq $publicationWorkVolumeType "EmptyDir") (eq $publicationWorkVolumeType "PersistentVolumeClaim")) -}}

@@ -1,4 +1,6 @@
 type: object
+required:
+  - artifacts
 description: |
   User-facing configuration for the ai-models module.
 
@@ -110,16 +112,24 @@ properties:
             default: password
   artifacts:
     type: object
-    description: S3-compatible artifact storage used by ai-models.
+    required:
+      - bucket
+      - endpoint
+      - credentialsSecretName
+    description: |
+      Shared S3-compatible storage used by ai-models.
+      The MLflow backend keeps its own artifact subtree under `pathPrefix`,
+      controller-owned raw ingest writes fixed `raw/` objects in the same bucket,
+      and the internal DMCR publication plane writes fixed `dmcr/` objects.
     additionalProperties: false
     properties:
       bucket:
         type: string
-        description: Bucket name for ai-models artifacts.
+        description: Bucket name shared by backend artifacts, raw ingest, and published model bytes.
         default: ""
       pathPrefix:
         type: string
-        description: Prefix inside the bucket used for ai-models artifacts.
+        description: Prefix inside the bucket used by the internal MLflow backend artifact root.
         default: ai-models
       endpoint:
         type: string
@@ -133,7 +143,7 @@ properties:
         type: string
         description: |
           Existing Secret in `d8-ai-models` with `accessKey` and `secretKey`.
-          Prefer this path in production. Inline credentials remain available for bootstrap.
+          This Secret is required; inline credentials are not supported.
         default: ""
       caSecretName:
         type: string
@@ -141,18 +151,6 @@ properties:
           Optional existing Secret in `d8-ai-models` with key `ca.crt` used to trust
           a custom CA for the S3-compatible endpoint. When empty, ai-models reuses
           `credentialsSecretName` if that Secret also contains `ca.crt`.
-        default: ""
-      accessKey:
-        type: string
-        description: |
-          Inline S3 access key used to render the internal artifact credentials Secret.
-          Intended mainly for bootstrap when a pre-created Secret is not used.
-        default: ""
-      secretKey:
-        type: string
-        description: |
-          Inline S3 secret key used to render the internal artifact credentials Secret.
-          Intended mainly for bootstrap when a pre-created Secret is not used.
         default: ""
       insecure:
         type: boolean
@@ -162,59 +160,6 @@ properties:
         type: boolean
         description: Use path-style S3 requests.
         default: true
-  publicationStorage:
-    type: object
-    description: |
-      Storage settings for the internal module-owned publication backend.
-      Published model artifacts are always served through the hidden internal
-      OCI plane; this block only selects how that internal backend stores bytes.
-    additionalProperties: false
-    properties:
-      type:
-        type: string
-        description: |
-          Storage backend used by the internal publication plane.
-          `ObjectStorage` reuses the configured S3-compatible endpoint from
-          `ai-models.artifacts`.
-          `PersistentVolumeClaim` stores published model artifacts inside a
-          module-owned PVC.
-        enum:
-          - "ObjectStorage"
-          - "PersistentVolumeClaim"
-        default: "ObjectStorage"
-      objectStorage:
-        type: object
-        description: |
-          Optional overrides for the internal publication backend when
-          `type=ObjectStorage`. Credentials, endpoint, CA and path-style
-          settings are reused from `ai-models.artifacts`.
-        additionalProperties: false
-        properties:
-          bucket:
-            type: string
-            description: |
-              Optional bucket override for published model artifacts.
-              When empty, ai-models reuses `ai-models.artifacts.bucket`.
-            default: ""
-          pathPrefix:
-            type: string
-            description: Prefix inside the bucket used by the internal publication backend.
-            default: dmcr
-      persistentVolumeClaim:
-        type: object
-        description: |
-          PVC settings for the internal publication backend when
-          `type=PersistentVolumeClaim`.
-        additionalProperties: false
-        properties:
-          storageClassName:
-            type: string
-            description: StorageClass for the internal publication PVC. Empty means cluster default.
-            default: ""
-          storageSize:
-            type: string
-            description: Persistent volume size for the internal publication backend.
-            default: 50Gi
   auth:
     type: object
     description: Deckhouse SSO settings for browser access to ai-models.

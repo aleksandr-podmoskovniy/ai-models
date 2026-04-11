@@ -847,3 +847,16 @@ Checks:
 - `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/application/publishobserve ./internal/controllers/catalogstatus ./internal/adapters/k8s/uploadsession ./internal/adapters/k8s/uploadsessionstate ./internal/dataplane/uploadsession`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
+## Slice 51 review notes
+
+- The new contract is stricter but more honest: users now configure one shared
+  S3-compatible artifact backend and one credential Secret reference instead of
+  a fake choice between inline credentials and a separate publication-storage
+  branch.
+- The phase split is explicit again:
+  - MLflow remains a phase-1 backend concern and keeps PostgreSQL in the
+    module contract;
+  - phase-2 raw ingest and DMCR publication reuse the same S3 backend without
+    pretending that PVC-backed DMCR remains a supported product path.
+- Observability no longer overpromises PVC capacity monitoring for a storage
+  mode that the module no longer supports.

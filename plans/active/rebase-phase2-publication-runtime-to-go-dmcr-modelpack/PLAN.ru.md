@@ -2360,3 +2360,37 @@ replacement has landed yet.
 - `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/application/publishobserve ./internal/controllers/catalogstatus ./internal/adapters/k8s/uploadsession ./internal/adapters/k8s/uploadsessionstate ./internal/dataplane/uploadsession`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
+
+## Slice 51 landed
+
+- user-facing storage contract is now honest and simpler:
+  - phase-1 MLflow backend remains in place and still owns the PostgreSQL
+    requirement for metadata/auth storage;
+  - shared S3-compatible `artifacts` storage is the only supported byte path
+    for MLflow artifacts, controller-owned raw ingest, and internal DMCR
+    publication bytes;
+  - inline `artifacts.accessKey` / `artifacts.secretKey` are removed from the
+    public contract in favor of required `artifacts.credentialsSecretName`;
+  - user-facing `publicationStorage` and the PVC-backed DMCR branch are
+    removed from schema, values, templates, fixtures, and docs.
+- DMCR render/runtime shell is now S3-only:
+  - `templates/dmcr/configmap.yaml` always renders the `s3` driver with a
+    fixed `/dmcr` rootdirectory;
+  - `templates/dmcr/deployment.yaml` no longer switches between filesystem and
+    object storage, and HA rollout logic is now independent from a fake PVC
+    branch;
+  - `templates/dmcr/pvc.yaml` is deleted.
+- artifact credentials are now reference-only:
+  - `templates/module/artifacts-secret.yaml` is deleted;
+  - `artifactsResolvedSecretName` resolves directly to the referenced Secret;
+  - validation now fails fast when `artifacts.credentialsSecretName` is empty.
+- observability contract was tightened to match the new storage reality:
+  - the PVC-only DMCR capacity alert was removed;
+  - the module overview dashboard no longer shows fake DMCR PVC capacity
+    panels.
+
+Проверки:
+
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`

@@ -37,7 +37,4 @@ aiModels:
   artifacts:
     bucket: ai-models
     endpoint: https://s3.internal.local
-    accessKey: ai-models-storage
-    secretKey: ai-models-storage-secret
-  publicationStorage:
-    type: ObjectStorage
+    credentialsSecretName: ai-models-artifacts

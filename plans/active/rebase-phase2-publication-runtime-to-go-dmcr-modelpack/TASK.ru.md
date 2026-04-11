@@ -34,6 +34,20 @@
 
 ## Постановка задачи
 
+### Current contract override (2026-04-11)
+
+- internal phase-1 backend remains MLflow-based and keeps PostgreSQL as a
+  required dependency for metadata/auth storage;
+- shared S3-compatible `artifacts` storage is now the only supported byte
+  backend for:
+  - MLflow artifacts;
+  - controller-owned raw ingest;
+  - internal DMCR publication bytes;
+- inline object-storage credentials are not supported anymore; module users
+  must provide an existing Secret reference;
+- PVC-backed internal publication storage is no longer part of the live
+  user-facing contract.
+
 Переосмыслить и постепенно перевести phase-2 publication/runtime implementation
 на virtualization-style architecture:
 

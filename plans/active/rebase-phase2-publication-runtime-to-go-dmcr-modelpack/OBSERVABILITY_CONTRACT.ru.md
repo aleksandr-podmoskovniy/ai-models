@@ -525,3 +525,10 @@ baseline.
 - следующая правильная работа не "навалить побольше метрик", а
   "добавить маленький жёсткий набор state metrics, health alerts и
   unified lifecycle logging".
+## Contract override (2026-04-11)
+
+- DMCR is no longer user-configurable as `PersistentVolumeClaim`; the live
+  module contract supports only the shared S3-compatible byte backend from
+  `aiModels.artifacts`.
+- Because of that, module-owned baseline alerts and overview dashboards must
+  not promise PVC-capacity monitoring for DMCR.

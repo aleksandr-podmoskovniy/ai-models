@@ -24,19 +24,14 @@ data:
 {{- end }}
       redirect:
         disable: true
-{{- if eq (include "ai-models.publicationStorageType" . | trim) "PersistentVolumeClaim" }}
-      filesystem:
-        rootdirectory: /var/lib/registry
-{{- else }}
       s3:
         region: {{ include "ai-models.artifactsRegion" . | quote }}
-        bucket: {{ include "ai-models.publicationStorageBucket" . | quote }}
+        bucket: {{ include "ai-models.artifactsBucket" . | quote }}
         regionendpoint: {{ include "ai-models.artifactsEndpointHost" . | quote }}
-        rootdirectory: {{ include "ai-models.publicationStorageRootDirectory" . | quote }}
+        rootdirectory: {{ include "ai-models.dmcrRootDirectory" . | quote }}
         forcepathstyle: {{ eq (include "ai-models.artifactsUsePathStyleBool" . | trim) "true" }}
         secure: {{ eq (include "ai-models.artifactsEndpointSecure" . | trim) "true" }}
         skipverify: {{ eq (include "ai-models.artifactsIgnoreTLS" . | trim) "true" }}
-{{- end }}
     auth:
       htpasswd:
         realm: Registry Realm

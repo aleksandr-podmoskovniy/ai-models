@@ -25,7 +25,7 @@ import (
 
 const (
 	secretSnapshotName     = "dmcr-garbage-collection-secret"
-	internalValuesPath     = "aiModels.internal.dmcr.garbageCollectionModeEnabled"
+	internalValuesPath     = "aiModels.internal.dmcr"
 	requestLabelKey        = "ai-models.deckhouse.io/dmcr-gc-request"
 	requestLabelValue      = "true"
 	switchAnnotationKey    = "ai-models.deckhouse.io/dmcr-gc-switch"
@@ -84,6 +84,8 @@ func handleDMCRGarbageCollection(_ context.Context, input *pkg.HookInput) error 
 		enabled = true
 		break
 	}
-	input.Values.Set(internalValuesPath, enabled)
+	input.Values.Set(internalValuesPath, map[string]bool{
+		"garbageCollectionModeEnabled": enabled,
+	})
 	return nil
 }

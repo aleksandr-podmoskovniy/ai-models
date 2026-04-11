@@ -71,28 +71,3 @@
           1. Retrieve details of the Deployment: `kubectl -n d8-ai-models describe deploy dmcr`
           2. View the Pod status: `kubectl -n d8-ai-models get pod -l app.kubernetes.io/name=ai-models,app.kubernetes.io/component=dmcr`
 
-    - alert: D8AIModelsDMCRInsufficientCapacityRisk
-      expr: |
-        min by (persistentvolumeclaim, namespace) (
-          (kubelet_volume_stats_available_bytes{namespace="d8-ai-models", persistentvolumeclaim="dmcr"} < 5 * 1024 * 1024 * 1024)
-          or
-          (kubelet_volume_stats_available_bytes{namespace="d8-ai-models", persistentvolumeclaim="dmcr"} / (kubelet_volume_stats_capacity_bytes / 100) < 20)
-        )
-      for: 10m
-      labels:
-        severity_level: "6"
-        tier: cluster
-      annotations:
-        plk_protocol_version: "1"
-        plk_markup_format: "markdown"
-        plk_create_group_if_not_exists__d8_ai_models_dmcr_health: "D8AIModelsDMCRHealth,tier=~tier,prometheus=deckhouse,kubernetes=~kubernetes"
-        plk_grouped_by__d8_ai_models_dmcr_health: "D8AIModelsDMCRHealth,tier=~tier,prometheus=deckhouse,kubernetes=~kubernetes"
-        summary: Risk of insufficient DMCR storage capacity.
-        description: |
-          The DMCR storage (PVC {{ $labels.persistentvolumeclaim }} in namespace {{ $labels.namespace }}) has less than 5GB or 20% free space, risking failure to publish new model artifacts.
-
-          The recommended course of action:
-
-          - Check PVC details: `kubectl -n d8-ai-models describe pvc dmcr`
-          - Extend `aiModels.publicationStorage.persistentVolumeClaim.storageSize` or remove unnecessary published artifacts.
-

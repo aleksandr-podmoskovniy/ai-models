@@ -1,11 +1,7 @@
 {{- if (include "ai-models.isEnabled" .) }}
-{{- $storageType := include "ai-models.publicationStorageType" . | trim -}}
-{{- $replicas := 1 -}}
-{{- $strategyType := "RollingUpdate" -}}
 {{- $priorityClassName := include "ai-models.priorityClassName" . -}}
-{{- if eq $storageType "PersistentVolumeClaim" -}}
-  {{- $strategyType = "Recreate" -}}
-{{- else if (include "helm_lib_ha_enabled" .) -}}
+{{- $replicas := 1 -}}
+{{- if (include "helm_lib_ha_enabled" .) -}}
   {{- $replicas = 2 -}}
 {{- end -}}
 ---
@@ -19,8 +15,8 @@ spec:
   replicas: {{ $replicas }}
   revisionHistoryLimit: 2
   strategy:
-    type: {{ $strategyType }}
-    {{- if and (eq $strategyType "RollingUpdate") (gt $replicas 1) }}
+    type: RollingUpdate
+    {{- if gt $replicas 1 }}
     rollingUpdate:
       maxSurge: 0
       maxUnavailable: 1
@@ -65,7 +61,6 @@ spec:
                 secretKeyRef:
                   name: {{ include "ai-models.dmcrAuthSecretName" . }}
                   key: salt
-            {{- if eq $storageType "ObjectStorage" }}
             - name: REGISTRY_STORAGE_S3_ACCESSKEY
               valueFrom:
                 secretKeyRef:
@@ -79,7 +74,6 @@ spec:
             {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
             - name: AWS_CA_BUNDLE
               value: /etc/ai-models/artifacts-ca/ca.crt
-            {{- end }}
             {{- end }}
           ports:
             - name: https
@@ -118,11 +112,7 @@ spec:
             - name: dmcr-auth
               mountPath: /auth
               readOnly: true
-            {{- if eq $storageType "PersistentVolumeClaim" }}
-            - name: data
-              mountPath: /var/lib/registry
-            {{- end }}
-            {{- if and (eq $storageType "ObjectStorage") (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+            {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
             - name: artifacts-ca
               mountPath: /etc/ai-models/artifacts-ca
               readOnly: true
@@ -155,7 +145,6 @@ spec:
             - pause
             {{- end }}
           env:
-            {{- if eq $storageType "ObjectStorage" }}
             - name: REGISTRY_STORAGE_S3_ACCESSKEY
               valueFrom:
                 secretKeyRef:
@@ -169,7 +158,6 @@ spec:
             {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
             - name: AWS_CA_BUNDLE
               value: /etc/ai-models/artifacts-ca/ca.crt
-            {{- end }}
             {{- end }}
           resources:
             requests:
@@ -194,11 +182,7 @@ spec:
             - name: dmcr-kube-api-access
               mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               readOnly: true
-            {{- if eq $storageType "PersistentVolumeClaim" }}
-            - name: data
-              mountPath: /var/lib/registry
-            {{- end }}
-            {{- if and (eq $storageType "ObjectStorage") (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+            {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
             - name: artifacts-ca
               mountPath: /etc/ai-models/artifacts-ca
               readOnly: true
@@ -216,12 +200,7 @@ spec:
             items:
               - key: htpasswd
                 path: htpasswd
-        {{- if eq $storageType "PersistentVolumeClaim" }}
-        - name: data
-          persistentVolumeClaim:
-            claimName: {{ include "ai-models.dmcrName" . }}
-        {{- end }}
-        {{- if and (eq $storageType "ObjectStorage") (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+        {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
         - name: artifacts-ca
           secret:
             secretName: {{ include "ai-models.artifactsMountedCASecretName" . }}

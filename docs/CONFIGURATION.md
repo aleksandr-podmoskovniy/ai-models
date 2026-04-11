@@ -8,8 +8,9 @@ weight: 60
 
 The current `ai-models` configuration contract is intentionally short.
 Only stable ai-models-specific settings are exposed at the module level:
-logging, Deckhouse SSO settings, PostgreSQL wiring, S3-compatible artifact
-storage, and storage semantics for the internal phase-2 publication backend.
+logging, Deckhouse SSO settings, PostgreSQL wiring, and the shared
+S3-compatible storage used by the backend, raw ingest, and the internal
+phase-2 publication backend.
 
 `postgresql.mode` supports two phase-1 paths:
 
@@ -33,12 +34,9 @@ provide that second database.
 bucket, path prefix, endpoint URL, region, TLS policy, addressing style, and
 credentials.
 
-Artifact credentials can be provided in two ways:
-
-- via `credentialsSecretName` that points to an existing Secret in `d8-ai-models`
-  with fixed keys `accessKey` and `secretKey`;
-- via inline `accessKey` and `secretKey` in ModuleConfig, in which case the
-  module renders an internal Secret in `d8-ai-models`.
+Artifact credentials are provided only through `credentialsSecretName`.
+That Secret must live in `d8-ai-models` and expose fixed `accessKey` and
+`secretKey` keys. Inline S3 credentials are no longer supported.
 
 Custom S3 CAs are configured separately through `artifacts.caSecretName`.
 That Secret must live in `d8-ai-models` and expose `ca.crt`. When
@@ -50,21 +48,15 @@ platform CA that is already discovered for Dex or copied from the global
 `bucket`, `pathPrefix`, `endpoint`, `region`, and addressing/TLS flags are not
 treated as secrets. They remain part of the normal module configuration surface.
 
-Phase-2 publication uses a separate `publicationStorage` module config. It does
-not expose an external registry endpoint or credentials contract. Instead, it
-selects how the internal module-owned publication backend stores bytes for
-published `ModelPack` artifacts:
+The internal DMCR publication backend now always uses the same S3-compatible
+storage contract from `artifacts`. There is no separate `publicationStorage`
+user-facing block and no PVC branch for published model bytes.
 
-- `ObjectStorage`: the internal DMCR-style backend reuses the S3-compatible
-  endpoint, credentials, CA, and addressing policy from `artifacts`, with an
-  optional bucket override and a dedicated `pathPrefix` for published models;
-- `PersistentVolumeClaim`: the internal DMCR-style backend stores published
-  models inside a module-owned PVC.
-
-When the same S3 bucket is reused, ai-models keeps the byte-path split
-explicit: controller-owned raw ingest lives under the fixed `raw/` subtree,
-future append-only audit/provenance data may live under `audit/`, and the
-internal publication backend defaults to the separate `dmcr/` subtree.
+Within the shared bucket, ai-models keeps the byte-path split explicit:
+- the MLflow backend uses the configured `artifacts.pathPrefix`;
+- controller-owned raw ingest uses the fixed `raw/` subtree;
+- the internal DMCR publication backend uses the fixed `dmcr/` subtree;
+- future append-only audit/provenance data may live under `audit/`.
 
 The controller always publishes to the same internal registry service rendered
 by the module. There is no longer a separate external `publicationRegistry`

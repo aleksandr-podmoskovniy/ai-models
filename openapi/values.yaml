@@ -108,8 +108,6 @@ properties:
       region: us-east-1
       credentialsSecretName: ""
       caSecretName: ""
-      accessKey: ""
-      secretKey: ""
       insecure: false
       usePathStyle: true
     properties:
@@ -131,63 +129,12 @@ properties:
       caSecretName:
         type: string
         default: ""
-      accessKey:
-        type: string
-        default: ""
-      secretKey:
-        type: string
-        default: ""
       insecure:
         type: boolean
         default: false
       usePathStyle:
         type: boolean
         default: true
-  publicationStorage:
-    type: object
-    description: Stable storage settings for the internal publication backend exposed by ai-models.
-    additionalProperties: false
-    default:
-      type: ObjectStorage
-      objectStorage:
-        bucket: ""
-        pathPrefix: dmcr
-      persistentVolumeClaim:
-        storageClassName: ""
-        storageSize: 50Gi
-    properties:
-      type:
-        type: string
-        enum:
-          - ObjectStorage
-          - PersistentVolumeClaim
-        default: ObjectStorage
-      objectStorage:
-        type: object
-        additionalProperties: false
-        default:
-          bucket: ""
-          pathPrefix: dmcr
-        properties:
-          bucket:
-            type: string
-            default: ""
-          pathPrefix:
-            type: string
-            default: dmcr
-      persistentVolumeClaim:
-        type: object
-        additionalProperties: false
-        default:
-          storageClassName: ""
-          storageSize: 50Gi
-        properties:
-          storageClassName:
-            type: string
-            default: ""
-          storageSize:
-            type: string
-            default: 50Gi
   auth:
     type: object
     description: Stable authentication settings exposed by the ai-models module.
@@ -291,18 +238,8 @@ properties:
             region: us-east-1
             credentialsSecretName: ""
             caSecretName: ""
-            accessKey: ""
-            secretKey: ""
             insecure: false
             usePathStyle: true
-          publicationStorage:
-            type: ObjectStorage
-            objectStorage:
-              bucket: ""
-              pathPrefix: dmcr
-            persistentVolumeClaim:
-              storageClassName: ""
-              storageSize: 50Gi
         additionalProperties: true
       conditions:
         type: array
@@ -368,11 +305,19 @@ properties:
           pathPrefix: ai-models
           endpoint: ""
           region: us-east-1
-          accessKey: ""
-          secretKey: ""
           insecure: false
           usePathStyle: true
         additionalProperties: true
+      dmcr:
+        type: object
+        description: Runtime-only internal DMCR state controlled by hooks and controller cleanup flow.
+        default:
+          garbageCollectionModeEnabled: false
+        properties:
+          garbageCollectionModeEnabled:
+            type: boolean
+            default: false
+        additionalProperties: false
       publicationRuntime:
         type: object
         description: Runtime-only publish worker scheduling and bounded work-volume settings.
