@@ -44,16 +44,23 @@ type RemoteOptions struct {
 }
 
 type RemoteResult struct {
-	SourceType        modelsv1alpha1.ModelSourceType
-	ModelDir          string
-	InputFormat       modelsv1alpha1.ModelInputFormat
+	SourceType    modelsv1alpha1.ModelSourceType
+	ModelDir      string
+	InputFormat   modelsv1alpha1.ModelInputFormat
+	Provenance    RemoteProvenance
+	ProfileHints  RemoteProfileHints
+	StagedObjects []cleanuphandle.UploadStagingHandle
+}
+
+type RemoteProvenance struct {
 	ExternalReference string
 	ResolvedRevision  string
-	Framework         string
-	PipelineTag       string
-	License           string
-	SourceRepoID      string
-	StagedObjects     []cleanuphandle.UploadStagingHandle
+}
+
+type RemoteProfileHints struct {
+	TaskHint     string
+	License      string
+	SourceRepoID string
 }
 
 func FetchRemoteModel(ctx context.Context, options RemoteOptions) (RemoteResult, error) {

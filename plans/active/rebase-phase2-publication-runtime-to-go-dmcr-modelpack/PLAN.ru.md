@@ -1986,6 +1986,305 @@ replacement has landed yet.
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
 
+## Slice 61 landed
+
+Цель:
+
+- выровнять внутреннюю границу `sourcefetch -> publishworker`, чтобы remote
+  acquisition больше не возвращал один плоский payload со смешанными
+  provenance и profile-hint полями.
+
+Что сделано:
+
+- `sourcefetch.RemoteResult` разбит на явные nested seams:
+  - `Provenance`
+  - `ProfileHints`
+- `HuggingFace` adapter теперь складывает:
+  - external reference / resolved revision в `Provenance`
+  - task hint / license / source repo ID в `ProfileHints`
+- `HTTP` adapter больше не выглядит как частично заполненный HF-like payload:
+  он пишет только provenance и оставляет profile hints пустыми;
+- `publishworker` теперь читает provenance и profile hints по их явной роли,
+  а не по набору flat fields из remote adapter.
+
+Границы slice:
+
+- public CRD shape не менялся;
+- `publishedsnapshot.SourceProvenance` и public status semantics не менялись;
+- byte path и staging semantics не менялись.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/adapters/modelprofile/safetensors ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 62 landed
+
+Цель:
+
+- убрать provenance-only поля из format resolvers, чтобы `modelprofile`
+  занимался только real profile resolution, а не копированием source metadata
+  в `ResolvedProfile`.
+
+Что сделано:
+
+- `license` и `sourceRepoID` удалены из входов `safetensors.Resolve` и
+  `gguf.Resolve`;
+- `publishworker` теперь навешивает эти provenance fields на уже resolved
+  profile через отдельный helper после format-specific resolution;
+- `HTTP` path больше не тянет пустой `TaskHint`, а provenance/profile split
+  теперь доведён до реального ownership boundary:
+  - resolver inputs
+  - resolver outputs
+  - post-resolution provenance attachment.
+
+Границы slice:
+
+- public CRD shape не менялся;
+- `ResolvedProfile` по-прежнему содержит `license` и `sourceRepoID`;
+- `TaskHint` как единственный remaining fallback для `HuggingFace` сохранён.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/adapters/modelprofile/safetensors ./internal/adapters/modelprofile/gguf ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 60 landed
+
+Цель:
+
+- убрать последний source-hint drift из planner-facing `ResolvedProfile` на
+  `Safetensors` path, чтобы `framework` не приходил из `HF`/`HTTP` source
+  metadata и не протаскивался через worker как скрытый pass-through.
+
+Что сделано:
+
+- `framework` удалён из `sourcefetch.RemoteResult`, `publishworker`
+  `sourceProfileInput` и входа `safetensors.Resolve`;
+- `Safetensors` resolver теперь всегда выставляет нормализованный
+  format-default `framework=transformers`;
+- `HuggingFace` fetch adapter больше не держит `library_name` как retained
+  metadata и не пробрасывает его вниз по publish path;
+- `HTTP` и `Upload` publish paths перестали тащить adapter-local
+  `framework` hints, потому что они больше не нужны для profile resolution.
+
+Границы slice:
+
+- public CRD shape не менялся;
+- `GGUF` path не менялся и по-прежнему держит свой format-specific framework;
+- `status.resolved.framework` сохранён как публичное поле, но теперь на
+  `Safetensors` path это нормализованный profile label, а не source mirror.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/adapters/modelprofile/safetensors ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 56 landed
+
+Цель:
+
+- убрать неверный HF CLI/binpack shell из controller runtime image и оставить
+  более тонкий Go-native `HuggingFace` acquisition path под тем же
+  `sourcefetch` owner.
+
+Что сделано:
+
+- удалены:
+  - `images/controller/install-hf-cli.sh`
+  - `images/controller/hf-cli.requirements.txt`
+  - HF CLI build/import stages from `images/controller/werf.inc.yaml`
+- `internal/adapters/sourcefetch` больше не зависит от external `hf` binary;
+- added package-local Go snapshot downloader that:
+  - downloads only selected files;
+  - pins exact resolved revision;
+  - writes a canonical snapshot tree under the worker workspace;
+  - keeps the same downstream raw-stage and checkpoint materialization path;
+- public CRD contract deliberately did not change:
+  - `spec.source.url`
+  - `spec.source.upload`
+  - `status.source.resolvedType`
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 57 framed
+
+Цель:
+
+- вычистить из `HuggingFace` adapter source-specific metadata noise, которая не
+  участвует ни в public status, ни в planner-facing contract, ни в runtime
+  decisions.
+
+Что меняем:
+
+- `images/controller/internal/adapters/sourcefetch/huggingface.go`
+- `images/controller/internal/adapters/sourcefetch/huggingface_test.go`
+- focused bundle/docs notes if they mention retained HF metadata shape
+
+Целевые границы:
+
+- adapter keeps only the fields that have a live consumer:
+  - repo identity
+  - resolved revision
+  - library/framework hint
+  - pipeline tag
+  - license
+  - file list
+- no `downloads`, `likes`, `tags`, `private/gated`, `base_model` or generic
+  `cardData` mirror survives unless it has a real owner/consumer
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 57 landed
+
+Цель:
+
+- удалить из `HuggingFace` adapter metadata noise без live consumer и оставить
+  только поля, которые реально участвуют в publication/status semantics.
+
+Что сделано:
+
+- `HuggingFaceInfo` и `huggingFaceAPIResponse` больше не тащат:
+  - `downloads`
+  - `likes`
+  - `tags`
+  - `private/gated`
+  - `base_model`
+- generic `cardData map[string]any` заменён на typed minimal shape only for
+  `license`;
+- focused HTTP test now checks that `FetchHuggingFaceInfo` keeps exactly the
+  minimum useful subset for the current adapter contract.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 58 framed
+
+Цель:
+
+- сделать planner-facing `task` для `Safetensors` зависимым в первую очередь от
+  реального checkpoint `config.json` / architecture, а source hints оставить
+  только fallback path.
+
+Что меняем:
+
+- `images/controller/internal/adapters/modelprofile/safetensors/*`
+- `images/controller/internal/dataplane/publishworker/*`
+- bundle/docs notes that mention task resolution semantics
+
+Целевые границы:
+
+- no public API change;
+- `source.url` / `source.upload` stay as-is;
+- explicit user task still wins when present;
+- `Safetensors` path now resolves task in this order:
+  - explicit task from request/spec
+  - task inferred from checkpoint bytes/config
+  - source hint such as HF `pipeline_tag`
+- `GGUF` keeps the existing explicit-task requirement until there is a real
+  byte-level inference path for it
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/modelprofile/safetensors ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 58 landed
+
+Цель:
+
+- перестать делать planner-facing `task` зависимым в первую очередь от HF
+  source hint, если `Safetensors` checkpoint уже даёт достаточно сигнала для
+  честного inference.
+
+Что сделано:
+
+- `Safetensors` profile now resolves task in strict order:
+  - explicit task from request/spec
+  - task inferred from `config.json` / architecture
+  - source hint fallback
+- `publishworker` no longer rejects `HuggingFace` / `HTTP` / `Upload`
+  prematurely only because task was absent before checkpoint inspection;
+- `GGUF` path intentionally keeps the explicit-task requirement until there is
+  a real byte-level inference path for it;
+- added regression tests for:
+  - task inference from architecture
+  - task-hint fallback
+  - upload publish without explicit task for inferable `Safetensors`
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/modelprofile/safetensors ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 59 framed
+
+Цель:
+
+- добить следующий source-hint drift в `Safetensors` profile:
+  `family` must come only from checkpoint bytes, and endpoint compatibility must
+  be calculated from the already resolved task instead of the stale input field.
+
+Что меняем:
+
+- `images/controller/internal/adapters/modelprofile/safetensors/*`
+- bundle/docs notes that mention the meaning of resolved task/family
+
+Целевые границы:
+
+- no public API change;
+- `SourceRepoID` remains provenance only and must not silently drive
+  `ResolvedProfile.Family`;
+- `SupportedEndpointTypes` must always reflect the final resolved task
+  (explicit, inferred, or fallback), not only the original request field
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/modelprofile/safetensors ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 59 landed
+
+Цель:
+
+- убрать ещё один source-hint drift из `Safetensors` profile и выровнять
+  endpoint compatibility на уже resolved task.
+
+Что сделано:
+
+- `ResolvedProfile.Family` for `Safetensors` no longer falls back to
+  `SourceRepoID`; family now comes only from checkpoint bytes
+  (`model_type` / architecture);
+- `SupportedEndpointTypes` now always derives from the final resolved task,
+  including inferred task and task-hint fallback paths;
+- added regressions for:
+  - endpoint types from inferred task
+  - endpoint types from task-hint fallback
+  - absence of repo-ID-based family fallback
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/modelprofile/safetensors ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
 ## Slice 38 landed
 
 - `catalogcleanup` owner metadata and DMCR GC request lifecycle were tightened
@@ -2535,5 +2834,111 @@ replacement has landed yet.
 
 - targeted cluster validation with `kubectl` and a real tiny-model publish flow
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 55 framed
+
+Цель:
+
+- выровнять канонический multi-source ingest path по исходным ADR и сильным
+  external reference practices, не раздувая public API source-specific
+  metadata.
+
+Артефакты:
+
+- bundle note with canonical ingest contract and reference practices
+- `CANONICAL_MULTI_SOURCE_INGEST.ru.md`
+- exact next implementation slice for HF-native downloader replacement
+
+Что нужно зафиксировать:
+
+- HF должен тянуться по source-native snapshot semantics, а не по ad-hoc
+  file-by-file loop;
+- `Ollama` не должен становиться generic source-of-truth downloader path для
+  каталога: это runtime/distribution ecosystem, а не общий platform ingest
+  contract;
+- `vLLM` и `KServe` важны как consumer/runtime references:
+  они ожидают scheduler-facing resolved metadata and local materialization, а
+  не HF-card mirror в CRD;
+- canonical platform path должен быть один:
+  `source-native acquisition -> controller-owned raw staging ->
+  normalized checkpoint workspace -> technical profile -> internal DMCR
+  publication -> scheduler-facing resolved status`.
+
+Проверки:
+
+- ADR cross-check against `internal-docs`
+- official-source reference review
+- bundle sync only; no code change in this slice
+
+## Slice 55 landed
+
+Цель:
+
+- заменить ad-hoc `HuggingFace` file-by-file download loop на source-native
+  snapshot acquisition, не ломая текущий publish pipeline и не вводя новый
+  public source contract.
+
+Что сделано:
+
+- `internal/adapters/sourcefetch` больше не тянет `HuggingFace` через прямой
+  per-file `HTTP GET` loop;
+- `HuggingFace` path теперь делает один source-native snapshot download в
+  hidden workspace tree, затем:
+  - optional raw staging в controller-owned `raw/...`
+  - link-first materialization только выбранных files в canonical
+    `checkpoint/`
+  - normal format validation and later publication into internal `DMCR`
+- старый direct resolve/download code path удалён вместо compatibility shim;
+- initial implementation shape of this slice was later simplified in
+  `Slice 56`: source-native semantics stayed, but the bundled CLI/runtime shell
+  was removed in favor of a Go adapter.
+- added focused tests for:
+  - snapshot-based `HuggingFace` fetch + raw staging + checkpoint
+    materialization
+
+Границы slice:
+
+- public `spec.source` не менялся;
+- `HTTP` и `Upload` paths не трогались;
+- scheduler/public status contract не расширялся HF-card шумом.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
+
+## Slice 56 framed
+
+Цель:
+
+- immediately remove the `HuggingFace` CLI/binpack drift from the controller
+  runtime shell while keeping the same public CRD contract and the same
+  controller-owned publish pipeline.
+
+Что меняем:
+
+- `images/controller/werf.inc.yaml`
+- `images/controller/internal/adapters/sourcefetch/*`
+- current bundle/docs notes that mentioned bundled `hf` tooling
+
+Целевые границы:
+
+- `spec.source` remains only:
+  - `source.url`
+  - `source.upload`
+- provider resolution remains internal and visible only through
+  `status.source.resolvedType`
+- `HuggingFace` acquisition stays source-native in behavior:
+  - revision pinning
+  - selected-file allowlist
+  - canonical local snapshot tree
+  - optional raw staging in `raw/...`
+  - one normalized `checkpoint/`
+- runtime image stops carrying Python/CLI HF tooling
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`

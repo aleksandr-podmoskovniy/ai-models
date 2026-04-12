@@ -33,7 +33,6 @@ func TestResolve(t *testing.T) {
 	profile, err := Resolve(Input{
 		ModelDir:       root,
 		Task:           "text-generation",
-		SourceRepoID:   "repo",
 		RuntimeEngines: []string{"KubeRay"},
 	})
 	if err != nil {

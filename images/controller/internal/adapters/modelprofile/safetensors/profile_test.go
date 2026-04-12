@@ -52,9 +52,6 @@ func TestResolveProfile(t *testing.T) {
 	resolved, err := Resolve(Input{
 		CheckpointDir:  checkpointDir,
 		Task:           "text-generation",
-		Framework:      "transformers",
-		License:        "apache-2.0",
-		SourceRepoID:   "Qwen/Qwen3-8B",
 		RuntimeEngines: []string{"KServe"},
 	})
 	if err != nil {
@@ -86,5 +83,88 @@ func TestResolveProfile(t *testing.T) {
 	}
 	if resolved.MinimumLaunch.AcceleratorMemoryGiB <= 0 {
 		t.Fatalf("unexpected minimum launch %#v", resolved.MinimumLaunch)
+	}
+}
+
+func TestResolveProfileInfersTaskFromArchitecture(t *testing.T) {
+	t.Parallel()
+
+	checkpointDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(checkpointDir, "model.safetensors"), []byte("weights"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(checkpointDir, "config.json"), []byte(`{
+  "architectures":["Qwen3ForCausalLM"],
+  "torch_dtype":"bfloat16",
+  "text_config":{"max_position_embeddings":32768}
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	resolved, err := Resolve(Input{
+		CheckpointDir: checkpointDir,
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got, want := resolved.Task, "text-generation"; got != want {
+		t.Fatalf("unexpected task %q", got)
+	}
+	if len(resolved.SupportedEndpointTypes) == 0 {
+		t.Fatal("expected endpoint types from inferred task")
+	}
+}
+
+func TestResolveProfileUsesTaskHintAsFallback(t *testing.T) {
+	t.Parallel()
+
+	checkpointDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(checkpointDir, "model.safetensors"), []byte("weights"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(checkpointDir, "config.json"), []byte(`{
+  "architectures":["CustomModel"],
+  "torch_dtype":"bfloat16"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	resolved, err := Resolve(Input{
+		CheckpointDir: checkpointDir,
+		TaskHint:      "feature-extraction",
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got, want := resolved.Task, "feature-extraction"; got != want {
+		t.Fatalf("unexpected task %q", got)
+	}
+	if len(resolved.SupportedEndpointTypes) == 0 || resolved.SupportedEndpointTypes[0] != "OpenAIEmbeddings" {
+		t.Fatalf("unexpected endpoint types %#v", resolved.SupportedEndpointTypes)
+	}
+}
+
+func TestResolveProfileDoesNotInferFamilyFromSourceRepoID(t *testing.T) {
+	t.Parallel()
+
+	checkpointDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(checkpointDir, "model.safetensors"), []byte("weights"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(checkpointDir, "config.json"), []byte(`{
+  "torch_dtype":"bfloat16"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	resolved, err := Resolve(Input{
+		CheckpointDir: checkpointDir,
+		TaskHint:      "text-generation",
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got, want := resolved.Family, ""; got != want {
+		t.Fatalf("unexpected family %q", got)
 	}
 }

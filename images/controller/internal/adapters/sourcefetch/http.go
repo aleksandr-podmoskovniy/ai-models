@@ -151,13 +151,14 @@ func fetchHTTPModel(ctx context.Context, options RemoteOptions) (RemoteResult, e
 	}
 
 	return RemoteResult{
-		SourceType:        modelsv1alpha1.ModelSourceTypeHTTP,
-		ModelDir:          modelDir,
-		InputFormat:       inputFormat,
-		ExternalReference: options.URL,
-		ResolvedRevision:  metadata.ResolvedRevision(),
-		Framework:         "transformers",
-		StagedObjects:     stagedObjects,
+		SourceType:  modelsv1alpha1.ModelSourceTypeHTTP,
+		ModelDir:    modelDir,
+		InputFormat: inputFormat,
+		Provenance: RemoteProvenance{
+			ExternalReference: options.URL,
+			ResolvedRevision:  metadata.ResolvedRevision(),
+		},
+		StagedObjects: stagedObjects,
 	}, nil
 }
 

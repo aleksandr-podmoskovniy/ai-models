@@ -62,6 +62,21 @@
   - treat every discovered runtime/config/schema failure as implementation debt
     to fix, not as a documentation caveat.
 
+### Current architecture correction (2026-04-12)
+
+- the last `HuggingFace` source-native slice proved the right public/runtime
+  boundary, but the implementation drifted into a non-Deckhouse build shell:
+  bundled Python-based `hf` CLI, extra shared-library packaging and a runtime
+  image that became harder to audit than the actual adapter logic;
+- the next slice must simplify immediately instead of treating that shell as
+  acceptable temporary debt;
+- the correction target is strict:
+  - keep `spec.source.url` / `spec.source.upload` unchanged;
+  - keep provider resolution internal through `status.source.resolvedType`;
+  - remove HF CLI/binpack from the runtime image;
+  - keep `HuggingFace` acquisition in Go with revision pinning, file allowlist,
+    raw-first staging and one normalized checkpoint workspace.
+
 Переосмыслить и постепенно перевести phase-2 publication/runtime implementation
 на virtualization-style architecture:
 
@@ -128,6 +143,8 @@
 - Fix functional defects found during this live end-to-end run, including CRD
   schema, controller/runtime, chart, or module-shell bugs, as long as they are
   within the current phase-2 publication/runtime scope.
+- Simplify `HuggingFace` acquisition by removing the bundled CLI/toolchain path
+  and keeping only a Go-native adapter under the current public contract.
 
 ## Non-goals
 
@@ -147,6 +164,10 @@
   validation и observable effect в status/conditions.
 - Не притворяться live e2e successful, если публикация маленькой тестовой
   модели не дошла до реального `Ready` / published artifact.
+- Не раздувать public `spec.source` provider trees ради source-specific
+  downloader деталей.
+- Не оставлять Python/CLI binpack inside runtime image после явного запроса на
+  упрощение module shell.
 
 ## Затрагиваемые области
 
@@ -164,6 +185,8 @@
 - `.agents/skills/*` если потребуется закрепить durable discipline
 - platform observability contract and monitoring integration notes derived from
   the sibling `virtualization` module patterns
+- `images/controller/werf.inc.yaml`
+- `images/controller/internal/adapters/sourcefetch/*`
 
 ## Критерии приёмки
 
@@ -217,6 +240,8 @@
   areas is explicit.
 - Phase-2 runtime больше не зависит от external `KitOps` CLI binary inside the
   runtime image, если native replacement slice landed safely.
+- `HuggingFace` ingest path больше не зависит от bundled Python/CLI toolchain
+  inside the runtime image; acquisition remains inside a Go adapter seam.
 - `sourcefetch` и `modelformat` уменьшаются как hotspots через explicit
   ownership split, а не через generic util dumps.
 - Первый bounded corrective slice реально landed в код, а не только в docs.
@@ -262,3 +287,33 @@
 - Live cluster validation может вскрыть CRD/schema bugs или install/runtime
   drifts, которые не ловились repo-only checks; их придётся чинить без
   разрастания задачи в отдельный мегарефакторинг.
+
+## Current architecture continuation (2026-04-12, multi-source ingest)
+
+Нужно зафиксировать один канонический ingest path для нескольких внешних
+источников модели без source-specific drift в public API и planner metadata.
+
+Scope:
+
+- сверить исходный ADR по `ai-models` и `ai-inference` с текущим phase-2
+  publication path;
+- посмотреть official reference practices у сильных решений:
+  - Hugging Face Hub;
+  - vLLM;
+  - Ollama;
+  - KServe;
+  - BentoML;
+- принять один platform-facing contract:
+  - как источник скачивается;
+  - как raw bytes staging works;
+  - как строится normalized checkpoint/workspace;
+  - какие metadata остаются source provenance only;
+  - какие metadata становятся public scheduler-facing `status.resolved.*`.
+
+Non-goals:
+
+- не внедрять сейчас новый downloader/runtime в код без отдельного bounded
+  implementation slice;
+- не возвращать provider-specific trees в `spec.source`;
+- не тащить HF/Ollama-specific metadata в public CRD только потому, что она
+  доступна у источника.

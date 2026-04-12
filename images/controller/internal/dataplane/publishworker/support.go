@@ -91,15 +91,6 @@ func ensureWorkspace(snapshotDir, prefix string) (string, func(), error) {
 	return dir, func() { _ = os.RemoveAll(dir) }, nil
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
 func resolveUploadInputFormat(checkpointDir string, requested modelsv1alpha1.ModelInputFormat) (modelsv1alpha1.ModelInputFormat, error) {
 	if strings.TrimSpace(string(requested)) != "" {
 		return requested, nil

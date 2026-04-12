@@ -54,6 +54,21 @@ func TestFetchRemoteModelHTTPGGUF(t *testing.T) {
 	if got, want := result.InputFormat, modelsv1alpha1.ModelInputFormatGGUF; got != want {
 		t.Fatalf("unexpected input format %q", got)
 	}
+	if got, want := result.Provenance.ExternalReference, server.URL+"/model.gguf"; got != want {
+		t.Fatalf("unexpected external reference %q", got)
+	}
+	if got, want := result.Provenance.ResolvedRevision, ""; got != want {
+		t.Fatalf("unexpected resolved revision %q", got)
+	}
+	if got, want := result.ProfileHints.TaskHint, ""; got != want {
+		t.Fatalf("unexpected task hint %q", got)
+	}
+	if got, want := result.ProfileHints.License, ""; got != want {
+		t.Fatalf("unexpected license %q", got)
+	}
+	if got, want := result.ProfileHints.SourceRepoID, ""; got != want {
+		t.Fatalf("unexpected source repo ID %q", got)
+	}
 	if _, err := os.Stat(filepath.Join(result.ModelDir, "model.gguf")); err != nil {
 		t.Fatalf("Stat(model.gguf) error = %v", err)
 	}

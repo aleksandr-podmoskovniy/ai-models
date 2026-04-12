@@ -31,18 +31,13 @@ import (
 type Input struct {
 	CheckpointDir  string
 	Task           string
-	Framework      string
-	License        string
-	SourceRepoID   string
+	TaskHint       string
 	RuntimeEngines []string
 }
 
 func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 	if strings.TrimSpace(input.CheckpointDir) == "" {
 		return publicationdata.ResolvedProfile{}, errors.New("checkpoint directory must not be empty")
-	}
-	if strings.TrimSpace(input.Task) == "" {
-		return publicationdata.ResolvedProfile{}, errors.New("resolved task must not be empty")
 	}
 
 	config, err := loadConfig(filepath.Join(input.CheckpointDir, "config.json"))
@@ -56,7 +51,11 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 	}
 
 	architecture := resolveArchitecture(config)
-	family := resolveFamily(config, architecture, input.SourceRepoID)
+	family := resolveFamily(config, architecture)
+	task := resolveTask(config, architecture, input.Task, input.TaskHint)
+	if task == "" {
+		return publicationdata.ResolvedProfile{}, errors.New("resolved task must not be empty")
+	}
 	contextWindow := detectContextWindow(config)
 	quantization := detectQuantization(config)
 	precision := detectPrecision(config, quantization)
@@ -70,22 +69,18 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 	)
 
 	resolved := publicationdata.ResolvedProfile{
-		Task:                strings.TrimSpace(input.Task),
-		Framework:           firstNonEmpty(input.Framework, "transformers"),
-		Family:              family,
-		License:             strings.TrimSpace(input.License),
-		Architecture:        architecture,
-		Format:              "Safetensors",
-		ParameterCount:      parameterCount,
-		Quantization:        quantization,
-		ContextWindowTokens: contextWindow,
-		SourceRepoID:        strings.TrimSpace(input.SourceRepoID),
-		SupportedEndpointTypes: profilecommon.EndpointTypes(
-			input.Task,
-		),
-		CompatibleRuntimes:   compatibleRuntimes(input.RuntimeEngines),
-		CompatiblePrecisions: compatiblePrecisions(precision),
-		MinimumLaunch:        minimumLaunch,
+		Task:                   task,
+		Framework:              "transformers",
+		Family:                 family,
+		Architecture:           architecture,
+		Format:                 "Safetensors",
+		ParameterCount:         parameterCount,
+		Quantization:           quantization,
+		ContextWindowTokens:    contextWindow,
+		SupportedEndpointTypes: profilecommon.EndpointTypes(task),
+		CompatibleRuntimes:     compatibleRuntimes(input.RuntimeEngines),
+		CompatiblePrecisions:   compatiblePrecisions(precision),
+		MinimumLaunch:          minimumLaunch,
 	}
 	if minimumLaunch.PlacementType == "GPU" {
 		resolved.CompatibleAcceleratorVendors = profilecommon.GPUVendors()
@@ -180,20 +175,13 @@ func resolveArchitecture(config map[string]any) string {
 	return firstNonEmpty(architectures...)
 }
 
-func resolveFamily(config map[string]any, architecture, sourceRepoID string) string {
+func resolveFamily(config map[string]any, architecture string) string {
 	if family := strings.TrimSpace(stringValue(config["model_type"])); family != "" {
 		return strings.ToLower(family)
 	}
 
 	if normalized := normalizeArchitecture(architecture); normalized != "" {
 		return strings.ToLower(normalized)
-	}
-
-	if sourceRepoID != "" {
-		parts := strings.Split(strings.TrimSpace(sourceRepoID), "/")
-		if len(parts) > 0 {
-			return strings.ToLower(strings.TrimSpace(parts[len(parts)-1]))
-		}
 	}
 
 	return ""

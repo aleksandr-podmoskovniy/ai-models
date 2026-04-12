@@ -32,7 +32,6 @@ import (
 type Input struct {
 	ModelDir       string
 	Task           string
-	SourceRepoID   string
 	RuntimeEngines []string
 }
 
@@ -69,7 +68,6 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 		Format:         "GGUF",
 		ParameterCount: parameterCount,
 		Quantization:   quantization,
-		SourceRepoID:   strings.TrimSpace(input.SourceRepoID),
 		SupportedEndpointTypes: profilecommon.EndpointTypes(
 			input.Task,
 		),

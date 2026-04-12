@@ -69,7 +69,6 @@ shell:
     - bash /src/install-kitops.sh --metadata /src/kitops.lock --dest /out/kit
     - mkdir -p /root/.local/share/kitops
     - /out/kit version --show-update-notifications=false >/dev/null
----
 image: controller
 final: true
 fromImage: distroless

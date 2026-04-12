@@ -35,9 +35,6 @@ func publishFromUpload(ctx context.Context, options Options) (publicationartifac
 	if strings.TrimSpace(options.UploadPath) == "" && options.UploadStage == nil {
 		return publicationartifact.Result{}, errors.New("upload source requires either upload-path or upload staging handle")
 	}
-	if strings.TrimSpace(options.Task) == "" {
-		return publicationartifact.Result{}, errors.New("task is required for upload source")
-	}
 
 	workspace, cleanupDir, err := ensureWorkspace(options.SnapshotDir, "ai-model-upload-publish-")
 	if err != nil {
@@ -65,7 +62,6 @@ func publishFromUpload(ctx context.Context, options Options) (publicationartifac
 
 	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, checkpointDir, inputFormat, sourceProfileInput{
 		Task:           options.Task,
-		Framework:      "transformers",
 		RuntimeEngines: options.RuntimeEngines,
 	}, "Published from uploaded model input")
 	if err != nil {

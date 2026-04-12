@@ -56,7 +56,13 @@ Current phase-2 slice implemented here:
   controller-owned `raw/` object subtree first and only then materialize into
   the bounded publish-worker work volume; shared raw-stage upload/download
   glue now lives in package-local `rawstage.go` instead of being repeated in
-  both provider files;
+  both provider files; `HuggingFace` acquisition itself now stays in Go:
+  metadata resolves the exact revision and selected files, then a package-local
+  HTTP snapshot downloader materializes only those files into the canonical
+  `checkpoint/` tree; provider-card noise such as downloads/likes/tags is not
+  retained in the adapter payload without an explicit consumer, and the remote
+  adapter now hands worker code two explicit seams instead of one flat result:
+  source provenance and profile hints;
 - `internal/adapters/modelformat` for source-agnostic input-format validation
   rules applied before packaging; inspect/validate/select flow now reuses one
   package-local runner over format-specific rule sets, instead of repeating the
@@ -68,7 +74,14 @@ Current phase-2 slice implemented here:
   `internal/adapters/modelprofile/gguf` for ai-inference-oriented metadata
   extraction from normalized model directories, with current live logic based
   on real weight sizes, task-to-endpoint mapping, quantization/precision
-  inference, and minimum-launch estimation;
+  inference, and minimum-launch estimation; `Safetensors` task resolution now
+  prefers explicit user intent, then checkpoint config/architecture, and only
+  then source hints such as HF `pipeline_tag`; `family` no longer falls back to
+  source repo IDs and stays byte-derived only; `framework` on the
+  `Safetensors` path is now a normalized format-default label
+  (`transformers`), not source-derived metadata; source provenance fields such
+  as `license` and `sourceRepoID` are now attached after resolution in
+  `publishworker`, not treated as resolver inputs;
 - `internal/adapters/k8s/sourceworker` for controller-owned worker Pods that turn
   accepted remote URLs into internal published artifacts, while reserving
   `Upload` for a dedicated session workflow;

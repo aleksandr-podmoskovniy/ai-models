@@ -287,6 +287,9 @@ runtime semantics или status logic, это уже не support.
   `rawstage.go`, поэтому provider files снова держат в основном
   URL/auth/metadata semantics, а не второй раз один и тот же object-storage
   handoff.
+- `HuggingFace` branch теперь дополнительно выровнен по source-native path:
+  package-local Go snapshot downloader живёт внутри того же adapter owner и не
+  тащит Python/CLI toolchain, HF-specific public API или лишний runtime shell.
 - Сюда нельзя складывать format validation, publish status или runtime policy.
 
 ### `internal/adapters/k8s/uploadsession/` и `internal/adapters/k8s/sourceworker/` уже выровнены по общему runtime contract

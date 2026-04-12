@@ -16,11 +16,13 @@ limitations under the License.
 
 package sourcefetch
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestHuggingFaceInfoURL(t *testing.T) {
-	t.Parallel()
-
 	endpoint, err := huggingFaceInfoURL("deepseek-ai/DeepSeek-R1", "main")
 	if err != nil {
 		t.Fatalf("huggingFaceInfoURL() error = %v", err)
@@ -30,22 +32,63 @@ func TestHuggingFaceInfoURL(t *testing.T) {
 	}
 }
 
-func TestHuggingFaceResolveURL(t *testing.T) {
-	t.Parallel()
-
-	endpoint, err := huggingFaceResolveURL("deepseek-ai/DeepSeek-R1", "abc123", "config.json")
-	if err != nil {
-		t.Fatalf("huggingFaceResolveURL() error = %v", err)
-	}
-	if got, want := endpoint, "https://huggingface.co/deepseek-ai/DeepSeek-R1/resolve/abc123/config.json?download=1"; got != want {
-		t.Fatalf("unexpected resolve endpoint %q", got)
-	}
-}
-
 func TestResolvedHuggingFaceRevision(t *testing.T) {
 	t.Parallel()
 
 	if got, want := ResolveHuggingFaceRevision(HuggingFaceInfo{SHA: "deadbeef"}, "main"), "deadbeef"; got != want {
 		t.Fatalf("unexpected revision %q", got)
+	}
+}
+
+func TestFetchHuggingFaceInfo(t *testing.T) {
+	previousBaseURL := huggingFaceBaseURL
+	t.Cleanup(func() {
+		huggingFaceBaseURL = previousBaseURL
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if got, want := request.URL.Path, "/api/models/deepseek-ai/DeepSeek-R1"; got != want {
+			t.Fatalf("unexpected path %q", got)
+		}
+		if got, want := request.URL.Query().Get("revision"), "main"; got != want {
+			t.Fatalf("unexpected revision query %q", got)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{
+		  "id": "deepseek-ai/DeepSeek-R1",
+		  "sha": "deadbeef",
+		  "pipeline_tag": "text-generation",
+		  "cardData": {"license": "mit", "base_model": "ignored"},
+		  "downloads": 42,
+		  "likes": 7,
+		  "tags": ["llm", "ignored"],
+		  "siblings": [
+		    {"rfilename": "config.json"},
+		    {"rfilename": "model.safetensors"}
+		  ]
+		}`))
+	}))
+	defer server.Close()
+
+	huggingFaceBaseURL = server.URL
+	info, err := FetchHuggingFaceInfo(t.Context(), "deepseek-ai/DeepSeek-R1", "main", "hf-token")
+	if err != nil {
+		t.Fatalf("FetchHuggingFaceInfo() error = %v", err)
+	}
+
+	if got, want := info.ID, "deepseek-ai/DeepSeek-R1"; got != want {
+		t.Fatalf("unexpected ID %q", got)
+	}
+	if got, want := info.SHA, "deadbeef"; got != want {
+		t.Fatalf("unexpected SHA %q", got)
+	}
+	if got, want := info.PipelineTag, "text-generation"; got != want {
+		t.Fatalf("unexpected pipeline tag %q", got)
+	}
+	if got, want := info.License, "mit"; got != want {
+		t.Fatalf("unexpected license %q", got)
+	}
+	if got, want := len(info.Files), 2; got != want {
+		t.Fatalf("unexpected file count %d", got)
 	}
 }

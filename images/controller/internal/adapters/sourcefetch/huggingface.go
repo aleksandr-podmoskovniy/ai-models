@@ -18,10 +18,10 @@ package sourcefetch
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -30,34 +30,24 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
-const huggingFaceBaseURL = "https://huggingface.co"
+var (
+	huggingFaceBaseURL       = "https://huggingface.co"
+	fetchHuggingFaceInfoFunc = FetchHuggingFaceInfo
+)
 
 type HuggingFaceInfo struct {
 	ID          string
 	SHA         string
-	Private     bool
-	Gated       bool
-	Downloads   int64
-	Likes       int64
-	LibraryName string
 	PipelineTag string
-	Tags        []string
 	License     string
-	BaseModel   string
 	Files       []string
 }
 
 type huggingFaceAPIResponse struct {
 	ID          string                   `json:"id"`
 	SHA         string                   `json:"sha"`
-	Private     bool                     `json:"private"`
-	Gated       any                      `json:"gated"`
-	Downloads   int64                    `json:"downloads"`
-	Likes       int64                    `json:"likes"`
-	LibraryName string                   `json:"library_name"`
 	PipelineTag string                   `json:"pipeline_tag"`
-	Tags        []string                 `json:"tags"`
-	CardData    map[string]any           `json:"cardData"`
+	CardData    huggingFaceCardData      `json:"cardData"`
 	Siblings    []huggingFaceSiblingInfo `json:"siblings"`
 }
 
@@ -65,17 +55,8 @@ type huggingFaceSiblingInfo struct {
 	Path string `json:"rfilename"`
 }
 
-func DownloadHuggingFaceFiles(
-	ctx context.Context,
-	repoID, revision, token, destination string,
-	files []string,
-) error {
-	for _, path := range files {
-		if err := downloadHuggingFaceFile(ctx, repoID, revision, token, path, destination); err != nil {
-			return err
-		}
-	}
-	return nil
+type huggingFaceCardData struct {
+	License string `json:"license"`
 }
 
 func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteResult, error) {
@@ -84,7 +65,7 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 		return RemoteResult{}, err
 	}
 
-	info, err := FetchHuggingFaceInfo(ctx, repoID, revision, options.HFToken)
+	info, err := fetchHuggingFaceInfoFunc(ctx, repoID, revision, options.HFToken)
 	if err != nil {
 		return RemoteResult{}, err
 	}
@@ -98,43 +79,112 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 		return RemoteResult{}, err
 	}
 
-	modelDir := filepath.Join(options.Workspace, "checkpoint")
 	resolvedRevision := ResolveHuggingFaceRevision(info, revision)
+	snapshotDir := filepath.Join(options.Workspace, ".hf-snapshot")
+	if err := newHuggingFaceSnapshotDownloader().Download(ctx, huggingFaceSnapshotDownloadInput{
+		RepoID:      repoID,
+		Revision:    resolvedRevision,
+		Token:       options.HFToken,
+		Files:       selectedFiles,
+		SnapshotDir: snapshotDir,
+	}); err != nil {
+		return RemoteResult{}, err
+	}
+
+	modelDir := filepath.Join(options.Workspace, "checkpoint")
 	var stagedObjects []cleanuphandle.UploadStagingHandle
 	if rawStageEnabled(options.RawStage) {
-		stagedObjects, err = downloadHuggingFaceFilesViaRawStage(
-			ctx,
-			repoID,
-			resolvedRevision,
-			options.HFToken,
-			modelDir,
-			selectedFiles,
-			*options.RawStage,
-		)
+		stagedObjects, err = stageHuggingFaceSnapshotFiles(ctx, snapshotDir, selectedFiles, *options.RawStage)
 		if err != nil {
 			return RemoteResult{}, err
 		}
-	} else {
-		if err := DownloadHuggingFaceFiles(ctx, repoID, resolvedRevision, options.HFToken, modelDir, selectedFiles); err != nil {
-			return RemoteResult{}, err
-		}
+	}
+	if err := materializeHuggingFaceSnapshot(snapshotDir, modelDir, selectedFiles); err != nil {
+		return RemoteResult{}, err
 	}
 	if err := modelformat.ValidateDir(modelDir, inputFormat); err != nil {
 		return RemoteResult{}, err
 	}
 
 	return RemoteResult{
-		SourceType:        modelsv1alpha1.ModelSourceTypeHuggingFace,
-		ModelDir:          modelDir,
-		InputFormat:       inputFormat,
-		ExternalReference: firstNonEmpty(info.ID, repoID),
-		ResolvedRevision:  resolvedRevision,
-		Framework:         firstNonEmpty(info.LibraryName, "transformers"),
-		PipelineTag:       info.PipelineTag,
-		License:           info.License,
-		SourceRepoID:      info.ID,
-		StagedObjects:     stagedObjects,
+		SourceType:  modelsv1alpha1.ModelSourceTypeHuggingFace,
+		ModelDir:    modelDir,
+		InputFormat: inputFormat,
+		Provenance: RemoteProvenance{
+			ExternalReference: firstNonEmpty(info.ID, repoID),
+			ResolvedRevision:  resolvedRevision,
+		},
+		ProfileHints: RemoteProfileHints{
+			TaskHint:     info.PipelineTag,
+			License:      info.License,
+			SourceRepoID: info.ID,
+		},
+		StagedObjects: stagedObjects,
 	}, nil
+}
+
+func stageHuggingFaceSnapshotFiles(
+	ctx context.Context,
+	snapshotDir string,
+	files []string,
+	rawStage RawStageOptions,
+) ([]cleanuphandle.UploadStagingHandle, error) {
+	if !rawStageEnabled(&rawStage) {
+		return nil, nil
+	}
+
+	stagedObjects := make([]cleanuphandle.UploadStagingHandle, 0, len(files))
+	for _, relativePath := range files {
+		cleanPath, err := cleanRemoteRelativePath(relativePath)
+		if err != nil {
+			return nil, err
+		}
+
+		sourcePath := filepath.Join(snapshotDir, cleanPath)
+		sourceInfo, err := os.Stat(sourcePath)
+		if err != nil {
+			return nil, err
+		}
+
+		stream, err := os.Open(sourcePath)
+		if err != nil {
+			return nil, err
+		}
+
+		handle, stageErr := stageRawObject(
+			ctx,
+			rawStage,
+			cleanPath,
+			filepath.Base(cleanPath),
+			sourceInfo.Size(),
+			"",
+			stream,
+		)
+		closeErr := stream.Close()
+		if stageErr != nil {
+			return nil, stageErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+
+		stagedObjects = append(stagedObjects, handle)
+	}
+
+	return stagedObjects, nil
+}
+
+func materializeHuggingFaceSnapshot(snapshotDir, destination string, files []string) error {
+	for _, relativePath := range files {
+		cleanPath, err := cleanRemoteRelativePath(relativePath)
+		if err != nil {
+			return err
+		}
+		if err := linkOrCopyFile(filepath.Join(snapshotDir, cleanPath), filepath.Join(destination, cleanPath)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func FetchHuggingFaceInfo(ctx context.Context, repoID, revision, token string) (HuggingFaceInfo, error) {
@@ -168,91 +218,10 @@ func FetchHuggingFaceInfo(ctx context.Context, repoID, revision, token string) (
 	return HuggingFaceInfo{
 		ID:          firstNonEmpty(payload.ID, repoID),
 		SHA:         strings.TrimSpace(payload.SHA),
-		Private:     payload.Private,
-		Gated:       payload.Gated != nil && payload.Gated != false,
-		Downloads:   payload.Downloads,
-		Likes:       payload.Likes,
-		LibraryName: strings.TrimSpace(payload.LibraryName),
 		PipelineTag: strings.TrimSpace(payload.PipelineTag),
-		Tags:        payload.Tags,
-		License:     stringValue(payload.CardData["license"]),
-		BaseModel:   stringValue(payload.CardData["base_model"]),
+		License:     strings.TrimSpace(payload.CardData.License),
 		Files:       files,
 	}, nil
-}
-
-func downloadHuggingFaceFile(ctx context.Context, repoID, revision, token, path, destination string) error {
-	endpoint, err := huggingFaceResolveURL(repoID, revision, path)
-	if err != nil {
-		return err
-	}
-	response, err := doGET(ctx, nil, endpoint, bearerAuthHeaders(token))
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		return unexpectedStatusError(response, fmt.Sprintf("huggingface download for %q", path))
-	}
-
-	target := filepath.Join(destination, filepath.Clean(path))
-	return writeResponseBody(target, response.Body)
-}
-
-func downloadHuggingFaceFilesViaRawStage(
-	ctx context.Context,
-	repoID, revision, token, destination string,
-	files []string,
-	rawStage RawStageOptions,
-) ([]cleanuphandle.UploadStagingHandle, error) {
-	if !rawStageEnabled(&rawStage) {
-		return nil, errors.New("huggingface raw stage options must not be empty")
-	}
-
-	stagedObjects := make([]cleanuphandle.UploadStagingHandle, 0, len(files))
-	for _, relativePath := range files {
-		handle, err := downloadHuggingFaceFileToRawStage(ctx, repoID, revision, token, relativePath, rawStage)
-		if err != nil {
-			return nil, err
-		}
-		stagedObjects = append(stagedObjects, handle)
-		if err := downloadStagedObject(ctx, rawStage.Client, handle, filepath.Join(destination, filepath.Clean(relativePath))); err != nil {
-			return nil, err
-		}
-	}
-
-	return stagedObjects, nil
-}
-
-func downloadHuggingFaceFileToRawStage(
-	ctx context.Context,
-	repoID, revision, token, filePath string,
-	rawStage RawStageOptions,
-) (cleanuphandle.UploadStagingHandle, error) {
-	endpoint, err := huggingFaceResolveURL(repoID, revision, filePath)
-	if err != nil {
-		return cleanuphandle.UploadStagingHandle{}, err
-	}
-	response, err := doGET(ctx, nil, endpoint, bearerAuthHeaders(token))
-	if err != nil {
-		return cleanuphandle.UploadStagingHandle{}, err
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		return cleanuphandle.UploadStagingHandle{}, unexpectedStatusError(response, fmt.Sprintf("huggingface download for %q", filePath))
-	}
-
-	return stageRawObject(
-		ctx,
-		rawStage,
-		filePath,
-		filepath.Base(filePath),
-		response.ContentLength,
-		response.Header.Get("Content-Type"),
-		response.Body,
-	)
 }
 
 func huggingFaceInfoURL(repoID, revision string) (string, error) {
@@ -265,22 +234,6 @@ func huggingFaceInfoURL(repoID, revision string) (string, error) {
 		return endpoint, nil
 	}
 	return endpoint + "?revision=" + url.QueryEscape(strings.TrimSpace(revision)), nil
-}
-
-func huggingFaceResolveURL(repoID, revision, path string) (string, error) {
-	repositoryPath, err := huggingFaceRepoPath(repoID)
-	if err != nil {
-		return "", err
-	}
-	trimmedPath := strings.Trim(strings.TrimSpace(path), "/")
-	if trimmedPath == "" {
-		return "", errors.New("huggingface file path must not be empty")
-	}
-	resolvedRevision := strings.TrimSpace(revision)
-	if resolvedRevision == "" {
-		resolvedRevision = "main"
-	}
-	return huggingFaceBaseURL + "/" + repositoryPath + "/resolve/" + url.PathEscape(resolvedRevision) + "/" + escapeHuggingFaceFilePath(trimmedPath) + "?download=1", nil
 }
 
 func huggingFaceRepoPath(repoID string) (string, error) {
@@ -299,13 +252,8 @@ func huggingFaceRepoPath(repoID string) (string, error) {
 	return strings.Join(escaped, "/"), nil
 }
 
-func escapeHuggingFaceFilePath(path string) string {
-	parts := strings.Split(path, "/")
-	escaped := make([]string, 0, len(parts))
-	for _, part := range parts {
-		escaped = append(escaped, url.PathEscape(part))
-	}
-	return strings.Join(escaped, "/")
+func cleanRemoteRelativePath(path string) (string, error) {
+	return archiveRelativePath(strings.ReplaceAll(path, "\\", "/"))
 }
 
 func ResolveHuggingFaceRevision(info HuggingFaceInfo, requested string) string {
@@ -316,11 +264,6 @@ func ResolveHuggingFaceRevision(info HuggingFaceInfo, requested string) string {
 		return strings.TrimSpace(requested)
 	}
 	return "main"
-}
-
-func stringValue(value any) string {
-	typed, _ := value.(string)
-	return strings.TrimSpace(typed)
 }
 
 func firstNonEmpty(values ...string) string {

@@ -913,3 +913,125 @@ Checks:
   module bundle is rolled out. DKP forbids direct mutation of module-owned CRDs
   and deployments, so the remaining blocker is deployment freshness, not an
   unhandled repo defect in this slice.
+
+## Slice 55 review notes
+
+- No blocking findings against the new `HuggingFace` acquisition path.
+  Replacing the ad-hoc per-file `HTTP GET` loop with source-native snapshot
+  download is the correct architectural cut and matches the earlier canonical
+  note.
+- High: keeping the rest of the publish pipeline stable is the right boundary.
+  Raw staging, checkpoint normalization, format validation, profile resolution
+  and `DMCR` publication remain controller-owned contracts rather than leaking
+  HF-specific semantics upward.
+- Medium: link-first materialization from the snapshot tree into canonical
+  `checkpoint/` avoids reintroducing the extra full local copy that earlier
+  byte-path slices removed.
+- High: the earlier bundled `hf` CLI/binpack implementation was the wrong
+  long-term shell for this module. The corrective slice that removes it and
+  keeps the same source-native behavior in Go is the right follow-up.
+- Residual risk: the Go snapshot adapter is unit-covered, but the final proof
+  still requires a fresh module bundle rollout and a real `HuggingFace`
+  publish run in the cluster.
+
+## Slice 56 review notes
+
+- No blocking findings against removing the HF CLI/binpack shell. This reduces
+  build/runtime drift without changing the public CRD or the controller-owned
+  publication contract.
+- High: keeping `HuggingFace` acquisition inside `sourcefetch` in Go is the
+  right corrective boundary. It simplifies the runtime image and keeps the
+  complexity where it belongs: in a normal adapter seam, not in build-time
+  Python packaging.
+- Medium: the corrected path still preserves the important byte-path behavior:
+  exact resolved revision, selected-file download, optional raw-first staging,
+  and one normalized local checkpoint tree before profile/publication.
+- Residual risk: this slice deliberately optimizes for simpler module shell and
+  clearer ownership, not for full HF cache/resume parity. If later required,
+  that should be added inside the same Go adapter rather than by reintroducing
+  a bundled external CLI.
+
+## Slice 57 review notes
+
+- No blocking findings against trimming the retained HF metadata subset.
+  Removing provider-card noise with no live consumer is the right direction
+  for both code size and contract discipline.
+- High: keeping only `repo/revision/library/pipeline/license/files` inside the
+  adapter matches the earlier rule that source-specific metadata must not
+  quietly become a second, accidental contract.
+- Medium: replacing generic `cardData map[string]any` with a typed minimal
+  shape is a real maintenance improvement, not cosmetic cleanup.
+- Residual risk: if future provenance/audit work really needs additional HF
+  fields, that should be introduced explicitly with a declared consumer, not by
+  silently widening the adapter payload again.
+
+## Slice 58 review notes
+
+- No blocking findings against moving `Safetensors` task resolution closer to
+  the real checkpoint bytes. This is the right planner-facing correction.
+- High: explicit task still wins, so the slice does not weaken the public
+  contract or hide user intent behind implicit magic.
+- High: using HF `pipeline_tag` only as fallback is materially better than
+  treating source metadata as the primary truth for `ResolvedProfile.Task`.
+- Residual risk: `GGUF` still needs explicit task. That is acceptable for now
+  because there is no equally honest byte-level task inference path there yet.
+
+## Slice 59 review notes
+
+- No blocking findings against removing `SourceRepoID` as a hidden fallback for
+  `ResolvedProfile.Family`. Provenance should not silently turn into a profile
+  classifier.
+- High: switching endpoint compatibility to the final resolved task is a real
+  correctness fix. Without it, inferred or fallback task resolution could still
+  leave `SupportedEndpointTypes` stale or empty.
+- Residual risk: `framework` still allows a source hint path on `Safetensors`.
+  That is now the clearest remaining field to either derive from bytes or
+  reduce to a format-default value in a later slice.
+
+## Slice 60 review notes
+
+- No blocking findings against removing source-derived `framework` from the
+  `Safetensors` publication path. This closes the last obvious case where
+  source metadata could still silently shape planner-facing resolved profile.
+- High: deleting `framework` from `RemoteResult` and `publishworker` inputs is
+  the right boundary. It prevents the same drift from coming back through a new
+  remote source adapter as an implicit pass-through field.
+- High: keeping public `status.resolved.framework` while normalizing it to the
+  format-default value is the right compatibility balance. External readers
+  still get a stable label, but it no longer mirrors `HF` provider metadata.
+- Residual risk: this narrows the observable meaning of `framework` for
+  `Safetensors`. External dashboards that previously differentiated Hugging Face
+  `library_name` values from this field will now only see `transformers`, which
+  is intentional.
+
+## Slice 61 review notes
+
+- No blocking findings against separating remote acquisition provenance from
+  profile hints. This makes the `sourcefetch -> publishworker` boundary more
+  explicit without changing any public API.
+- High: `HTTP` no longer pretends to be a partially populated Hugging Face
+  result. Empty `ProfileHints` on `HTTP` are clearer than carrying unrelated
+  zero-value fields in one flat struct.
+- Medium: this slice improves maintainability more than behavior, but that is
+  exactly the right kind of cleanup here. It reduces the chance of another
+  source adapter reintroducing accidental planner/profile inputs by copying a
+  flat result shape.
+- Residual risk: `ProfileHints` still contains `TaskHint` for `HuggingFace`
+  fallback and provenance-derived `license` / `sourceRepoID`. That is
+  acceptable because each field still has a declared consumer and is no longer
+  hidden inside an undifferentiated remote payload.
+
+## Slice 62 review notes
+
+- No blocking findings against moving `license` and `sourceRepoID` out of the
+  format resolvers. This restores the right ownership line: resolvers derive
+  profile, worker code attaches provenance.
+- High: removing provenance-only inputs from both `Safetensors` and `GGUF`
+  makes the modelprofile packages more honest and reduces the chance of future
+  resolver logic quietly depending on source metadata again.
+- High: keeping `TaskHint` as the only remaining `HuggingFace` fallback is the
+  right balance. It is still a real consumer-backed hint, unlike `license` and
+  `sourceRepoID`, which were only copied through.
+- Residual risk: `ResolvedProfile` still mixes planner-facing fields and a
+  small provenance subset in one public struct. That is acceptable for now
+  because the public API already exposes them and they have declared consumers.

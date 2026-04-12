@@ -80,17 +80,14 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 	}
 	defer cleanupDir()
 
-	task := firstNonEmpty(options.Task, remote.PipelineTag)
-	if task == "" {
-		return publicationartifact.Result{}, errors.New("task is required either explicitly or from Hugging Face metadata")
-	}
-
 	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, remote.ModelDir, remote.InputFormat, sourceProfileInput{
-		Task:           task,
-		Framework:      remote.Framework,
-		License:        remote.License,
-		SourceRepoID:   remote.SourceRepoID,
+		Task:           options.Task,
+		TaskHint:       remote.ProfileHints.TaskHint,
 		RuntimeEngines: options.RuntimeEngines,
+		Provenance: sourceProfileProvenance{
+			License:      remote.ProfileHints.License,
+			SourceRepoID: remote.ProfileHints.SourceRepoID,
+		},
 	}, fmt.Sprintf("Published from Hugging Face source %s", options.HFModelID))
 	if err != nil {
 		return publicationartifact.Result{}, err
@@ -103,8 +100,8 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 	return buildBackendResult(
 		publicationdata.SourceProvenance{
 			Type:              modelsv1alpha1.ModelSourceTypeHuggingFace,
-			ExternalReference: remote.ExternalReference,
-			ResolvedRevision:  remote.ResolvedRevision,
+			ExternalReference: remote.Provenance.ExternalReference,
+			ResolvedRevision:  remote.Provenance.ResolvedRevision,
 			RawURI:            rawSource.RawURI,
 			RawObjectCount:    rawSource.RawObjectCount,
 			RawSizeBytes:      rawSource.RawSizeBytes,
@@ -124,13 +121,8 @@ func publishFromHTTP(ctx context.Context, options Options) (publicationartifact.
 	}
 	defer cleanupDir()
 
-	if strings.TrimSpace(options.Task) == "" {
-		return publicationartifact.Result{}, errors.New("task is required for HTTP source")
-	}
-
 	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, remote.ModelDir, remote.InputFormat, sourceProfileInput{
 		Task:           options.Task,
-		Framework:      remote.Framework,
 		RuntimeEngines: options.RuntimeEngines,
 	}, fmt.Sprintf("Published from HTTP source %s", options.HTTPURL))
 	if err != nil {
@@ -144,8 +136,8 @@ func publishFromHTTP(ctx context.Context, options Options) (publicationartifact.
 	return buildBackendResult(
 		publicationdata.SourceProvenance{
 			Type:              modelsv1alpha1.ModelSourceTypeHTTP,
-			ExternalReference: remote.ExternalReference,
-			ResolvedRevision:  remote.ResolvedRevision,
+			ExternalReference: remote.Provenance.ExternalReference,
+			ResolvedRevision:  remote.Provenance.ResolvedRevision,
 			RawURI:            rawSource.RawURI,
 			RawObjectCount:    rawSource.RawObjectCount,
 			RawSizeBytes:      rawSource.RawSizeBytes,
@@ -203,6 +195,7 @@ func resolveAndPublish(
 	if err != nil {
 		return publicationdata.ResolvedProfile{}, modelpackports.PublishResult{}, err
 	}
+	resolvedProfile = attachResolvedProfileProvenance(resolvedProfile, input.Provenance)
 
 	publishResult, err := options.ModelPackPublisher.Publish(ctx, modelpackports.PublishInput{
 		ModelDir:    checkpointDir,
@@ -218,10 +211,14 @@ func resolveAndPublish(
 
 type sourceProfileInput struct {
 	Task           string
-	Framework      string
-	License        string
-	SourceRepoID   string
+	TaskHint       string
 	RuntimeEngines []string
+	Provenance     sourceProfileProvenance
+}
+
+type sourceProfileProvenance struct {
+	License      string
+	SourceRepoID string
 }
 
 func resolveProfile(
@@ -234,19 +231,25 @@ func resolveProfile(
 		return safetensorsprofile.Resolve(safetensorsprofile.Input{
 			CheckpointDir:  checkpointDir,
 			Task:           input.Task,
-			Framework:      input.Framework,
-			License:        input.License,
-			SourceRepoID:   input.SourceRepoID,
+			TaskHint:       input.TaskHint,
 			RuntimeEngines: input.RuntimeEngines,
 		})
 	case modelsv1alpha1.ModelInputFormatGGUF:
 		return ggufprofile.Resolve(ggufprofile.Input{
 			ModelDir:       checkpointDir,
 			Task:           input.Task,
-			SourceRepoID:   input.SourceRepoID,
 			RuntimeEngines: input.RuntimeEngines,
 		})
 	default:
 		return publicationdata.ResolvedProfile{}, fmt.Errorf("unsupported model input format %q", inputFormat)
 	}
+}
+
+func attachResolvedProfileProvenance(
+	resolved publicationdata.ResolvedProfile,
+	provenance sourceProfileProvenance,
+) publicationdata.ResolvedProfile {
+	resolved.License = strings.TrimSpace(provenance.License)
+	resolved.SourceRepoID = strings.TrimSpace(provenance.SourceRepoID)
+	return resolved
 }

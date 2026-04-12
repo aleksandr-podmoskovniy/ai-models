@@ -241,6 +241,8 @@
 - Decision surface:
   - remote `HTTP` and `HuggingFace` raw-first staging into controller-owned
     object storage before local checkpoint preparation
+  - `HuggingFace` source-native snapshot acquisition through a package-local
+    Go downloader instead of the removed ad-hoc per-file download loop
   - direct single-file checkpoint materialization via link-first staging when
     source and checkpoint share the same filesystem
   - safe archive unpacking and direct `GGUF` normalization
@@ -251,8 +253,9 @@
   - `http_test.go`
   - `http_probe_test.go`
 - Residual gaps:
-  - dedicated end-to-end replay for raw-staged `HuggingFace` downloads still
-    relies on the shared fetch path rather than a separate live transport test
+  - dedicated live-cluster replay for `HuggingFace` snapshot acquisition is
+    still pending a fresh module rollout; current evidence is unit-level plus
+    the shared publishworker path
 
 ## `internal/dataplane/publishworker`
 
