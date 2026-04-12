@@ -18,7 +18,6 @@ package kitops
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -78,6 +77,9 @@ func (a *Adapter) Publish(ctx context.Context, input modelpackports.PublishInput
 
 	inspectPayload, err := a.inspectRemote(ctx, configDir, input.ArtifactURI, auth)
 	if err != nil {
+		return modelpackports.PublishResult{}, err
+	}
+	if err := validateModelPackPayload(inspectPayload); err != nil {
 		return modelpackports.PublishResult{}, err
 	}
 
@@ -145,30 +147,8 @@ func (a *Adapter) login(ctx context.Context, configDir, reference string, auth m
 	return nil
 }
 
-func (a *Adapter) inspectRemote(ctx context.Context, configDir, reference string, auth modelpackports.RegistryAuth) (map[string]any, error) {
-	command := a.command(ctx, configDir, "inspect", "--remote", reference)
-	command.Args = append(command.Args, connectionFlags(auth)...)
-	command.Args = append(command.Args, "--progress", "none")
-	command.Env = runtimeEnvironment(configDir, auth)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("failed to inspect remote ModelPack: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-
-	payload := strings.TrimSpace(string(output))
-	if payload == "" {
-		return nil, errors.New("kitops inspect returned an empty payload")
-	}
-	if index := strings.Index(payload, "{"); index >= 0 {
-		payload = payload[index:]
-	}
-
-	var decoded map[string]any
-	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
-		return nil, fmt.Errorf("failed to decode kitops inspect output: %w", err)
-	}
-
-	return decoded, nil
+func (a *Adapter) inspectRemote(ctx context.Context, _ string, reference string, auth modelpackports.RegistryAuth) (map[string]any, error) {
+	return inspectRemoteViaRegistry(ctx, reference, auth)
 }
 
 func (a *Adapter) run(ctx context.Context, configDir string, auth modelpackports.RegistryAuth, args ...string) error {
@@ -295,52 +275,4 @@ func packageNameFromOCIReference(reference string) string {
 		return "model"
 	}
 	return cleanReference
-}
-
-func artifactDigestFromInspectPayload(payload map[string]any) string {
-	value, _ := payload["digest"].(string)
-	return strings.TrimSpace(value)
-}
-
-func artifactMediaTypeFromInspectPayload(payload map[string]any) string {
-	manifest, _ := payload["manifest"].(map[string]any)
-	if manifest != nil {
-		if artifactType, _ := manifest["artifactType"].(string); strings.TrimSpace(artifactType) != "" {
-			return strings.TrimSpace(artifactType)
-		}
-	}
-	return "application/vnd.cncf.model.manifest.v1+json"
-}
-
-func inspectModelPackSize(payload map[string]any) int64 {
-	var total int64
-	manifest, _ := payload["manifest"].(map[string]any)
-	if manifest == nil {
-		return 0
-	}
-
-	if config, _ := manifest["config"].(map[string]any); config != nil {
-		total += parseSize(config["size"])
-	}
-	if layers, _ := manifest["layers"].([]any); layers != nil {
-		for _, layer := range layers {
-			layerMap, _ := layer.(map[string]any)
-			total += parseSize(layerMap["size"])
-		}
-	}
-
-	return total
-}
-
-func parseSize(value any) int64 {
-	switch typed := value.(type) {
-	case int64:
-		return typed
-	case float64:
-		return int64(typed)
-	case int:
-		return int64(typed)
-	default:
-		return 0
-	}
 }

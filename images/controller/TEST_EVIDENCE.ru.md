@@ -329,3 +329,47 @@
     `dmcr` server and client credentials;
   - live repair requires module rollout because DKP forbids manual mutation of
     `heritage: deckhouse` secrets.
+
+## Live `HF` smoke after `DMCR` auth rollout
+
+- Scenario:
+  - `Model` in namespace `ai-models-smoke`
+  - `source.url=https://huggingface.co/hf-internal-testing/tiny-random-PhiForCausalLM`
+  - `inputFormat=Safetensors`
+- Result:
+  - `DMCR` auth now succeeds:
+    - projected write/read passwords match server-side `htpasswd`;
+    - direct `/v2/` call with live write credentials returns `200`;
+  - publish still fails, but now later in the path with
+    `kitops inspect returned an empty payload`.
+- Root-cause proof:
+  - the published manifest already exists in `DMCR` under the expected
+    controller-owned repository path;
+  - `HEAD /v2/<repo>/manifests/published` returns `200` and
+    `Docker-Content-Digest`;
+  - therefore `pack` and `push` succeeded, and the failure is isolated to the
+    post-push `KitOps inspect --remote` step.
+- Outcome:
+  - this smoke validated Slice 71: digest/manifest inspection must use the OCI
+    registry API directly instead of parsing `KitOps` inspect output.
+
+## Live `ModelPack` manifest/config inspection
+
+- Scenario:
+  - direct inspection of the failed-but-pushed artifact published to `DMCR`
+    for `tiny-random-phi-debug2`;
+- Result:
+  - the top-level manifest already contained:
+    - `artifactType=application/vnd.cncf.model.manifest.v1+json`
+    - `config.mediaType=application/vnd.cncf.model.config.v1+json`
+    - weight layer media type
+    - `org.cncf.model.filepath` layer annotation;
+  - the referenced config blob contained:
+    - `descriptor`
+    - `modelfs.type=layers`
+    - non-empty `modelfs.diffIds`.
+- Outcome:
+  - this inspection proved that `ModelPack` semantics live in the published
+    manifest+config pair, not only in the digest or in `KitOps` CLI output;
+  - Slice 72 therefore hardened post-push success criteria to validate those
+    `ModelPack` fields directly from `DMCR`.

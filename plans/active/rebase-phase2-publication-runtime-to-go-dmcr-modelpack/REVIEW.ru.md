@@ -1162,3 +1162,37 @@ Checks:
 - Medium: live patching remained intentionally impossible because DKP forbids
   updating `heritage: deckhouse` objects by hand. That is acceptable here: the
   template fix is correct, and rollout is the supported repair path.
+
+## Slice 71 review notes
+
+- No blocking findings against removing `kit inspect --remote` from the
+  controller-owned publication success path. Live cluster evidence showed that
+  `pack` and `push` already succeeded and the published manifest was present in
+  `DMCR`; only the CLI inspection step was failing.
+- High: direct OCI registry inspection is the right boundary here. The module
+  already owns the target registry and already has the exact write credentials
+  and CA material, so digest/manifest lookup should not depend on opaque CLI
+  stdout parsing.
+- High: keeping `KitOps` only for `pack/push/remove` makes the adapter
+  narrower and easier to reason about. This reduces external-tool coupling
+  instead of deepening it.
+- Medium: live validation still needs one more module rollout because the
+  current cluster was tested against the bundle that fixed `DMCR` auth but did
+  not yet include this new post-push inspect fix.
+
+## Slice 72 review notes
+
+- No blocking findings against hardening the registry-inspect path with real
+  `ModelPack` semantics. The previous transport fix was necessary but not
+  sufficient: digest existence alone would have weakened the role of `KitOps`
+  to “something that pushed some OCI object”.
+- High: validating `artifactType`, config descriptor media type, weight layer
+  media types/annotations, and config blob `modelfs` is the right contract
+  boundary. These belong to the published `ModelPack`, not to `KitOps`
+  implementation trivia.
+- High: not requiring `ml.kitops.modelkit.kitfile` is also correct. That
+  annotation is `KitOps` provenance, not the durable internal artifact
+  contract, so keeping it optional preserves the replaceable packer seam.
+- Medium: the next live cluster check still requires another rollout, but the
+  code now matches the stronger interpretation of `ModelPack` semantics rather
+  than a transport-only approximation.

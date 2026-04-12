@@ -3242,3 +3242,90 @@ replacement has landed yet.
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
+
+## Slice 71 landed
+
+Цель:
+
+- убрать live `HF` publish failure after successful `DMCR` push:
+  `kitops inspect returned an empty payload`.
+
+Что сделано:
+
+- root cause was narrowed on a real cluster:
+  - `DMCR` auth is fixed and `/v2/` with live write credentials returns `200`;
+  - the pushed manifest exists in `DMCR` under the expected controller-owned
+    repository path and already returns `Docker-Content-Digest`;
+  - failure happens only in post-push `KitOps inspect --remote` handling;
+- `images/controller/internal/adapters/modelpack/kitops` now uses `KitOps`
+  only for:
+  - `pack`
+  - `push`
+  - `remove`
+- post-push inspection now goes directly through the OCI registry API in Go:
+  - `GET /v2/<repo>/manifests/<tag>`
+  - basic auth from the same projected write credentials
+  - digest from `Docker-Content-Digest`
+  - media type and size from the returned manifest body;
+- this removes the fragile dependency on `kit inspect --remote` output format
+  while keeping the existing `KitOps` publication path intact.
+
+Границы slice:
+
+- no change to public API or controller/runtime ownership;
+- `KitOps` stays the concrete pack/push implementation adapter;
+- only the inspection/reporting step moved from CLI output parsing to the
+  registry API that the module already owns.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/modelpack/kitops`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 72 landed
+
+Цель:
+
+- добить semantic validation `ModelPack` after registry-based inspect so the
+  module no longer treats any arbitrary OCI manifest as a successful publish.
+
+Что сделано:
+
+- live `DMCR` artifact inspection proved that the internal `ModelPack`
+  semantics currently live in more than the top-level digest:
+  - `artifactType=application/vnd.cncf.model.manifest.v1+json`
+  - `config.mediaType=application/vnd.cncf.model.config.v1+json`
+  - weight layers use `application/vnd.cncf.model.weight.v1.tar`
+  - layer annotations carry `org.cncf.model.filepath`
+  - config blob contains `descriptor` and `modelfs`;
+- `images/controller/internal/adapters/modelpack/kitops/registry_inspect.go`
+  now fetches both:
+  - remote manifest;
+  - remote config blob referenced by the manifest;
+- `images/controller/internal/adapters/modelpack/kitops/adapter.go`
+  now validates the published artifact as `ModelPack` before reporting success:
+  - `schemaVersion == 2`
+  - required `artifactType`
+  - required config descriptor media type
+  - at least one weight layer with filepath annotation
+  - config blob with `descriptor`, `modelfs.type=layers`, and non-empty
+    `diffIds` matching the layer count;
+- kitops-specific provenance such as `ml.kitops.modelkit.kitfile` is still not
+  required, so future replaceable packers are not blocked by a `KitOps`-only
+  marker.
+
+Границы slice:
+
+- transport still uses direct OCI registry inspection from the final source of
+  truth (`DMCR`);
+- success semantics are now strict `ModelPack` contract checks, not just
+  digest existence;
+- this keeps `KitOps` justified as the packer without tying correctness to
+  opaque CLI inspect output.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/modelpack/kitops`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
