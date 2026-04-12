@@ -114,8 +114,10 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 			ExternalReference: firstNonEmpty(info.ID, repoID),
 			ResolvedRevision:  resolvedRevision,
 		},
-		ProfileHints: RemoteProfileHints{
-			TaskHint:     info.PipelineTag,
+		Fallbacks: RemoteProfileFallbacks{
+			TaskHint: info.PipelineTag,
+		},
+		Metadata: RemoteMetadata{
 			License:      info.License,
 			SourceRepoID: info.ID,
 		},

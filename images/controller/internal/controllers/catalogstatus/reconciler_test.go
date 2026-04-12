@@ -123,7 +123,7 @@ func TestModelReconcilerPublishesReadyStatusFromSucceededWorker(t *testing.T) {
 	if ready.Status.Artifact == nil || ready.Status.Artifact.URI != "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1/550e8400-e29b-41d4-a716-446655440000@sha256:deadbeef" {
 		t.Fatalf("unexpected artifact status %#v", ready.Status.Artifact)
 	}
-	if ready.Status.Resolved == nil || ready.Status.Resolved.SourceRepoID != "deepseek-ai/DeepSeek-R1" {
+	if ready.Status.Resolved == nil {
 		t.Fatalf("unexpected resolved status %#v", ready.Status.Resolved)
 	}
 	if !deleted {

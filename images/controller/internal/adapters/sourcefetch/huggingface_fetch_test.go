@@ -75,13 +75,13 @@ func TestFetchRemoteModelHuggingFaceUsesSnapshotDownloader(t *testing.T) {
 	if got, want := result.Provenance.ExternalReference, "deepseek-ai/DeepSeek-R1"; got != want {
 		t.Fatalf("unexpected external reference %q", got)
 	}
-	if got, want := result.ProfileHints.TaskHint, "text-generation"; got != want {
+	if got, want := result.Fallbacks.TaskHint, "text-generation"; got != want {
 		t.Fatalf("unexpected task hint %q", got)
 	}
-	if got, want := result.ProfileHints.License, "mit"; got != want {
+	if got, want := result.Metadata.License, "mit"; got != want {
 		t.Fatalf("unexpected license %q", got)
 	}
-	if got, want := result.ProfileHints.SourceRepoID, "deepseek-ai/DeepSeek-R1"; got != want {
+	if got, want := result.Metadata.SourceRepoID, "deepseek-ai/DeepSeek-R1"; got != want {
 		t.Fatalf("unexpected source repo ID %q", got)
 	}
 	if got, want := len(result.StagedObjects), 2; got != want {

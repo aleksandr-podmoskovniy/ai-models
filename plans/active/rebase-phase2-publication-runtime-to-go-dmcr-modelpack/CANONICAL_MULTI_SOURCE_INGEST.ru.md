@@ -193,12 +193,15 @@ Useful provenance, still acceptable in public status:
 
 - `status.source.resolvedType`
 - `status.source.resolvedRevision`
-- `status.resolved.sourceRepoID`
 - `status.resolved.framework` as a normalized profile label, not a mirror of
   source-specific provider metadata
-- `status.resolved.license`
 - `status.resolved.family`
 - `status.resolved.architecture`
+
+Provenance that must stay internal-only:
+
+- source license
+- source repository ID
 
 ## What must stay out of public status
 

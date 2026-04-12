@@ -202,12 +202,13 @@ spec:
                 type: object
                 x-kubernetes-validations:
                 - message: exactly one of source.url or source.upload must be specified
-                  rule: '((size(self.url) > 0 ? 1 : 0) + (has(self.upload) ? 1 : 0))
-                    == 1'
+                  rule: '((has(self.url) && size(self.url) > 0 ? 1 : 0) + (has(self.upload)
+                    ? 1 : 0)) == 1'
                 - message: source.authSecretRef is only allowed for source.url
                   rule: 'has(self.upload) ? !has(self.authSecretRef) : true'
                 - message: source.caBundle is only allowed for source.url
-                  rule: 'has(self.upload) ? size(self.caBundle) == 0 : true'
+                  rule: 'has(self.upload) ? (!has(self.caBundle) || size(self.caBundle)
+                    == 0) : true'
               usagePolicy:
                 properties:
                   allowedEndpointTypes:
@@ -230,17 +231,23 @@ spec:
             - message: spec.source is immutable
               rule: self.source == oldSelf.source
             - message: spec.inputFormat is immutable
-              rule: self.inputFormat == oldSelf.inputFormat
+              rule: (!has(self.inputFormat) && !has(oldSelf.inputFormat)) || (has(self.inputFormat)
+                && has(oldSelf.inputFormat) && self.inputFormat == oldSelf.inputFormat)
             - message: spec.runtimeHints is immutable
-              rule: self.runtimeHints == oldSelf.runtimeHints
+              rule: (!has(self.runtimeHints) && !has(oldSelf.runtimeHints)) || (has(self.runtimeHints)
+                && has(oldSelf.runtimeHints) && self.runtimeHints == oldSelf.runtimeHints)
             - message: spec.modelType is immutable
-              rule: self.modelType == oldSelf.modelType
+              rule: (!has(self.modelType) && !has(oldSelf.modelType)) || (has(self.modelType)
+                && has(oldSelf.modelType) && self.modelType == oldSelf.modelType)
             - message: spec.usagePolicy is immutable
-              rule: self.usagePolicy == oldSelf.usagePolicy
+              rule: (!has(self.usagePolicy) && !has(oldSelf.usagePolicy)) || (has(self.usagePolicy)
+                && has(oldSelf.usagePolicy) && self.usagePolicy == oldSelf.usagePolicy)
             - message: spec.launchPolicy is immutable
-              rule: self.launchPolicy == oldSelf.launchPolicy
+              rule: (!has(self.launchPolicy) && !has(oldSelf.launchPolicy)) || (has(self.launchPolicy)
+                && has(oldSelf.launchPolicy) && self.launchPolicy == oldSelf.launchPolicy)
             - message: spec.optimization is immutable
-              rule: self.optimization == oldSelf.optimization
+              rule: (!has(self.optimization) && !has(oldSelf.optimization)) || (has(self.optimization)
+                && has(oldSelf.optimization) && self.optimization == oldSelf.optimization)
           status:
             description: |-
               ModelStatus is the shared observed state for both Model and ClusterModel.
@@ -363,8 +370,6 @@ spec:
                     type: string
                   framework:
                     type: string
-                  license:
-                    type: string
                   minimumLaunch:
                     properties:
                       acceleratorCount:
@@ -385,8 +390,6 @@ spec:
                     minimum: 1
                     type: integer
                   quantization:
-                    type: string
-                  sourceRepoID:
                     type: string
                   supportedEndpointTypes:
                     items:

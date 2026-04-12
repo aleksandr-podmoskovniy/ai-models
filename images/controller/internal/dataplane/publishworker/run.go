@@ -82,11 +82,11 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 
 	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, remote.ModelDir, remote.InputFormat, sourceProfileInput{
 		Task:           options.Task,
-		TaskHint:       remote.ProfileHints.TaskHint,
+		TaskHint:       remote.Fallbacks.TaskHint,
 		RuntimeEngines: options.RuntimeEngines,
 		Provenance: sourceProfileProvenance{
-			License:      remote.ProfileHints.License,
-			SourceRepoID: remote.ProfileHints.SourceRepoID,
+			License:      remote.Metadata.License,
+			SourceRepoID: remote.Metadata.SourceRepoID,
 		},
 	}, fmt.Sprintf("Published from Hugging Face source %s", options.HFModelID))
 	if err != nil {

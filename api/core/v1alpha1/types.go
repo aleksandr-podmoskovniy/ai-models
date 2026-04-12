@@ -114,7 +114,6 @@ type ModelResolvedStatus struct {
 	Task         string `json:"task,omitempty"`
 	Framework    string `json:"framework,omitempty"`
 	Family       string `json:"family,omitempty"`
-	License      string `json:"license,omitempty"`
 	Architecture string `json:"architecture,omitempty"`
 	Format       string `json:"format,omitempty"`
 	// +kubebuilder:validation:Minimum=1
@@ -122,7 +121,6 @@ type ModelResolvedStatus struct {
 	Quantization   *string `json:"quantization,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	ContextWindowTokens *int64 `json:"contextWindowTokens,omitempty"`
-	SourceRepoID        string `json:"sourceRepoID,omitempty"`
 	// +listType=set
 	SupportedEndpointTypes []string `json:"supportedEndpointTypes,omitempty"`
 	// +listType=set

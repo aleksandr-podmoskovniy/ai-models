@@ -48,7 +48,8 @@ type RemoteResult struct {
 	ModelDir      string
 	InputFormat   modelsv1alpha1.ModelInputFormat
 	Provenance    RemoteProvenance
-	ProfileHints  RemoteProfileHints
+	Fallbacks     RemoteProfileFallbacks
+	Metadata      RemoteMetadata
 	StagedObjects []cleanuphandle.UploadStagingHandle
 }
 
@@ -57,8 +58,11 @@ type RemoteProvenance struct {
 	ResolvedRevision  string
 }
 
-type RemoteProfileHints struct {
-	TaskHint     string
+type RemoteProfileFallbacks struct {
+	TaskHint string
+}
+
+type RemoteMetadata struct {
 	License      string
 	SourceRepoID string
 }

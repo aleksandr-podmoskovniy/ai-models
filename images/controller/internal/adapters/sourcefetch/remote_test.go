@@ -60,13 +60,13 @@ func TestFetchRemoteModelHTTPGGUF(t *testing.T) {
 	if got, want := result.Provenance.ResolvedRevision, ""; got != want {
 		t.Fatalf("unexpected resolved revision %q", got)
 	}
-	if got, want := result.ProfileHints.TaskHint, ""; got != want {
+	if got, want := result.Fallbacks.TaskHint, ""; got != want {
 		t.Fatalf("unexpected task hint %q", got)
 	}
-	if got, want := result.ProfileHints.License, ""; got != want {
+	if got, want := result.Metadata.License, ""; got != want {
 		t.Fatalf("unexpected license %q", got)
 	}
-	if got, want := result.ProfileHints.SourceRepoID, ""; got != want {
+	if got, want := result.Metadata.SourceRepoID, ""; got != want {
 		t.Fatalf("unexpected source repo ID %q", got)
 	}
 	if _, err := os.Stat(filepath.Join(result.ModelDir, "model.gguf")); err != nil {

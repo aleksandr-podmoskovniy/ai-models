@@ -1998,10 +1998,12 @@ replacement has landed yet.
 
 - `sourcefetch.RemoteResult` разбит на явные nested seams:
   - `Provenance`
-  - `ProfileHints`
+  - `ProfileHints` (later split into `Fallbacks` and `Metadata` in
+    `Slice 63`)
 - `HuggingFace` adapter теперь складывает:
   - external reference / resolved revision в `Provenance`
-  - task hint / license / source repo ID в `ProfileHints`
+  - task hint / license / source repo ID в `ProfileHints` (later split by role
+    in `Slice 63`)
 - `HTTP` adapter больше не выглядит как частично заполненный HF-like payload:
   он пишет только provenance и оставляет profile hints пустыми;
 - `publishworker` теперь читает provenance и profile hints по их явной роли,
@@ -2048,6 +2050,71 @@ replacement has landed yet.
 Проверки:
 
 - `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/adapters/modelprofile/safetensors ./internal/adapters/modelprofile/gguf ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 63 landed
+
+Цель:
+
+- добить remote handoff seam до конца: отделить реальный fallback от
+  provenance metadata, чтобы `TaskHint` не жил в одном bucket с `license` и
+  `sourceRepoID`.
+
+Что сделано:
+
+- `sourcefetch.RemoteResult` теперь держит три явные nested roles:
+  - `Provenance`
+  - `Fallbacks`
+  - `Metadata`
+- `HuggingFace` path складывает `pipeline_tag` только в `Fallbacks`, а
+  `license` / `sourceRepoID` только в `Metadata`;
+- `publishworker` теперь читает:
+  - fallback только из `remote.Fallbacks`
+  - metadata только из `remote.Metadata`
+- тесты `sourcefetch` дополнены прямыми проверками этой границы для `HF` и
+  `HTTP`.
+
+Границы slice:
+
+- public CRD shape не менялся;
+- `TaskHint` остаётся единственным source fallback;
+- provenance metadata по-прежнему сохраняется в public resolved status, но уже
+  не смешана с fallback contract внутри remote acquisition layer.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/adapters/modelprofile/safetensors ./internal/adapters/modelprofile/gguf ./internal/dataplane/publishworker`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 64 landed
+
+Цель:
+
+- убрать provenance-only `license` и `sourceRepoID` из public
+  `status.resolved`, чтобы planner-facing public contract не тащил source
+  metadata, которая не участвует ни в scheduling, ни в policy logic.
+
+Что сделано:
+
+- `license` и `sourceRepoID` удалены из `api/core/v1alpha1.ModelResolvedStatus`;
+- status projection в `publishstate` перестала писать эти поля в public
+  `ModelStatus`;
+- generated CRD schema обновлена через `api/scripts/update-codegen.sh`;
+- docs/notes выровнены: эти поля больше не считаются acceptable public
+  resolved metadata и остаются только во внутреннем runtime provenance.
+
+Границы slice:
+
+- internal `publishedsnapshot.ResolvedProfile` не менялся;
+- runtime result / cleanup / audit path не менялись;
+- change intentionally is a public alpha API cut for status readers.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/domain/publishstate ./internal/controllers/catalogstatus ./internal/application/publishobserve`
+- `cd api && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./...`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
 

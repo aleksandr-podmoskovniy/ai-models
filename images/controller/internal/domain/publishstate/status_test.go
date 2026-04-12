@@ -254,13 +254,11 @@ func TestProjectStatusSucceeded(t *testing.T) {
 					Task:                         "text-generation",
 					Framework:                    "transformers",
 					Family:                       "deepseek",
-					License:                      "apache-2.0",
 					Architecture:                 "DeepseekForCausalLM",
 					Format:                       "Safetensors",
 					ParameterCount:               8_000_000_000,
 					Quantization:                 "bnb-nf4",
 					ContextWindowTokens:          8192,
-					SourceRepoID:                 "deepseek-ai/DeepSeek-R1",
 					SupportedEndpointTypes:       []string{"OpenAIChatCompletions", "OpenAICompletions"},
 					CompatibleRuntimes:           []string{"KServe"},
 					CompatibleAcceleratorVendors: []string{"NVIDIA", "AMD"},
@@ -288,7 +286,7 @@ func TestProjectStatusSucceeded(t *testing.T) {
 	if projection.Status.Artifact == nil || projection.Status.Artifact.URI != "registry.example/model@sha256:deadbeef" {
 		t.Fatalf("unexpected artifact status %#v", projection.Status.Artifact)
 	}
-	if projection.Status.Resolved == nil || projection.Status.Resolved.SourceRepoID != "deepseek-ai/DeepSeek-R1" {
+	if projection.Status.Resolved == nil {
 		t.Fatalf("unexpected resolved status %#v", projection.Status.Resolved)
 	}
 	if projection.Status.Resolved.ParameterCount == nil || *projection.Status.Resolved.ParameterCount != 8_000_000_000 {

@@ -61,8 +61,9 @@ Current phase-2 slice implemented here:
   HTTP snapshot downloader materializes only those files into the canonical
   `checkpoint/` tree; provider-card noise such as downloads/likes/tags is not
   retained in the adapter payload without an explicit consumer, and the remote
-  adapter now hands worker code two explicit seams instead of one flat result:
-  source provenance and profile hints;
+  adapter now hands worker code three explicit seams instead of one flat
+  result:
+  source provenance, profile fallbacks, and source metadata;
 - `internal/adapters/modelformat` for source-agnostic input-format validation
   rules applied before packaging; inspect/validate/select flow now reuses one
   package-local runner over format-specific rule sets, instead of repeating the
@@ -81,7 +82,8 @@ Current phase-2 slice implemented here:
   `Safetensors` path is now a normalized format-default label
   (`transformers`), not source-derived metadata; source provenance fields such
   as `license` and `sourceRepoID` are now attached after resolution in
-  `publishworker`, not treated as resolver inputs;
+  `publishworker`, not treated as resolver inputs, and no longer project into
+  public `status.resolved`;
 - `internal/adapters/k8s/sourceworker` for controller-owned worker Pods that turn
   accepted remote URLs into internal published artifacts, while reserving
   `Upload` for a dedicated session workflow;

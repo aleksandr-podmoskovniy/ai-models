@@ -1010,16 +1010,16 @@ Checks:
   profile hints. This makes the `sourcefetch -> publishworker` boundary more
   explicit without changing any public API.
 - High: `HTTP` no longer pretends to be a partially populated Hugging Face
-  result. Empty `ProfileHints` on `HTTP` are clearer than carrying unrelated
-  zero-value fields in one flat struct.
+  result. Empty `ProfileHints` on `HTTP` were clearer than carrying unrelated
+  zero-value fields in one flat struct; this boundary was later refined in
+  `Slice 63` into `Fallbacks` plus `Metadata`.
 - Medium: this slice improves maintainability more than behavior, but that is
   exactly the right kind of cleanup here. It reduces the chance of another
   source adapter reintroducing accidental planner/profile inputs by copying a
   flat result shape.
-- Residual risk: `ProfileHints` still contains `TaskHint` for `HuggingFace`
-  fallback and provenance-derived `license` / `sourceRepoID`. That is
-  acceptable because each field still has a declared consumer and is no longer
-  hidden inside an undifferentiated remote payload.
+- Residual risk at that point: `ProfileHints` still contained `TaskHint` for
+  `HuggingFace` fallback and provenance-derived `license` / `sourceRepoID`.
+  That residual was then closed in `Slice 63`.
 
 ## Slice 62 review notes
 
@@ -1035,3 +1035,34 @@ Checks:
 - Residual risk: `ResolvedProfile` still mixes planner-facing fields and a
   small provenance subset in one public struct. That is acceptable for now
   because the public API already exposes them and they have declared consumers.
+
+## Slice 63 review notes
+
+- No blocking findings against separating remote fallback and metadata into
+  distinct seams. This removes the last mixed bucket in the remote acquisition
+  handoff without changing behavior or public API.
+- High: `TaskHint` is now explicitly the only source-side fallback contract.
+  That is the right boundary and makes future source adapter work less likely
+  to smuggle extra semantics through a generic `hints` struct.
+- Medium: the extra `Metadata` seam is justified here because the previous
+  structure was semantically wrong, not merely imperfectly named.
+- Residual risk: the public `ResolvedProfile` still keeps a small metadata
+  subset (`license`, `sourceRepoID`). The internal handoff is now clean; the
+  remaining question is public API philosophy, not an implementation drift in
+  the runtime path.
+
+## Slice 64 review notes
+
+- No blocking findings against removing `license` and `sourceRepoID` from the
+  public resolved status. At this point they were pure provenance fields with
+  no live planner, policy, metrics, or condition consumer inside the repo.
+- High: keeping them in internal runtime provenance while removing them from
+  public `status.resolved` is the right boundary. It avoids leaking source
+  metadata into the scheduler-facing API without breaking the internal
+  publication flow.
+- Medium: this is an intentional public compatibility break for status readers.
+  That is acceptable in the current alpha stage, but it is important that the
+  bundle now states it explicitly instead of letting it happen implicitly.
+- Residual risk: external scripts or dashboards outside this repo that read
+  `.status.resolved.license` or `.status.resolved.sourceRepoID` will stop
+  seeing those fields after the next status rewrite in-cluster.
