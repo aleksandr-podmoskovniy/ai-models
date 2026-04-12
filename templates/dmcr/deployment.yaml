@@ -61,6 +61,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "ai-models.dmcrAuthSecretName" . }}
                   key: salt
+            - name: OTEL_TRACES_EXPORTER
+              value: none
             - name: REGISTRY_STORAGE_S3_ACCESSKEY
               valueFrom:
                 secretKeyRef:

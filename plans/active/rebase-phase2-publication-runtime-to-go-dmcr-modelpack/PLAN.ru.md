@@ -3172,3 +3172,31 @@ replacement has landed yet.
 - `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
+
+## Slice 69 landed
+
+Цель:
+
+- убрать шумящие `dmcr` startup/runtime логи про failed trace export на
+  `https://localhost:4318/v1/traces`, не притворяясь, что в модуле есть
+  локальный OTLP collector.
+
+Что сделано:
+
+- в `templates/dmcr/deployment.yaml` main `dmcr` container теперь получает
+  `OTEL_TRACES_EXPORTER=none`;
+- module explicitly disables upstream registry trace export by default instead
+  of relying on missing localhost collector behavior;
+- metrics path and protected `/metrics` shell are unchanged.
+
+Границы slice:
+
+- trace export is disabled by default only for `dmcr` runtime;
+- no collector, tracing pipeline, or observability API was added;
+- `dmcr` health, TLS serving, and Prometheus metrics behavior stay unchanged.
+
+Проверки:
+
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`

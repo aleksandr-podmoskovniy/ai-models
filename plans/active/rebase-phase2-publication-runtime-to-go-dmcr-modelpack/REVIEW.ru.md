@@ -1128,3 +1128,19 @@ Checks:
 - Medium: local `werf build --dev --env dev --platform=linux/amd64 controller
   controller-runtime` is now the relevant proof, because it exercises the same
   controller image path that the CI failure stopped before.
+
+## Slice 69 review notes
+
+- No blocking findings against disabling default trace export in `dmcr`. The
+  live registry pod was healthy; the repeated `localhost:4318` errors were
+  pure upstream auto-telemetry noise because this module does not run an OTLP
+  collector beside `dmcr`.
+- High: setting `OTEL_TRACES_EXPORTER=none` in the module-owned deployment is
+  the correct fix boundary. It is explicit, fail-closed, and does not pretend
+  that a local collector exists.
+- High: leaving metrics intact while disabling traces is the right platform
+  default. `dmcr` observability in this module is currently Prometheus-first,
+  not tracing-first.
+- Medium: if the module later gets a real tracing integration, this default
+  should be revisited deliberately instead of being inferred from generic
+  upstream defaults.
