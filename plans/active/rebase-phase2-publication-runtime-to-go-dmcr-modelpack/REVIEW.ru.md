@@ -894,3 +894,22 @@ Checks:
   `dmcr` container are not the same failure. They are secondary probe/client
   noise while the sidecar is unhealthy; this slice targets the actual startup
   blocker in `kube-rbac-proxy`.
+
+## Slice 54 review notes
+
+- No blocking findings against the landed repo fixes. The live e2e run exposed
+  real product bugs rather than operator mistakes, and all landed fixes stay
+  bounded and aligned with the current phase-2 publication scope.
+- High: the CRD CEL fixes are necessary, not optional cleanup. Optional
+  immutable fields and upload-only `spec.source` paths must not fail on absent
+  keys during normal create/status-update flows.
+- High: reducing default publication-worker scratch/resources from `2Ti` to
+  `50Gi` is the correct baseline correction. A default that cannot schedule on
+  ordinary worker nodes is not an honest bounded runtime shell.
+- High: controller-created runtime pods/jobs must inherit the module registry
+  pull secret. Without that, tiny-model e2e will just move from `Pending` to
+  `ErrImagePull`, which is still a broken default runtime path.
+- Medium: the live cluster still cannot finish tiny-model e2e until the new
+  module bundle is rolled out. DKP forbids direct mutation of module-owned CRDs
+  and deployments, so the remaining blocker is deployment freshness, not an
+  unhandled repo defect in this slice.

@@ -186,7 +186,7 @@ func withValidRuntimeOptions(options RuntimeOptions) RuntimeOptions {
 		options.WorkVolume.Type = WorkVolumeTypeEmptyDir
 	}
 	if options.WorkVolume.EmptyDirSizeLimit.Sign() <= 0 {
-		options.WorkVolume.EmptyDirSizeLimit = resource.MustParse("2Ti")
+		options.WorkVolume.EmptyDirSizeLimit = resource.MustParse("50Gi")
 	}
 	if strings.TrimSpace(options.WorkVolume.PersistentVolumeClaimName) == "" {
 		options.WorkVolume.PersistentVolumeClaimName = "ai-models-publication-work"
@@ -204,7 +204,7 @@ func withValidRuntimeOptions(options RuntimeOptions) RuntimeOptions {
 		options.Resources.Requests[corev1.ResourceMemory] = resource.MustParse("8Gi")
 	}
 	if _, ok := options.Resources.Requests[corev1.ResourceEphemeralStorage]; !ok {
-		options.Resources.Requests[corev1.ResourceEphemeralStorage] = resource.MustParse("2Ti")
+		options.Resources.Requests[corev1.ResourceEphemeralStorage] = resource.MustParse("50Gi")
 	}
 	if _, ok := options.Resources.Limits[corev1.ResourceCPU]; !ok {
 		options.Resources.Limits[corev1.ResourceCPU] = resource.MustParse("4")
@@ -213,7 +213,7 @@ func withValidRuntimeOptions(options RuntimeOptions) RuntimeOptions {
 		options.Resources.Limits[corev1.ResourceMemory] = resource.MustParse("16Gi")
 	}
 	if _, ok := options.Resources.Limits[corev1.ResourceEphemeralStorage]; !ok {
-		options.Resources.Limits[corev1.ResourceEphemeralStorage] = resource.MustParse("2Ti")
+		options.Resources.Limits[corev1.ResourceEphemeralStorage] = resource.MustParse("50Gi")
 	}
 	return options
 }

@@ -53,7 +53,7 @@ memory: 128Mi
 {{- $runtime := (index $internal "publicationRuntime") | default dict -}}
 {{- $workVolume := (index $runtime "workVolume") | default dict -}}
 {{- $emptyDir := (index $workVolume "emptyDir") | default dict -}}
-{{- default "2Ti" (index $emptyDir "sizeLimit") -}}
+{{- default "50Gi" (index $emptyDir "sizeLimit") -}}
 {{- end -}}
 
 {{- define "ai-models.publicationWorkVolumePVCName" -}}
@@ -80,7 +80,7 @@ memory: 128Mi
 {{- $runtime := (index $internal "publicationRuntime") | default dict -}}
 {{- $workVolume := (index $runtime "workVolume") | default dict -}}
 {{- $pvc := (index $workVolume "persistentVolumeClaim") | default dict -}}
-{{- default "2Ti" (index $pvc "storageSize") -}}
+{{- default "50Gi" (index $pvc "storageSize") -}}
 {{- end -}}
 
 {{- define "ai-models.publicationWorkerCPURequest" -}}
@@ -107,7 +107,7 @@ memory: 128Mi
 {{- $runtime := (index $internal "publicationRuntime") | default dict -}}
 {{- $resources := (index $runtime "resources") | default dict -}}
 {{- $requests := (index $resources "requests") | default dict -}}
-{{- default "2Ti" (index $requests "ephemeral-storage") -}}
+{{- default "50Gi" (index $requests "ephemeral-storage") -}}
 {{- end -}}
 
 {{- define "ai-models.publicationWorkerCPULimit" -}}
@@ -134,7 +134,7 @@ memory: 128Mi
 {{- $runtime := (index $internal "publicationRuntime") | default dict -}}
 {{- $resources := (index $runtime "resources") | default dict -}}
 {{- $limits := (index $resources "limits") | default dict -}}
-{{- default "2Ti" (index $limits "ephemeral-storage") -}}
+{{- default "50Gi" (index $limits "ephemeral-storage") -}}
 {{- end -}}
 
 {{- define "ai-models.dmcrResources" -}}

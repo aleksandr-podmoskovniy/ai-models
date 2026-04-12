@@ -89,6 +89,7 @@ func buildWithPlan(
 		Spec: corev1.PodSpec{
 			RestartPolicy:      corev1.RestartPolicyNever,
 			ServiceAccountName: options.ServiceAccountName,
+			ImagePullSecrets:   imagePullSecrets(options.ImagePullSecretName),
 			Volumes:            buildVolumes(options, sourcePlan, projectedAuthSecretName),
 			Containers:         []corev1.Container{container},
 		},
@@ -100,6 +101,13 @@ func imagePullPolicyFor(options Options) corev1.PullPolicy {
 		return options.ImagePullPolicy
 	}
 	return corev1.PullIfNotPresent
+}
+
+func imagePullSecrets(secretName string) []corev1.LocalObjectReference {
+	if strings.TrimSpace(secretName) == "" {
+		return nil
+	}
+	return []corev1.LocalObjectReference{{Name: strings.TrimSpace(secretName)}}
 }
 
 func buildLabels(owner publicationports.Owner) map[string]string {

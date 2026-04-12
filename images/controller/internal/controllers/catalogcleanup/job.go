@@ -34,6 +34,7 @@ import (
 type CleanupJobOptions struct {
 	Namespace               string
 	Image                   string
+	ImagePullSecretName     string
 	ServiceAccountName      string
 	OCIInsecure             bool
 	OCIRegistrySecretName   string
@@ -128,6 +129,7 @@ func buildCleanupJob(owner cleanupJobOwner, handle cleanuphandle.Handle, options
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
 					ServiceAccountName: options.ServiceAccountName,
+					ImagePullSecrets:   imagePullSecrets(options.ImagePullSecretName),
 					Volumes: append(
 						registryVolumes,
 						objectStorageVolumes...,
@@ -155,6 +157,13 @@ func buildCleanupJob(owner cleanupJobOwner, handle cleanuphandle.Handle, options
 			},
 		},
 	}, nil
+}
+
+func imagePullSecrets(secretName string) []corev1.LocalObjectReference {
+	if strings.TrimSpace(secretName) == "" {
+		return nil
+	}
+	return []corev1.LocalObjectReference{{Name: strings.TrimSpace(secretName)}}
 }
 
 func isCleanupJobComplete(job *batchv1.Job) bool {

@@ -20,12 +20,12 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // ModelSpec is the shared desired state for both Model and ClusterModel.
 // +kubebuilder:validation:XValidation:rule="self.source == oldSelf.source",message="spec.source is immutable"
-// +kubebuilder:validation:XValidation:rule="self.inputFormat == oldSelf.inputFormat",message="spec.inputFormat is immutable"
-// +kubebuilder:validation:XValidation:rule="self.runtimeHints == oldSelf.runtimeHints",message="spec.runtimeHints is immutable"
-// +kubebuilder:validation:XValidation:rule="self.modelType == oldSelf.modelType",message="spec.modelType is immutable"
-// +kubebuilder:validation:XValidation:rule="self.usagePolicy == oldSelf.usagePolicy",message="spec.usagePolicy is immutable"
-// +kubebuilder:validation:XValidation:rule="self.launchPolicy == oldSelf.launchPolicy",message="spec.launchPolicy is immutable"
-// +kubebuilder:validation:XValidation:rule="self.optimization == oldSelf.optimization",message="spec.optimization is immutable"
+// +kubebuilder:validation:XValidation:rule="(!has(self.inputFormat) && !has(oldSelf.inputFormat)) || (has(self.inputFormat) && has(oldSelf.inputFormat) && self.inputFormat == oldSelf.inputFormat)",message="spec.inputFormat is immutable"
+// +kubebuilder:validation:XValidation:rule="(!has(self.runtimeHints) && !has(oldSelf.runtimeHints)) || (has(self.runtimeHints) && has(oldSelf.runtimeHints) && self.runtimeHints == oldSelf.runtimeHints)",message="spec.runtimeHints is immutable"
+// +kubebuilder:validation:XValidation:rule="(!has(self.modelType) && !has(oldSelf.modelType)) || (has(self.modelType) && has(oldSelf.modelType) && self.modelType == oldSelf.modelType)",message="spec.modelType is immutable"
+// +kubebuilder:validation:XValidation:rule="(!has(self.usagePolicy) && !has(oldSelf.usagePolicy)) || (has(self.usagePolicy) && has(oldSelf.usagePolicy) && self.usagePolicy == oldSelf.usagePolicy)",message="spec.usagePolicy is immutable"
+// +kubebuilder:validation:XValidation:rule="(!has(self.launchPolicy) && !has(oldSelf.launchPolicy)) || (has(self.launchPolicy) && has(oldSelf.launchPolicy) && self.launchPolicy == oldSelf.launchPolicy)",message="spec.launchPolicy is immutable"
+// +kubebuilder:validation:XValidation:rule="(!has(self.optimization) && !has(oldSelf.optimization)) || (has(self.optimization) && has(oldSelf.optimization) && self.optimization == oldSelf.optimization)",message="spec.optimization is immutable"
 type ModelSpec struct {
 	DisplayName string          `json:"displayName,omitempty"`
 	Description string          `json:"description,omitempty"`
@@ -56,9 +56,9 @@ type ModelStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
-// +kubebuilder:validation:XValidation:rule="((size(self.url) > 0 ? 1 : 0) + (has(self.upload) ? 1 : 0)) == 1",message="exactly one of source.url or source.upload must be specified"
+// +kubebuilder:validation:XValidation:rule="((has(self.url) && size(self.url) > 0 ? 1 : 0) + (has(self.upload) ? 1 : 0)) == 1",message="exactly one of source.url or source.upload must be specified"
 // +kubebuilder:validation:XValidation:rule="has(self.upload) ? !has(self.authSecretRef) : true",message="source.authSecretRef is only allowed for source.url"
-// +kubebuilder:validation:XValidation:rule="has(self.upload) ? size(self.caBundle) == 0 : true",message="source.caBundle is only allowed for source.url"
+// +kubebuilder:validation:XValidation:rule="has(self.upload) ? (!has(self.caBundle) || size(self.caBundle) == 0) : true",message="source.caBundle is only allowed for source.url"
 type ModelSourceSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:Pattern=`^http[s]?:\/\/(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+$`

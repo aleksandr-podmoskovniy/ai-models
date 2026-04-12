@@ -353,20 +353,20 @@ properties:
           workVolume:
             type: EmptyDir
             emptyDir:
-              sizeLimit: 2Ti
+              sizeLimit: 50Gi
             persistentVolumeClaim:
               name: ai-models-publication-work
               storageClassName: ""
-              storageSize: 2Ti
+              storageSize: 50Gi
           resources:
             requests:
               cpu: "1"
               memory: 8Gi
-              ephemeral-storage: 2Ti
+              ephemeral-storage: 50Gi
             limits:
               cpu: "4"
               memory: 16Gi
-              ephemeral-storage: 2Ti
+              ephemeral-storage: 50Gi
         additionalProperties: true
       ingress:
         type: object

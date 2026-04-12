@@ -51,6 +51,17 @@
 - PVC-backed internal publication storage is no longer part of the live
   user-facing contract.
 
+### Current live validation continuation (2026-04-12)
+
+- the module is now enabled on a real cluster from the `main` override path;
+- the next required step is no longer another structural slice, but an honest
+  end-to-end validation:
+  - verify that the live cluster state is actually healthy;
+  - publish at least one small real test model through the current public
+    contract;
+  - treat every discovered runtime/config/schema failure as implementation debt
+    to fix, not as a documentation caveat.
+
 Переосмыслить и постепенно перевести phase-2 publication/runtime implementation
 на virtualization-style architecture:
 
@@ -112,6 +123,11 @@
 - Сжать текущие жирные controller hotspots in place:
   - `sourcefetch`
   - `modelformat`
+- Проверить live cluster/module state against the new contract and run a real
+  small-model publication scenario through the current supported path.
+- Fix functional defects found during this live end-to-end run, including CRD
+  schema, controller/runtime, chart, or module-shell bugs, as long as they are
+  within the current phase-2 publication/runtime scope.
 
 ## Non-goals
 
@@ -129,6 +145,8 @@
   не подтверждено живой controller semantics.
 - Не тащить speculative policy blocks как пустые placeholder knobs без
   validation и observable effect в status/conditions.
+- Не притворяться live e2e successful, если публикация маленькой тестовой
+  модели не дошла до реального `Ready` / published artifact.
 
 ## Затрагиваемые области
 
@@ -241,3 +259,6 @@
   ложный contract drift.
 - Можно попытаться выкинуть synchronous upload path без честного intermediate
   storage/ownership seam и сломать большие upload scenarios хуже, чем сейчас.
+- Live cluster validation может вскрыть CRD/schema bugs или install/runtime
+  drifts, которые не ловились repo-only checks; их придётся чинить без
+  разрастания задачи в отдельный мегарефакторинг.

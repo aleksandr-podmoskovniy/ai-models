@@ -51,9 +51,11 @@ spec:
             - --leader-election-id={{ include "ai-models.controllerLeaderElectionID" . }}
             - --leader-election-namespace=$(POD_NAMESPACE)
             - --cleanup-job-image={{ include "helm_lib_module_image" (list . "controllerRuntime") }}
+            - --cleanup-job-image-pull-secret-name={{ include "ai-models.registrySecretName" . }}
             - --cleanup-job-namespace=$(POD_NAMESPACE)
             - --cleanup-job-service-account={{ include "ai-models.controllerServiceAccountName" . }}
             - --publication-worker-image={{ include "helm_lib_module_image" (list . "controllerRuntime") }}
+            - --publication-worker-image-pull-secret-name={{ include "ai-models.registrySecretName" . }}
             - --publication-worker-namespace=$(POD_NAMESPACE)
             - --publication-worker-service-account={{ include "ai-models.controllerServiceAccountName" . }}
             - --publication-max-concurrent-workers={{ include "ai-models.publicationMaxConcurrentWorkers" . }}

@@ -2453,3 +2453,87 @@ replacement has landed yet.
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
+
+## Slice 54 landed
+
+Цель:
+
+- провести честную live e2e validation нового module contract на реальном
+  кластере;
+- довести публикацию маленькой тестовой модели через текущий public contract
+  до реального `Ready`;
+- все найденные schema/runtime bugs чинить как bounded follow-up slices внутри
+  этого же canonical bundle.
+
+Первые live findings:
+
+- upload-only `Model` create already exposed a real CRD CEL bug:
+  `spec.source` validation accesses missing `source.url` / `source.caBundle`
+  keys directly, so an object with only `source.upload` fails admission with
+  `no such key` instead of passing validation.
+
+План работы внутри slice:
+
+- fix CRD/OpenAPI marker drift for `spec.source` CEL rules;
+- continue upload-based tiny GGUF e2e flow in the cluster;
+- capture and fix the next real runtime failures, if any;
+- sync bundle notes and validation evidence after each landed fix.
+
+Реально сделано:
+
+- live cluster baseline was verified first:
+  - `Module/ai-models` is `Ready`;
+  - backend, controller, PostgreSQL, and DMCR Pods are `Running`;
+  - shared controller ingress/service shell is present.
+- tiny-model e2e validation was started with a cluster-local HTTP source that
+  serves a minimal `GGUFpayload` fixture through a temporary test Service in
+  `default`.
+- live validation exposed three real module bugs:
+  - CRD CEL drift:
+    - `spec.source` upload validation accessed missing `url` / `caBundle`
+      keys directly and rejected upload-only objects with `no such key`;
+    - optional immutable `spec` fields (`inputFormat`, `runtimeHints`,
+      `modelType`, `usagePolicy`, `launchPolicy`, `optimization`) also used
+      direct equality against absent keys, which broke normal controller status
+      updates on otherwise valid objects.
+  - publication worker runtime defaults were not schedulable on the real
+    cluster:
+    - `publicationWorkVolume.emptyDir.sizeLimit`
+    - `requests.ephemeral-storage`
+    - `limits.ephemeral-storage`
+    all defaulted to `2Ti`, so even a tiny test publish pod stayed `Pending`
+    with `Insufficient ephemeral-storage`.
+  - controller-created runtime pods/jobs did not inherit the module registry
+    pull secret, so once the worker shell became schedulable the next live
+    failure was `ErrImagePull` for the private runtime image.
+- repo fixes landed:
+  - `api/core/v1alpha1/types.go` now guards all optional CEL validations with
+    `has(...)` checks instead of reading absent keys directly;
+  - publication runtime defaults were reduced from `2Ti` to a schedulable
+    bounded baseline `50Gi` in:
+    - `images/controller/cmd/ai-models-controller/run.go`
+    - `openapi/values.yaml`
+    - `templates/_helpers.tpl`
+    - matching controller tests.
+  - controller-created publication workers and cleanup jobs now inherit the
+    module image pull secret through:
+    - `images/controller/internal/adapters/k8s/workloadpod/options.go`
+    - `images/controller/internal/adapters/k8s/sourceworker/build.go`
+    - `images/controller/internal/controllers/catalogcleanup/job.go`
+    - `templates/controller/deployment.yaml`
+    - matching controller tests.
+- honest live outcome after the repo fix:
+  - upload-source e2e cannot complete on the current cluster without a new
+    module rollout because DKP forbids direct CRD patching for module-owned
+    objects;
+  - URL-source e2e reaches `Publishing` with a real sourceworker pod plan, and
+    the remaining live blockers on the current deployed bundle are the old
+    unschedulable `2Ti` worker shell and the missing runtime `imagePullSecret`
+    still running in the cluster.
+
+Проверки:
+
+- targeted cluster validation with `kubectl` and a real tiny-model publish flow
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`

@@ -66,7 +66,7 @@ func TestVolumesIncludeBoundedEmptyDirAndRegistryCA(t *testing.T) {
 	if volumes[0].Name != WorkVolumeName || volumes[0].EmptyDir == nil {
 		t.Fatalf("unexpected work volume %#v", volumes[0])
 	}
-	if got, want := volumes[0].EmptyDir.SizeLimit.String(), "2Ti"; got != want {
+	if got, want := volumes[0].EmptyDir.SizeLimit.String(), "50Gi"; got != want {
 		t.Fatalf("unexpected work volume size limit %q", got)
 	}
 	if volumes[1].Name != "registry-ca" {
@@ -84,7 +84,7 @@ func TestVolumesSupportPersistentVolumeClaimWorkVolume(t *testing.T) {
 		WorkVolume: WorkVolumeOptions{
 			Type:                      WorkVolumeTypePersistentVolumeClaim,
 			PersistentVolumeClaimName: "ai-models-publication-work",
-			EmptyDirSizeLimit:         resource.MustParse("2Ti"),
+			EmptyDirSizeLimit:         resource.MustParse("50Gi"),
 		},
 	}), corev1.Volume{})
 

@@ -46,6 +46,7 @@ func TestBuildCleanupJob(t *testing.T) {
 	}, CleanupJobOptions{
 		Namespace:             "d8-ai-models",
 		Image:                 "backend:latest",
+		ImagePullSecretName:   "ai-models-module-registry",
 		ServiceAccountName:    "ai-models-controller",
 		OCIRegistrySecretName: "ai-models-dmcr-auth-write",
 		Env: []corev1.EnvVar{
@@ -67,5 +68,8 @@ func TestBuildCleanupJob(t *testing.T) {
 	}
 	if got, want := job.Labels[resourcenames.OwnerNamespaceLabelKey], "team-a"; got != want {
 		t.Fatalf("unexpected owner namespace label %q", got)
+	}
+	if len(job.Spec.Template.Spec.ImagePullSecrets) != 1 || job.Spec.Template.Spec.ImagePullSecrets[0].Name != "ai-models-module-registry" {
+		t.Fatalf("unexpected imagePullSecrets %#v", job.Spec.Template.Spec.ImagePullSecrets)
 	}
 }

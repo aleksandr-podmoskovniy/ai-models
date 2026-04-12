@@ -51,6 +51,9 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	if got, want := pod.Spec.ServiceAccountName, "ai-models-controller"; got != want {
 		t.Fatalf("unexpected service account %q", got)
 	}
+	if len(pod.Spec.ImagePullSecrets) != 1 || pod.Spec.ImagePullSecrets[0].Name != "ai-models-module-registry" {
+		t.Fatalf("unexpected imagePullSecrets %#v", pod.Spec.ImagePullSecrets)
+	}
 	if got, want := pod.Spec.Containers[0].Resources.Requests.Cpu().String(), "1"; got != want {
 		t.Fatalf("unexpected cpu request %q", got)
 	}

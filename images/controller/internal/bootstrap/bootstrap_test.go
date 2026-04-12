@@ -64,18 +64,18 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 				},
 				WorkVolume: workloadpod.WorkVolumeOptions{
 					Type:              workloadpod.WorkVolumeTypeEmptyDir,
-					EmptyDirSizeLimit: resource.MustParse("2Ti"),
+					EmptyDirSizeLimit: resource.MustParse("50Gi"),
 				},
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:              resource.MustParse("1"),
 						corev1.ResourceMemory:           resource.MustParse("8Gi"),
-						corev1.ResourceEphemeralStorage: resource.MustParse("2Ti"),
+						corev1.ResourceEphemeralStorage: resource.MustParse("50Gi"),
 					},
 					Limits: corev1.ResourceList{
 						corev1.ResourceCPU:              resource.MustParse("4"),
 						corev1.ResourceMemory:           resource.MustParse("16Gi"),
-						corev1.ResourceEphemeralStorage: resource.MustParse("2Ti"),
+						corev1.ResourceEphemeralStorage: resource.MustParse("50Gi"),
 					},
 				},
 			},

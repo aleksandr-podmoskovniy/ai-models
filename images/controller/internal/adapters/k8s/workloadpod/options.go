@@ -42,6 +42,7 @@ type WorkVolumeOptions struct {
 type RuntimeOptions struct {
 	Namespace               string
 	Image                   string
+	ImagePullSecretName     string
 	ServiceAccountName      string
 	OCIRepositoryPrefix     string
 	OCIInsecure             bool

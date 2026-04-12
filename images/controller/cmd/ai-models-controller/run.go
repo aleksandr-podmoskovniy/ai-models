@@ -35,64 +35,68 @@ import (
 )
 
 const (
-	logFormatEnv                       = "LOG_FORMAT"
-	cleanupJobImageEnv                 = "CLEANUP_JOB_IMAGE"
-	cleanupJobNamespaceEnv             = "CLEANUP_JOB_NAMESPACE"
-	cleanupJobServiceAccountEnv        = "CLEANUP_JOB_SERVICE_ACCOUNT"
-	cleanupJobEnvPassThroughEnv        = "CLEANUP_JOB_ENV_PASS_THROUGH"
-	publicationWorkerImageEnv          = "PUBLICATION_WORKER_IMAGE"
-	publicationWorkerNamespaceEnv      = "PUBLICATION_WORKER_NAMESPACE"
-	publicationWorkerServiceAccountEnv = "PUBLICATION_WORKER_SERVICE_ACCOUNT"
-	publicationOCIRepositoryPrefixEnv  = "PUBLICATION_OCI_REPOSITORY_PREFIX"
-	publicationOCIInsecureEnv          = "PUBLICATION_OCI_INSECURE"
-	publicationOCISecretEnv            = "PUBLICATION_OCI_CREDENTIALS_SECRET_NAME"
-	publicationOCICASecretEnv          = "PUBLICATION_OCI_CA_SECRET_NAME"
-	publicationMaxConcurrentWorkersEnv = "PUBLICATION_MAX_CONCURRENT_WORKERS"
-	publicationWorkVolumeTypeEnv       = "PUBLICATION_WORK_VOLUME_TYPE"
-	publicationWorkVolumeSizeLimitEnv  = "PUBLICATION_WORK_VOLUME_SIZE_LIMIT"
-	publicationWorkVolumeClaimNameEnv  = "PUBLICATION_WORK_VOLUME_CLAIM_NAME"
-	publicationWorkerCPURequestEnv     = "PUBLICATION_WORKER_CPU_REQUEST"
-	publicationWorkerCPULimitEnv       = "PUBLICATION_WORKER_CPU_LIMIT"
-	publicationWorkerMemoryRequestEnv  = "PUBLICATION_WORKER_MEMORY_REQUEST"
-	publicationWorkerMemoryLimitEnv    = "PUBLICATION_WORKER_MEMORY_LIMIT"
-	publicationWorkerEphemeralReqEnv   = "PUBLICATION_WORKER_EPHEMERAL_STORAGE_REQUEST"
-	publicationWorkerEphemeralLimitEnv = "PUBLICATION_WORKER_EPHEMERAL_STORAGE_LIMIT"
-	artifactsBucketEnv                 = "ARTIFACTS_BUCKET"
-	artifactsS3EndpointEnv             = "ARTIFACTS_S3_ENDPOINT_URL"
-	artifactsS3RegionEnv               = "ARTIFACTS_S3_REGION"
-	artifactsS3UsePathStyleEnv         = "ARTIFACTS_S3_USE_PATH_STYLE"
-	artifactsS3IgnoreTLSEnv            = "ARTIFACTS_S3_IGNORE_TLS"
-	artifactsCredentialsSecretEnv      = "ARTIFACTS_CREDENTIALS_SECRET_NAME"
-	artifactsCASecretEnv               = "ARTIFACTS_CA_SECRET_NAME"
-	uploadServiceNameEnv               = "UPLOAD_SERVICE_NAME"
-	uploadPublicHostEnv                = "UPLOAD_PUBLIC_HOST"
-	metricsBindAddressEnv              = "METRICS_BIND_ADDRESS"
-	healthProbeBindAddressEnv          = "HEALTH_PROBE_BIND_ADDRESS"
-	leaderElectEnv                     = "LEADER_ELECT"
-	leaderElectionIDEnv                = "LEADER_ELECTION_ID"
-	leaderElectionNamespaceEnv         = "LEADER_ELECTION_NAMESPACE"
+	logFormatEnv                        = "LOG_FORMAT"
+	cleanupJobImageEnv                  = "CLEANUP_JOB_IMAGE"
+	cleanupJobImagePullSecretEnv        = "CLEANUP_JOB_IMAGE_PULL_SECRET_NAME"
+	cleanupJobNamespaceEnv              = "CLEANUP_JOB_NAMESPACE"
+	cleanupJobServiceAccountEnv         = "CLEANUP_JOB_SERVICE_ACCOUNT"
+	cleanupJobEnvPassThroughEnv         = "CLEANUP_JOB_ENV_PASS_THROUGH"
+	publicationWorkerImageEnv           = "PUBLICATION_WORKER_IMAGE"
+	publicationWorkerImagePullSecretEnv = "PUBLICATION_WORKER_IMAGE_PULL_SECRET_NAME"
+	publicationWorkerNamespaceEnv       = "PUBLICATION_WORKER_NAMESPACE"
+	publicationWorkerServiceAccountEnv  = "PUBLICATION_WORKER_SERVICE_ACCOUNT"
+	publicationOCIRepositoryPrefixEnv   = "PUBLICATION_OCI_REPOSITORY_PREFIX"
+	publicationOCIInsecureEnv           = "PUBLICATION_OCI_INSECURE"
+	publicationOCISecretEnv             = "PUBLICATION_OCI_CREDENTIALS_SECRET_NAME"
+	publicationOCICASecretEnv           = "PUBLICATION_OCI_CA_SECRET_NAME"
+	publicationMaxConcurrentWorkersEnv  = "PUBLICATION_MAX_CONCURRENT_WORKERS"
+	publicationWorkVolumeTypeEnv        = "PUBLICATION_WORK_VOLUME_TYPE"
+	publicationWorkVolumeSizeLimitEnv   = "PUBLICATION_WORK_VOLUME_SIZE_LIMIT"
+	publicationWorkVolumeClaimNameEnv   = "PUBLICATION_WORK_VOLUME_CLAIM_NAME"
+	publicationWorkerCPURequestEnv      = "PUBLICATION_WORKER_CPU_REQUEST"
+	publicationWorkerCPULimitEnv        = "PUBLICATION_WORKER_CPU_LIMIT"
+	publicationWorkerMemoryRequestEnv   = "PUBLICATION_WORKER_MEMORY_REQUEST"
+	publicationWorkerMemoryLimitEnv     = "PUBLICATION_WORKER_MEMORY_LIMIT"
+	publicationWorkerEphemeralReqEnv    = "PUBLICATION_WORKER_EPHEMERAL_STORAGE_REQUEST"
+	publicationWorkerEphemeralLimitEnv  = "PUBLICATION_WORKER_EPHEMERAL_STORAGE_LIMIT"
+	artifactsBucketEnv                  = "ARTIFACTS_BUCKET"
+	artifactsS3EndpointEnv              = "ARTIFACTS_S3_ENDPOINT_URL"
+	artifactsS3RegionEnv                = "ARTIFACTS_S3_REGION"
+	artifactsS3UsePathStyleEnv          = "ARTIFACTS_S3_USE_PATH_STYLE"
+	artifactsS3IgnoreTLSEnv             = "ARTIFACTS_S3_IGNORE_TLS"
+	artifactsCredentialsSecretEnv       = "ARTIFACTS_CREDENTIALS_SECRET_NAME"
+	artifactsCASecretEnv                = "ARTIFACTS_CA_SECRET_NAME"
+	uploadServiceNameEnv                = "UPLOAD_SERVICE_NAME"
+	uploadPublicHostEnv                 = "UPLOAD_PUBLIC_HOST"
+	metricsBindAddressEnv               = "METRICS_BIND_ADDRESS"
+	healthProbeBindAddressEnv           = "HEALTH_PROBE_BIND_ADDRESS"
+	leaderElectEnv                      = "LEADER_ELECT"
+	leaderElectionIDEnv                 = "LEADER_ELECTION_ID"
+	leaderElectionNamespaceEnv          = "LEADER_ELECTION_NAMESPACE"
 )
 
 const defaultCleanupPassThrough = "SSL_CERT_FILE,REQUESTS_CA_BUNDLE,AWS_CA_BUNDLE"
 
 const (
 	defaultPublicationMaxConcurrentWorkers = 1
-	defaultPublicationWorkVolumeSizeLimit  = "2Ti"
+	defaultPublicationWorkVolumeSizeLimit  = "50Gi"
 	defaultPublicationWorkVolumeClaimName  = "ai-models-publication-work"
 	defaultPublicationWorkerCPURequest     = "1"
 	defaultPublicationWorkerCPULimit       = "4"
 	defaultPublicationWorkerMemoryRequest  = "8Gi"
 	defaultPublicationWorkerMemoryLimit    = "16Gi"
-	defaultPublicationWorkerEphemeralLimit = "2Ti"
+	defaultPublicationWorkerEphemeralLimit = "50Gi"
 )
 
 func runManager(args []string) int {
 	var logFormat string
 	var cleanupJobImage string
+	var cleanupJobImagePullSecretName string
 	var cleanupJobNamespace string
 	var cleanupJobServiceAccount string
 	var cleanupJobEnvPassThrough string
 	var publicationWorkerImage string
+	var publicationWorkerImagePullSecretName string
 	var publicationWorkerNamespace string
 	var publicationWorkerServiceAccount string
 	var publicationOCIRepositoryPrefix string
@@ -127,10 +131,12 @@ func runManager(args []string) int {
 	flags := cmdsupport.NewFlagSet("ai-models-controller")
 	flags.StringVar(&logFormat, "log-format", cmdsupport.EnvOr(logFormatEnv, "text"), "Log format: text or json.")
 	flags.StringVar(&cleanupJobImage, "cleanup-job-image", cmdsupport.EnvOr(cleanupJobImageEnv, ""), "Runtime image used for cleanup Jobs.")
+	flags.StringVar(&cleanupJobImagePullSecretName, "cleanup-job-image-pull-secret-name", cmdsupport.EnvOr(cleanupJobImagePullSecretEnv, ""), "Optional imagePullSecret name used by cleanup Jobs.")
 	flags.StringVar(&cleanupJobNamespace, "cleanup-job-namespace", cmdsupport.EnvOr(cleanupJobNamespaceEnv, cmdsupport.EnvOr("POD_NAMESPACE", "d8-ai-models")), "Namespace where cleanup Jobs are created.")
 	flags.StringVar(&cleanupJobServiceAccount, "cleanup-job-service-account", cmdsupport.EnvOr(cleanupJobServiceAccountEnv, ""), "ServiceAccountName used by cleanup Jobs.")
 	flags.StringVar(&cleanupJobEnvPassThrough, "cleanup-job-env-pass-through", cmdsupport.EnvOr(cleanupJobEnvPassThroughEnv, defaultCleanupPassThrough), "Comma-separated list of controller env vars copied into cleanup Jobs.")
 	flags.StringVar(&publicationWorkerImage, "publication-worker-image", cmdsupport.EnvOr(publicationWorkerImageEnv, cmdsupport.EnvOr(cleanupJobImageEnv, "")), "Runtime image used for publication worker Pods.")
+	flags.StringVar(&publicationWorkerImagePullSecretName, "publication-worker-image-pull-secret-name", cmdsupport.EnvOr(publicationWorkerImagePullSecretEnv, cmdsupport.EnvOr(cleanupJobImagePullSecretEnv, "")), "Optional imagePullSecret name used by publication worker Pods.")
 	flags.StringVar(&publicationWorkerNamespace, "publication-worker-namespace", cmdsupport.EnvOr(publicationWorkerNamespaceEnv, cmdsupport.EnvOr(cleanupJobNamespaceEnv, cmdsupport.EnvOr("POD_NAMESPACE", "d8-ai-models"))), "Namespace where publication worker Pods are created.")
 	flags.StringVar(&publicationWorkerServiceAccount, "publication-worker-service-account", cmdsupport.EnvOr(publicationWorkerServiceAccountEnv, cmdsupport.EnvOr(cleanupJobServiceAccountEnv, "")), "ServiceAccountName used by publication worker Pods.")
 	flags.StringVar(&publicationOCIRepositoryPrefix, "publication-oci-repository-prefix", cmdsupport.EnvOr(publicationOCIRepositoryPrefixEnv, ""), "OCI repository prefix used by publication workers.")
@@ -213,6 +219,7 @@ func runManager(args []string) int {
 			CleanupJob: catalogcleanup.CleanupJobOptions{
 				Namespace:               cleanupJobNamespace,
 				Image:                   cleanupJobImage,
+				ImagePullSecretName:     cleanupJobImagePullSecretName,
 				ServiceAccountName:      cleanupJobServiceAccount,
 				OCIInsecure:             publicationOCIInsecure,
 				OCIRegistrySecretName:   publicationOCISecretName,
@@ -226,6 +233,7 @@ func runManager(args []string) int {
 			Runtime: catalogstatus.PublicationRuntimeOptions{
 				Namespace:               publicationWorkerNamespace,
 				Image:                   cmdsupport.FallbackString(publicationWorkerImage, cleanupJobImage),
+				ImagePullSecretName:     cmdsupport.FallbackString(publicationWorkerImagePullSecretName, cleanupJobImagePullSecretName),
 				ServiceAccountName:      cmdsupport.FallbackString(publicationWorkerServiceAccount, cleanupJobServiceAccount),
 				OCIRepositoryPrefix:     publicationOCIRepositoryPrefix,
 				OCIInsecure:             publicationOCIInsecure,

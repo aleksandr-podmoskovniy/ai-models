@@ -57,6 +57,7 @@ func testOptions() Options {
 		RuntimeOptions: workloadpod.RuntimeOptions{
 			Namespace:             "d8-ai-models",
 			Image:                 "backend:latest",
+			ImagePullSecretName:   "ai-models-module-registry",
 			ServiceAccountName:    "ai-models-controller",
 			OCIRepositoryPrefix:   "registry.internal.local/ai-models",
 			OCIRegistrySecretName: "ai-models-dmcr-auth-write",
