@@ -38,8 +38,6 @@ type RemoteOptions struct {
 	Workspace       string
 	RequestedFormat modelsv1alpha1.ModelInputFormat
 	HFToken         string
-	HTTPCABundle    []byte
-	HTTPAuthDir     string
 	RawStage        *RawStageOptions
 }
 
@@ -83,8 +81,6 @@ func FetchRemoteModel(ctx context.Context, options RemoteOptions) (RemoteResult,
 	switch sourceType {
 	case modelsv1alpha1.ModelSourceTypeHuggingFace:
 		return fetchHuggingFaceModel(ctx, options)
-	case modelsv1alpha1.ModelSourceTypeHTTP:
-		return fetchHTTPModel(ctx, options)
 	default:
 		return RemoteResult{}, errors.New("unsupported remote source type")
 	}
@@ -95,11 +91,4 @@ func resolveRemoteFormat(files []string, requested modelsv1alpha1.ModelInputForm
 		return requested, nil
 	}
 	return modelformat.DetectRemoteFormat(files)
-}
-
-func resolveDirFormat(modelDir string, requested modelsv1alpha1.ModelInputFormat) (modelsv1alpha1.ModelInputFormat, error) {
-	if strings.TrimSpace(string(requested)) != "" {
-		return requested, nil
-	}
-	return modelformat.DetectDirFormat(modelDir)
 }

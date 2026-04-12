@@ -34,7 +34,6 @@
 Тип источника пользователь больше не задаёт явно. Он определяется внутри:
 
 - `huggingface.co` и `hf.co` -> `HuggingFace`
-- прочий `http/https` -> `HTTP`
 - `upload` -> `Upload`
 
 Это делается в [source.go](/Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models/api/core/v1alpha1/source.go).
@@ -96,13 +95,11 @@
 - `task`
 - `framework`
 - `family`
-- `license`
 - `architecture`
 - `format`
 - `parameterCount`
 - `quantization`
 - `contextWindowTokens`
-- `sourceRepoID`
 - `supportedEndpointTypes`
 - `compatibleRuntimes`
 - `compatibleAcceleratorVendors`
@@ -145,18 +142,14 @@ ADR ожидает такие пользовательские поля:
 
 ### 2. ADR описывает source contract иначе
 
-В ADR пользователь сам задаёт:
-
-- `HTTP`
-- `HuggingFace`
-- `Upload`
-
+В ADR пользователь сам задаёт тип source.
 В текущем CRD пользователь задаёт только:
 
 - ссылку
 - либо upload
 
-А `HuggingFace` и `HTTP` различаются уже внутри controller.
+А `HuggingFace` и `Upload` различаются уже внутри controller по выбранной
+ветке `source`.
 
 ### 3. В ADR есть inference policy в spec, а в коде её нет
 

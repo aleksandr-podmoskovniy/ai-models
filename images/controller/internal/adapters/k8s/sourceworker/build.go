@@ -17,7 +17,6 @@ limitations under the License.
 package sourceworker
 
 import (
-	"encoding/base64"
 	"errors"
 	"strings"
 
@@ -31,11 +30,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-)
-
-const (
-	httpAuthVolumeName = "http-auth"
-	httpAuthMountPath  = "/etc/ai-models/http-auth"
 )
 
 func Build(request publicationports.Request, options Options, projectedAuthSecretName string) (*corev1.Pod, error) {
@@ -141,33 +135,16 @@ func buildEnv(
 
 func buildVolumeMounts(options Options, plan publicationapp.SourceWorkerPlan) []corev1.VolumeMount {
 	var extra []corev1.VolumeMount
-	if plan.HTTP != nil && plan.HTTP.AuthSecretRef != nil {
-		extra = append(extra, corev1.VolumeMount{
-			Name:      httpAuthVolumeName,
-			MountPath: httpAuthMountPath,
-			ReadOnly:  true,
-		})
-	}
 	extra = objectstorage.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
 	return workloadpod.VolumeMounts(options.RuntimeOptions, extra...)
 }
 
 func buildVolumes(
 	options Options,
-	plan publicationapp.SourceWorkerPlan,
-	projectedAuthSecretName string,
+	_ publicationapp.SourceWorkerPlan,
+	_ string,
 ) []corev1.Volume {
 	var extra []corev1.Volume
-	if plan.HTTP != nil && plan.HTTP.AuthSecretRef != nil {
-		extra = append(extra, corev1.Volume{
-			Name: httpAuthVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: projectedAuthSecretName,
-				},
-			},
-		})
-	}
 	extra = objectstorage.Volumes(options.ObjectStorage.CASecretName, extra...)
 	return workloadpod.Volumes(options.RuntimeOptions, extra...)
 }
@@ -199,9 +176,6 @@ func sourceArgs(plan publicationapp.SourceWorkerPlan, ownerUID types.UID, rawBuc
 	if plan.HuggingFace != nil {
 		return append(huggingFaceArgs(plan.HuggingFace), remoteRawStageArgs(ownerUID, rawBucket)...)
 	}
-	if plan.HTTP != nil {
-		return append(httpArgs(plan.HTTP), remoteRawStageArgs(ownerUID, rawBucket)...)
-	}
 	if plan.Upload != nil {
 		return uploadArgs(plan.Upload)
 	}
@@ -212,17 +186,6 @@ func huggingFaceArgs(source *publicationapp.HuggingFaceSourcePlan) []string {
 	args := []string{"--hf-model-id", source.RepoID}
 	if strings.TrimSpace(source.Revision) != "" {
 		args = append(args, "--revision", source.Revision)
-	}
-	return args
-}
-
-func httpArgs(source *publicationapp.HTTPSourcePlan) []string {
-	args := []string{"--http-url", source.URL}
-	if len(source.CABundle) > 0 {
-		args = append(args, "--http-ca-bundle-b64", base64.StdEncoding.EncodeToString(source.CABundle))
-	}
-	if source.AuthSecretRef != nil {
-		args = append(args, "--http-auth-dir", httpAuthMountPath)
 	}
 	return args
 }
@@ -268,6 +231,5 @@ func validateProjectedAuthSecretName(
 }
 
 func sourceAuthRequired(plan publicationapp.SourceWorkerPlan) bool {
-	return (plan.HuggingFace != nil && plan.HuggingFace.AuthSecretRef != nil) ||
-		(plan.HTTP != nil && plan.HTTP.AuthSecretRef != nil)
+	return plan.HuggingFace != nil && plan.HuggingFace.AuthSecretRef != nil
 }

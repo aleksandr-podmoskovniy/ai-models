@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -46,29 +45,6 @@ func rawStageObjectKey(keyPrefix, relativePath string) string {
 	default:
 		return path.Join(cleanPrefix, cleanRelative)
 	}
-}
-
-func downloadStagedObject(
-	ctx context.Context,
-	client uploadstagingports.Client,
-	handle cleanuphandle.UploadStagingHandle,
-	destinationPath string,
-) error {
-	if client == nil {
-		return errors.New("raw stage client must not be nil")
-	}
-	if strings.TrimSpace(destinationPath) == "" {
-		return errors.New("raw stage destination path must not be empty")
-	}
-	if err := ensureParentDir(destinationPath); err != nil {
-		return err
-	}
-
-	return client.Download(ctx, uploadstagingports.DownloadInput{
-		Bucket:          handle.Bucket,
-		Key:             handle.Key,
-		DestinationPath: destinationPath,
-	})
 }
 
 func stageRawObject(
@@ -113,19 +89,6 @@ func stageRawObject(
 
 	return handle, nil
 }
-
-func ensureParentDir(path string) error {
-	parent := filepath.Dir(path)
-	if strings.TrimSpace(parent) == "" || parent == "." {
-		return nil
-	}
-	return osMkdirAll(parent)
-}
-
-var osMkdirAll = func(path string) error {
-	return os.MkdirAll(path, 0o755)
-}
-
 func nonNegativeInt64(value int64) int64 {
 	if value < 0 {
 		return 0

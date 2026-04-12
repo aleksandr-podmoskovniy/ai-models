@@ -111,20 +111,15 @@ temporary troubleshooting path and not the intended steady-state mode.
 
 For phase 2, the controller now owns publication/runtime adapters for its
 first live source paths. `Model` / `ClusterModel` with `spec.source.url` are
-reconciled through controller-owned worker Pods that determine whether the URL
-targets Hugging Face or a generic HTTP source, download the accepted source,
-generate a model-package description, package the checkpoint into a
+reconciled through controller-owned worker Pods that accept only Hugging Face
+URLs, resolve the exact upstream revision, download the selected files from the
+snapshot, generate a model-package description, package the checkpoint into a
 `ModelPack` with the current implementation adapter, push the resulting
-artifact into the internal module-owned DMCR-style OCI publication plane, inspect the remote
-manifest, and then project the saved artifact locator and enriched technical profile
-back into object `status`. The current live `HTTP` scope is narrow on purpose:
-it expects an archive containing a Hugging Face-compatible checkpoint,
-requires `spec.runtimeHints.task`, supports inline `caBundle`, and now also supports
-`authSecretRef` through controller-owned projection. For `HuggingFace`, the
+artifact into the internal module-owned DMCR-style OCI publication plane,
+inspect the remote manifest, and then project the saved artifact locator and
+enriched technical profile back into object `status`. For `HuggingFace`, the
 controller accepts source secrets with one of `token`, `HF_TOKEN`, or
 `HUGGING_FACE_HUB_TOKEN` and normalizes them into a projected worker token.
-For `HTTP`, the controller accepts either `authorization` or
-`username`+`password` and projects only those keys into the worker namespace.
 The controller-owned publication worker hardens tar/zip extraction and rejects
 path traversal, symlink, hard link, and other special archive entries instead
 of relying on raw `extractall`.
@@ -184,8 +179,8 @@ On top of the source contract, `spec` now also carries a live policy layer:
 `spec.inputFormat` is treated as the source-agnostic validation contract for
 the uploaded or downloaded model project, not as the final registry artifact
 format. The final published form stays internal and fixed:
-`ModelPack` in OCI. Regardless of whether bytes came from Hugging Face, HTTP,
-or local upload, the controller now validates and sanitizes the project
+`ModelPack` in OCI. Regardless of whether bytes came from Hugging Face or
+local upload, the controller now validates and sanitizes the project
 composition before packaging. The current live rules are:
 
 - `Safetensors`: requires a root `config.json`, at least one `.safetensors`
@@ -194,11 +189,6 @@ composition before packaging. The current live rules are:
   as `.py`, `.sh`, `.dll`, `.so`, or other unsupported payloads.
 - `GGUF`: requires at least one `.gguf` file, strips benign extras, and rejects
   the same active or ambiguous payloads.
-
-For generic `HTTP`, this currently means:
-
-- `Safetensors` expects an archive;
-- `GGUF` can arrive as a direct file or as an archive.
 
 If `spec.inputFormat` is omitted, the controller tries to determine it
 automatically:

@@ -49,7 +49,7 @@ func DetectRemoteSourceType(rawURL string) (ModelSourceType, error) {
 	case "huggingface.co", "www.huggingface.co", "hf.co":
 		return ModelSourceTypeHuggingFace, nil
 	default:
-		return ModelSourceTypeHTTP, nil
+		return "", fmt.Errorf("unsupported source URL host %q", parsed.Hostname())
 	}
 }
 

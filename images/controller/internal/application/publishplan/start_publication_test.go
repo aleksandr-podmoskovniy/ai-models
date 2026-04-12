@@ -37,11 +37,6 @@ func TestIsTerminalOperationPhase(t *testing.T) {
 			want:  ExecutionModeSourceWorker,
 		},
 		{
-			name:  "http uses source worker",
-			input: StartPublicationInput{Source: modelsv1alpha1.ModelSourceSpec{URL: "https://downloads.example/model.tar.gz"}},
-			want:  ExecutionModeSourceWorker,
-		},
-		{
 			name: "safetensors upload uses upload session",
 			input: StartPublicationInput{
 				Source:       modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},

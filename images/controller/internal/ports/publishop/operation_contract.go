@@ -110,7 +110,7 @@ func validateRequestSource(source modelsv1alpha1.ModelSourceSpec) error {
 		if source.Upload == nil {
 			return errors.New("publication operation upload source must not be empty")
 		}
-	case modelsv1alpha1.ModelSourceTypeHuggingFace, modelsv1alpha1.ModelSourceTypeHTTP:
+	case modelsv1alpha1.ModelSourceTypeHuggingFace:
 		if strings.TrimSpace(source.URL) == "" {
 			return errors.New("publication operation source url must not be empty")
 		}

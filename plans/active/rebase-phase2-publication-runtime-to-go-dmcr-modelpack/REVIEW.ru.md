@@ -1066,3 +1066,24 @@ Checks:
 - Residual risk: external scripts or dashboards outside this repo that read
   `.status.resolved.license` or `.status.resolved.sourceRepoID` will stop
   seeing those fields after the next status rewrite in-cluster.
+
+## Slice 65 review notes
+
+- No blocking findings against removing generic `HTTP` as a source kind. The
+  remaining supported remote path, `HuggingFace`, has a clear platform value
+  and a much better-defined security and metadata model than arbitrary remote
+  HTTP fetch.
+- High: deleting `source.caBundle`, HTTP auth projection, HTTP probe code and
+  HTTP worker flags in one slice is the right boundary. A half-removed source
+  path would leave dead config surface and hidden maintenance debt behind.
+- High: the shipped backend image must not quietly keep a second HTTP import
+  CLI surface after the controller/API cut. Removing the packaged
+  `ai-models-backend-source-import` alias and narrowing
+  `ai-models-backend-hf-import` back to HF-only semantics is part of the same
+  correctness boundary, not an optional cleanup.
+- High: keeping `spec.source.url` while narrowing it to Hugging Face URLs is
+  the right API shape. User intent stays simple, while the live support matrix
+  becomes explicit and fail-closed.
+- Medium: this is an intentional alpha API break for old non-HF URL manifests.
+  That is acceptable here, but operators must rebuild or edit those manifests
+  before the next rollout.

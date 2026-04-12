@@ -3,7 +3,7 @@
 ## Контекст
 
 Текущий phase-2 publication path уже умеет публиковать `Model` / `ClusterModel`
-из `HuggingFace`, narrow `HTTP` и `Upload` в OCI-backed
+из `HuggingFace` и `Upload` в OCI-backed
 `ModelPack` artifacts. Но concrete data plane реализован плохо:
 
 - слишком большая часть publication/runtime semantics уехала в
@@ -76,6 +76,19 @@
   - remove HF CLI/binpack from the runtime image;
   - keep `HuggingFace` acquisition in Go with revision pinning, file allowlist,
     raw-first staging and one normalized checkpoint workspace.
+
+### Current source-contract reduction (2026-04-12)
+
+- generic `HTTP` remote source has been removed from the live public/runtime
+  contract;
+- `spec.source.url` now means only a `HuggingFace` URL;
+- `status.source.resolvedType` now has only:
+  - `HuggingFace`
+  - `Upload`
+- `source.caBundle` and all HTTP-only auth/probe/runtime code are deleted as
+  dead surface;
+- this is an intentional alpha API break made to reduce controller/runtime
+  complexity and keep only the source path that has a clear platform value.
 
 Переосмыслить и постепенно перевести phase-2 publication/runtime implementation
 на virtualization-style architecture:

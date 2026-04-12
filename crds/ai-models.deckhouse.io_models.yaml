@@ -185,9 +185,6 @@ spec:
                     required:
                     - name
                     type: object
-                  caBundle:
-                    format: byte
-                    type: string
                   upload:
                     properties:
                       expectedSizeBytes:
@@ -197,7 +194,7 @@ spec:
                     type: object
                   url:
                     minLength: 1
-                    pattern: ^http[s]?:\/\/(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+$
+                    pattern: ^https?:\/\/(?:(?:www\.)?huggingface\.co|hf\.co)\/.+$
                     type: string
                 type: object
                 x-kubernetes-validations:
@@ -206,9 +203,6 @@ spec:
                     ? 1 : 0)) == 1'
                 - message: source.authSecretRef is only allowed for source.url
                   rule: 'has(self.upload) ? !has(self.authSecretRef) : true'
-                - message: source.caBundle is only allowed for source.url
-                  rule: 'has(self.upload) ? (!has(self.caBundle) || size(self.caBundle)
-                    == 0) : true'
               usagePolicy:
                 properties:
                   allowedEndpointTypes:
@@ -407,7 +401,6 @@ spec:
                     enum:
                     - HuggingFace
                     - Upload
-                    - HTTP
                     type: string
                 type: object
               upload:

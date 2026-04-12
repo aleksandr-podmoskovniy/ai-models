@@ -43,7 +43,7 @@ func StartPublication(input StartPublicationInput) (ExecutionMode, error) {
 	}
 
 	switch sourceType {
-	case modelsv1alpha1.ModelSourceTypeHuggingFace, modelsv1alpha1.ModelSourceTypeHTTP:
+	case modelsv1alpha1.ModelSourceTypeHuggingFace:
 		return ExecutionModeSourceWorker, nil
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		if input.Source.Upload == nil {

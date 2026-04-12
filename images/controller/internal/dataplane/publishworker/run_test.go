@@ -19,8 +19,6 @@ package publishworker
 import (
 	"archive/tar"
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -152,38 +150,6 @@ func TestPublishFromUploadAcceptsDirectGGUFFile(t *testing.T) {
 	}
 	if got, want := result.Artifact.Digest, "sha256:deadbeef"; got != want {
 		t.Fatalf("unexpected artifact digest %q", got)
-	}
-}
-
-func TestPublishFromHTTPAcceptsDirectGGUFFile(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/model.gguf" {
-			http.NotFound(writer, request)
-			return
-		}
-		writer.Header().Set("Content-Type", "application/octet-stream")
-		_, _ = writer.Write([]byte("GGUFpayload"))
-	}))
-	defer server.Close()
-
-	result, err := run(context.Background(), Options{
-		SourceType:         modelsv1alpha1.ModelSourceTypeHTTP,
-		ArtifactURI:        "registry.example.com/ai-models/catalog/model:published",
-		HTTPURL:            server.URL + "/model.gguf",
-		Task:               "text-generation",
-		RuntimeEngines:     []string{"KubeRay"},
-		ModelPackPublisher: fakePublisher{},
-	})
-	if err != nil {
-		t.Fatalf("run() error = %v", err)
-	}
-	if got, want := result.Resolved.Format, "GGUF"; got != want {
-		t.Fatalf("unexpected resolved format %q", got)
-	}
-	if got, want := result.Source.Type, modelsv1alpha1.ModelSourceTypeHTTP; got != want {
-		t.Fatalf("unexpected source type %q", got)
 	}
 }
 

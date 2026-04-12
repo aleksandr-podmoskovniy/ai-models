@@ -17,7 +17,6 @@ limitations under the License.
 package sourceworker
 
 import (
-	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -68,32 +67,6 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	t.Fatal("expected TMPDIR env")
 }
 
-func TestBuildAcceptsHTTPPublicationRequest(t *testing.T) {
-	t.Parallel()
-
-	request := testOperationRequest()
-	request.Owner.UID = "1111-3333"
-	request.Owner.Name = "deepseek-r1-http"
-	request.Identity.Name = "deepseek-r1-http"
-	request.Spec.Source.URL = "https://downloads.example/models/deepseek-r1.tar.gz"
-	request.Spec.Source.CABundle = []byte("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
-
-	pod, err := Build(request, testOptions(), "")
-	if err != nil {
-		t.Fatalf("Build() error = %v", err)
-	}
-
-	args := pod.Spec.Containers[0].Args
-	assertContains(t, args, "--http-url")
-	assertContains(t, args, "https://downloads.example/models/deepseek-r1.tar.gz")
-	assertContains(t, args, "--http-ca-bundle-b64")
-	assertContains(t, args, base64.StdEncoding.EncodeToString([]byte("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")))
-	assertContains(t, args, "--raw-stage-bucket")
-	assertContains(t, args, "ai-models")
-	assertContains(t, args, "--raw-stage-key-prefix")
-	assertContains(t, args, "raw/1111-3333/source-url")
-}
-
 func TestBuildIncludesHuggingFaceAuthTokenEnvFromProjectedSecret(t *testing.T) {
 	t.Parallel()
 
@@ -135,55 +108,6 @@ func TestBuildRejectsMissingProjectedAuthSecretName(t *testing.T) {
 	if _, err := Build(request, testOptions(), ""); err == nil {
 		t.Fatal("expected missing projected auth secret name to fail")
 	}
-}
-
-func TestBuildRejectsHTTPWithoutTask(t *testing.T) {
-	t.Parallel()
-
-	request := testOperationRequest()
-	request.Owner.UID = "1111-3335"
-	request.Owner.Name = "deepseek-r1-http-no-task"
-	request.Identity.Name = "deepseek-r1-http-no-task"
-	request.Spec.Source.URL = "https://downloads.example/models/deepseek-r1.tar.gz"
-	request.Spec.RuntimeHints = nil
-
-	if _, err := Build(request, testOptions(), ""); err == nil {
-		t.Fatal("expected HTTP source without task to be rejected")
-	}
-}
-
-func TestBuildIncludesHTTPAuthSecretVolumeAndArgs(t *testing.T) {
-	t.Parallel()
-
-	request := testOperationRequest()
-	request.Owner.UID = "1111-3336"
-	request.Owner.Name = "deepseek-r1-http-auth"
-	request.Identity.Name = "deepseek-r1-http-auth"
-	request.Spec.Source.URL = "https://downloads.example/models/deepseek-r1.tar.gz"
-	request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "http-auth"}
-
-	pod, err := Build(request, testOptions(), "ai-model-publish-auth-1111-3336")
-	if err != nil {
-		t.Fatalf("Build() error = %v", err)
-	}
-
-	assertContains(t, pod.Spec.Containers[0].Args, "--http-auth-dir")
-	assertContains(t, pod.Spec.Containers[0].Args, httpAuthMountPath)
-
-	for _, mount := range pod.Spec.Containers[0].VolumeMounts {
-		if mount.Name == httpAuthVolumeName && mount.MountPath == httpAuthMountPath && mount.ReadOnly {
-			goto volumeCheck
-		}
-	}
-	t.Fatal("expected HTTP auth secret volume mount")
-
-volumeCheck:
-	for _, volume := range pod.Spec.Volumes {
-		if volume.Name == httpAuthVolumeName && volume.Secret != nil && volume.Secret.SecretName == "ai-model-publish-auth-1111-3336" {
-			return
-		}
-	}
-	t.Fatal("expected HTTP auth secret volume")
 }
 
 func TestBuildTruncatesOwnerLabelsToKubernetesLimit(t *testing.T) {

@@ -1986,6 +1986,62 @@ replacement has landed yet.
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
 
+## Slice 65 landed
+
+Цель:
+
+- удалить generic `HTTP` remote source как слишком дорогой и слабо защищённый
+  путь по отношению к его platform value, оставив только `HuggingFace` и
+  `Upload`.
+
+Что сделано:
+
+- public API и runtime contract выровнены под один честный remote path:
+  - `spec.source.url` теперь принимает только `huggingface.co` / `hf.co`;
+  - `status.source.resolvedType` теперь имеет только:
+    - `HuggingFace`
+    - `Upload`
+  - `source.caBundle` удалён из CRD как мёртвый HTTP-only knob.
+- deleted HTTP-only controller/runtime code as one slice:
+  - removed HTTP preflight/probe logic from `sourceadmission` and
+    `adapters/k8s/sourceworker`;
+  - removed HTTP auth projection and worker env/args;
+  - removed HTTP fetch/probe adapters from `internal/adapters/sourcefetch`;
+  - removed HTTP publish-worker flags/env/flow.
+- deleted shipped backend legacy HTTP residue that contradicted the slice:
+  - removed `ai-models-backend-source-import` packaging alias from backend
+    images;
+  - reduced `ai-models-backend-hf-import` back to a HF-only CLI surface;
+  - removed the corresponding smoke-runtime check.
+- generated API artifacts and tests were synced:
+  - CRDs/codegen updated for the reduced source contract;
+  - HTTP-only tests were deleted or rewritten to `HuggingFace` / `Upload`.
+- repo memory/docs were synced to the new live matrix:
+  - `source.url` means only `HuggingFace`;
+  - no inline remote `caBundle`;
+  - no generic HTTP auth path;
+  - canonical controller evidence now points only to live `sourcefetch`
+    tests.
+
+Границы slice:
+
+- `Upload` path and shared upload gateway stay intact;
+- `HuggingFace` source-native Go downloader stays intact;
+- raw-stage / DMCR / profile / cleanup pipeline stays intact.
+
+Риск и честная совместимость:
+
+- this is an intentional alpha API break;
+- existing objects/manifests that used non-HF `source.url`, `source.caBundle`,
+  or HTTP-style auth semantics must be migrated or will be rejected.
+
+Проверки:
+
+- `cd api && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./...`
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/application/sourceadmission ./internal/application/publishplan ./internal/ports/publishop ./internal/adapters/sourcefetch ./internal/adapters/k8s/sourceworker ./internal/dataplane/publishworker ./internal/domain/publishstate ./internal/monitoring/catalogmetrics ./internal/application/publishaudit ./internal/application/publishobserve ./internal/publicationartifact`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
 ## Slice 61 landed
 
 Цель:

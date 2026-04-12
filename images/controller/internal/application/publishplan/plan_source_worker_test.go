@@ -57,27 +57,6 @@ func TestPlanSourceWorker(t *testing.T) {
 			},
 		},
 		{
-			name: "http source requires task and keeps ca bundle",
-			spec: modelsv1alpha1.ModelSpec{
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
-				Source: modelsv1alpha1.ModelSourceSpec{
-					URL:      "https://downloads.example/model.tar.gz",
-					CABundle: []byte("ca-data"),
-				},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
-			},
-			ownerNS: "team-a",
-			assert: func(t *testing.T, got SourceWorkerPlan) {
-				t.Helper()
-				if got.HTTP == nil || got.HTTP.URL != "https://downloads.example/model.tar.gz" {
-					t.Fatalf("unexpected http plan %#v", got.HTTP)
-				}
-				if string(got.HTTP.CABundle) != "ca-data" {
-					t.Fatalf("unexpected ca bundle %q", string(got.HTTP.CABundle))
-				}
-			},
-		},
-		{
 			name: "huggingface auth secret resolves owner namespace",
 			spec: modelsv1alpha1.ModelSpec{
 				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
@@ -98,50 +77,15 @@ func TestPlanSourceWorker(t *testing.T) {
 			},
 		},
 		{
-			name: "http auth secret keeps explicit namespace",
-			spec: modelsv1alpha1.ModelSpec{
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
-				Source: modelsv1alpha1.ModelSourceSpec{
-					URL: "https://downloads.example/model.tar.gz",
-					AuthSecretRef: &modelsv1alpha1.SecretReference{
-						Namespace: "shared-auth",
-						Name:      "http-auth",
-					},
-				},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
-			},
-			assert: func(t *testing.T, got SourceWorkerPlan) {
-				t.Helper()
-				if got.HTTP == nil || got.HTTP.AuthSecretRef == nil {
-					t.Fatalf("expected resolved http auth secret, got %#v", got.HTTP)
-				}
-				if got.HTTP.AuthSecretRef.Namespace != "shared-auth" {
-					t.Fatalf("unexpected auth namespace %q", got.HTTP.AuthSecretRef.Namespace)
-				}
-			},
-		},
-		{
 			name: "namespaced source auth secret rejects foreign namespace",
 			spec: modelsv1alpha1.ModelSpec{
 				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 				Source: modelsv1alpha1.ModelSourceSpec{
-					URL: "https://downloads.example/model.tar.gz",
+					URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 					AuthSecretRef: &modelsv1alpha1.SecretReference{
 						Namespace: "other-team",
-						Name:      "http-auth",
+						Name:      "hf-auth",
 					},
-				},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
-			},
-			ownerNS: "team-a",
-			wantErr: true,
-		},
-		{
-			name: "http without task is rejected",
-			spec: modelsv1alpha1.ModelSpec{
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
-				Source: modelsv1alpha1.ModelSourceSpec{
-					URL: "https://downloads.example/model.tar.gz",
 				},
 			},
 			ownerNS: "team-a",

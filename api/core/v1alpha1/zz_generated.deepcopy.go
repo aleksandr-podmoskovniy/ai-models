@@ -334,11 +334,6 @@ func (in *ModelSourceSpec) DeepCopyInto(out *ModelSourceSpec) {
 		*out = new(SecretReference)
 		**out = **in
 	}
-	if in.CABundle != nil {
-		in, out := &in.CABundle, &out.CABundle
-		*out = make([]byte, len(*in))
-		copy(*out, *in)
-	}
 	if in.Upload != nil {
 		in, out := &in.Upload, &out.Upload
 		*out = new(UploadModelSource)

@@ -25,10 +25,11 @@ func TestDetectRemoteSourceType(t *testing.T) {
 		name string
 		url  string
 		want ModelSourceType
+		err  string
 	}{
 		{name: "huggingface root", url: "https://huggingface.co/deepseek-ai/DeepSeek-R1", want: ModelSourceTypeHuggingFace},
 		{name: "huggingface tree", url: "https://huggingface.co/deepseek-ai/DeepSeek-R1/tree/main", want: ModelSourceTypeHuggingFace},
-		{name: "generic http", url: "https://downloads.example.com/model.tar.gz", want: ModelSourceTypeHTTP},
+		{name: "generic http rejected", url: "https://downloads.example.com/model.tar.gz", err: `unsupported source URL host "downloads.example.com"`},
 	}
 
 	for _, tc := range cases {
@@ -36,6 +37,12 @@ func TestDetectRemoteSourceType(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got, err := DetectRemoteSourceType(tc.url)
+			if tc.err != "" {
+				if err == nil || err.Error() != tc.err {
+					t.Fatalf("DetectRemoteSourceType() error = %v, want %q", err, tc.err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("DetectRemoteSourceType() error = %v", err)
 			}

@@ -18,11 +18,9 @@ package sourceworker
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/application/sourceadmission"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
@@ -104,12 +102,6 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
-	service.httpSourceProbe = &fakeHTTPSourceProbe{
-		result: sourceadmission.HTTPProbeResult{
-			FileName:    "deepseek-r1.gguf",
-			ContentType: "application/octet-stream",
-		},
-	}
 
 	request := testOperationRequest()
 	request.Owner.UID = types.UID("2222-3333")
@@ -169,36 +161,6 @@ func TestServiceGetOrCreateProjectsSourceAuthSecret(t *testing.T) {
 	}
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: registrySecretName, Namespace: "d8-ai-models"}, registrySecret); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected projected OCI auth secret to be deleted, got err=%v", err)
-	}
-}
-
-func TestServiceGetOrCreateFailsClosedOnHTTPPreflightError(t *testing.T) {
-	t.Parallel()
-
-	scheme := testkit.NewScheme(t)
-	kubeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write")).
-		Build()
-
-	service, err := NewService(kubeClient, scheme, testOptions())
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-	service.httpSourceProbe = &fakeHTTPSourceProbe{err: errors.New("head failed")}
-
-	request := testOperationRequest()
-	request.Spec.Source.URL = "https://models.example.com/model.gguf"
-
-	handle, created, err := service.GetOrCreate(context.Background(), testkit.NewModel(), request)
-	if err == nil {
-		t.Fatal("expected preflight error")
-	}
-	if created {
-		t.Fatal("did not expect pod creation after preflight failure")
-	}
-	if handle != nil {
-		t.Fatalf("unexpected handle %#v", handle)
 	}
 }
 
@@ -267,16 +229,4 @@ func TestServiceGetOrCreateQueuesWhenPublishConcurrencyLimitIsReached(t *testing
 	if got, want := len(pods.Items), 1; got != want {
 		t.Fatalf("unexpected pod count %d", got)
 	}
-}
-
-type fakeHTTPSourceProbe struct {
-	result sourceadmission.HTTPProbeResult
-	err    error
-}
-
-func (f *fakeHTTPSourceProbe) Probe(_ context.Context, _ sourceadmission.HTTPProbeRequest) (sourceadmission.HTTPProbeResult, error) {
-	if f.err != nil {
-		return sourceadmission.HTTPProbeResult{}, f.err
-	}
-	return f.result, nil
 }

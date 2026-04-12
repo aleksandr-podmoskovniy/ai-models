@@ -113,21 +113,15 @@ in-cluster import Jobs и break-glass operations, а browser users идут че
 
 Для phase 2 controller теперь владеет publication/runtime adapters для первых
 live source paths. `Model` / `ClusterModel` с `spec.source.url` проходят через
-controller-owned worker Pods, которые сами определяют, является ли ссылка
-Hugging Face-источником или обычным HTTP-адресом, скачивают принятый source, генерируют
-model-package description, упаковывают checkpoint в `ModelPack` через текущий
-implementation adapter, пушат итоговый artifact во внутренний module-owned
-DMCR-style OCI publication plane, инспектируют remote manifest и только после
-этого пишут в public
-`status` ссылку на сохранённый artifact и обогащённый technical profile. Текущий
-live scope для `HTTP` намеренно узкий: ожидается
-archive с Hugging Face-compatible checkpoint, требуется
-`spec.runtimeHints.task`, поддерживается inline `caBundle`, а `authSecretRef`
-теперь проходит через controller-owned projection. Для `HuggingFace`
-controller принимает source secret с одним из ключей `token`, `HF_TOKEN` или
-`HUGGING_FACE_HUB_TOKEN` и нормализует его в projected worker token. Для
-`HTTP` controller принимает либо `authorization`, либо пару
-`username`+`password` и проецирует только эти ключи в worker namespace.
+controller-owned worker Pods, которые принимают только Hugging Face URL,
+резолвят точный upstream revision, скачивают выбранные файлы из snapshot,
+генерируют model-package description, упаковывают checkpoint в `ModelPack`
+через текущий implementation adapter, пушат итоговый artifact во внутренний
+module-owned DMCR-style OCI publication plane, инспектируют remote manifest и
+только после этого пишут в public `status` ссылку на сохранённый artifact и
+обогащённый technical profile. Для `HuggingFace` controller принимает source
+secret с одним из ключей `token`, `HF_TOKEN` или `HUGGING_FACE_HUB_TOKEN` и
+нормализует его в projected worker token.
 Controller-owned publication worker жёстко harden'ит tar/zip extraction и
 отклоняет path traversal, symlink, hard link и другие специальные archive
 entries вместо raw `extractall`.
@@ -184,8 +178,8 @@ multipart upload в module-owned object-storage staging, подписывает 
 `spec.inputFormat` трактуется как source-agnostic contract для валидации
 состава модели на входе, а не как формат финального registry artifact.
 Финальная опубликованная форма скрыта и фиксирована: `ModelPack` в OCI.
-Независимо от того, пришли ли байты из Hugging Face, HTTP или локального
-upload, controller теперь валидирует и санитизирует состав проекта до
+Независимо от того, пришли ли байты из Hugging Face или локального upload,
+controller теперь валидирует и санитизирует состав проекта до
 packaging. Текущие live правила такие:
 
 - `Safetensors`: нужен root `config.json`, хотя бы один `.safetensors`, разрешён
@@ -194,11 +188,6 @@ packaging. Текущие live правила такие:
   `.py`, `.sh`, `.dll`, `.so` и прочий unsupported payload отклоняются.
 - `GGUF`: нужен хотя бы один `.gguf`, benign extras вычищаются, те же активные
   или неоднозначные payload'ы отклоняются.
-
-Для generic `HTTP` это означает:
-
-- `Safetensors` сейчас ожидает архив;
-- `GGUF` может приехать как прямой файл или как архив.
 
 Если `spec.inputFormat` не указан, controller сначала пытается определить
 формат сам:

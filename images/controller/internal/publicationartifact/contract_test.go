@@ -29,7 +29,7 @@ func TestResultValidateRequiresArtifactAndCleanupHandle(t *testing.T) {
 
 	result := Result{
 		Source: publication.SourceProvenance{
-			Type: modelsv1alpha1.ModelSourceTypeHTTP,
+			Type: modelsv1alpha1.ModelSourceTypeHuggingFace,
 		},
 		Artifact: publication.PublishedArtifact{
 			Kind: modelsv1alpha1.ModelArtifactLocationKindOCI,

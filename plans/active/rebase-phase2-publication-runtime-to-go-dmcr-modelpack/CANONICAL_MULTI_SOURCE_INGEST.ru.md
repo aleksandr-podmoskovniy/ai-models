@@ -2,8 +2,8 @@
 
 ## Зачем нужен этот note
 
-Нужно выровнять source ingest path для `HTTP`, `HuggingFace`, `Upload` и
-будущих источников так, чтобы:
+Нужно выровнять source ingest path для `HuggingFace`, `Upload` и будущих
+источников так, чтобы:
 
 - public API оставался source-agnostic;
 - planner получал только scheduler-facing metadata;
@@ -132,7 +132,7 @@ Official docs:
 - local/internal `Model Store` acts as canonical managed representation;
 - HF source can be loaded through a dedicated adapter;
 - runtime consumers work with a local path or model-store tag, not with raw
-  HF/HTTP source semantics;
+  source-provider semantics;
 - models can be exported/imported across storage backends after normalization.
 
 Вывод:
@@ -154,7 +154,6 @@ Official docs:
 2. Source acquisition uses a source-native adapter:
    - `HuggingFace` -> native snapshot semantics with revision pinning and file
      filtering;
-   - `HTTP` -> HTTP fetch with archive/single-file normalization;
    - `Upload` -> shared upload gateway + multipart raw staging;
    - future custom schemes -> dedicated internal adapter, not public API
      inflation.
@@ -225,7 +224,7 @@ The next correct implementation slice is not "support more source kinds in
 spec". It is:
 
 - replace the current ad-hoc Hugging Face file loop with a source-native
-  snapshot adapter implemented in Go over the official HTTP/API semantics,
+  snapshot adapter implemented in Go over the official HF API semantics,
   not through a bundled Python/CLI runtime;
 - keep the rest of the publication pipeline unchanged:
   raw stage -> normalized checkpoint -> profile -> DMCR publish -> public

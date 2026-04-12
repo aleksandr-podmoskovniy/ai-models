@@ -18,12 +18,10 @@ package main
 
 import (
 	"log/slog"
-	"net/url"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/kitops"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
 	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/dataplane/publishworker"
@@ -34,9 +32,6 @@ import (
 const (
 	publishSourceTypeEnv          = "AI_MODELS_PUBLISH_SOURCE_TYPE"
 	publishHFModelIDEnv           = "AI_MODELS_IMPORT_HF_MODEL_ID"
-	publishHTTPURLEnv             = "AI_MODELS_IMPORT_HTTP_URL"
-	publishHTTPCABundleB64Env     = "AI_MODELS_IMPORT_HTTP_CA_BUNDLE_B64"
-	publishHTTPAuthDirEnv         = "AI_MODELS_IMPORT_HTTP_AUTH_DIR"
 	publishUploadPathEnv          = "AI_MODELS_IMPORT_UPLOAD_PATH"
 	publishUploadStageBucketEnv   = "AI_MODELS_IMPORT_UPLOAD_STAGE_BUCKET"
 	publishUploadStageKeyEnv      = "AI_MODELS_IMPORT_UPLOAD_STAGE_KEY"
@@ -55,9 +50,6 @@ func runPublishWorker(args []string) int {
 	var sourceType string
 	var artifactURI string
 	var hfModelID string
-	var httpURL string
-	var httpCABundleB64 string
-	var httpAuthDir string
 	var uploadPath string
 	var uploadStageBucket string
 	var uploadStageKey string
@@ -70,12 +62,9 @@ func runPublishWorker(args []string) int {
 	var snapshotDir string
 	var runtimeEngines cmdsupport.RepeatedStringFlag
 
-	flags.StringVar(&sourceType, "source-type", cmdsupport.EnvOr(publishSourceTypeEnv, string(modelsv1alpha1.ModelSourceTypeHuggingFace)), "Source type: HuggingFace, HTTP or Upload.")
+	flags.StringVar(&sourceType, "source-type", cmdsupport.EnvOr(publishSourceTypeEnv, string(modelsv1alpha1.ModelSourceTypeHuggingFace)), "Source type: HuggingFace or Upload.")
 	flags.StringVar(&artifactURI, "artifact-uri", "", "Controller-owned destination OCI reference.")
 	flags.StringVar(&hfModelID, "hf-model-id", cmdsupport.EnvOr(publishHFModelIDEnv, ""), "Hugging Face repo ID.")
-	flags.StringVar(&httpURL, "http-url", cmdsupport.EnvOr(publishHTTPURLEnv, ""), "HTTP model URL. May point to an archive or a direct GGUF file.")
-	flags.StringVar(&httpCABundleB64, "http-ca-bundle-b64", cmdsupport.EnvOr(publishHTTPCABundleB64Env, ""), "Base64-encoded HTTP CA bundle.")
-	flags.StringVar(&httpAuthDir, "http-auth-dir", cmdsupport.EnvOr(publishHTTPAuthDirEnv, ""), "HTTP auth directory.")
 	flags.StringVar(&uploadPath, "upload-path", cmdsupport.EnvOr(publishUploadPathEnv, ""), "Uploaded archive path.")
 	flags.StringVar(&uploadStageBucket, "upload-stage-bucket", cmdsupport.EnvOr(publishUploadStageBucketEnv, ""), "Bucket containing staged upload input.")
 	flags.StringVar(&uploadStageKey, "upload-stage-key", cmdsupport.EnvOr(publishUploadStageKeyEnv, ""), "Object key containing staged upload input.")
@@ -92,12 +81,7 @@ func runPublishWorker(args []string) int {
 		return 2
 	}
 
-	caBundle, err := sourcefetch.DecodeInlineCABundle(httpCABundleB64)
-	if err != nil {
-		cmdsupport.WriteTerminationFailure(err.Error())
-		return cmdsupport.CommandError(commandPublishWorker, err)
-	}
-
+	var err error
 	var uploadStage *cleanuphandle.UploadStagingHandle
 	var uploadStagingClient *uploadstagings3.Adapter
 	if uploadStageKey != "" || uploadStageBucket != "" {
@@ -122,7 +106,6 @@ func runPublishWorker(args []string) int {
 		modelsv1alpha1.ModelSourceType(sourceType),
 		artifactURI,
 		hfModelID,
-		httpURL,
 		uploadStageFileName,
 		modelsv1alpha1.ModelInputFormat(inputFormat),
 		task,
@@ -134,9 +117,6 @@ func runPublishWorker(args []string) int {
 		ArtifactURI:        artifactURI,
 		HFModelID:          hfModelID,
 		Revision:           revision,
-		HTTPURL:            httpURL,
-		HTTPCABundle:       caBundle,
-		HTTPAuthDir:        httpAuthDir,
 		UploadPath:         uploadPath,
 		UploadStage:        uploadStage,
 		RawStageBucket:     rawStageBucket,
@@ -177,7 +157,6 @@ func publishWorkerLogger(
 	sourceType modelsv1alpha1.ModelSourceType,
 	artifactURI string,
 	hfModelID string,
-	httpURL string,
 	uploadFileName string,
 	inputFormat modelsv1alpha1.ModelInputFormat,
 	task string,
@@ -198,10 +177,6 @@ func publishWorkerLogger(
 		if strings.TrimSpace(hfModelID) != "" {
 			logger = logger.With(slog.String("sourceRepoID", strings.TrimSpace(hfModelID)))
 		}
-	case modelsv1alpha1.ModelSourceTypeHTTP:
-		if host := publishWorkerHTTPHost(httpURL); host != "" {
-			logger = logger.With(slog.String("sourceHost", host))
-		}
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		if strings.TrimSpace(uploadFileName) != "" {
 			logger = logger.With(slog.String("fileName", strings.TrimSpace(uploadFileName)))
@@ -209,12 +184,4 @@ func publishWorkerLogger(
 	}
 
 	return logger
-}
-
-func publishWorkerHTTPHost(rawURL string) string {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(parsed.Host)
 }

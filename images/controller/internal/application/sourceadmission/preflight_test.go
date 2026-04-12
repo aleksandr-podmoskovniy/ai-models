@@ -17,8 +17,6 @@ limitations under the License.
 package sourceadmission
 
 import (
-	"context"
-	"errors"
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -41,57 +39,7 @@ func TestPreflight(t *testing.T) {
 		Name:      "deepseek-r1",
 	}
 
-	t.Run("http probe validates file name", func(t *testing.T) {
-		t.Parallel()
-
-		prober := &fakeHTTPProber{
-			result: HTTPProbeResult{
-				FileName:    "model.gguf",
-				ContentType: "application/octet-stream",
-			},
-		}
-		err := Preflight(t.Context(), PreflightInput{
-			Owner:           owner,
-			Identity:        identity,
-			HTTPSourceProbe: prober,
-			Spec: modelsv1alpha1.ModelSpec{
-				Source: modelsv1alpha1.ModelSourceSpec{
-					URL: "https://models.example.com/model.gguf",
-				},
-			},
-		})
-		if err != nil {
-			t.Fatalf("Preflight() error = %v", err)
-		}
-		if prober.calls != 1 {
-			t.Fatalf("expected one probe call, got %d", prober.calls)
-		}
-	})
-
-	t.Run("http html pages are rejected", func(t *testing.T) {
-		t.Parallel()
-
-		err := Preflight(t.Context(), PreflightInput{
-			Owner:    owner,
-			Identity: identity,
-			HTTPSourceProbe: &fakeHTTPProber{
-				result: HTTPProbeResult{
-					FileName:    "download",
-					ContentType: "text/html; charset=utf-8",
-				},
-			},
-			Spec: modelsv1alpha1.ModelSpec{
-				Source: modelsv1alpha1.ModelSourceSpec{
-					URL: "https://models.example.com/download",
-				},
-			},
-		})
-		if err == nil {
-			t.Fatal("expected html source to be rejected")
-		}
-	})
-
-	t.Run("huggingface skips http probe", func(t *testing.T) {
+	t.Run("huggingface passes", func(t *testing.T) {
 		t.Parallel()
 
 		err := Preflight(t.Context(), PreflightInput{
@@ -105,43 +53,6 @@ func TestPreflight(t *testing.T) {
 		})
 		if err != nil {
 			t.Fatalf("Preflight() error = %v", err)
-		}
-	})
-
-	t.Run("probe errors fail closed", func(t *testing.T) {
-		t.Parallel()
-
-		err := Preflight(t.Context(), PreflightInput{
-			Owner:    owner,
-			Identity: identity,
-			HTTPSourceProbe: &fakeHTTPProber{
-				err: errors.New("head failed"),
-			},
-			Spec: modelsv1alpha1.ModelSpec{
-				Source: modelsv1alpha1.ModelSourceSpec{
-					URL: "https://models.example.com/model.gguf",
-				},
-			},
-		})
-		if err == nil {
-			t.Fatal("expected probe failure")
-		}
-	})
-
-	t.Run("http sources require a probe client", func(t *testing.T) {
-		t.Parallel()
-
-		err := Preflight(t.Context(), PreflightInput{
-			Owner:    owner,
-			Identity: identity,
-			Spec: modelsv1alpha1.ModelSpec{
-				Source: modelsv1alpha1.ModelSourceSpec{
-					URL: "https://models.example.com/model.gguf",
-				},
-			},
-		})
-		if err == nil {
-			t.Fatal("expected missing probe client error")
 		}
 	})
 
@@ -166,13 +77,12 @@ func TestPreflight(t *testing.T) {
 		t.Parallel()
 
 		err := Preflight(t.Context(), PreflightInput{
-			Owner:           owner,
-			Identity:        identity,
-			HTTPSourceProbe: &fakeHTTPProber{},
+			Owner:    owner,
+			Identity: identity,
 			Spec: modelsv1alpha1.ModelSpec{
 				InputFormat: modelsv1alpha1.ModelInputFormat("Broken"),
 				Source: modelsv1alpha1.ModelSourceSpec{
-					URL: "https://models.example.com/model.gguf",
+					URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 				},
 			},
 		})
@@ -180,18 +90,38 @@ func TestPreflight(t *testing.T) {
 			t.Fatal("expected invalid input format error")
 		}
 	})
-}
 
-type fakeHTTPProber struct {
-	result HTTPProbeResult
-	err    error
-	calls  int
-}
+	t.Run("invalid owner binding fails closed", func(t *testing.T) {
+		t.Parallel()
 
-func (f *fakeHTTPProber) Probe(_ context.Context, _ HTTPProbeRequest) (HTTPProbeResult, error) {
-	f.calls++
-	if f.err != nil {
-		return HTTPProbeResult{}, f.err
-	}
-	return f.result, nil
+		err := Preflight(t.Context(), PreflightInput{
+			Owner: ingestadmission.OwnerBinding{
+				Kind: modelsv1alpha1.ModelKind,
+				Name: "other-model",
+				UID:  owner.UID,
+			},
+			Identity: identity,
+			Spec: modelsv1alpha1.ModelSpec{
+				Source: modelsv1alpha1.ModelSourceSpec{
+					URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
+				},
+			},
+		})
+		if err == nil {
+			t.Fatal("expected owner binding error")
+		}
+	})
+
+	t.Run("missing source fails closed", func(t *testing.T) {
+		t.Parallel()
+
+		err := Preflight(t.Context(), PreflightInput{
+			Owner:    owner,
+			Identity: identity,
+			Spec:     modelsv1alpha1.ModelSpec{},
+		})
+		if err == nil {
+			t.Fatal("expected source validation error")
+		}
+	})
 }

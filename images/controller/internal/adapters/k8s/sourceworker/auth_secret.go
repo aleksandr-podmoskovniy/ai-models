@@ -90,10 +90,8 @@ func (s *Service) projectedAuthSecretData(
 		return map[string][]byte{
 			"token": token,
 		}, nil
-	case plan.HTTP != nil && plan.HTTP.AuthSecretRef != nil:
-		return projectedHTTPAuthData(sourceSecret)
 	default:
-		return nil, errors.New("source worker auth projection requires a supported auth plan")
+		return nil, errors.New("source worker auth projection requires a HuggingFace auth plan")
 	}
 }
 
@@ -101,8 +99,6 @@ func sourceAuthSecretRef(plan publicationapp.SourceWorkerPlan) *publicationapp.S
 	switch {
 	case plan.HuggingFace != nil:
 		return plan.HuggingFace.AuthSecretRef
-	case plan.HTTP != nil:
-		return plan.HTTP.AuthSecretRef
 	default:
 		return nil
 	}
@@ -116,29 +112,6 @@ func projectedHFToken(secret *corev1.Secret) ([]byte, error) {
 	}
 	return nil, fmt.Errorf(
 		"source worker huggingFace auth secret %s/%s must contain one of: token, HF_TOKEN, HUGGING_FACE_HUB_TOKEN",
-		secret.Namespace,
-		secret.Name,
-	)
-}
-
-func projectedHTTPAuthData(secret *corev1.Secret) (map[string][]byte, error) {
-	if authorization := trimSecretValue(secret.Data["authorization"]); len(authorization) > 0 {
-		return map[string][]byte{
-			"authorization": authorization,
-		}, nil
-	}
-
-	username := trimSecretValue(secret.Data["username"])
-	password := trimSecretValue(secret.Data["password"])
-	if len(username) > 0 && len(password) > 0 {
-		return map[string][]byte{
-			"username": username,
-			"password": password,
-		}, nil
-	}
-
-	return nil, fmt.Errorf(
-		"source worker http auth secret %s/%s must contain authorization or username+password",
 		secret.Namespace,
 		secret.Name,
 	)

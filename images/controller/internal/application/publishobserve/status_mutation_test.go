@@ -115,7 +115,7 @@ func TestPlanCatalogStatusMutation(t *testing.T) {
 				Spec: modelsv1alpha1.ModelSpec{},
 				Runtime: CatalogStatusRuntimeResult{
 					Generation:    7,
-					SourceType:    modelsv1alpha1.ModelSourceTypeHTTP,
+					SourceType:    modelsv1alpha1.ModelSourceTypeHuggingFace,
 					DeleteRuntime: true,
 					Observation: publicationdomain.Observation{
 						Phase:   publicationdomain.OperationPhaseFailed,
@@ -183,7 +183,7 @@ func TestPlanCatalogStatusMutation(t *testing.T) {
 func TestPlanFailedCatalogStatusMutation(t *testing.T) {
 	t.Parallel()
 
-	got, err := PlanFailedCatalogStatusMutation(modelsv1alpha1.ModelStatus{}, 7, modelsv1alpha1.ModelSourceTypeHTTP, "fetch failed")
+	got, err := PlanFailedCatalogStatusMutation(modelsv1alpha1.ModelStatus{}, 7, modelsv1alpha1.ModelSourceTypeHuggingFace, "fetch failed")
 	if err != nil {
 		t.Fatalf("PlanFailedCatalogStatusMutation() error = %v", err)
 	}

@@ -31,7 +31,6 @@ type SourceWorkerPlan struct {
 	Task           string
 	RuntimeEngines []string
 	HuggingFace    *HuggingFaceSourcePlan
-	HTTP           *HTTPSourcePlan
 	Upload         *UploadSourcePlan
 }
 
@@ -43,12 +42,6 @@ type SourceAuthSecretRef struct {
 type HuggingFaceSourcePlan struct {
 	RepoID        string
 	Revision      string
-	AuthSecretRef *SourceAuthSecretRef
-}
-
-type HTTPSourcePlan struct {
-	URL           string
-	CABundle      []byte
 	AuthSecretRef *SourceAuthSecretRef
 }
 
@@ -93,27 +86,6 @@ func PlanSourceWorker(
 		plan.HuggingFace = &HuggingFaceSourcePlan{
 			RepoID:        repoID,
 			Revision:      revision,
-			AuthSecretRef: authSecretRef,
-		}
-		return plan, nil
-	case modelsv1alpha1.ModelSourceTypeHTTP:
-		if strings.TrimSpace(spec.Source.URL) == "" {
-			return SourceWorkerPlan{}, errors.New("source worker http url must not be empty")
-		}
-		authSecretRef, err := resolveSourceAuthSecretRef(
-			spec.Source.AuthSecretRef,
-			ownerNamespace,
-			"http",
-		)
-		if err != nil {
-			return SourceWorkerPlan{}, err
-		}
-		if plan.Task == "" {
-			return SourceWorkerPlan{}, errors.New("source worker http source requires spec.runtimeHints.task")
-		}
-		plan.HTTP = &HTTPSourcePlan{
-			URL:           spec.Source.URL,
-			CABundle:      spec.Source.CABundle,
 			AuthSecretRef: authSecretRef,
 		}
 		return plan, nil

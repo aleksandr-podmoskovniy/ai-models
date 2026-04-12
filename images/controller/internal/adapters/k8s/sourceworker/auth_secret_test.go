@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestProjectedHFTokenSupportsKnownKeys(t *testing.T) {
@@ -58,58 +57,5 @@ func TestProjectedHFTokenSupportsKnownKeys(t *testing.T) {
 				t.Fatalf("unexpected token %q", got)
 			}
 		})
-	}
-}
-
-func TestProjectedHTTPAuthDataSupportsAuthorizationOrBasicPair(t *testing.T) {
-	t.Parallel()
-
-	authorization, err := projectedHTTPAuthData(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "team-a",
-			Name:      "http-authz",
-		},
-		Data: map[string][]byte{"authorization": []byte("Bearer abc")},
-	})
-	if err != nil {
-		t.Fatalf("projectedHTTPAuthData(authorization) error = %v", err)
-	}
-	if got, want := string(authorization["authorization"]), "Bearer abc"; got != want {
-		t.Fatalf("unexpected authorization %q", got)
-	}
-
-	basic, err := projectedHTTPAuthData(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "team-a",
-			Name:      "http-basic",
-		},
-		Data: map[string][]byte{
-			"username": []byte("alice"),
-			"password": []byte("secret"),
-		},
-	})
-	if err != nil {
-		t.Fatalf("projectedHTTPAuthData(username+password) error = %v", err)
-	}
-	if got, want := string(basic["username"]), "alice"; got != want {
-		t.Fatalf("unexpected username %q", got)
-	}
-	if got, want := string(basic["password"]), "secret"; got != want {
-		t.Fatalf("unexpected password %q", got)
-	}
-}
-
-func TestProjectedHTTPAuthDataRejectsUnsupportedShape(t *testing.T) {
-	t.Parallel()
-
-	_, err := projectedHTTPAuthData(&corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "team-a",
-			Name:      "http-invalid",
-		},
-		Data: map[string][]byte{"username": []byte("alice")},
-	})
-	if err == nil {
-		t.Fatal("expected unsupported HTTP auth secret shape to fail")
 	}
 }

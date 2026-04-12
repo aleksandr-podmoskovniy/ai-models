@@ -174,7 +174,7 @@ func TestProjectStatusFailed(t *testing.T) {
 		current,
 		modelsv1alpha1.ModelSpec{},
 		5,
-		modelsv1alpha1.ModelSourceTypeHTTP,
+		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		Observation{
 			Phase:   OperationPhaseFailed,
 			Message: "download failed",

@@ -49,20 +49,19 @@ Current phase-2 slice implemented here:
   contract;
 - `internal/adapters/modelpack/kitops` for the current `KitOps`-based
   implementation of that contract;
-- `internal/adapters/sourcefetch` for safe `HuggingFace` and `HTTP` source
+- `internal/adapters/sourcefetch` for safe `HuggingFace` source
   acquisition and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport and archive preparation instead of split
   orchestration in the worker; remote `source.url` bytes now land in the
   controller-owned `raw/` object subtree first and only then materialize into
   the bounded publish-worker work volume; shared raw-stage upload/download
-  glue now lives in package-local `rawstage.go` instead of being repeated in
-  both provider files; `HuggingFace` acquisition itself now stays in Go:
-  metadata resolves the exact revision and selected files, then a package-local
-  HTTP snapshot downloader materializes only those files into the canonical
-  `checkpoint/` tree; provider-card noise such as downloads/likes/tags is not
-  retained in the adapter payload without an explicit consumer, and the remote
-  adapter now hands worker code three explicit seams instead of one flat
-  result:
+  glue now lives in package-local `rawstage.go`; `HuggingFace` acquisition
+  itself now stays in Go: metadata resolves the exact revision and selected
+  files, then a package-local HTTP snapshot downloader materializes only those
+  files into the canonical `checkpoint/` tree; provider-card noise such as
+  downloads/likes/tags is not retained in the adapter payload without an
+  explicit consumer, and the remote adapter now hands worker code three
+  explicit seams instead of one flat result:
   source provenance, profile fallbacks, and source metadata;
 - `internal/adapters/modelformat` for source-agnostic input-format validation
   rules applied before packaging; inspect/validate/select flow now reuses one
@@ -221,17 +220,15 @@ Naming rule:
 
 Still intentionally out of scope:
 - publication paths beyond the current live input matrix:
-  - `HuggingFace URL -> Safetensors`
-  - `HTTP URL -> Safetensors archive or GGUF file/archive`
+  - `HuggingFace URL -> supported Hugging Face checkpoint layouts`
   - `Upload -> Safetensors archive or GGUF file/archive`
   into internal `ModelPack/OCI` served by the module-local DMCR-style backend
   through the current Go dataplane and
   implementation adapter;
 - richer input formats beyond the current fail-closed `Safetensors` and `GGUF`
-  rules shared across `HuggingFace`, `HTTP`, and `Upload` sources;
+  rules shared across `HuggingFace` and `Upload` sources;
 - richer source auth flows beyond the current minimal projection contract:
-  `HuggingFace` supports a projected token secret and `HTTP` supports projected
-  `authorization` or `username`+`password` material, but broader source
+  `HuggingFace` supports a projected token secret, but broader source
   integrations and richer auth/session handoff stay out of scope;
 - live runtime integration with `ai-inference`, concrete init-container
   pod mutation/runtime injection for materializers, and any speculative

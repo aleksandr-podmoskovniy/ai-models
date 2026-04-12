@@ -142,8 +142,10 @@ import:
   before: install
 shell:
   beforeInstall:
-  {{- include "debian packages proxy" . | nindent 2 }}
-  {{- include "pypi proxy" . | nindent 2 }}
+  - |
+    set -euo pipefail
+{{- include "debian packages proxy" . | nindent 4 }}
+{{- include "pypi proxy" . | nindent 4 }}
   install:
   - |
     set -euo pipefail
@@ -190,8 +192,10 @@ import:
   before: install
 shell:
   beforeInstall:
-  {{- include "debian packages proxy" . | nindent 2 }}
-  {{- include "pypi proxy" . | nindent 2 }}
+  - |
+    set -euo pipefail
+{{- include "debian packages proxy" . | nindent 4 }}
+{{- include "pypi proxy" . | nindent 4 }}
   install:
   - |
     set -euo pipefail
@@ -205,7 +209,6 @@ shell:
     install -m 0755 /scripts/ai-models-backend-db-upgrade.py /usr/local/bin/ai-models-backend-db-upgrade
     install -m 0755 /scripts/ai-models-backend-bootstrap-oidc-auth.py /usr/local/bin/ai-models-backend-bootstrap-oidc-auth
     install -m 0755 /scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-hf-import
-    install -m 0755 /scripts/ai-models-backend-hf-import.py /usr/local/bin/ai-models-backend-source-import
     install -m 0755 /scripts/ai-models-backend-model-cleanup.py /usr/local/bin/ai-models-backend-model-cleanup
     OIDC_AUTH_PREBUILT_UI_DIR=/oidc-auth-ui bash /scripts/install-oidc-auth-from-source.sh
     python3 -m pip install --no-cache-dir \

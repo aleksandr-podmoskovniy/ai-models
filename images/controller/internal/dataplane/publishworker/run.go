@@ -38,9 +38,6 @@ type Options struct {
 	ArtifactURI        string
 	HFModelID          string
 	Revision           string
-	HTTPURL            string
-	HTTPCABundle       []byte
-	HTTPAuthDir        string
 	UploadPath         string
 	UploadStage        *cleanuphandle.UploadStagingHandle
 	RawStageBucket     string
@@ -111,60 +108,17 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 	), nil
 }
 
-func publishFromHTTP(ctx context.Context, options Options) (publicationartifact.Result, error) {
-	if strings.TrimSpace(options.HTTPURL) == "" {
-		return publicationartifact.Result{}, errors.New("http-url is required")
-	}
-	remote, cleanupDir, err := fetchRemote(ctx, options, "ai-model-http-publish-")
-	if err != nil {
-		return publicationartifact.Result{}, err
-	}
-	defer cleanupDir()
-
-	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, remote.ModelDir, remote.InputFormat, sourceProfileInput{
-		Task:           options.Task,
-		RuntimeEngines: options.RuntimeEngines,
-	}, fmt.Sprintf("Published from HTTP source %s", options.HTTPURL))
-	if err != nil {
-		return publicationartifact.Result{}, err
-	}
-	if err := cleanupRemoteStagedObjects(ctx, options, remote.StagedObjects); err != nil {
-		return publicationartifact.Result{}, err
-	}
-	rawSource := remoteRawProvenance(options, remote.StagedObjects)
-
-	return buildBackendResult(
-		publicationdata.SourceProvenance{
-			Type:              modelsv1alpha1.ModelSourceTypeHTTP,
-			ExternalReference: remote.Provenance.ExternalReference,
-			ResolvedRevision:  remote.Provenance.ResolvedRevision,
-			RawURI:            rawSource.RawURI,
-			RawObjectCount:    rawSource.RawObjectCount,
-			RawSizeBytes:      rawSource.RawSizeBytes,
-		},
-		resolvedProfile,
-		publishResult,
-	), nil
-}
-
 func fetchRemote(ctx context.Context, options Options, prefix string) (sourcefetch.RemoteResult, func(), error) {
 	workspace, cleanupDir, err := ensureWorkspace(options.SnapshotDir, prefix)
 	if err != nil {
 		return sourcefetch.RemoteResult{}, nil, err
 	}
 
-	remoteURL := options.HTTPURL
-	if options.SourceType == modelsv1alpha1.ModelSourceTypeHuggingFace {
-		remoteURL = huggingFaceSourceURL(options.HFModelID, options.Revision)
-	}
-
 	remote, err := sourcefetch.FetchRemoteModel(ctx, sourcefetch.RemoteOptions{
-		URL:             remoteURL,
+		URL:             huggingFaceSourceURL(options.HFModelID, options.Revision),
 		Workspace:       workspace,
 		RequestedFormat: options.InputFormat,
 		HFToken:         options.HFToken,
-		HTTPCABundle:    options.HTTPCABundle,
-		HTTPAuthDir:     options.HTTPAuthDir,
 		RawStage:        remoteRawStage(options),
 	})
 	if err != nil {

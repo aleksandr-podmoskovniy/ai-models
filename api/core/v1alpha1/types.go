@@ -58,14 +58,12 @@ type ModelStatus struct {
 
 // +kubebuilder:validation:XValidation:rule="((has(self.url) && size(self.url) > 0 ? 1 : 0) + (has(self.upload) ? 1 : 0)) == 1",message="exactly one of source.url or source.upload must be specified"
 // +kubebuilder:validation:XValidation:rule="has(self.upload) ? !has(self.authSecretRef) : true",message="source.authSecretRef is only allowed for source.url"
-// +kubebuilder:validation:XValidation:rule="has(self.upload) ? (!has(self.caBundle) || size(self.caBundle) == 0) : true",message="source.caBundle is only allowed for source.url"
 type ModelSourceSpec struct {
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:Pattern=`^http[s]?:\/\/(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+$`
+	// +kubebuilder:validation:Pattern=`^https?:\/\/(?:(?:www\.)?huggingface\.co|hf\.co)\/.+$`
 	URL string `json:"url,omitempty"`
 	// For namespaced Model, empty Namespace resolves to the object's namespace.
 	AuthSecretRef *SecretReference   `json:"authSecretRef,omitempty"`
-	CABundle      []byte             `json:"caBundle,omitempty"`
 	Upload        *UploadModelSource `json:"upload,omitempty"`
 }
 
@@ -141,13 +139,12 @@ type ModelMinimumLaunchStatus struct {
 	SharingMode          string `json:"sharingMode,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=HuggingFace;Upload;HTTP
+// +kubebuilder:validation:Enum=HuggingFace;Upload
 type ModelSourceType string
 
 const (
 	ModelSourceTypeHuggingFace ModelSourceType = "HuggingFace"
 	ModelSourceTypeUpload      ModelSourceType = "Upload"
-	ModelSourceTypeHTTP        ModelSourceType = "HTTP"
 )
 
 // +kubebuilder:validation:Enum=Safetensors;GGUF

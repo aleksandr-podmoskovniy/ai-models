@@ -23,7 +23,6 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
-	"github.com/deckhouse/ai-models/controller/internal/application/sourceadmission"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -35,10 +34,9 @@ import (
 )
 
 type Service struct {
-	client          client.Client
-	scheme          *runtime.Scheme
-	options         Options
-	httpSourceProbe sourceadmission.HTTPSourceProber
+	client  client.Client
+	scheme  *runtime.Scheme
+	options Options
 }
 
 func NewService(client client.Client, scheme *runtime.Scheme, options Options) (*Service, error) {
@@ -54,10 +52,9 @@ func NewService(client client.Client, scheme *runtime.Scheme, options Options) (
 	}
 
 	return &Service{
-		client:          client,
-		scheme:          scheme,
-		options:         options,
-		httpSourceProbe: httpSourcePreflightProber{},
+		client:  client,
+		scheme:  scheme,
+		options: options,
 	}, nil
 }
 

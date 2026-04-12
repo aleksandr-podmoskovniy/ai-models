@@ -10,9 +10,7 @@ worker Pods, а module-owned hidden artifact plane по паттерну `virtua
 - пользователь работает с `Model` / `ClusterModel`;
 - controller управляет ingestion, publication, cleanup и future delivery;
 - опубликованная модель хранится только во внутреннем `DMCR`;
-- сам `DMCR` хранит blobs на module-owned backend storage:
-  - `S3`-compatible object storage;
-  - `PersistentVolumeClaim`;
+- сам `DMCR` хранит blobs на module-owned `S3`-compatible object storage;
 - runtime consumer не знает про исходный upload/source flow и получает только
   локальный materialized path из опубликованного `ModelPack`.
 
@@ -195,11 +193,10 @@ publication.
 2. controller performs preflight admission checks:
    - authz / owner binding;
    - quota and declared size limits;
-   - provider allowlist / credential resolution;
-   - lightweight metadata probe such as `HEAD` or small range check when the
-     source supports it;
-3. bounded fetch worker streams bytes directly into the canonical raw object
-   URI in controlled object storage;
+   - `HuggingFace` host allowlist / credential resolution;
+3. bounded fetch worker resolves the exact upstream revision, downloads the
+   selected snapshot files and stages bytes into the canonical raw object URI
+   in controlled object storage;
 4. publish worker validates format, extracts profile, builds `ModelPack` and
    publishes to `DMCR`;
 5. controller projects `status.artifact`, `status.resolved`,

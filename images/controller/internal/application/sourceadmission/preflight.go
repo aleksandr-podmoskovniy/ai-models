@@ -18,38 +18,16 @@ package sourceadmission
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/domain/ingestadmission"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
-type HTTPSourceProber interface {
-	Probe(ctx context.Context, input HTTPProbeRequest) (HTTPProbeResult, error)
-}
-
-type HTTPProbeRequest struct {
-	URL      string
-	CABundle []byte
-	Headers  map[string]string
-}
-
-type HTTPProbeResult struct {
-	FileName       string
-	ContentType    string
-	ContentLength  int64
-	SupportsRanges bool
-}
-
 type PreflightInput struct {
-	Owner           ingestadmission.OwnerBinding
-	Identity        publicationdata.Identity
-	Spec            modelsv1alpha1.ModelSpec
-	HTTPHeaders     map[string]string
-	HTTPSourceProbe HTTPSourceProber
+	Owner    ingestadmission.OwnerBinding
+	Identity publicationdata.Identity
+	Spec     modelsv1alpha1.ModelSpec
 }
 
 func Preflight(ctx context.Context, input PreflightInput) error {
@@ -64,29 +42,6 @@ func Preflight(ctx context.Context, input PreflightInput) error {
 	if err != nil {
 		return err
 	}
-
-	switch sourceType {
-	case modelsv1alpha1.ModelSourceTypeHuggingFace:
-		return nil
-	case modelsv1alpha1.ModelSourceTypeUpload:
-		return nil
-	case modelsv1alpha1.ModelSourceTypeHTTP:
-		if input.HTTPSourceProbe == nil {
-			return errors.New("http source preflight requires a probe client")
-		}
-		probe, err := input.HTTPSourceProbe.Probe(ctx, HTTPProbeRequest{
-			URL:      input.Spec.Source.URL,
-			CABundle: input.Spec.Source.CABundle,
-			Headers:  input.HTTPHeaders,
-		})
-		if err != nil {
-			return err
-		}
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(probe.ContentType)), "text/html") {
-			return fmt.Errorf("http source %q resolved to content-type %q instead of a model artifact", input.Spec.Source.URL, probe.ContentType)
-		}
-		return ingestadmission.ValidateRemoteFileName(probe.FileName, input.Spec.InputFormat)
-	default:
-		return fmt.Errorf("source preflight does not support source type %q", sourceType)
-	}
+	_ = sourceType
+	return nil
 }

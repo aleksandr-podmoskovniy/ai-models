@@ -79,7 +79,7 @@ func TestPlanPostStatusRecordsRemoteStarted(t *testing.T) {
 	records := PlanPostStatusRecords(
 		modelsv1alpha1.ModelStatus{},
 		modelsv1alpha1.ModelStatus{Phase: modelsv1alpha1.ModelPhasePublishing},
-		modelsv1alpha1.ModelSourceTypeHTTP,
+		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		publicationdomain.Observation{},
 	)
 	if got, want := len(records), 1; got != want {
@@ -96,14 +96,14 @@ func TestPlanPostStatusRecordsPublicationSucceeded(t *testing.T) {
 	records := PlanPostStatusRecords(
 		modelsv1alpha1.ModelStatus{Phase: modelsv1alpha1.ModelPhasePublishing},
 		modelsv1alpha1.ModelStatus{Phase: modelsv1alpha1.ModelPhaseReady},
-		modelsv1alpha1.ModelSourceTypeHTTP,
+		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		publicationdomain.Observation{
 			Snapshot: &publicationdata.Snapshot{
 				Artifact: publicationdata.PublishedArtifact{
 					URI: "registry.internal.local/model@sha256:deadbeef",
 				},
 				Source: publicationdata.SourceProvenance{
-					Type:           modelsv1alpha1.ModelSourceTypeHTTP,
+					Type:           modelsv1alpha1.ModelSourceTypeHuggingFace,
 					RawURI:         "s3://artifacts/raw/1111-2222/source-url",
 					RawObjectCount: 4,
 				},
@@ -127,7 +127,7 @@ func TestPlanPostStatusRecordsPublicationFailed(t *testing.T) {
 	records := PlanPostStatusRecords(
 		modelsv1alpha1.ModelStatus{Phase: modelsv1alpha1.ModelPhasePublishing},
 		modelsv1alpha1.ModelStatus{Phase: modelsv1alpha1.ModelPhaseFailed},
-		modelsv1alpha1.ModelSourceTypeHTTP,
+		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		publicationdomain.Observation{Message: "scanner policy rejected the payload"},
 	)
 	if got, want := len(records), 1; got != want {

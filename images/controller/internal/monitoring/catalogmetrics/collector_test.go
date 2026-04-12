@@ -53,12 +53,12 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 	}
 
 	clusterModel := testkit.NewClusterModel()
-	clusterModel.Spec.Source.URL = "https://example.com/models/deepseek-r1.gguf"
+	clusterModel.Spec.Source.URL = "https://huggingface.co/deepseek-ai/DeepSeek-R1-GGUF"
 	clusterModel.Spec.InputFormat = modelsv1alpha1.ModelInputFormatGGUF
 	clusterModel.Status = modelsv1alpha1.ModelStatus{
 		Phase: modelsv1alpha1.ModelPhaseFailed,
 		Source: &modelsv1alpha1.ResolvedSourceStatus{
-			ResolvedType: modelsv1alpha1.ModelSourceTypeHTTP,
+			ResolvedType: modelsv1alpha1.ModelSourceTypeHuggingFace,
 		},
 		Resolved: &modelsv1alpha1.ModelResolvedStatus{
 			Task:      "text-generation",
@@ -117,7 +117,7 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 		"name":        clusterModel.Name,
 		"uid":         string(clusterModel.UID),
 		"phase":       string(modelsv1alpha1.ModelPhaseFailed),
-		"source_type": string(modelsv1alpha1.ModelSourceTypeHTTP),
+		"source_type": string(modelsv1alpha1.ModelSourceTypeHuggingFace),
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_clustermodel_ready", map[string]string{
 		"name": clusterModel.Name,
@@ -130,7 +130,7 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 	assertGaugeValue(t, families, "d8_ai_models_clustermodel_info", map[string]string{
 		"name":                 clusterModel.Name,
 		"uid":                  string(clusterModel.UID),
-		"resolved_source_type": string(modelsv1alpha1.ModelSourceTypeHTTP),
+		"resolved_source_type": string(modelsv1alpha1.ModelSourceTypeHuggingFace),
 		"format":               "GGUF",
 		"task":                 "text-generation",
 		"framework":            "llama.cpp",

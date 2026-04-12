@@ -63,8 +63,6 @@ func run(ctx context.Context, options Options) (publicationartifact.Result, erro
 	switch options.SourceType {
 	case modelsv1alpha1.ModelSourceTypeHuggingFace:
 		return publishFromHuggingFace(ctx, options)
-	case modelsv1alpha1.ModelSourceTypeHTTP:
-		return publishFromHTTP(ctx, options)
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		return publishFromUpload(ctx, options)
 	default:
