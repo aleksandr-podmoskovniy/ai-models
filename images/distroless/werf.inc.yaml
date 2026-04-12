@@ -20,11 +20,9 @@ fromImage: builder/alt
 final: false
 shell:
   beforeInstall:
-  - |
-    set -euo pipefail
-{{- include "alt packages proxy" . | nindent 4 }}
-    apt-get install ca-certificates tzdata -y
-{{- include "alt packages clean" . | nindent 4 }}
+  {{- include "alt packages proxy" . | nindent 2 }}
+  - apt-get install ca-certificates tzdata -y
+  {{- include "alt packages clean" . | nindent 2 }}
   install:
     - |
       mkdir -p /relocate/etc/{pki,ssl} /relocate/usr/{bin,sbin,share,lib,lib64}

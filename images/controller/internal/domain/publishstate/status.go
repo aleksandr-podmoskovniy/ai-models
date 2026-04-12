@@ -25,12 +25,13 @@ import (
 )
 
 type Observation struct {
-	Phase         OperationPhase
-	RuntimeKind   RuntimeKind
-	Message       string
-	Upload        *modelsv1alpha1.ModelUploadStatus
-	Snapshot      *publicationdata.Snapshot
-	CleanupHandle *cleanuphandle.Handle
+	Phase           OperationPhase
+	RuntimeKind     RuntimeKind
+	ConditionReason modelsv1alpha1.ModelConditionReason
+	Message         string
+	Upload          *modelsv1alpha1.ModelUploadStatus
+	Snapshot        *publicationdata.Snapshot
+	CleanupHandle   *cleanuphandle.Handle
 }
 
 type Projection struct {
@@ -74,7 +75,7 @@ func ProjectStatus(
 		}, nil
 	case OperationPhaseFailed:
 		return Projection{
-			Status: failedStatus(current, generation, sourceType, observation.Message),
+			Status: failedStatus(current, generation, sourceType, observation.ConditionReason, observation.Message),
 		}, nil
 	case OperationPhaseSucceeded:
 		if observation.Snapshot == nil {

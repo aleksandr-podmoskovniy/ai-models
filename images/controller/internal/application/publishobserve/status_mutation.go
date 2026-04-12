@@ -70,13 +70,47 @@ func PlanFailedCatalogStatusMutation(
 	sourceType modelsv1alpha1.ModelSourceType,
 	message string,
 ) (CatalogStatusMutationPlan, error) {
+	return planFailedCatalogStatusMutation(
+		current,
+		generation,
+		sourceType,
+		modelsv1alpha1.ModelConditionReasonPublicationFailed,
+		message,
+	)
+}
+
+func PlanUnsupportedSourceCatalogStatusMutation(
+	current modelsv1alpha1.ModelStatus,
+	generation int64,
+	message string,
+) (CatalogStatusMutationPlan, error) {
+	return planFailedCatalogStatusMutation(
+		current,
+		generation,
+		"",
+		modelsv1alpha1.ModelConditionReasonUnsupportedSource,
+		message,
+	)
+}
+
+func planFailedCatalogStatusMutation(
+	current modelsv1alpha1.ModelStatus,
+	generation int64,
+	sourceType modelsv1alpha1.ModelSourceType,
+	reason modelsv1alpha1.ModelConditionReason,
+	message string,
+) (CatalogStatusMutationPlan, error) {
 	return PlanCatalogStatusMutation(CatalogStatusMutationInput{
 		Spec:    modelsv1alpha1.ModelSpec{},
 		Current: current,
 		Runtime: CatalogStatusRuntimeResult{
-			Generation:  generation,
-			SourceType:  sourceType,
-			Observation: failedObservation(message),
+			Generation: generation,
+			SourceType: sourceType,
+			Observation: publicationdomain.Observation{
+				Phase:           publicationdomain.OperationPhaseFailed,
+				ConditionReason: reason,
+				Message:         message,
+			},
 		},
 	})
 }

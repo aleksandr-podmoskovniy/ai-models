@@ -17,9 +17,15 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
+)
+
+var (
+	ErrUnsupportedSourceURLScheme = errors.New("unsupported source URL scheme")
+	ErrUnsupportedSourceURLHost   = errors.New("unsupported source URL host")
 )
 
 func (s ModelSourceSpec) DetectType() (ModelSourceType, error) {
@@ -41,7 +47,7 @@ func DetectRemoteSourceType(rawURL string) (ModelSourceType, error) {
 		return "", err
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", fmt.Errorf("unsupported source URL scheme %q", parsed.Scheme)
+		return "", fmt.Errorf("%w %q", ErrUnsupportedSourceURLScheme, parsed.Scheme)
 	}
 
 	host := strings.ToLower(parsed.Hostname())
@@ -49,8 +55,12 @@ func DetectRemoteSourceType(rawURL string) (ModelSourceType, error) {
 	case "huggingface.co", "www.huggingface.co", "hf.co":
 		return ModelSourceTypeHuggingFace, nil
 	default:
-		return "", fmt.Errorf("unsupported source URL host %q", parsed.Hostname())
+		return "", fmt.Errorf("%w %q", ErrUnsupportedSourceURLHost, parsed.Hostname())
 	}
+}
+
+func IsUnsupportedRemoteSourceError(err error) bool {
+	return errors.Is(err, ErrUnsupportedSourceURLScheme) || errors.Is(err, ErrUnsupportedSourceURLHost)
 }
 
 func ParseHuggingFaceURL(rawURL string) (string, string, error) {

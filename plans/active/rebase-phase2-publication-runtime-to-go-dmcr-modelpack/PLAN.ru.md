@@ -2031,14 +2031,121 @@ replacement has landed yet.
 
 Риск и честная совместимость:
 
-- this is an intentional alpha API break;
-- existing objects/manifests that used non-HF `source.url`, `source.caBundle`,
-  or HTTP-style auth semantics must be migrated or will be rejected.
+- live remote source matrix still stays HF-only plus Upload;
+- old persisted objects and old apply manifests with non-HF `source.url`,
+  `source.caBundle`, or HTTP-style auth now go through a compatibility bridge:
+  apply succeeds, controller converges them to `Failed/UnsupportedSource`,
+  and no manual pre-rollout migration is required.
 
 Проверки:
 
 - `cd api && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./...`
 - `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/application/sourceadmission ./internal/application/publishplan ./internal/ports/publishop ./internal/adapters/sourcefetch ./internal/adapters/k8s/sourceworker ./internal/dataplane/publishworker ./internal/domain/publishstate ./internal/monitoring/catalogmetrics ./internal/application/publishaudit ./internal/application/publishobserve ./internal/publicationartifact`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 66 landed
+
+Цель:
+
+- убрать последний rollout blocker после удаления generic `HTTP` source:
+  persisted legacy objects with old non-HF `source.url` must stop looping on
+  reconcile errors and instead converge to a terminal public status.
+
+Что сделано:
+
+- added explicit unsupported-remote-source classification in
+  `api/core/v1alpha1/source.go` without reopening the public source matrix;
+- `catalogstatus` owner now catches only legacy unsupported remote-source
+  errors and projects a terminal status instead of returning a raw reconcile
+  error forever;
+- terminal status shape is now:
+  - `phase=Failed`
+  - `ArtifactPublished=False`
+  - `Ready=False`
+  - reason `UnsupportedSource`
+  - no invented `status.source.resolvedType`
+- lower publication runtime paths remain strict and unchanged; migration stays
+  at the controller owner boundary, not in worker/runtime adapters.
+
+Совместимость:
+
+- old persisted objects with non-HF `source.url` now self-stabilize after
+  rollout and do not require manual recreate just to stop reconcile churn;
+- old manifests are still an intentional alpha break and must be edited or
+  recreated before apply, because the public contract stays HF-only.
+
+Проверки:
+
+- `cd api && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./core/v1alpha1`
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/domain/publishstate ./internal/application/publishobserve ./internal/controllers/catalogstatus`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 67 landed
+
+Цель:
+
+- починить локальный и CI `werf` build path для controller images before any
+  further work.
+
+Что было сломано:
+
+- `images/controller/werf.inc.yaml` accidentally lost the YAML document
+  separator before `image: controller`, so `werf config render` and
+  `deckhouse/modules-actions/build@v4` failed with duplicate `image/final/
+  fromImage` keys in one map;
+- previous local shell rewrite also mismatched repo helper semantics:
+  `.werf/stages/helpers.yaml` emits YAML list items for `beforeInstall`,
+  like `gpu-control-plane`, so block-script wrapping was invalid and produced
+  literal `- export` / `- apt-get` lines inside shell.
+
+Что сделано:
+
+- restored the missing `---` separator in `images/controller/werf.inc.yaml`
+  before the final `controller` image document;
+- restored `beforeInstall` blocks in:
+  - `images/controller/werf.inc.yaml`
+  - `images/distroless/werf.inc.yaml`
+  - `images/backend/werf.inc.yaml`
+  back to the repo-native list-item pattern used by helper templates and
+  mirrored in `gpu-control-plane`.
+
+Проверки:
+
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH werf config render --dev --env dev controller controller-runtime`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH werf build --dev --env dev --platform=linux/amd64 controller controller-runtime`
+- `git diff --check`
+
+## Slice 68 landed
+
+Цель:
+
+- убрать последний residual для старых apply manifests after the HTTP-source
+  removal cut, without reopening generic HTTP as a live supported source path.
+
+Что сделано:
+
+- `spec.source.url` schema widened back to generic `http(s)` so legacy remote
+  manifests are accepted again instead of failing before reconcile;
+- deprecated compatibility-only `spec.source.caBundle` returned to the CRD as
+  an ignored field, so old manifests no longer fail on unknown field;
+- controller/runtime semantics did not widen:
+  - only `huggingface.co` / `hf.co` still resolve to live `HuggingFace`;
+  - all other remote URLs still converge to terminal
+    `Failed/UnsupportedSource`.
+
+Совместимость:
+
+- old apply manifests with non-HF `source.url`, `source.caBundle`, or remote
+  auth refs no longer require manual edits before rollout;
+- compatibility is intentionally input-only; it does not restore the deleted
+  generic `HTTP` source path as a supported publication feature.
+
+Проверки:
+
+- `cd api && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go generate ./...`
+- `cd api && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./core/v1alpha1`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
 

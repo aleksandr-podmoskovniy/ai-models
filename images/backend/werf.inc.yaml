@@ -142,10 +142,8 @@ import:
   before: install
 shell:
   beforeInstall:
-  - |
-    set -euo pipefail
-{{- include "debian packages proxy" . | nindent 4 }}
-{{- include "pypi proxy" . | nindent 4 }}
+  {{- include "debian packages proxy" . | nindent 2 }}
+  {{- include "pypi proxy" . | nindent 2 }}
   install:
   - |
     set -euo pipefail
@@ -192,10 +190,8 @@ import:
   before: install
 shell:
   beforeInstall:
-  - |
-    set -euo pipefail
-{{- include "debian packages proxy" . | nindent 4 }}
-{{- include "pypi proxy" . | nindent 4 }}
+  {{- include "debian packages proxy" . | nindent 2 }}
+  {{- include "pypi proxy" . | nindent 2 }}
   install:
   - |
     set -euo pipefail

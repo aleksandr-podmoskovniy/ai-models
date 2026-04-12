@@ -191,6 +191,36 @@ func TestProjectStatusFailed(t *testing.T) {
 	}
 }
 
+func TestProjectStatusUnsupportedSourceFailureOmitsResolvedType(t *testing.T) {
+	t.Parallel()
+
+	projection, err := ProjectStatus(
+		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{},
+		5,
+		"",
+		Observation{
+			Phase:           OperationPhaseFailed,
+			ConditionReason: modelsv1alpha1.ModelConditionReasonUnsupportedSource,
+			Message:         `unsupported source URL host "downloads.example.com"`,
+		},
+	)
+	if err != nil {
+		t.Fatalf("ProjectStatus() error = %v", err)
+	}
+	if projection.Status.Source != nil {
+		t.Fatalf("unexpected source status %#v", projection.Status.Source)
+	}
+	artifactPublished := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactPublished))
+	if artifactPublished == nil || artifactPublished.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
+		t.Fatalf("unexpected artifact published condition %#v", artifactPublished)
+	}
+	ready := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionReady))
+	if ready == nil || ready.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
+		t.Fatalf("unexpected ready condition %#v", ready)
+	}
+}
+
 func TestProjectStatusSucceeded(t *testing.T) {
 	t.Parallel()
 

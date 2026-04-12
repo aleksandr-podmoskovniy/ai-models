@@ -183,6 +183,11 @@ spec:
                     required:
                     - name
                     type: object
+                  caBundle:
+                    description: |-
+                      Deprecated: compatibility-only legacy field for old remote-source manifests.
+                      The controller ignores it and keeps the live remote source matrix HF-only.
+                    type: string
                   upload:
                     properties:
                       expectedSizeBytes:
@@ -192,7 +197,7 @@ spec:
                     type: object
                   url:
                     minLength: 1
-                    pattern: ^https?:\/\/(?:(?:www\.)?huggingface\.co|hf\.co)\/.+$
+                    pattern: ^https?:\/\/.+$
                     type: string
                 type: object
                 x-kubernetes-validations:
@@ -201,6 +206,8 @@ spec:
                     ? 1 : 0)) == 1'
                 - message: source.authSecretRef is only allowed for source.url
                   rule: 'has(self.upload) ? !has(self.authSecretRef) : true'
+                - message: source.caBundle is only allowed for source.url
+                  rule: 'has(self.upload) ? !has(self.caBundle) : true'
               usagePolicy:
                 properties:
                   allowedEndpointTypes:

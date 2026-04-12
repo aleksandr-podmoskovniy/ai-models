@@ -223,3 +223,20 @@ func (r *baseReconciler) failPublication(
 		Message: message,
 	}, plan, nil, uploadSync)
 }
+
+func (r *baseReconciler) failUnsupportedSource(
+	ctx context.Context,
+	object client.Object,
+	current *modelsv1alpha1.ModelStatus,
+	message string,
+) (ctrl.Result, error) {
+	plan, err := publicationapp.PlanUnsupportedSourceCatalogStatusMutation(*current, object.GetGeneration(), message)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	return r.applyMutationPlan(ctx, object, current, "", publicationdomain.Observation{
+		Phase:           publicationdomain.OperationPhaseFailed,
+		ConditionReason: modelsv1alpha1.ModelConditionReasonUnsupportedSource,
+		Message:         message,
+	}, plan, nil, uploadSessionPhaseSync{})
+}

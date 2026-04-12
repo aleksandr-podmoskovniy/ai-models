@@ -23,6 +23,7 @@ import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	auditapp "github.com/deckhouse/ai-models/controller/internal/application/publishaudit"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -178,6 +179,48 @@ func TestModelReconcilerMarksFailureFromFailedWorker(t *testing.T) {
 	}
 	if got, want := failed.Status.Phase, modelsv1alpha1.ModelPhaseFailed; got != want {
 		t.Fatalf("unexpected phase %q", got)
+	}
+}
+
+func TestModelReconcilerMarksLegacyUnsupportedRemoteSourceFailedWithoutRuntime(t *testing.T) {
+	t.Parallel()
+
+	model := testModel()
+	model.Spec.Source.URL = "https://downloads.example.com/model.tar.gz"
+
+	sourceWorkers := &fakeSourceWorkerRuntime{}
+	uploadSessions := &fakeUploadSessionRuntime{}
+	reconciler, kubeClient := newModelReconciler(t, sourceWorkers, uploadSessions, model)
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(model),
+	}); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if sourceWorkers.calls != 0 {
+		t.Fatalf("legacy unsupported source must not create source worker, got %d calls", sourceWorkers.calls)
+	}
+	if uploadSessions.calls != 0 {
+		t.Fatalf("legacy unsupported source must not create upload session, got %d calls", uploadSessions.calls)
+	}
+
+	var failed modelsv1alpha1.Model
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &failed); err != nil {
+		t.Fatalf("Get(model) error = %v", err)
+	}
+	if got, want := failed.Status.Phase, modelsv1alpha1.ModelPhaseFailed; got != want {
+		t.Fatalf("unexpected phase %q", got)
+	}
+	if failed.Status.Source != nil {
+		t.Fatalf("legacy unsupported source must not project resolvedType, got %#v", failed.Status.Source)
+	}
+	artifactPublished := apimeta.FindStatusCondition(failed.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactPublished))
+	if artifactPublished == nil || artifactPublished.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
+		t.Fatalf("unexpected artifact published condition %#v", artifactPublished)
+	}
+	ready := apimeta.FindStatusCondition(failed.Status.Conditions, string(modelsv1alpha1.ModelConditionReady))
+	if ready == nil || ready.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
+		t.Fatalf("unexpected ready condition %#v", ready)
 	}
 }
 

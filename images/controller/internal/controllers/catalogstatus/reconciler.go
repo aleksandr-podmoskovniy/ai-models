@@ -78,6 +78,9 @@ func (r *baseReconciler) reconcileObject(
 		HasCleanupHandle:   hasHandle,
 	})
 	if err != nil {
+		if modelsv1alpha1.IsUnsupportedRemoteSourceError(err) {
+			return r.failUnsupportedSource(ctx, object, status, err.Error())
+		}
 		return ctrl.Result{}, err
 	}
 	if decision.Skip {

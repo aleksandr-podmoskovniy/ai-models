@@ -1084,6 +1084,47 @@ Checks:
 - High: keeping `spec.source.url` while narrowing it to Hugging Face URLs is
   the right API shape. User intent stays simple, while the live support matrix
   becomes explicit and fail-closed.
-- Medium: this is an intentional alpha API break for old non-HF URL manifests.
-  That is acceptable here, but operators must rebuild or edit those manifests
-  before the next rollout.
+- Medium: at this stage the live remote matrix is intentionally narrower than
+  the compatibility input shape. That is acceptable only because unsupported
+  remote URLs deterministically converge to `Failed/UnsupportedSource`.
+
+## Slice 66 review notes
+
+- No blocking findings against handling persisted legacy non-HF `source.url`
+  objects at the `catalogstatus` owner boundary. This is the right place to
+  converge old immutable specs to a terminal public state without reopening
+  deleted runtime branches.
+- High: using `Failed` with reason `UnsupportedSource` is materially better
+  than surfacing a permanent reconcile error or reintroducing a fake `HTTP`
+  `resolvedType`.
+- High: omitting `status.source.resolvedType` for this terminal migration path
+  is the correct API behavior. Inventing `HTTP` or `Unknown` would create a
+  dead public contract surface after the source-kind cut.
+- Medium: the slice intentionally fixed persisted objects only; this remained a
+  temporary migration gap until the next compatibility cut.
+
+## Slice 68 review notes
+
+- No blocking findings against reintroducing `source.caBundle` and generic
+  `http(s)` URL schema only as deprecated compatibility input. The live remote
+  matrix is still enforced by controller resolution, not by the CRD pattern.
+- High: this is the right way to remove manual manifest migration without
+  reviving the deleted generic `HTTP` runtime path.
+- High: the compatibility bridge stays one-way and explicit:
+  old manifests apply, unsupported remote URLs become
+  `Failed/UnsupportedSource`, and no fake `HTTP` source kind returns into the
+  public status contract.
+
+## Slice 67 review notes
+
+- No blocking findings against treating this as a build-shell correctness
+  slice, not a feature slice. The failure was in module packaging layout, so
+  fixing it before more controller work is the right priority.
+- High: the missing YAML document separator in `images/controller/werf.inc.yaml`
+  was the direct CI/root build breaker and had to be fixed explicitly.
+- High: reverting `beforeInstall` back to helper-compatible YAML list items is
+  correct for this repo. `.werf/stages/helpers.yaml` emits list items, so a
+  block-script wrapper would keep breaking `werf` shell generation.
+- Medium: local `werf build --dev --env dev --platform=linux/amd64 controller
+  controller-runtime` is now the relevant proof, because it exercises the same
+  controller image path that the CI failure stopped before.

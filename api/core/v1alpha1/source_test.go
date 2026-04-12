@@ -16,7 +16,10 @@ limitations under the License.
 
 package v1alpha1
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestDetectRemoteSourceType(t *testing.T) {
 	t.Parallel()
@@ -41,6 +44,9 @@ func TestDetectRemoteSourceType(t *testing.T) {
 				if err == nil || err.Error() != tc.err {
 					t.Fatalf("DetectRemoteSourceType() error = %v, want %q", err, tc.err)
 				}
+				if !IsUnsupportedRemoteSourceError(err) {
+					t.Fatalf("expected unsupported remote source classification, got %v", err)
+				}
 				return
 			}
 			if err != nil {
@@ -53,6 +59,17 @@ func TestDetectRemoteSourceType(t *testing.T) {
 	}
 }
 
+func TestIsUnsupportedRemoteSourceError(t *testing.T) {
+	t.Parallel()
+
+	if IsUnsupportedRemoteSourceError(nil) {
+		t.Fatal("nil error must not be classified as unsupported source")
+	}
+	if IsUnsupportedRemoteSourceError(errors.New("something else")) {
+		t.Fatal("unrelated error must not be classified as unsupported source")
+	}
+}
+
 func TestParseHuggingFaceURL(t *testing.T) {
 	t.Parallel()
 
@@ -62,5 +79,23 @@ func TestParseHuggingFaceURL(t *testing.T) {
 	}
 	if repoID != "deepseek-ai/DeepSeek-R1" || revision != "main" {
 		t.Fatalf("unexpected repo/revision %q %q", repoID, revision)
+	}
+}
+
+func TestModelSourceSpecDetectTypeAllowsLegacyHTTPShapeButRejectsProvider(t *testing.T) {
+	t.Parallel()
+
+	_, err := (ModelSourceSpec{
+		URL:      "https://downloads.example.com/model.tar.gz",
+		CABundle: "-----BEGIN CERTIFICATE-----\nlegacy\n-----END CERTIFICATE-----",
+		AuthSecretRef: &SecretReference{
+			Name: "legacy-http-auth",
+		},
+	}).DetectType()
+	if err == nil {
+		t.Fatal("expected unsupported source error")
+	}
+	if !IsUnsupportedRemoteSourceError(err) {
+		t.Fatalf("expected unsupported remote source classification, got %v", err)
 	}
 }

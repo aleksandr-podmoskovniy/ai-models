@@ -58,13 +58,17 @@ type ModelStatus struct {
 
 // +kubebuilder:validation:XValidation:rule="((has(self.url) && size(self.url) > 0 ? 1 : 0) + (has(self.upload) ? 1 : 0)) == 1",message="exactly one of source.url or source.upload must be specified"
 // +kubebuilder:validation:XValidation:rule="has(self.upload) ? !has(self.authSecretRef) : true",message="source.authSecretRef is only allowed for source.url"
+// +kubebuilder:validation:XValidation:rule="has(self.upload) ? !has(self.caBundle) : true",message="source.caBundle is only allowed for source.url"
 type ModelSourceSpec struct {
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:Pattern=`^https?:\/\/(?:(?:www\.)?huggingface\.co|hf\.co)\/.+$`
+	// +kubebuilder:validation:Pattern=`^https?:\/\/.+$`
 	URL string `json:"url,omitempty"`
 	// For namespaced Model, empty Namespace resolves to the object's namespace.
-	AuthSecretRef *SecretReference   `json:"authSecretRef,omitempty"`
-	Upload        *UploadModelSource `json:"upload,omitempty"`
+	AuthSecretRef *SecretReference `json:"authSecretRef,omitempty"`
+	// Deprecated: compatibility-only legacy field for old remote-source manifests.
+	// The controller ignores it and keeps the live remote source matrix HF-only.
+	CABundle string             `json:"caBundle,omitempty"`
+	Upload   *UploadModelSource `json:"upload,omitempty"`
 }
 
 type UploadModelSource struct {

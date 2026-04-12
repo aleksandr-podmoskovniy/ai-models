@@ -14,6 +14,8 @@
   - upload status equality
   - worker/session observation decisions
   - status/condition projection
+  - explicit terminal `UnsupportedSource` projection for persisted legacy
+    non-HF remote objects after the HTTP-source removal cut
 - Primary evidence:
   - `operation_test.go`
   - `runtime_decisions_test.go`
@@ -45,6 +47,8 @@
   - upload-session expiry handling before public status projection
   - upload-source reconcile gating when cleanup-handle handoff is already
     persisted but final ready status is not yet projected
+  - legacy unsupported remote-source rejection staying at controller-owner
+    boundary instead of leaking deeper into runtime orchestration
 - Primary evidence:
   - `observe_runtime_test.go`
   - `reconcile_gate_test.go`

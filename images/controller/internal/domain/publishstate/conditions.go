@@ -17,6 +17,8 @@ limitations under the License.
 package publishstate
 
 import (
+	"strings"
+
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -100,22 +102,28 @@ func failedStatus(
 	current modelsv1alpha1.ModelStatus,
 	generation int64,
 	sourceType modelsv1alpha1.ModelSourceType,
+	reason modelsv1alpha1.ModelConditionReason,
 	message string,
 ) modelsv1alpha1.ModelStatus {
 	status := modelsv1alpha1.ModelStatus{
 		ObservedGeneration: generation,
 		Phase:              modelsv1alpha1.ModelPhaseFailed,
-		Source: &modelsv1alpha1.ResolvedSourceStatus{
+		Conditions:         keepNonPublishConditions(current.Conditions),
+	}
+	if strings.TrimSpace(string(sourceType)) != "" {
+		status.Source = &modelsv1alpha1.ResolvedSourceStatus{
 			ResolvedType: sourceType,
-		},
-		Conditions: keepNonPublishConditions(current.Conditions),
+		}
+	}
+	if reason == "" {
+		reason = modelsv1alpha1.ModelConditionReasonPublicationFailed
 	}
 
 	setAcceptedCondition(&status.Conditions, generation)
 	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
 		Type:               string(modelsv1alpha1.ModelConditionArtifactPublished),
 		Status:             metav1.ConditionFalse,
-		Reason:             string(modelsv1alpha1.ModelConditionReasonPublicationFailed),
+		Reason:             string(reason),
 		Message:            message,
 		ObservedGeneration: generation,
 		LastTransitionTime: metav1.Now(),
@@ -123,7 +131,7 @@ func failedStatus(
 	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
 		Type:               string(modelsv1alpha1.ModelConditionReady),
 		Status:             metav1.ConditionFalse,
-		Reason:             string(modelsv1alpha1.ModelConditionReasonPublicationFailed),
+		Reason:             string(reason),
 		Message:            message,
 		ObservedGeneration: generation,
 		LastTransitionTime: metav1.Now(),
