@@ -3200,3 +3200,45 @@ replacement has landed yet.
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
+
+## Slice 70 landed
+
+Цель:
+
+- убрать live drift между server-side `dmcr` htpasswd secret и projected
+  reader/writer credentials secret, который вскрылся на реальном `HF` smoke
+  publish как `401 unauthorized`.
+
+Что сделано:
+
+- в `templates/_helpers.tpl` write/read `dmcr` passwords теперь имеют один
+  source-of-truth order:
+  - persisted `write.password` / `read.password` в server auth secret;
+  - projected read/write auth secret password;
+  - legacy fallback only where it still exists;
+  - fresh generated password only for first install;
+- write/read `htpasswd` entries теперь reuse existing hash only when stored
+  plaintext password matches desired password; otherwise hash regenerates and
+  drift self-heals on next rollout;
+- в `templates/dmcr/secret.yaml` server auth secret now persists
+  `write.password` and `read.password` explicitly so future renders no longer
+  preserve mismatched `htpasswd` forever;
+- real cluster smoke with
+  `https://huggingface.co/hf-internal-testing/tiny-random-PhiForCausalLM`
+  proved the root cause:
+  `publication worker -> dmcr /v2/ -> 401 unauthorized`, and direct bcrypt
+  check showed `ai-models-dmcr-auth-write.password` did not match
+  `ai-models-dmcr-auth.write.htpasswd`.
+
+Границы slice:
+
+- this is a server/client credential reconciliation fix only;
+- no public API, `Model` contract, or `HF` ingest semantics changed;
+- live hot-patch is intentionally impossible under DKP `heritage: deckhouse`
+  policy, so the repair takes effect only after the next module rollout.
+
+Проверки:
+
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`

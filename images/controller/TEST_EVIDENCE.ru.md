@@ -307,3 +307,25 @@
 - Residual gaps:
   - no standalone envtest replay here; controller-runtime fake client coverage
     remains the primary evidence for this delete-only owner
+
+## Live `HF` smoke against cluster
+
+- Scenario:
+  - `Model` in namespace `ai-models-smoke`
+  - `source.url=https://huggingface.co/hf-internal-testing/tiny-random-PhiForCausalLM`
+  - `inputFormat=Safetensors`
+- Result:
+  - `RemoteIngestStarted` reached the publish worker successfully;
+  - publish then failed on `dmcr /v2/` auth with
+    `401 unauthorized: authentication required`.
+- Root-cause proof:
+  - direct curl with current `ai-models-dmcr-auth-write` credentials also
+    returned `401`;
+  - direct bcrypt comparison proved
+    `ai-models-dmcr-auth-write.password` did not match
+    `ai-models-dmcr-auth.write.htpasswd`.
+- Outcome:
+  - this smoke validated the need for Slice 70 template reconciliation of
+    `dmcr` server and client credentials;
+  - live repair requires module rollout because DKP forbids manual mutation of
+    `heritage: deckhouse` secrets.

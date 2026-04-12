@@ -866,26 +866,31 @@ ai-models-reader
 
 {{- define "ai-models.dmcrWriteAuthPassword" -}}
 {{- $namespace := include "ai-models.namespace" . -}}
+{{- $authSecretName := include "ai-models.dmcrAuthSecretName" . -}}
+{{- $authSecret := lookup "v1" "Secret" $namespace $authSecretName -}}
+{{- $authData := (get (default (dict) $authSecret) "data" | default (dict)) -}}
+{{- $serverPassword := (get $authData "write.password" | default "" | b64dec) -}}
 {{- $secretName := include "ai-models.dmcrWriteAuthSecretName" . -}}
 {{- $existingSecret := lookup "v1" "Secret" $namespace $secretName -}}
 {{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
 {{- $existingPassword := (get $existingData "password" | default "" | b64dec) -}}
-{{- if not $existingPassword -}}
-  {{- $legacySecret := lookup "v1" "Secret" $namespace (include "ai-models.dmcrAuthSecretName" .) -}}
-  {{- $legacyData := (get (default (dict) $legacySecret) "data" | default (dict)) -}}
-  {{- $existingPassword = (get $legacyData "password" | default "" | b64dec) -}}
-{{- end -}}
+{{- $legacyPassword := (get $authData "password" | default "" | b64dec) -}}
 {{- $generatedPassword := printf "A1a%s" (randAlphaNum 37) -}}
-{{- coalesce $existingPassword $generatedPassword -}}
+{{- coalesce $serverPassword $existingPassword $legacyPassword $generatedPassword -}}
 {{- end -}}
 
 {{- define "ai-models.dmcrReadAuthPassword" -}}
+{{- $namespace := include "ai-models.namespace" . -}}
+{{- $authSecretName := include "ai-models.dmcrAuthSecretName" . -}}
+{{- $authSecret := lookup "v1" "Secret" $namespace $authSecretName -}}
+{{- $authData := (get (default (dict) $authSecret) "data" | default (dict)) -}}
+{{- $serverPassword := (get $authData "read.password" | default "" | b64dec) -}}
 {{- $secretName := include "ai-models.dmcrReadAuthSecretName" . -}}
-{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $existingSecret := lookup "v1" "Secret" $namespace $secretName -}}
 {{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
 {{- $existingPassword := (get $existingData "password" | default "" | b64dec) -}}
 {{- $generatedPassword := printf "A1a%s" (randAlphaNum 37) -}}
-{{- coalesce $existingPassword $generatedPassword -}}
+{{- coalesce $serverPassword $existingPassword $generatedPassword -}}
 {{- end -}}
 
 {{- define "ai-models.dmcrDockerConfigJSON" -}}
@@ -910,10 +915,12 @@ ai-models-reader
 {{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
 {{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
 {{- $existingEntry := (get $existingData "write.htpasswd" | default "" | b64dec) -}}
-{{- if $existingEntry -}}
+{{- $storedPassword := (get $existingData "write.password" | default "" | b64dec) -}}
+{{- $desiredPassword := include "ai-models.dmcrWriteAuthPassword" . | trim -}}
+{{- if and $existingEntry $storedPassword (eq ($storedPassword | trim) $desiredPassword) -}}
 {{- $existingEntry -}}
 {{- else -}}
-{{- htpasswd (include "ai-models.dmcrWriteAuthUsername" . | trim) (include "ai-models.dmcrWriteAuthPassword" . | trim) -}}
+{{- htpasswd (include "ai-models.dmcrWriteAuthUsername" . | trim) $desiredPassword -}}
 {{- end -}}
 {{- end -}}
 
@@ -922,10 +929,12 @@ ai-models-reader
 {{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
 {{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
 {{- $existingEntry := (get $existingData "read.htpasswd" | default "" | b64dec) -}}
-{{- if $existingEntry -}}
+{{- $storedPassword := (get $existingData "read.password" | default "" | b64dec) -}}
+{{- $desiredPassword := include "ai-models.dmcrReadAuthPassword" . | trim -}}
+{{- if and $existingEntry $storedPassword (eq ($storedPassword | trim) $desiredPassword) -}}
 {{- $existingEntry -}}
 {{- else -}}
-{{- htpasswd (include "ai-models.dmcrReadAuthUsername" . | trim) (include "ai-models.dmcrReadAuthPassword" . | trim) -}}
+{{- htpasswd (include "ai-models.dmcrReadAuthUsername" . | trim) $desiredPassword -}}
 {{- end -}}
 {{- end -}}
 

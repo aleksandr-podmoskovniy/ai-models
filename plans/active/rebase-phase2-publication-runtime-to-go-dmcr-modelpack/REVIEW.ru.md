@@ -1144,3 +1144,21 @@ Checks:
 - Medium: if the module later gets a real tracing integration, this default
   should be revisited deliberately instead of being inferred from generic
   upstream defaults.
+
+## Slice 70 review notes
+
+- No blocking findings against treating the `dmcr` auth mismatch as a module
+  template bug, not a runtime/user misconfiguration. Live `HF` smoke reached
+  `dmcr`, and the failure reduced to `401 unauthorized` with reproducible
+  credential drift between `ai-models-dmcr-auth-write/read` and
+  `ai-models-dmcr-auth`.
+- High: persisting `write.password` / `read.password` in the server auth secret
+  is the right repair boundary. Without persisted plaintext source-of-truth,
+  Helm keeps preserving mismatched `htpasswd` entries forever.
+- High: self-healing `htpasswd` regeneration only when the stored plaintext no
+  longer matches the desired password is the right no-surprises behavior. It
+  preserves stable credentials after the first repaired rollout and still fixes
+  existing drift automatically.
+- Medium: live patching remained intentionally impossible because DKP forbids
+  updating `heritage: deckhouse` objects by hand. That is acceptable here: the
+  template fix is correct, and rollout is the supported repair path.
