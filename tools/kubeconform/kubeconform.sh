@@ -23,6 +23,23 @@ HELM_RENDER="${ROOT_DIR}/tools/kubeconform/helm-template-render.yaml"
 KUBECONFORM_VERSION="${KUBECONFORM_VERSION:-0.7.0}"
 KUBECONFORM_BIN=""
 
+download_with_retry() {
+  local url="$1"
+  local destination="$2"
+  local -a retry_flags=(
+    --retry 5
+    --retry-delay 2
+    --retry-max-time 120
+    --retry-connrefused
+  )
+
+  if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+    retry_flags+=(--retry-all-errors)
+  fi
+
+  curl -fL "${retry_flags[@]}" "${url}" -o "${destination}"
+}
+
 ensure_kubeconform() {
   if command -v kubeconform >/dev/null 2>&1; then
     KUBECONFORM_BIN="$(command -v kubeconform)"
@@ -59,7 +76,7 @@ ensure_kubeconform() {
   tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/kubeconform.XXXXXX")"
   trap 'rm -rf "${tmp_dir}"' RETURN
   mkdir -p "${cache_dir}"
-  curl -fsSL "${url}" -o "${tmp_dir}/kubeconform.tgz"
+  download_with_retry "${url}" "${tmp_dir}/kubeconform.tgz"
   tar -xzf "${tmp_dir}/kubeconform.tgz" -C "${tmp_dir}"
   install -m 0755 "${tmp_dir}/kubeconform" "${KUBECONFORM_BIN}"
 }
