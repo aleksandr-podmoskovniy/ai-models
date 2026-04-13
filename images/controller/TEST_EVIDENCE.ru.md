@@ -450,6 +450,86 @@
     canonical `Safetensors` publication, while remote code still stays
     reject-only.
 
+## Live `Gemma 4` smoke on the current public `HuggingFace` contract
+
+- Scenario:
+  - `Model` in namespace `ai-models-smoke`
+  - `source.url=https://huggingface.co/google/gemma-4-E2B-it`
+  - `inputFormat=Safetensors`
+  - `runtimeHints.task=text-generation`
+  - no explicit `revision` or `authSecretRef`
+- Result:
+  - current public manifest shape worked unchanged on the live cluster;
+  - controller accepted the spec, resolved the source as `HuggingFace`,
+    completed publication, inspection and validation, and finished with:
+    - `phase=Ready`
+    - `ArtifactPublished=True`
+    - `MetadataReady=True`
+    - `Validated=True`
+    - `Ready=True`;
+  - published artifact:
+    - `digest=sha256:d3a98df3d0fff2a2249cf61339492f260122b703621d667259e832681f008d55`
+    - `mediaType=application/vnd.cncf.model.manifest.v1+json`;
+  - resolved source metadata:
+    - `resolvedType=HuggingFace`
+    - `resolvedRevision=b4a601102c3d45e2b7b50e2057a6d5ec8ed4adcf`;
+  - resolved technical profile included:
+    - `family=gemma4`
+    - `framework=transformers`
+    - `architecture=Gemma4ForConditionalGeneration`
+    - `format=Safetensors`
+    - `parameterCount=1579352064`
+    - `contextWindowTokens=131072`
+    - `compatibleRuntimes=[KServe,KubeRay]`
+    - `minimumLaunch.acceleratorMemoryGiB=12`.
+- Root-cause proof:
+  - the same live cluster had already proven that current `source.url` parsing,
+    publish worker wiring and `DMCR` publication path are functional;
+  - this run additionally proved that the plain user-facing
+    `https://huggingface.co/<owner>/<repo>` contract is sufficient for an
+    official small `Gemma 4` checkpoint and that the controller resolves the
+    exact commit SHA into status without requiring the user to embed it in the
+    manifest.
+- Outcome:
+  - users can already publish `Gemma 4 E2B IT` with the current runtime
+    contract;
+  - a future API redesign around `repoID + revision` can still improve UX, but
+    it is not required to make the live path work today.
+
+## Live `Gemma 4` published artifact integrity check
+
+- Scenario:
+  - inspect the published `DMCR` artifact for
+    `ai-models-smoke/gemma-4-e2b-it-smoke-20260413-1` after `phase=Ready`;
+  - verify not only status/digest, but actual manifest and blob payloads in the
+    registry backend.
+- Result:
+  - live manifest was structurally valid but semantically wrong for a real
+    model payload:
+    - `config.size=353`
+    - single weight-layer digest
+      `sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef`
+    - `layer.size=1024`;
+  - direct blob fetch from `DMCR` confirmed the published layer tar itself was
+    only `1024` bytes;
+  - direct `tar -tvf` on that layer produced no file entries, i.e. the layer
+    was an empty tar shell instead of a real model filesystem.
+- Root-cause proof:
+  - publication code in `internal/adapters/modelpack/kitops/adapter.go`
+    prepared a temporary `kitops` context via:
+    - temp dir
+    - `model -> <checkpointDir>` symlink
+    - `Kitfile` with `model.path: model`;
+  - live artifact shape is consistent with `kitops pack` publishing the symlink
+    shell rather than dereferenced checkpoint contents;
+  - therefore `Ready` was reached with a false-positive published artifact.
+- Outcome:
+  - the defect required a corrective slice: `kit pack` must run directly on the
+    real model directory with `Kitfile model.path: .`, not on a symlink-based
+    wrapper context;
+  - this path also avoids introducing one more full local copy of the model
+    just to satisfy `kitops`.
+
 ## Live delete / GC evidence
 
 - Scenario:

@@ -25,6 +25,13 @@
 - phase-2 live cluster validation уже успела выявить, что second-smoke style
   HF repos могут нести benign alternative export artifacts вроде `onnx/`,
   и это не должно ломать canonical `Safetensors` ingest.
+- следующая live validation surface должна проверить current public HF source
+  contract на реальном small official `Gemma 4` checkpoint и зафиксировать,
+  достаточно ли текущего `source.url=https://huggingface.co/...` для user-facing
+  UX до отдельного API cut под `repoID + revision`.
+- live `Gemma 4` smoke дополнительно вскрыла целостностный дефект публикации:
+  published `ModelPack` дошёл до `Ready`, но в `DMCR` оказался пустой
+  weight-layer размером `1024` байта вместо реальных весов модели.
 
 Нужен новый компактный canonical active bundle, чтобы следующие bounded slices
 шли без повторного разрастания `plans/active`.
@@ -50,10 +57,18 @@
   - current open workstreams
   - validation rules
 - обновить planning hygiene docs, если это нужно для закрепления правила.
+- прогнать live smoke на current runtime contract для small official `Gemma 4`
+  checkpoint и зафиксировать operational result.
+- устранить live integrity defect в `KitOps` publication path, из-за которого
+  published `ModelPack` может содержать только пустой layer-shell.
 
 ## Non-goals
 
 - не менять runtime code, API, values, templates или текущий product scope;
+- не делать в этом срезе отдельный API redesign под `source.repoID` /
+  `source.revision`, если live smoke укладывается в current contract;
+- не переделывать сейчас весь `ModelPack`/OCI contract или delivery path за
+  пределами bounded corrective fix для real-content publication;
 - не переписывать архивированный bundle задним числом;
 - не дробить историю на несколько новых active bundles одновременно;
 - не переносить в новый bundle весь старый review log и slice-by-slice history.
@@ -63,6 +78,7 @@
 - `plans/active/*`
 - `plans/archive/2026/*`
 - `plans/README.md`
+- live cluster `Model` smoke surface
 
 ## Критерии приёмки
 
@@ -73,6 +89,14 @@
   дублирует её;
 - planning hygiene rule про oversized active bundles зафиксирован в repo docs;
 - layout `plans/active` и `plans/archive` остаётся чистым и понятным.
+- current public `HuggingFace` source contract проверен живьём на official
+  small `Gemma 4` checkpoint;
+- по результату есть готовый working manifest или зафиксированный bounded
+  defect с фактами из live cluster.
+- опубликованный `ModelPack` после live smoke содержит реальные model bytes, а
+  не пустой tar layer или symlink shell;
+- corrective regression не допускает возврата symlink-based `kitops` packing
+  context.
 
 ## Риски
 
@@ -80,3 +104,7 @@
 - можно оставить параллельные active bundles и снова получить split-brain;
 - можно случайно дублировать в новом bundle старую историю вместо новой
   компактной рабочей поверхности.
+- live smoke может занять заметное время из-за размера модели и скрыть, где
+  именно находится bottleneck: source ingest, publish, registry или cleanup.
+- быстрый "фикс" через дополнительную полную локальную копию модели перед
+  `kit pack` может ухудшить byte path и ещё сильнее поднять storage pressure.

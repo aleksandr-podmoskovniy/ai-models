@@ -17,7 +17,12 @@ limitations under the License.
 package kitops
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
 
 func TestRegistryFromOCIReference(t *testing.T) {
@@ -33,5 +38,44 @@ func TestImmutableOCIReference(t *testing.T) {
 
 	if got, want := immutableOCIReference("registry.example.com/ai-models/catalog/model:published", "sha256:deadbeef"), "registry.example.com/ai-models/catalog/model@sha256:deadbeef"; got != want {
 		t.Fatalf("unexpected immutable reference %q", got)
+	}
+}
+
+func TestPrepareContextWritesKitfileForDirectModelDir(t *testing.T) {
+	t.Parallel()
+
+	modelDir := filepath.Join(t.TempDir(), "checkpoint")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "config.json"), []byte(`{"model_type":"gemma4"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(config.json) error = %v", err)
+	}
+
+	contextDir, err := prepareContext(modelpackports.PublishInput{
+		ModelDir:    modelDir,
+		ArtifactURI: "registry.example.com/ns/model:published",
+		Description: `desc "quoted"`,
+	})
+	if err != nil {
+		t.Fatalf("prepareContext() error = %v", err)
+	}
+	defer os.RemoveAll(contextDir)
+
+	if _, err := os.Lstat(filepath.Join(contextDir, "model")); !os.IsNotExist(err) {
+		t.Fatalf("prepareContext() must not create model symlink, stat err = %v", err)
+	}
+
+	kitfilePath := filepath.Join(contextDir, "Kitfile")
+	payload, err := os.ReadFile(kitfilePath)
+	if err != nil {
+		t.Fatalf("ReadFile(Kitfile) error = %v", err)
+	}
+	text := string(payload)
+	if !strings.Contains(text, "  path: .") {
+		t.Fatalf("Kitfile must pack the model directory directly, got %q", text)
+	}
+	if !strings.Contains(text, `description: "desc 'quoted'"`) {
+		t.Fatalf("Kitfile must sanitize quotes, got %q", text)
 	}
 }

@@ -68,7 +68,7 @@ func (a *Adapter) Publish(ctx context.Context, input modelpackports.PublishInput
 	if err := a.login(ctx, configDir, input.ArtifactURI, auth); err != nil {
 		return modelpackports.PublishResult{}, err
 	}
-	if err := a.run(ctx, configDir, auth, "pack", contextDir, "-t", input.ArtifactURI, "--use-model-pack"); err != nil {
+	if err := a.run(ctx, configDir, auth, "pack", input.ModelDir, "-f", filepath.Join(contextDir, "Kitfile"), "-t", input.ArtifactURI, "--use-model-pack"); err != nil {
 		return modelpackports.PublishResult{}, fmt.Errorf("failed to pack ModelPack: %w", err)
 	}
 	pushArgs := append([]string{"push", input.ArtifactURI}, connectionFlags(auth)...)
@@ -180,13 +180,8 @@ func prepareContext(input modelpackports.PublishInput) (string, error) {
 		return "", errors.New("model directory must not be empty")
 	}
 
-	contextDir, err := os.MkdirTemp("", "ai-model-kitops-context-")
+	contextDir, err := os.MkdirTemp("", "ai-model-kitops-kitfile-")
 	if err != nil {
-		return "", err
-	}
-
-	if err := os.Symlink(modelDir, filepath.Join(contextDir, "model")); err != nil {
-		os.RemoveAll(contextDir)
 		return "", err
 	}
 
@@ -200,7 +195,7 @@ func prepareContext(input modelpackports.PublishInput) (string, error) {
 		fmt.Sprintf("  name: %s", packageName(input)),
 		fmt.Sprintf("  description: \"%s\"", description),
 		"model:",
-		"  path: model",
+		"  path: .",
 		"",
 	}, "\n")
 

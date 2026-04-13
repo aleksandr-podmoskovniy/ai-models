@@ -59,6 +59,10 @@ large corrective rebase bundle was completed and archived.
    - second HF smoke against a repo different from the original phi test
    - controller/runtime bugs found by cluster smoke must become bounded
      corrective slices with focused regressions
+   - current public HF source contract must be checked on a small official
+     `Gemma 4` checkpoint before any API redesign around `repoID + revision`
+   - live `Gemma 4` smoke must also confirm that published `ModelPack`
+     contains real model bytes in `DMCR`, not only manifest/config shells
 
 ## Slice 1. Archive giant active bundle
 
@@ -137,6 +141,46 @@ large corrective rebase bundle was completed and archived.
 1. удалить `plans/active/phase2-runtime-followups/`;
 2. переместить archived predecessor обратно в `plans/active/`;
 3. откатить изменение `plans/README.md`.
+
+## Slice 5. Validate current HF source contract on official Gemma 4
+
+Цель:
+
+- проверить live cluster на current user-facing manifest shape для
+  `HuggingFace`;
+- прогнать smoke publish для official small `Gemma 4` checkpoint;
+- по факту зафиксировать working manifest или bounded defect.
+
+Артефакты:
+
+- updated active bundle notes for the live smoke result
+- optional live evidence update if the cluster run exposes a real defect
+
+Проверки:
+
+- `kubectl get module ai-models`
+- `kubectl -n d8-ai-models get deploy ai-models ai-models-controller dmcr`
+- live `Model` apply/watch result in `ai-models-smoke`
+
+## Slice 6. Fix empty-layer `KitOps` publication defect
+
+Цель:
+
+- исправить live defect, при котором publish path доходит до `Ready`, но
+  публикует в `DMCR` пустой weight-layer вместо реального model filesystem;
+- сохранить bounded byte path без дополнительной полной копии модели.
+
+Артефакты:
+
+- updated `images/controller/internal/adapters/modelpack/kitops/adapter.go`
+- focused regression in `images/controller/internal/adapters/modelpack/kitops/adapter_test.go`
+- updated live evidence for the empty-layer defect
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelpack/kitops`
+- `cd images/controller && go test ./internal/adapters/modelpack/... ./cmd/ai-models-artifact-runtime/...`
+- `git diff --check`
 
 ## Final validation
 
