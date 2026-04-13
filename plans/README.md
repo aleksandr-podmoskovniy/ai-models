@@ -19,7 +19,8 @@
 - после завершения задачи bundle переносится в `plans/archive/<year>/`, если он
   ещё нужен как история;
 - если active bundle разросся до heavy historical log и перестал быть удобной
-  рабочей поверхностью, его тоже надо архивировать и заводить новый compact
+  рабочей поверхностью, его тоже надо архивировать: archive
+  stale/finished or oversized active bundles и заводить новый compact
   continuation bundle в `plans/active/` с коротким baseline и ссылкой на
   archived predecessor;
 - мелкие одноразовые bundles можно удалять после merge, если они не несут

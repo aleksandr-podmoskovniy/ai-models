@@ -123,6 +123,23 @@ Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
   base-image map пока нет эквивалента;
 - `images/` не должен превращаться в свалку unrelated tooling или docs.
 
+### `docs/development/`
+
+`docs/development/` хранит durable engineering baseline репозитория:
+- `TZ.ru.md` — product and phase baseline;
+- `PHASES.ru.md` — stage boundaries;
+- `REPO_LAYOUT.ru.md` — layout discipline;
+- `CODEX_WORKFLOW.ru.md` — рабочий цикл;
+- `TASK_TEMPLATE.ru.md` — canonical bundle template;
+- `REVIEW_CHECKLIST.ru.md` — final review checklist.
+
+Правила:
+- workflow docs не должны противоречить `AGENTS.md`, `.codex/README.md`,
+  skills и agent profiles;
+- если меняются `CODEX_WORKFLOW.ru.md`, `TASK_TEMPLATE.ru.md` или
+  `REVIEW_CHECKLIST.ru.md`, это governance task, а не incidental docs cleanup;
+- для такого изменения обязателен `make lint-codex-governance`.
+
 ## Werf shell
 
 Root `werf` должен оставаться module-oriented, как в `virtualization` и

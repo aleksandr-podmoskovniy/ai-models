@@ -1,0 +1,240 @@
+{
+  "precedence": [
+    "AGENTS.md",
+    ".codex/README.md",
+    ".agents/skills/*",
+    ".codex/agents/*.toml"
+  ],
+  "core_skills": [
+    "task-intake-and-slicing",
+    "review-gate",
+    "dkp-module-shell",
+    "module-config-contract",
+    "third-party-component-integration",
+    "platform-runtime-integration",
+    "k8s-api-design",
+    "controller-runtime-implementation"
+  ],
+  "core_read_only_agents": [
+    "repo_architect",
+    "integration_architect",
+    "api_designer",
+    "reviewer"
+  ],
+  "write_capable_agents": [
+    "task_framer",
+    "module_implementer"
+  ],
+  "skills": [
+    {
+      "name": "ai-models-backend-platform",
+      "path": ".agents/skills/ai-models-backend-platform/SKILL.md",
+      "must_include": [
+        "No backend entity leaked as public platform contract.",
+        "No backend/storage/auth change without matching module-shell and config"
+      ]
+    },
+    {
+      "name": "controller-architecture-discipline",
+      "path": ".agents/skills/controller-architecture-discipline/SKILL.md",
+      "must_include": [
+        "No controller test monolith growth.",
+        "keep them under the same LOC discipline as production files"
+      ]
+    },
+    {
+      "name": "controller-runtime-implementation",
+      "path": ".agents/skills/controller-runtime-implementation/SKILL.md",
+      "must_include": [
+        "Prefer Go-first phase-2 data-plane code by default.",
+        "If the controller package map or controller test tree changes, sync:"
+      ]
+    },
+    {
+      "name": "dkp-module-shell",
+      "path": ".agents/skills/dkp-module-shell/SKILL.md",
+      "must_include": [
+        "No values/OpenAPI/template drift.",
+        "No shell/build change without matching render/verify evidence."
+      ]
+    },
+    {
+      "name": "k8s-api-design",
+      "path": ".agents/skills/k8s-api-design/SKILL.md",
+      "must_include": [
+        "No internal transport/storage/output format leaked into public `spec`.",
+        "No placeholder API knob kept “for later”."
+      ]
+    },
+    {
+      "name": "model-catalog-api",
+      "path": ".agents/skills/model-catalog-api/SKILL.md",
+      "must_include": [
+        "Treat `ModelPack` as the publication contract",
+        "dead public knobs with no live controller semantics"
+      ]
+    },
+    {
+      "name": "module-config-contract",
+      "path": ".agents/skills/module-config-contract/SKILL.md",
+      "must_include": [
+        "No dead public knobs without live semantics.",
+        "No fake compatibility layers that outlive the migration they were added for."
+      ]
+    },
+    {
+      "name": "platform-runtime-integration",
+      "path": ".agents/skills/platform-runtime-integration/SKILL.md",
+      "must_include": [
+        "No local convenience option that bypasses a DKP global mechanism",
+        "No observability contract that exists only in logs or chat"
+      ]
+    },
+    {
+      "name": "review-gate",
+      "path": ".agents/skills/review-gate/SKILL.md",
+      "must_include": [
+        "check them as one instruction system",
+        "no lower-level file contradicts a higher-level rule"
+      ]
+    },
+    {
+      "name": "task-intake-and-slicing",
+      "path": ".agents/skills/task-intake-and-slicing/SKILL.md",
+      "must_include": [
+        "make it a dedicated governance bundle",
+        "archive stale/finished or oversized active bundles"
+      ]
+    },
+    {
+      "name": "third-party-component-integration",
+      "path": ".agents/skills/third-party-component-integration/SKILL.md",
+      "must_include": [
+        "No patching upstream files in-place without explicit patch/rebase discipline.",
+        "No hidden source-of-truth split between vendored copy, build shell, and docs."
+      ]
+    }
+  ],
+  "agents": [
+    {
+      "name": "api_designer",
+      "path": ".codex/agents/api-designer.toml",
+      "sandbox_mode": "read-only",
+      "must_include": [
+        "Treat dead public knobs, internal output-format leakage, and unstable conditions as real findings"
+      ]
+    },
+    {
+      "name": "backend_integrator",
+      "path": ".codex/agents/backend-integrator.toml",
+      "sandbox_mode": "read-only",
+      "must_include": [
+        "Treat backend convenience leaking into public platform behavior as a real finding."
+      ]
+    },
+    {
+      "name": "integration_architect",
+      "path": ".codex/agents/integration-architect.toml",
+      "sandbox_mode": "read-only",
+      "must_include": [
+        "always answer the byte-path, copy-count, and runtime-footprint questions explicitly."
+      ]
+    },
+    {
+      "name": "module_implementer",
+      "path": ".codex/agents/module-implementer.toml",
+      "sandbox_mode": "workspace-write",
+      "must_include": [
+        "Do not treat repo-local workflow governance edits (",
+        "they need their own bundle and explicit consistency review."
+      ]
+    },
+    {
+      "name": "repo_architect",
+      "path": ".codex/agents/repo-architect.toml",
+      "sandbox_mode": "read-only",
+      "must_include": [
+        "include governance-surface consistency in the review"
+      ]
+    },
+    {
+      "name": "reviewer",
+      "path": ".codex/agents/reviewer.toml",
+      "sandbox_mode": "read-only",
+      "must_include": [
+        "review them as one instruction system and treat contradictions across layers as real findings."
+      ]
+    },
+    {
+      "name": "task_framer",
+      "path": ".codex/agents/task-framer.toml",
+      "sandbox_mode": "workspace-write",
+      "must_include": [
+        "archive stale or oversized active bundles instead of creating sibling sources of truth.",
+        "require consistency checks across all touched instruction layers."
+      ]
+    }
+  ],
+  "required_files": [
+    {
+      "path": "AGENTS.md",
+      "must_include": [
+        "Repo-local workflow rules имеют строгий precedence:",
+        "## Engineering doctrine",
+        "## Workflow governance",
+        "make lint-codex-governance"
+      ]
+    },
+    {
+      "path": ".codex/README.md",
+      "must_include": [
+        "Precedence внутри repo-local Codex surface:",
+        "Core skills:",
+        "Core read-only agents:",
+        "Write-capable agents:",
+        ".codex/governance-inventory.json",
+        "make lint-codex-governance"
+      ]
+    },
+    {
+      "path": "docs/development/CODEX_WORKFLOW.ru.md",
+      "must_include": [
+        "reuse canonical active bundle",
+        "это отдельный governance bundle",
+        "make lint-codex-governance"
+      ]
+    },
+    {
+      "path": "docs/development/TASK_TEMPLATE.ru.md",
+      "must_include": [
+        "Для workflow/governance tasks дополнительно:",
+        "### 2. Orchestration",
+        "Для workflow/governance tasks сюда входит `make lint-codex-governance`."
+      ]
+    },
+    {
+      "path": "docs/development/REVIEW_CHECKLIST.ru.md",
+      "must_include": [
+        "## Workflow governance",
+        "`make lint-codex-governance` прогнан",
+        "не противоречат `AGENTS.md` и `.codex/README.md`"
+      ]
+    },
+    {
+      "path": "docs/development/REPO_LAYOUT.ru.md",
+      "must_include": [
+        "### `docs/development/`",
+        "это governance task, а не incidental docs cleanup;",
+        "обязателен `make lint-codex-governance`."
+      ]
+    },
+    {
+      "path": "plans/README.md",
+      "must_include": [
+        "`plans/archive/<year>/<slug>/`",
+        "stale/finished or oversized active bundles",
+        "archived predecessor"
+      ]
+    }
+  ]
+}

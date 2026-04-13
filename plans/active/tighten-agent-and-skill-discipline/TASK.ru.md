@@ -43,6 +43,11 @@
 - `.codex/README.md`
 - `.agents/skills/*`
 - `.codex/agents/*`
+- `docs/development/CODEX_WORKFLOW.ru.md`
+- `docs/development/TASK_TEMPLATE.ru.md`
+- `docs/development/REVIEW_CHECKLIST.ru.md`
+- `docs/development/REPO_LAYOUT.ru.md`
+- `plans/README.md`
 - task bundle для этой задачи
 
 ## Non-goals
@@ -58,6 +63,8 @@
 - `.codex/README.md`
 - `.agents/skills/*.md`
 - `.codex/agents/*.toml`
+- `docs/development/*.md`
+- `plans/README.md`
 - `plans/active/tighten-agent-and-skill-discipline/*`
 
 ## Критерии приёмки
@@ -74,6 +81,10 @@
 - skills не дублируют друг друга без явного split of responsibility;
 - agent profiles не противоречат skills и не маскируют governance work как
   incidental wording;
+- есть machine-checkable inventory/lint для ключевых governance invariants,
+  а не только manual reread;
+- `docs/development` больше не расходится с `AGENTS.md`, `.codex/README.md`
+  и reusable workflow doctrine;
 - есть финальный жёсткий review по самим инструкциям, а не только summary.
 
 ## Риски

@@ -28,7 +28,7 @@ description: Use at the end of any substantial task. Reviews the diff against th
    - stale bundles left in `plans/active`
    - current change landed in the correct canonical active bundle and did not create a parallel source of truth
    - implementation drift not reflected in the current bundle
-6. If repo-local workflow surfaces changed (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`), check them as one instruction system:
+6. If repo-local workflow surfaces changed (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`, `docs/development/CODEX_WORKFLOW.ru.md`, `docs/development/TASK_TEMPLATE.ru.md`, `docs/development/REVIEW_CHECKLIST.ru.md`, `plans/README.md`), check them as one instruction system:
    - no lower-level file contradicts a higher-level rule
    - skill and agent responsibilities are still distinct
    - no new governance surface was introduced without a real need

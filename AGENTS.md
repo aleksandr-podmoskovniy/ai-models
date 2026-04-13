@@ -47,8 +47,12 @@
   - `.codex/agents/*.toml`
   Нижний уровень не должен противоречить верхнему.
 - Любая задача, которая меняет `AGENTS.md`, `.codex/*`, `.agents/skills/*` или
-  `.codex/agents/*`, считается governance task и требует отдельного task
-  bundle, а не incidental wording fix inside another workstream.
+  `.codex/agents/*`, а также workflow docs
+  `docs/development/CODEX_WORKFLOW.ru.md`,
+  `docs/development/TASK_TEMPLATE.ru.md`,
+  `docs/development/REVIEW_CHECKLIST.ru.md` или `plans/README.md`,
+  считается governance task и требует отдельного task bundle, а не incidental
+  wording fix inside another workstream.
 
 ## Engineering doctrine
 
@@ -113,6 +117,10 @@
 - `.codex/README.md`
 - `.agents/skills/*`
 - `.codex/agents/*.toml`
+- `docs/development/CODEX_WORKFLOW.ru.md`
+- `docs/development/TASK_TEMPLATE.ru.md`
+- `docs/development/REVIEW_CHECKLIST.ru.md`
+- `plans/README.md`
 
 то обязательно:
 
@@ -122,6 +130,7 @@
 4. не плодить новые skills или agent roles, если проблему можно решить
    tightening existing boundaries;
 5. завершать задачу только после manual consistency review этих surfaces.
+6. прогонять `make lint-codex-governance` как machine-checkable guardrail.
 
 ## Когда обязательно использовать planning
 
@@ -132,7 +141,10 @@ Planning обязателен, если:
 - задача затрагивает внутренний backend, auth, storage или observability;
 - задача предполагает patching upstream.
 - задача меняет repo-local workflow/governance surface
-  (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`).
+  (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`,
+  `docs/development/CODEX_WORKFLOW.ru.md`,
+  `docs/development/TASK_TEMPLATE.ru.md`,
+  `docs/development/REVIEW_CHECKLIST.ru.md`, `plans/README.md`).
 
 ## Режимы orchestration
 
@@ -195,6 +207,7 @@ Delegation обязателен, если:
 - `make ensure-tools`
 - `make fmt`
 - `make lint`
+- `make lint-codex-governance`
 - `make test`
 - `make helm-template`
 - `make kubeconform`

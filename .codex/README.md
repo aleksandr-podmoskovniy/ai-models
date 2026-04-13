@@ -17,6 +17,8 @@ Precedence внутри repo-local Codex surface:
 - давать переносимый reusable baseline для DKP module repos;
 - удерживать engineering doctrine вне chat-only context;
 - не допускать split-brain между skills, agent profiles и task bundles.
+- удерживать workflow docs в `docs/development/` и `plans/README.md`
+  выровненными с этим instruction surface.
 
 ## Reusable core
 
@@ -87,6 +89,15 @@ Engineering expectations carried by this baseline:
 - no wrapper-on-wrapper architecture
 - test methodology by decision surface, not by helper accretion
 - explicit review of governance changes as a first-class scope
+
+Machine-checkable governance baseline:
+
+- `.codex/governance-inventory.json` is the repo-local inventory for the
+  precedence chain, core skills, agent capability split, and workflow-doc
+  guardrails.
+- `make lint-codex-governance` validates that `AGENTS.md`, `.codex/README.md`,
+  skills, agent profiles, and core workflow docs still match that inventory
+  instead of drifting silently.
 
 Cadence:
 1. До первого code change выбрать режим `solo` / `light` / `full`.

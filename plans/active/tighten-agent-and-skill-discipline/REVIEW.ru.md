@@ -27,18 +27,18 @@
    That made them portable only as prose, not as enforceable baseline. Fixed
    by adding explicit hard-rule sections to module shell, config, API,
    platform integration, backend integration, and 3p integration skills.
-
-## Missing checks
-
-- No automated lint exists yet for contradictions across `AGENTS.md`,
-  `.codex/README.md`, skills, and agent profiles. The current check remains a
-  manual consistency review.
+7. Medium: `docs/development/CODEX_WORKFLOW.ru.md`,
+   `TASK_TEMPLATE.ru.md`, and `REVIEW_CHECKLIST.ru.md` lagged behind the
+   tightened governance doctrine. That left a second workflow narrative outside
+   the machine-checked instruction surface. Fixed by aligning those docs and
+   extending the governance inventory to cover them.
 
 ## Residual risks
 
-- The repo-local governance surface is now stricter, but still prose-driven.
-  If it grows much further, the next corrective slice should add a lightweight
-  machine-checkable inventory or lint instead of more wording.
+- The repo-local governance surface now has a lightweight machine-checkable
+  guardrail, but it still verifies only the highest-signal invariants. If the
+  surface grows much further, the next corrective slice should extend the
+  inventory instead of falling back to more prose.
 - The baseline is now substantially more reusable across DKP module repos, but
   it still carries `ai-models` overlays inside the same repository. If this
   pattern is copied to another module, the adopter still needs to prune the

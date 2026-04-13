@@ -5,14 +5,15 @@
 Любая нетривиальная задача проходит один и тот же цикл:
 
 1. intake;
-2. task bundle;
-3. выбор orchestration mode;
-4. архитектурная проверка;
-5. план;
-6. реализация по slice;
-7. review;
-8. verification;
-9. синхронизация документации.
+2. `TASK.ru.md`;
+3. `PLAN.ru.md`;
+4. выбор orchestration mode;
+5. read-only review по границам, если он обязателен;
+6. реализация по одному slice;
+7. узкие проверки после каждого slice;
+8. финальный review;
+9. repo-level verification;
+10. синхронизация документации.
 
 ## Режимы orchestration
 
@@ -67,6 +68,25 @@
 Task bundle может оформить сам основной агент. `task_framer` нужен тогда, когда
 intake слишком широкий, расплывчатый или смешивает несколько workstreams.
 
+Bundle hygiene:
+- reuse canonical active bundle, если задача продолжает текущий workstream;
+- не заводить sibling source of truth в `plans/active/`;
+- архивировать stale или oversized active bundle, если он перестал быть
+  рабочей поверхностью.
+
+Если задача меняет repo-local workflow surface:
+- `AGENTS.md`
+- `.codex/*`
+- `.agents/skills/*`
+- `.codex/agents/*`
+- `docs/development/CODEX_WORKFLOW.ru.md`
+- `docs/development/TASK_TEMPLATE.ru.md`
+- `docs/development/REVIEW_CHECKLIST.ru.md`
+- `plans/README.md`
+
+то это отдельный governance bundle, а не incidental wording fix inside another
+product/runtime task.
+
 ### Шаг 2. Выбрать и вызвать нужных subagents
 
 Сабагенты вызываются **до первого изменения кода**, если задача не в режиме
@@ -92,6 +112,14 @@ intake слишком широкий, расплывчатый или смеши
 
 Если использовалась delegation или задача была multi-area, дополнительно
 вызывается `reviewer`, который сверяет результат с task bundle.
+
+### Шаг 5. Прогнать machine-checkable guardrails
+
+Если менялся repo-local workflow/governance surface, обязательно прогнать:
+- `make lint-codex-governance`
+
+Перед завершением задачи repo-level verification всё равно идёт через обычный
+`make verify`.
 
 ## Как пользоваться из VS Code
 

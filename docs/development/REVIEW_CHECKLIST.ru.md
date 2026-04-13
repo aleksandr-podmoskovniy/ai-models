@@ -2,10 +2,17 @@
 
 ## Orchestration
 - Для нетривиальной задачи есть актуальный task bundle в `plans/active/<slug>/`.
+- Reused canonical active bundle, а не создан лишний sibling bundle для того же workstream.
 - Для задачи выбран оправданный orchestration mode: `solo`, `light` или `full`.
 - Если задача не была в `solo`, нужные read-only subagents действительно были вызваны до реализации.
 - Если использовался `solo`, это не скрывает multi-area или архитектурно рискованную задачу.
 - Для substantial task финальный review не ограничился только субъективным summary исполнителя.
+
+## Workflow governance
+- Если менялись `AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`, `docs/development/CODEX_WORKFLOW.ru.md`, `docs/development/TASK_TEMPLATE.ru.md`, `docs/development/REVIEW_CHECKLIST.ru.md` или `plans/README.md`, задача оформлена как отдельный governance bundle.
+- Изменённые workflow surfaces проверены как одна instruction system, а не как отдельные wording files.
+- `make lint-codex-governance` прогнан и его результат отражает текущий diff.
+- `CODEX_WORKFLOW.ru.md`, `TASK_TEMPLATE.ru.md` и `REVIEW_CHECKLIST.ru.md` не противоречат `AGENTS.md` и `.codex/README.md`.
 
 ## Архитектура
 - Изменение укладывается в текущий этап проекта.

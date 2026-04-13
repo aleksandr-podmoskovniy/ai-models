@@ -70,7 +70,52 @@ serve as a reusable baseline for DKP module repos.
 
 - repo-local consistency pass after edits
 
-## Slice 4. Final review of the instruction set
+## Slice 4. Add a machine-checkable governance guardrail
+
+Цель:
+
+- перестать полагаться только на prose и manual reread при проверке
+  repo-local workflow surface;
+- зафиксировать inventory для ключевых governance invariants;
+- добавить lint в normal verify path.
+
+Артефакты:
+
+- `.codex/governance-inventory.json`
+- `tools/check-codex-governance.py`
+- updated `Makefile`
+- synced root workflow docs if command surface changes
+
+Проверки:
+
+- `python3 ./tools/check-codex-governance.py`
+- `make lint-codex-governance`
+
+## Slice 5. Align `docs/development` with the governance baseline
+
+Цель:
+
+- убрать drift между `docs/development` и repo-local instruction surface;
+- выровнять workflow docs, bundle template и review checklist с текущим
+  governance doctrine;
+- расширить machine-checkable guardrail на ключевые workflow docs.
+
+Артефакты:
+
+- updated `docs/development/CODEX_WORKFLOW.ru.md`
+- updated `docs/development/TASK_TEMPLATE.ru.md`
+- updated `docs/development/REVIEW_CHECKLIST.ru.md`
+- updated `docs/development/REPO_LAYOUT.ru.md`
+- updated `plans/README.md` if workflow-surface scope expands there
+- updated governance inventory/checker if new invariants are encoded
+
+Проверки:
+
+- `python3 ./tools/check-codex-governance.py`
+- `make lint-codex-governance`
+- repo-local consistency pass across workflow docs and root governance docs
+
+## Slice 6. Final review of the instruction set
 
 Цель:
 
@@ -100,6 +145,7 @@ serve as a reusable baseline for DKP module repos.
 
 ## Final validation
 
+- `make lint-codex-governance`
 - `git diff --check`
 - manual review of:
   - `AGENTS.md`
