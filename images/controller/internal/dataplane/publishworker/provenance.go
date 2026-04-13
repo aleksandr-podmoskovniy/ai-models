@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
@@ -52,6 +53,17 @@ func remoteRawProvenance(options Options, objects []cleanuphandle.UploadStagingH
 		provenance.RawSizeBytes += nonNegativeSize(object.SizeBytes)
 	}
 	return provenance
+}
+
+func sourceMirrorRawProvenance(options Options, sourceMirror *sourcefetch.SourceMirrorSnapshot) publicationdata.SourceProvenance {
+	if sourceMirror == nil {
+		return publicationdata.SourceProvenance{}
+	}
+	return publicationdata.SourceProvenance{
+		RawURI:         rawURI(options.RawStageBucket, sourceMirror.CleanupPrefix),
+		RawObjectCount: sourceMirror.ObjectCount,
+		RawSizeBytes:   nonNegativeSize(sourceMirror.SizeBytes),
+	}
 }
 
 func nonNegativeSize(value int64) int64 {

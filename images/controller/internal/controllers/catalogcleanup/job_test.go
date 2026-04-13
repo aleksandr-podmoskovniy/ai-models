@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -50,7 +50,7 @@ func TestBuildCleanupJob(t *testing.T) {
 		ImagePullSecretName:   "ai-models-module-registry",
 		ServiceAccountName:    "ai-models-controller",
 		OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-		ObjectStorage: objectstorage.Options{
+		ObjectStorage: storageprojection.Options{
 			Bucket:                "artifacts",
 			EndpointURL:           "https://s3.example.com",
 			Region:                "us-east-1",

@@ -21,7 +21,7 @@ import (
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
@@ -78,7 +78,7 @@ func testCleanupOptions() Options {
 			Namespace:             "d8-ai-models",
 			Image:                 "backend:latest",
 			OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-			ObjectStorage: objectstorage.Options{
+			ObjectStorage: storageprojection.Options{
 				Bucket:                "ai-models",
 				EndpointURL:           "https://s3.example.com",
 				Region:                "us-east-1",

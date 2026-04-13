@@ -25,7 +25,7 @@ import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 )
 
-func TestFetchRemoteModelHuggingFaceUsesSnapshotDownloader(t *testing.T) {
+func TestFetchRemoteModelHuggingFaceUsesSnapshotDownloaderWithoutSourceMirror(t *testing.T) {
 	previousInfoFetcher := fetchHuggingFaceInfoFunc
 	previousDownloaderFactory := newHuggingFaceSnapshotDownloader
 	t.Cleanup(func() {

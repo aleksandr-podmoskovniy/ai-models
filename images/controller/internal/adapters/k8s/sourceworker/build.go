@@ -20,8 +20,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
@@ -118,7 +118,7 @@ func buildEnv(
 		Name:  "TMPDIR",
 		Value: workloadpod.WorkVolumeMountPath,
 	})
-	env = append(env, objectstorage.Env(options.ObjectStorage)...)
+	env = append(env, storageprojection.Env(options.ObjectStorage)...)
 	if plan.HuggingFace != nil && plan.HuggingFace.AuthSecretRef != nil {
 		env = append(env, corev1.EnvVar{
 			Name: "HF_TOKEN",
@@ -135,7 +135,7 @@ func buildEnv(
 
 func buildVolumeMounts(options Options, plan publicationapp.SourceWorkerPlan) []corev1.VolumeMount {
 	var extra []corev1.VolumeMount
-	extra = objectstorage.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
+	extra = storageprojection.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
 	return workloadpod.VolumeMounts(options.RuntimeOptions, extra...)
 }
 
@@ -145,7 +145,7 @@ func buildVolumes(
 	_ string,
 ) []corev1.Volume {
 	var extra []corev1.Volume
-	extra = objectstorage.Volumes(options.ObjectStorage.CASecretName, extra...)
+	extra = storageprojection.Volumes(options.ObjectStorage.CASecretName, extra...)
 	return workloadpod.Volumes(options.RuntimeOptions, extra...)
 }
 

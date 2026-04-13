@@ -44,6 +44,7 @@ type ArtifactSnapshot struct {
 type BackendArtifactHandle struct {
 	Reference                string `json:"reference,omitempty"`
 	RepositoryMetadataPrefix string `json:"repositoryMetadataPrefix,omitempty"`
+	SourceMirrorPrefix       string `json:"sourceMirrorPrefix,omitempty"`
 }
 
 type UploadStagingHandle struct {

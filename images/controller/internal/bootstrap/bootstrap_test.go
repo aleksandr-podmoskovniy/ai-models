@@ -21,7 +21,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
@@ -39,7 +39,7 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 				Namespace:             "d8-ai-models",
 				Image:                 "backend:latest",
 				OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-				ObjectStorage: objectstorage.Options{
+				ObjectStorage: storageprojection.Options{
 					Bucket:                "ai-models",
 					EndpointURL:           "https://s3.example.com",
 					Region:                "us-east-1",
@@ -55,7 +55,7 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 				ServiceAccountName:    "ai-models-controller",
 				OCIRepositoryPrefix:   "registry.internal.local/ai-models",
 				OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-				ObjectStorage: objectstorage.Options{
+				ObjectStorage: storageprojection.Options{
 					Bucket:                "ai-models",
 					EndpointURL:           "https://s3.example.com",
 					Region:                "us-east-1",
@@ -101,7 +101,7 @@ func TestNewAllowsCleanupOnlyRuntimeWithoutPublicationPlaneConfiguration(t *test
 				Namespace:             "d8-ai-models",
 				Image:                 "backend:latest",
 				OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-				ObjectStorage: objectstorage.Options{
+				ObjectStorage: storageprojection.Options{
 					Bucket:                "ai-models",
 					EndpointURL:           "https://s3.example.com",
 					Region:                "us-east-1",

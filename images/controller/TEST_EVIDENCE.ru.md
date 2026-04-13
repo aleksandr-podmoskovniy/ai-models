@@ -276,10 +276,14 @@
 ## `internal/adapters/sourcefetch`
 
 - Decision surface:
-  - remote `HuggingFace` raw-first staging into controller-owned object
-    storage before local checkpoint preparation
+  - remote `HuggingFace` source mirror into controller-owned object storage
+    before local checkpoint preparation
+  - persisted mirror manifest/state handoff around `HuggingFace` snapshot
+    acquisition
+  - resumable mirror-byte transport via object-storage multipart upload plus
+    HTTP `Range` resume from the already confirmed byte offset
   - `HuggingFace` source-native snapshot acquisition through a package-local
-  Go downloader instead of the removed ad-hoc per-file download loop
+    Go downloader instead of the removed ad-hoc per-file download loop
   - direct single-file checkpoint materialization via link-first staging when
     source and checkpoint share the same filesystem
   - safe archive unpacking and direct `GGUF` normalization
@@ -293,13 +297,42 @@
   - dedicated live-cluster replay for `HuggingFace` snapshot acquisition is
     still pending a fresh module rollout; current evidence is unit-level plus
     the shared publishworker path
+  - file-level and intra-file parallelism are still future slices; current
+    landed transport is resumable but intentionally sequential
+
+## `internal/ports/sourcemirror`
+
+- Decision surface:
+  - durable source snapshot locator contract
+  - immutable mirror manifest validation
+  - persisted mirror phase/file state validation
+  - stable object-storage prefix derivation for mirror ownership and cleanup
+- Primary evidence:
+  - `contract_test.go`
+- Residual gaps:
+  - no provider-specific policy lives here; `HuggingFace` and future `Ollama`
+    mapping remain adapter-owned
+
+## `internal/adapters/sourcemirror/objectstore`
+
+- Decision surface:
+  - object-storage persistence for mirror manifest/state JSON
+  - `not found` mapping into shared mirror contract
+  - whole-snapshot prefix deletion contract for later owner cleanup
+- Primary evidence:
+  - `adapter_test.go`
+- Residual gaps:
+  - multipart byte transport intentionally remains outside this adapter and
+    stays owned by `sourcefetch`
 
 ## `internal/dataplane/publishworker`
 
 - Decision surface:
   - bounded workspace allocation under controller-provided snapshot root
   - cleanup semantics for per-run work directories
-  - raw-stage cleanup after successful remote publication
+  - source-mirror raw provenance over durable mirrored files instead of
+    transient raw-stage copies for remote sources
+  - source-mirror prefix handoff into backend cleanup ownership
   - direct upload / direct `GGUF` acceptance and archive validation on the
     publish path
 - Primary evidence:
@@ -307,6 +340,32 @@
 - Residual gaps:
   - remote raw-first staging still pays an extra object-storage hop inside the
     same bounded publish worker until a future native encoder/runtime cut
+
+## `internal/dataplane/artifactcleanup`
+
+- Decision surface:
+  - backend artifact delete versus upload-staging delete dispatch
+  - repository metadata prefix pruning after backend remove
+  - source-mirror prefix pruning as part of the same backend-owned cleanup path
+- Primary evidence:
+  - `run_test.go`
+  - `backend_prefix_test.go`
+- Residual gaps:
+  - registry-side asynchronous blob GC remains outside this runtime and stays
+    owned by the existing `DMCR` GC path
+
+## `internal/support/cleanuphandle`
+
+- Decision surface:
+  - cleanup-handle serialization contract across controller and cleanup runtime
+  - backend artifact ownership fields, including repository metadata and source
+    mirror prefixes
+  - upload staging handle validation
+- Primary evidence:
+  - `handle_test.go`
+- Residual gaps:
+  - handle schema versioning is still unnecessary while the runtime remains
+    alpha and module-owned
 
 ## `internal/application/deletion`
 

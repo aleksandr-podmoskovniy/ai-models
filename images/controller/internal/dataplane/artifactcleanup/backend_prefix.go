@@ -18,10 +18,22 @@ package artifactcleanup
 
 import (
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
+
+func backendObjectStoragePrefixes(handle cleanuphandle.Handle) []string {
+	result := make([]string, 0, 2)
+	if prefix := backendRepositoryMetadataPrefix(handle); prefix != "" {
+		result = append(result, prefix)
+	}
+	if prefix := backendSourceMirrorPrefix(handle); prefix != "" {
+		result = append(result, prefix)
+	}
+	return slices.Compact(result)
+}
 
 func backendRepositoryMetadataPrefix(handle cleanuphandle.Handle) string {
 	if handle.Backend == nil {
@@ -36,6 +48,13 @@ func backendRepositoryMetadataPrefix(handle cleanuphandle.Handle) string {
 		return ""
 	}
 	return path.Join("dmcr", "docker", "registry", "v2", "repositories", repository)
+}
+
+func backendSourceMirrorPrefix(handle cleanuphandle.Handle) string {
+	if handle.Backend == nil {
+		return ""
+	}
+	return strings.Trim(strings.TrimSpace(handle.Backend.SourceMirrorPrefix), "/")
 }
 
 func repositoryPathFromOCIReference(reference string) string {

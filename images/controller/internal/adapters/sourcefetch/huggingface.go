@@ -27,6 +27,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
+	sourcemirrorports "github.com/deckhouse/ai-models/controller/internal/ports/sourcemirror"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
@@ -80,20 +81,34 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 	}
 
 	resolvedRevision := ResolveHuggingFaceRevision(info, revision)
-	snapshotDir := filepath.Join(options.Workspace, ".hf-snapshot")
-	if err := newHuggingFaceSnapshotDownloader().Download(ctx, huggingFaceSnapshotDownloadInput{
-		RepoID:      repoID,
-		Revision:    resolvedRevision,
-		Token:       options.HFToken,
-		Files:       selectedFiles,
-		SnapshotDir: snapshotDir,
-	}); err != nil {
+	sourceMirrorSnapshot, err := persistHuggingFaceMirrorManifest(ctx, options.SourceMirror, repoID, resolvedRevision, selectedFiles)
+	if err != nil {
 		return RemoteResult{}, err
+	}
+	snapshotDir := filepath.Join(options.Workspace, ".hf-snapshot")
+	if sourceMirrorSnapshot != nil {
+		if err := mirrorHuggingFaceSnapshotFiles(ctx, options.SourceMirror, repoID, resolvedRevision, options.HFToken, selectedFiles, sourceMirrorSnapshot); err != nil {
+			_ = persistHuggingFaceMirrorPhase(ctx, options.SourceMirror, sourceMirrorSnapshot, sourcemirrorports.SnapshotPhaseFailed, nil, err.Error())
+			return RemoteResult{}, err
+		}
+		if err := materializeHuggingFaceMirrorSnapshot(ctx, options.SourceMirror, sourceMirrorSnapshot, snapshotDir, selectedFiles); err != nil {
+			return RemoteResult{}, err
+		}
+	} else {
+		if err := newHuggingFaceSnapshotDownloader().Download(ctx, huggingFaceSnapshotDownloadInput{
+			RepoID:      repoID,
+			Revision:    resolvedRevision,
+			Token:       options.HFToken,
+			Files:       selectedFiles,
+			SnapshotDir: snapshotDir,
+		}); err != nil {
+			return RemoteResult{}, err
+		}
 	}
 
 	modelDir := filepath.Join(options.Workspace, "checkpoint")
 	var stagedObjects []cleanuphandle.UploadStagingHandle
-	if rawStageEnabled(options.RawStage) {
+	if sourceMirrorSnapshot == nil && rawStageEnabled(options.RawStage) {
 		stagedObjects, err = stageHuggingFaceSnapshotFiles(ctx, snapshotDir, selectedFiles, *options.RawStage)
 		if err != nil {
 			return RemoteResult{}, err
@@ -122,6 +137,7 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 			SourceRepoID: info.ID,
 		},
 		StagedObjects: stagedObjects,
+		SourceMirror:  sourceMirrorSnapshot,
 	}, nil
 }
 

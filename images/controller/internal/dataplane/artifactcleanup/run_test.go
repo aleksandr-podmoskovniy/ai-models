@@ -34,13 +34,11 @@ func (f *fakeRemover) Remove(_ context.Context, reference string, _ modelpackpor
 }
 
 type fakePrefixRemover struct {
-	bucket string
-	prefix string
+	calls []uploadstagingports.DeletePrefixInput
 }
 
 func (f *fakePrefixRemover) DeletePrefix(_ context.Context, input uploadstagingports.DeletePrefixInput) error {
-	f.bucket = input.Bucket
-	f.prefix = input.Prefix
+	f.calls = append(f.calls, input)
 	return nil
 }
 
@@ -74,10 +72,35 @@ func TestRunPrunesBackendRepositoryMetadataPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if got, want := prefixRemover.bucket, "artifacts"; got != want {
+	if got, want := len(prefixRemover.calls), 1; got != want {
+		t.Fatalf("unexpected prefix remover call count %d", got)
+	}
+	if got, want := prefixRemover.calls[0].Bucket, "artifacts"; got != want {
 		t.Fatalf("unexpected prefix bucket %q", got)
 	}
-	if got, want := prefixRemover.prefix, "dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/model/1111"; got != want {
+	if got, want := prefixRemover.calls[0].Prefix, "dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/model/1111"; got != want {
 		t.Fatalf("unexpected metadata prefix %q", got)
+	}
+}
+
+func TestRunPrunesSourceMirrorPrefix(t *testing.T) {
+	t.Parallel()
+
+	remover := &fakeRemover{}
+	prefixRemover := &fakePrefixRemover{}
+	err := Run(context.Background(), Options{
+		HandleJSON:          `{"kind":"BackendArtifact","artifact":{"kind":"OCI","uri":"registry.example.com/model@sha256:deadbeef"},"backend":{"reference":"registry.example.com/ai-models/catalog/namespaced/team-a/model/1111@sha256:deadbeef","repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/model/1111","sourceMirrorPrefix":"raw/1111-2222/source-url/.mirror/huggingface/google/gemma-4-E2B-it/deadbeef"}}`,
+		Remover:             remover,
+		PrefixRemover:       prefixRemover,
+		ObjectStorageBucket: "artifacts",
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got, want := len(prefixRemover.calls), 2; got != want {
+		t.Fatalf("unexpected prefix remover call count %d", got)
+	}
+	if got, want := prefixRemover.calls[1].Prefix, "raw/1111-2222/source-url/.mirror/huggingface/google/gemma-4-E2B-it/deadbeef"; got != want {
+		t.Fatalf("unexpected source mirror prefix %q", got)
 	}
 }

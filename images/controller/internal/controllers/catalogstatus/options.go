@@ -23,8 +23,8 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/auditevent"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/sourceworker"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsession"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	"github.com/deckhouse/ai-models/controller/internal/ports/auditsink"
@@ -133,7 +133,7 @@ func (o Options) Validate() error {
 	if o.MaxConcurrentWorkers <= 0 {
 		return errors.New("publication runtime max concurrent workers must be greater than zero")
 	}
-	return objectstorage.ValidateOptions("publication runtime", o.Runtime.ObjectStorage)
+	return storageprojection.ValidateOptions("publication runtime", o.Runtime.ObjectStorage)
 }
 
 func sourceWorkerOptions(o PublicationRuntimeOptions, maxConcurrentWorkers int) sourceworker.Options {

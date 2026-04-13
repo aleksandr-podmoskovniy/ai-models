@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
@@ -216,6 +217,32 @@ func TestBuildBackendResultSetsRepositoryMetadataPrefix(t *testing.T) {
 	}
 	if got, want := result.CleanupHandle.Backend.RepositoryMetadataPrefix, "dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/model/1111"; got != want {
 		t.Fatalf("unexpected repository metadata prefix %q", got)
+	}
+}
+
+func TestAttachBackendSourceMirror(t *testing.T) {
+	t.Parallel()
+
+	result := buildBackendResult(
+		publicationdata.SourceProvenance{Type: modelsv1alpha1.ModelSourceTypeHuggingFace},
+		publicationdata.ResolvedProfile{Task: "text-generation", Format: "Safetensors"},
+		modelpackports.PublishResult{
+			Reference: "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/team-a/model/1111@sha256:deadbeef",
+			Digest:    "sha256:deadbeef",
+			MediaType: "application/vnd.cncf.model.manifest.v1+json",
+			SizeBytes: 123,
+		},
+	)
+
+	result = attachBackendSourceMirror(result, &sourcefetch.SourceMirrorSnapshot{
+		CleanupPrefix: "raw/1111-2222/source-url/.mirror/huggingface/google/gemma-4-E2B-it/deadbeef",
+	})
+
+	if result.CleanupHandle.Backend == nil {
+		t.Fatal("expected backend cleanup handle")
+	}
+	if got, want := result.CleanupHandle.Backend.SourceMirrorPrefix, "raw/1111-2222/source-url/.mirror/huggingface/google/gemma-4-E2B-it/deadbeef"; got != want {
+		t.Fatalf("unexpected source mirror prefix %q", got)
 	}
 }
 

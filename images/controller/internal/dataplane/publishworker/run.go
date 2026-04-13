@@ -97,8 +97,11 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 		return publicationartifact.Result{}, err
 	}
 	rawSource := remoteRawProvenance(options, remote.StagedObjects)
+	if remote.SourceMirror != nil {
+		rawSource = sourceMirrorRawProvenance(options, remote.SourceMirror)
+	}
 
-	return buildBackendResult(
+	result := buildBackendResult(
 		publicationdata.SourceProvenance{
 			Type:              modelsv1alpha1.ModelSourceTypeHuggingFace,
 			ExternalReference: remote.Provenance.ExternalReference,
@@ -109,7 +112,8 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 		},
 		resolvedProfile,
 		publishResult,
-	), nil
+	)
+	return attachBackendSourceMirror(result, remote.SourceMirror), nil
 }
 
 func fetchRemote(ctx context.Context, options Options, prefix string) (sourcefetch.RemoteResult, func(), error) {
@@ -124,6 +128,7 @@ func fetchRemote(ctx context.Context, options Options, prefix string) (sourcefet
 		RequestedFormat: options.InputFormat,
 		HFToken:         options.HFToken,
 		RawStage:        remoteRawStage(options),
+		SourceMirror:    remoteSourceMirror(options),
 	})
 	if err != nil {
 		cleanupDir()
@@ -210,4 +215,15 @@ func attachResolvedProfileProvenance(
 	resolved.License = strings.TrimSpace(provenance.License)
 	resolved.SourceRepoID = strings.TrimSpace(provenance.SourceRepoID)
 	return resolved
+}
+
+func attachBackendSourceMirror(
+	result publicationartifact.Result,
+	sourceMirror *sourcefetch.SourceMirrorSnapshot,
+) publicationartifact.Result {
+	if sourceMirror == nil || result.CleanupHandle.Backend == nil {
+		return result
+	}
+	result.CleanupHandle.Backend.SourceMirrorPrefix = strings.TrimSpace(sourceMirror.CleanupPrefix)
+	return result
 }

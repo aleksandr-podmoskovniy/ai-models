@@ -50,11 +50,6 @@ type Request struct {
 	UploadStage *cleanuphandle.UploadStagingHandle `json:"uploadStage,omitempty"`
 }
 
-type Result struct {
-	Snapshot      publishedsnapshot.Snapshot `json:"snapshot"`
-	CleanupHandle cleanuphandle.Handle       `json:"cleanupHandle"`
-}
-
 type Status struct {
 	Phase      Phase
 	Message    string
@@ -90,13 +85,6 @@ func (r Request) Validate() error {
 		}
 	}
 	return validateRequestSource(r.Spec.Source)
-}
-
-func (r Result) Validate() error {
-	if err := r.Snapshot.Validate(); err != nil {
-		return err
-	}
-	return r.CleanupHandle.Validate()
 }
 
 func validateRequestSource(source modelsv1alpha1.ModelSourceSpec) error {

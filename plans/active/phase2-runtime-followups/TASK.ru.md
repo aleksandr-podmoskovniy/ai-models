@@ -32,6 +32,29 @@
 - live `Gemma 4` smoke дополнительно вскрыла целостностный дефект публикации:
   published `ModelPack` дошёл до `Ready`, но в `DMCR` оказался пустой
   weight-layer размером `1024` байта вместо реальных весов модели.
+- текущий `HF` ingest path всё ещё restart-unsafe:
+  - plain per-file `GET`
+  - local `O_TRUNC` writes in pod workspace
+  - no `Range` resume
+  - no persisted progress state
+  - no durable shared mirror before publication.
+  Это уже недостаточно для больших моделей и станет общим риском для будущих
+  non-HF sources вроде Ollama-like registries.
+- после первых corrective slices baseline изменился:
+  - persisted source mirror now exists in object storage
+  - resumable multipart mirror upload plus HTTP `Range` resume is landed
+  - local materialization already reads from the mirror
+  - remaining gap is parallelism/throughput, not complete restart-unsafety
+- package map тоже потребовала отдельного cleanup:
+  - `internal/adapters/k8s/objectstorage` был только env/volume projection
+    glue, но назывался как реальный storage adapter;
+  - это уже конфликтовало с живыми adapter boundaries:
+    `uploadstaging/s3` и `sourcemirror/objectstore`;
+  - `STRUCTURE.ru.md` при этом не отражал `support/uploadsessiontoken/` и
+    начинал разрастаться обратно в исторический log.
+- следующий structural drift вскрылся уже не в naming, а в shared contracts:
+  `internal/ports/publishop` всё ещё держал мёртвый `Result`, хотя live tree
+  уже использует `publishedsnapshot.Result` и `publicationartifact.Result`.
 
 Нужен новый компактный canonical active bundle, чтобы следующие bounded slices
 шли без повторного разрастания `plans/active`.
@@ -61,6 +84,12 @@
   checkpoint и зафиксировать operational result.
 - устранить live integrity defect в `KitOps` publication path, из-за которого
   published `ModelPack` может содержать только пустой layer-shell.
+- начать corrective redesign source ingest:
+  - вместо transient local-first download
+  - в сторону durable source mirror в object storage with resumable byte path.
+- выровнять package map controller runtime и удалить live naming collisions.
+- вырезать мёртвые shared handoff types, если их responsibility уже живёт в
+  более узких live models.
 
 ## Non-goals
 
@@ -69,6 +98,9 @@
   `source.revision`, если live smoke укладывается в current contract;
 - не переделывать сейчас весь `ModelPack`/OCI contract или delivery path за
   пределами bounded corrective fix для real-content publication;
+- не пытаться в одном срезе довести весь resumable downloader до production
+  parity вместе с `Range`, multipart resume, scheduling и runtime delivery;
+  parallelism и throughput tuning остаются отдельным slice;
 - не переписывать архивированный bundle задним числом;
 - не дробить историю на несколько новых active bundles одновременно;
 - не переносить в новый bundle весь старый review log и slice-by-slice history.
@@ -79,6 +111,10 @@
 - `plans/archive/2026/*`
 - `plans/README.md`
 - live cluster `Model` smoke surface
+- `images/controller/internal/ports/*`
+- `images/controller/internal/adapters/*`
+- `images/controller/STRUCTURE.ru.md`
+- `images/controller/TEST_EVIDENCE.ru.md`
 
 ## Критерии приёмки
 
@@ -97,6 +133,17 @@
   не пустой tar layer или symlink shell;
 - corrective regression не допускает возврата symlink-based `kitops` packing
   context.
+- durable source mirror direction зафиксирован как отдельный live seam:
+  - manifest/state persisted outside pod
+  - local workspace перестаёт быть единственным download truth
+- landed slices уже довели seam до resumable multipart mirror bytes without
+  architectural patchwork.
+- misleading package names больше не конфликтуют с уже существующими live
+  boundaries и `STRUCTURE.ru.md` отражает текущее дерево без выпавших support
+  packages.
+- в shared port packages больше не остаётся мёртвых result-wrapper types,
+  которые не участвуют в live runtime path и только создают ложную общую
+  boundary.
 
 ## Риски
 
@@ -108,3 +155,8 @@
   именно находится bottleneck: source ingest, publish, registry или cleanup.
 - быстрый "фикс" через дополнительную полную локальную копию модели перед
   `kit pack` может ухудшить byte path и ещё сильнее поднять storage pressure.
+- если source-mirror seam будет размазан по `sourcefetch`, `uploadstaging` и
+  `publishworker` без явного port/adapter split, следующий этап быстро снова
+  превратится в монолит.
+- misleading package names могут снова замаскировать реальные boundaries и
+  привести к следующему structural drift при первом же новом adapter slice.

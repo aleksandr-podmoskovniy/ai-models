@@ -81,16 +81,22 @@ func pruneBackendRepositoryMetadata(
 		return nil
 	}
 
-	prefix := backendRepositoryMetadataPrefix(handle)
-	if prefix == "" {
+	prefixes := backendObjectStoragePrefixes(handle)
+	if len(prefixes) == 0 {
 		return nil
 	}
 	if bucket == "" {
 		return nil
 	}
 
-	return remover.DeletePrefix(ctx, uploadstagingports.DeletePrefixInput{
-		Bucket: bucket,
-		Prefix: prefix,
-	})
+	for _, prefix := range prefixes {
+		if err := remover.DeletePrefix(ctx, uploadstagingports.DeletePrefixInput{
+			Bucket: bucket,
+			Prefix: prefix,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

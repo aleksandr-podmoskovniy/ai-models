@@ -45,10 +45,13 @@ large corrective rebase bundle was completed and archived.
 
 2. `HuggingFace` ingest hardening
    - native downloader/cache semantics
-   - bounded shared cache strategy
-   - future durable mirror only if product signal justifies it
+   - current local-first transient download path must be replaced by a durable
+     source-mirror seam
+   - bounded shared cache remains optional only as a later optimization
    - benign alternative export artifacts from HF repos must not fail a valid
      `Safetensors` publication path
+   - the same seam should stay reusable for future non-HF sources such as
+     Ollama-like registries
 
 3. Ongoing structural hygiene
    - no return of generic HTTP source
@@ -63,6 +66,13 @@ large corrective rebase bundle was completed and archived.
      `Gemma 4` checkpoint before any API redesign around `repoID + revision`
    - live `Gemma 4` smoke must also confirm that published `ModelPack`
      contains real model bytes in `DMCR`, not only manifest/config shells
+
+5. Structural package-map hygiene
+   - remove misleading package names that collide with already existing live
+     boundaries
+   - keep `STRUCTURE.ru.md` as a live package map, not as a historical refactor
+     diary
+   - keep support/adapters package inventory aligned with the current tree
 
 ## Slice 1. Archive giant active bundle
 
@@ -180,6 +190,97 @@ large corrective rebase bundle was completed and archived.
 
 - `cd images/controller && go test ./internal/adapters/modelpack/kitops`
 - `cd images/controller && go test ./internal/adapters/modelpack/... ./cmd/ai-models-artifact-runtime/...`
+- `git diff --check`
+
+## Slice 7. Introduce durable source-mirror seam
+
+Цель:
+
+- зафиксировать target architecture для resumable source ingest;
+- ввести явный port/adapter split для source mirror manifest/state storage;
+- не размазывать будущий resume logic по `sourcefetch` и `publishworker`.
+
+Артефакты:
+
+- active bundle decision note for durable source mirror
+- new `internal/ports/sourcemirror/*`
+- first object-storage-backed adapter for manifest/state persistence
+- first `HuggingFace` integration that persists mirror manifest/state and hands
+  mirror prefix ownership to the existing backend cleanup path
+- structure/evidence docs updated for the new seam
+
+Проверки:
+
+- focused `go test` for the new `sourcemirror` packages
+- `make verify`
+- `git diff --check`
+
+## Slice 8. Land resumable mirror-byte transport
+
+Цель:
+
+- перестать использовать pod-local snapshot как единственную truth для remote
+  bytes;
+- mirror `HuggingFace` files into object storage before local materialization;
+- продолжать download после restart через multipart upload state плюс HTTP
+  `Range` resume.
+
+Артефакты:
+
+- `sourcefetch` resumable mirror transport split into state/transport files
+- `publishworker` raw provenance switched to durable source mirror for remote
+  sources
+- focused regressions for:
+  - source-mirror-backed `FetchRemoteModel`
+  - resumed multipart upload from a persisted byte offset
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
+- `make verify`
+- `git diff --check`
+
+## Slice 9. Remove naming collisions from the controller package map
+
+Цель:
+
+- убрать live naming collision between K8s pod-projection glue and real
+  object-storage adapters;
+- выровнять `STRUCTURE.ru.md` под текущее дерево без выпавших support
+  packages и без лишнего historical noise.
+
+Артефакты:
+
+- `internal/adapters/k8s/storageprojection/*` replacing
+  `internal/adapters/k8s/objectstorage/*`
+- imports and runtime options updated to the renamed package
+- `images/controller/STRUCTURE.ru.md` simplified and aligned with the live tree
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/sourceworker ./internal/adapters/k8s/workloadpod ./internal/controllers/catalogstatus ./internal/controllers/catalogcleanup ./internal/bootstrap`
+- `make verify`
+- `git diff --check`
+
+## Slice 10. Remove dead shared-result collision from `publishop`
+
+Цель:
+
+- убрать мёртвый `publishop.Result`, который больше не используется в live
+  runtime path;
+- не оставлять в shared port package третью `Result`-структуру рядом с живыми
+  `publishedsnapshot.Result` и `publicationartifact.Result`.
+
+Артефакты:
+
+- simplified `internal/ports/publishop/operation_contract.go`
+- aligned `internal/ports/publishop/operation_contract_test.go`
+- updated `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/ports/publishop ./internal/application/publishplan ./internal/controllers/catalogstatus ./internal/adapters/k8s/sourceworker`
+- `make verify`
 - `git diff --check`
 
 ## Final validation

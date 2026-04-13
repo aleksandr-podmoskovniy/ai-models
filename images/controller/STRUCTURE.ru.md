@@ -51,6 +51,7 @@ images/controller/
     ports/
       publishop/
       modelpack/
+      sourcemirror/
       uploadstaging/
       auditsink/
     monitoring/
@@ -63,14 +64,16 @@ images/controller/
     adapters/
       k8s/
         auditevent/
-        objectstorage/
         ociregistry/
         ownedresource/
         sourceworker/
+        storageprojection/
         uploadsession/
         uploadsessionstate/
         workloadpod/
       sourcefetch/
+      sourcemirror/
+        objectstore/
       modelformat/
       modelprofile/
         common/
@@ -89,6 +92,7 @@ images/controller/
       modelobject/
       resourcenames/
       testkit/
+      uploadsessiontoken/
 ```
 
 ## 2. Почему границы именно такие
@@ -139,11 +143,15 @@ adapter packages.
 
 - `internal/ports/publishop/` — shared runtime contract между control plane и
   concrete worker/session adapters.
-  В live tree здесь теперь один прямой `publishop.Request`.
-  Старый `OperationContext` wrapper удалён как пустая оболочка, которая только
-  плодила `request.Request.*`.
+  В live tree здесь остаются только прямые shared request/status/phase
+  contracts.
+  Старые пустые оболочки вроде `OperationContext` и мёртвый `publishop.Result`
+  удалены, потому что они только плодили ложную shared boundary.
 - `internal/ports/modelpack/` — replaceable `ModelPack` contract:
   publish/remove/materialize.
+- `internal/ports/sourcemirror/` — durable source-ingest contract:
+  immutable snapshot manifest, persisted mirror state и object-storage-backed
+  retry boundary для remote sources.
 - `internal/ports/uploadstaging/` — отдельный staging contract для upload path.
   В live tree он уже включает не только presign/complete shell, но и чтение
   server-side multipart manifest для resumability/state sync upload session.
@@ -187,7 +195,7 @@ Controller package оправдан только ownership, а не тем, чт
 - `uploadsession/`
 - `uploadsessionstate/`
 - `ociregistry/`
-- `objectstorage/`
+- `storageprojection/`
 - `ownedresource/`
 - `workloadpod/`
 - `auditevent/`
@@ -195,6 +203,7 @@ Controller package оправдан только ownership, а не тем, чт
 Non-K8s adapters остаются отдельно:
 
 - `sourcefetch/`
+- `sourcemirror/objectstore/`
 - `modelformat/`
 - `modelprofile/*`
 - `modelpack/kitops/`
@@ -207,6 +216,9 @@ Non-K8s adapters остаются отдельно:
 - не заводить adapter-local request wrappers поверх уже существующих ports;
 - не возвращать runtime proxy layers, если concrete adapter и так реализует
   shared contract напрямую.
+- не держать misleading names:
+  K8s package, который только проецирует env/volumes/secrets в pod, не должен
+  называться как реальный storage adapter.
 
 ### Dataplane
 
@@ -223,6 +235,7 @@ Non-K8s adapters остаются отдельно:
 - `modelobject/`
 - `resourcenames/`
 - `testkit/`
+- `uploadsessiontoken/`
 
 `support/*` допустим только как shared helper layer. Если пакет решает policy,
 runtime semantics или status logic, это уже не support.
@@ -282,6 +295,9 @@ runtime semantics или status logic, это уже не support.
 - Не плодить локальные mirrors существующих shared contracts.
   Если есть `publishop.Request`, adapter не должен изобретать второй request
   type только ради “удобных имён”.
+- Не держать в shared port package мёртвые handoff types.
+  Если payload реально живёт в `publishedsnapshot` или `publicationartifact`,
+  его не надо дублировать третьим `Result` в `publishop`.
 - Не смешивать handoff models:
   `publishedsnapshot` и `publicationartifact` остаются разными пакетами по
   разным причинам.
@@ -298,6 +314,11 @@ runtime semantics или status logic, это уже не support.
   `publishop.Request`, `publishop.Owner` и других shared contracts.
 - `DELETE ON SIGHT` исторические имена, если их исходный смысл уже умер.
   Именно так в этом slice был удалён `artifactbackend`.
+- `DELETE ON SIGHT` package names, которые сталкиваются с уже существующими
+  live boundaries.
+  Именно так `k8s/objectstorage` был заменён на `k8s/storageprojection`:
+  старое имя конфликтовало с реальными object-storage adapters
+  `uploadstaging/s3` и `sourcemirror/objectstore`.
 - `DELETE ON SIGHT` новый controller package без нового owner.
 - `DELETE ON SIGHT` новые package-local inventories наподобие
   `BRANCH_MATRIX.ru.md`.
@@ -307,38 +328,19 @@ runtime semantics или status logic, это уже не support.
 
 ### `internal/controllers/catalogcleanup/` остаётся главным controller hotspot
 
-- Пакет тяжёлый, но тяжёлый по реальной причине:
-  delete lifecycle теперь включает cleanup job, GC request и finalizer release.
-- Cleanup `Job` и DMCR GC request `Secret` теперь сходятся через один
-  package-local owner-metadata seam и shared `resourcenames` policy, а не через
-  две локальные raw label maps с теми же ключами.
-- Delete apply path теперь ещё и строит локальный runtime один раз:
-  owner/handle prerequisites больше не пересчитываются на каждом apply step, а
-  finalizer release не перепарсивает cleanup annotation поверх уже наблюдённого
-  handle.
-- Delete reconcile path теперь и сам стал честнее на owner layer:
-  observe -> decide -> apply больше не таскает разрозненные values между
-  методами, а идёт через один package-local finalize flow.
-- Upload-staging delete path больше не лезет в DMCR GC observation после
-  завершённого cleanup job. Эта ветка остаётся только для backend artifact.
-- Delete policy при этом тоже стала явнее на application layer:
-  `internal/application/deletion/` теперь собирает finalize protocol через
-  package-local step helpers для cleanup job progress и GC progress, а не через
-  россыпь повторяющихся `FinalizeDeleteDecision{...}` веток.
-- Следующий рост сюда допустим только если он остаётся внутри того же owner.
-  Новый fake adapter package ситуацию не улучшит.
+- Пакет тяжёлый по реальной причине:
+  delete lifecycle включает cleanup job, GC request и finalizer release.
+- Рост сюда допустим только внутри того же owner.
+  Новый helper/controller package без нового owner будет patchwork.
+- Всё, что не является owner-level delete orchestration, надо выносить
+  обратно в `application/deletion`, `resourcenames` или concrete adapters.
 
 ### `internal/adapters/sourcefetch/` остаётся самым большим concrete adapter
 
-- Это нормально, пока boundary остаётся про source acquisition.
-- Общий raw-stage upload/download glue теперь уже вынесен в локальный
-  `rawstage.go`, поэтому provider files снова держат в основном
-  URL/auth/metadata semantics, а не второй раз один и тот же object-storage
-  handoff.
-- `HuggingFace` branch теперь дополнительно выровнен по source-native path:
-  package-local Go snapshot downloader живёт внутри того же adapter owner и не
-  тащит Python/CLI toolchain, HF-specific public API или лишний runtime shell.
+- Это допустимо, пока boundary остаётся только про source acquisition.
 - Сюда нельзя складывать format validation, publish status или runtime policy.
+- Любой новый кусок здесь должен либо усиливать acquisition path, либо
+  уходить в отдельный port/adapter seam вроде `sourcemirror/`.
 
 ### `internal/adapters/k8s/uploadsession/` и `internal/adapters/k8s/sourceworker/` уже выровнены по общему runtime contract
 
@@ -348,6 +350,35 @@ runtime semantics или status logic, это уже не support.
   `Secret` напрямую в обход этого runtime seam.
 - Возвращение локального wrapper или отдельного mapping layer будет прямым
   регрессом структуры.
+
+### `internal/adapters/k8s/storageprojection/` должен остаться тупым projection glue
+
+- Этот пакет существует только для env/volume projection object-storage creds и
+  CA в pod spec.
+- Он не делает IO, multipart, mirror state или bucket lifecycle.
+- Любая попытка тащить сюда реальные object-storage операции снова создаст
+  structural collision с `uploadstaging/s3` и `sourcemirror/objectstore`.
+
+### `internal/ports/sourcemirror/` и `internal/adapters/sourcemirror/objectstore/` фиксируют новый ingest boundary
+
+- `sourcemirror` появился не ради новой абстракции “на будущее”, а потому что
+  restart-safe source ingest нельзя дальше размазывать между `sourcefetch/`,
+  `publishworker/` и raw staging objects без отдельного persisted contract.
+- Port держит только:
+  - snapshot locator;
+  - immutable manifest;
+  - persisted phase/file state;
+  - store interface.
+- Object-store adapter реализует этот contract поверх уже существующего
+  object-storage substrate, не таща policy обратно в S3 adapter и не смешивая
+  mirror state с upload-session multipart state.
+- `sourcefetch` теперь использует эту boundary уже не только для JSON state,
+  но и для resumable mirror bytes:
+  - HTTP `Range` resume against source
+  - object-storage multipart upload
+  - local materialization уже из mirror, а не из единственной pod-local truth
+- Следующий slice может добавлять parallelism и throughput tuning, но не
+  должен снова уничтожать эту boundary.
 
 ### `internal/adapters/modelformat/` надо держать жёстко format-centric
 
@@ -360,12 +391,12 @@ runtime semantics или status logic, это уже не support.
 
 ### `internal/publicationartifact/` теперь честно описывает свой смысл
 
-- Пакет больше не притворяется backend-facing слоем.
-- В нём больше нет мёртвого `Request`.
 - Здесь остаются только:
   - publication runtime result payload;
   - validation этого payload;
   - OCI artifact reference policy.
+- Если package снова начнёт принимать backend-specific semantics, это будет
+  прямой structural regression.
 
 Если этот документ снова начнёт разрастаться в каталог на сотни строк, это
 будет означать не “сложную архитектуру”, а то, что документ снова обслуживает

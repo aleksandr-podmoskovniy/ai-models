@@ -21,8 +21,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	batchv1 "k8s.io/api/batch/v1"
@@ -39,7 +39,7 @@ type CleanupJobOptions struct {
 	OCIInsecure             bool
 	OCIRegistrySecretName   string
 	OCIRegistryCASecretName string
-	ObjectStorage           objectstorage.Options
+	ObjectStorage           storageprojection.Options
 	Env                     []corev1.EnvVar
 	ImagePullPolicy         corev1.PullPolicy
 	TTLSecondsFinished      int32
@@ -97,20 +97,20 @@ func buildCleanupJob(owner cleanupJobOwner, handle cleanuphandle.Handle, options
 		registryEnv = ociregistry.Env(options.OCIInsecure, options.OCIRegistrySecretName, options.OCIRegistryCASecretName)
 		registryMounts = ociregistry.VolumeMounts(options.OCIRegistryCASecretName)
 		registryVolumes = ociregistry.Volumes(options.OCIRegistryCASecretName)
-		if err := objectstorage.ValidateOptions("cleanup job", options.ObjectStorage); err != nil {
+		if err := storageprojection.ValidateOptions("cleanup job", options.ObjectStorage); err != nil {
 			return nil, err
 		}
-		objectStorageEnv = objectstorage.Env(options.ObjectStorage)
-		objectStorageMounts = objectstorage.VolumeMounts(options.ObjectStorage.CASecretName)
-		objectStorageVolumes = objectstorage.Volumes(options.ObjectStorage.CASecretName)
+		objectStorageEnv = storageprojection.Env(options.ObjectStorage)
+		objectStorageMounts = storageprojection.VolumeMounts(options.ObjectStorage.CASecretName)
+		objectStorageVolumes = storageprojection.Volumes(options.ObjectStorage.CASecretName)
 	}
 	if handle.Kind == cleanuphandle.KindUploadStaging {
-		if err := objectstorage.ValidateOptions("cleanup job", options.ObjectStorage); err != nil {
+		if err := storageprojection.ValidateOptions("cleanup job", options.ObjectStorage); err != nil {
 			return nil, err
 		}
-		objectStorageEnv = objectstorage.Env(options.ObjectStorage)
-		objectStorageMounts = objectstorage.VolumeMounts(options.ObjectStorage.CASecretName)
-		objectStorageVolumes = objectstorage.Volumes(options.ObjectStorage.CASecretName)
+		objectStorageEnv = storageprojection.Env(options.ObjectStorage)
+		objectStorageMounts = storageprojection.VolumeMounts(options.ObjectStorage.CASecretName)
+		objectStorageVolumes = storageprojection.Volumes(options.ObjectStorage.CASecretName)
 	}
 	handlePayload, err := json.Marshal(handle)
 	if err != nil {

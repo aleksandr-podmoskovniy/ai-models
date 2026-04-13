@@ -24,7 +24,7 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	"github.com/deckhouse/ai-models/controller/internal/bootstrap"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
@@ -181,7 +181,7 @@ func runManager(args []string) int {
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
 
-	artifactsObjectStorage := objectstorage.Options{
+	artifactsObjectStorage := storageprojection.Options{
 		Bucket:                artifactsBucket,
 		EndpointURL:           artifactsS3Endpoint,
 		Region:                artifactsS3Region,

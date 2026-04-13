@@ -19,9 +19,11 @@ package publishworker
 import (
 	"context"
 	"errors"
+	"path"
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
+	sourcemirrorobjectstore "github.com/deckhouse/ai-models/controller/internal/adapters/sourcemirror/objectstore"
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
@@ -60,4 +62,24 @@ func cleanupRemoteStagedObjects(
 		}
 	}
 	return nil
+}
+
+func remoteSourceMirror(options Options) *sourcefetch.SourceMirrorOptions {
+	if strings.TrimSpace(options.RawStageBucket) == "" || strings.TrimSpace(options.RawStageKeyPrefix) == "" {
+		return nil
+	}
+	if options.UploadStaging == nil {
+		return nil
+	}
+	return &sourcefetch.SourceMirrorOptions{
+		Bucket: strings.TrimSpace(options.RawStageBucket),
+		Client: options.UploadStaging,
+		Store: &sourcemirrorobjectstore.Adapter{
+			Uploader:   options.UploadStaging,
+			Downloader: options.UploadStaging,
+			Bucket:     options.RawStageBucket,
+			BasePrefix: path.Join(options.RawStageKeyPrefix, ".mirror"),
+		},
+		BasePrefix: path.Join(options.RawStageKeyPrefix, ".mirror"),
+	}
 }

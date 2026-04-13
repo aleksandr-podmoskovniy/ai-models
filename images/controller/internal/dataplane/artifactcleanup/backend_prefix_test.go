@@ -36,3 +36,24 @@ func TestBackendRepositoryMetadataPrefixFallsBackToReference(t *testing.T) {
 		t.Fatalf("unexpected metadata prefix %q", got)
 	}
 }
+
+func TestBackendObjectStoragePrefixesIncludesSourceMirror(t *testing.T) {
+	t.Parallel()
+
+	handle := cleanuphandle.Handle{
+		Kind: cleanuphandle.KindBackendArtifact,
+		Backend: &cleanuphandle.BackendArtifactHandle{
+			Reference:                "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/team-a/model/1111@sha256:deadbeef",
+			SourceMirrorPrefix:       "raw/1111-2222/source-url/.mirror/huggingface/google/gemma-4-E2B-it/deadbeef",
+			RepositoryMetadataPrefix: "dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/model/1111",
+		},
+	}
+
+	prefixes := backendObjectStoragePrefixes(handle)
+	if got, want := len(prefixes), 2; got != want {
+		t.Fatalf("unexpected prefix count %d", got)
+	}
+	if got, want := prefixes[1], "raw/1111-2222/source-url/.mirror/huggingface/google/gemma-4-E2B-it/deadbeef"; got != want {
+		t.Fatalf("unexpected source mirror prefix %q", got)
+	}
+}

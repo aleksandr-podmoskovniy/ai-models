@@ -20,7 +20,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
@@ -44,7 +44,7 @@ func validateOptions(plan publicationapp.SourceWorkerPlan, options Options) erro
 		return err
 	}
 	if plan.Upload != nil {
-		return objectstorage.ValidateOptions("source worker", options.ObjectStorage)
+		return storageprojection.ValidateOptions("source worker", options.ObjectStorage)
 	}
 	return nil
 }

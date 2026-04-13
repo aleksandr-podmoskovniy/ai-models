@@ -21,7 +21,6 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
-	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -180,45 +179,6 @@ func TestRequestValidate(t *testing.T) {
 				t.Fatalf("Validate() error = %v", err)
 			}
 		})
-	}
-}
-
-func TestResultValidate(t *testing.T) {
-	t.Parallel()
-
-	valid := Result{
-		Snapshot: publication.Snapshot{
-			Identity: validIdentity(),
-			Source: publication.SourceProvenance{
-				Type: modelsv1alpha1.ModelSourceTypeHuggingFace,
-			},
-			Artifact: publication.PublishedArtifact{
-				Kind: modelsv1alpha1.ModelArtifactLocationKindOCI,
-				URI:  "registry.internal.local/ai-models/catalog/team-a/deepseek-r1@sha256:deadbeef",
-			},
-			Result: publication.Result{
-				State: "Published",
-				Ready: true,
-			},
-		},
-		CleanupHandle: cleanuphandle.Handle{
-			Kind: cleanuphandle.KindBackendArtifact,
-			Backend: &cleanuphandle.BackendArtifactHandle{
-				Reference: "registry.internal.local/ai-models/catalog/team-a/deepseek-r1@sha256:deadbeef",
-			},
-		},
-	}
-
-	if err := valid.Validate(); err != nil {
-		t.Fatalf("Validate() error = %v", err)
-	}
-
-	invalid := valid
-	invalid.CleanupHandle = cleanuphandle.Handle{
-		Kind: cleanuphandle.KindBackendArtifact,
-	}
-	if err := invalid.Validate(); err == nil {
-		t.Fatal("expected invalid cleanup handle to fail")
 	}
 }
 
