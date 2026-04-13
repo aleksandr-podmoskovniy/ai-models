@@ -11,6 +11,11 @@
 - artifact-cleanup;
 - materialize-artifact.
 
+После первого controller-side slice остался отдельный live gap: repo-owned
+helper `dmcr-cleaner` вообще не пишет lifecycle logs. В кластере контейнер
+`dmcr-garbage-collection` существует, но его stdout пустой даже во время
+active GC path.
+
 Сейчас они пишут логи через stock `slog` handlers и по умолчанию стартуют в
 `text`-режиме. Это расходится с platform-style structured logging, который уже
 используется managed services и другими DKP-модулями.
@@ -20,7 +25,7 @@
 - перейти на JSON-by-default для наших компонентов;
 - нормализовать поля под platform style;
 - явно закрепить logging mode в deployment manifests;
-- не смешивать этот срез с reconfiguration backend или `dmcr`.
+- не смешивать этот срез с reconfiguration backend или основного `dmcr`.
 
 ## Постановка задачи
 
@@ -59,6 +64,11 @@ Go-owned runtime components.
 - `images/controller/internal/adapters/k8s/sourceworker/*`
 - `images/controller/internal/controllers/catalogcleanup/*`
 - `templates/controller/deployment.yaml`
+- `images/dmcr/cmd/dmcr-cleaner/*`
+- `images/dmcr/internal/garbagecollection/*`
+- `images/dmcr/internal/logging/*`
+- `templates/dmcr/deployment.yaml`
+- `images/dmcr/README.md`
 
 ## Критерии приёмки
 
@@ -72,7 +82,10 @@ Go-owned runtime components.
   - formatter normalization;
   - bridge into `controller-runtime` / `klog`;
   - env propagation for runtime workers/cleanup;
-- `backend` и `dmcr` не затронуты;
+- `backend` и основной `dmcr` process не затронуты;
+- repo-owned `dmcr-cleaner` helper пишет structured JSON lifecycle logs;
+- `dmcr-garbage-collection` container явно получает `LOG_FORMAT=json`;
+- focused tests покрывают `dmcr-cleaner` JSON envelope и GC run logging path;
 - пройдены focused checks и `make verify`.
 
 ## Риски

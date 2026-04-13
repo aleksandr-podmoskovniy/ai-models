@@ -18,6 +18,7 @@ package cmd
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -31,7 +32,9 @@ func newPauseCommand() *cobra.Command {
 		Short: "pause waits for Pod termination while DMCR is in normal mode",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			slog.Default().Info("dmcr garbage collection helper started in pause mode")
 			waitForTermination(cmd.Context())
+			slog.Default().Info("dmcr garbage collection helper stopped")
 			return nil
 		},
 	}

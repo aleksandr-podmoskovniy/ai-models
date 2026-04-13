@@ -18,14 +18,25 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/deckhouse/ai-models/dmcr/cmd/dmcr-cleaner/cmd"
+	"github.com/deckhouse/ai-models/dmcr/internal/logging"
 )
 
+const logFormatEnv = "LOG_FORMAT"
+
 func main() {
-	if err := cmd.NewRootCommand().Execute(); err != nil {
+	logger, err := logging.NewComponentLogger(logging.EnvOr(logFormatEnv, logging.DefaultLogFormat), "dmcr-garbage-collection")
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	logging.SetDefaultLogger(logger)
+
+	if err := cmd.NewRootCommand().Execute(); err != nil {
+		slog.Default().Error("dmcr-cleaner exited with error", slog.Any("error", err))
 		os.Exit(1)
 	}
 }

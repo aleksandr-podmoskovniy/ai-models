@@ -19,6 +19,7 @@ package garbagecollection
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -74,31 +75,81 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 	}
 
 	options = applyDefaultOptions(options)
+	slog.Default().Info(
+		"dmcr garbage collection loop started",
+		slog.String("request_namespace", options.RequestNamespace),
+		slog.String("request_label_selector", options.RequestLabelSelector),
+		slog.Duration("garbage_collection_timeout", options.GCTimeout),
+		slog.Duration("rescan_interval", options.RescanInterval),
+	)
 
 	signalContext, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	for {
-		pendingSecrets, err := listPendingRequestSecrets(signalContext, client, options.RequestNamespace, options.RequestLabelSelector)
+		handled, err := runPendingRequestCycle(signalContext, client, options, func() time.Time {
+			return time.Now().UTC()
+		})
 		if err != nil {
 			return err
 		}
-		if len(pendingSecrets) == 0 {
+		if !handled {
 			select {
 			case <-signalContext.Done():
+				slog.Default().Info("dmcr garbage collection loop stopped")
 				return nil
 			case <-time.After(options.RescanInterval):
 				continue
 			}
 		}
-
-		if _, err := execGarbageCollect(signalContext, options); err != nil {
-			return err
-		}
-		if err := markRequestsDone(signalContext, client, options.RequestNamespace, pendingSecrets, time.Now().UTC()); err != nil {
-			return err
-		}
 	}
+}
+
+func runPendingRequestCycle(
+	ctx context.Context,
+	client kubernetes.Interface,
+	options Options,
+	now func() time.Time,
+) (bool, error) {
+	pendingSecrets, err := listPendingRequestSecrets(ctx, client, options.RequestNamespace, options.RequestLabelSelector)
+	if err != nil {
+		return false, err
+	}
+	if len(pendingSecrets) == 0 {
+		return false, nil
+	}
+
+	requestNames := secretNames(pendingSecrets)
+	slog.Default().Info(
+		"dmcr garbage collection requested",
+		slog.Int("request_count", len(pendingSecrets)),
+		slog.Any("request_names", requestNames),
+	)
+
+	output, err := execGarbageCollect(ctx, options)
+	if err != nil {
+		return true, err
+	}
+
+	attrs := []any{
+		slog.Int("request_count", len(pendingSecrets)),
+		slog.Any("request_names", requestNames),
+	}
+	if trimmedOutput := strings.TrimSpace(string(output)); trimmedOutput != "" {
+		attrs = append(attrs, slog.String("registry_output", trimmedOutput))
+	}
+	slog.Default().Info("dmcr garbage collection completed", attrs...)
+
+	if err := markRequestsDone(ctx, client, options.RequestNamespace, pendingSecrets, now()); err != nil {
+		return true, err
+	}
+	slog.Default().Info(
+		"dmcr garbage collection requests marked done",
+		slog.Int("request_count", len(pendingSecrets)),
+		slog.Any("request_names", requestNames),
+	)
+
+	return true, nil
 }
 
 func applyDefaultOptions(options Options) Options {
@@ -140,6 +191,14 @@ func shouldRunGarbageCollection(secret corev1.Secret) bool {
 		return false
 	}
 	return strings.TrimSpace(secret.Annotations[switchAnnotationKey]) != ""
+}
+
+func secretNames(secrets []corev1.Secret) []string {
+	names := make([]string, 0, len(secrets))
+	for _, secret := range secrets {
+		names = append(names, secret.Name)
+	}
+	return names
 }
 
 func execGarbageCollect(ctx context.Context, options Options) ([]byte, error) {

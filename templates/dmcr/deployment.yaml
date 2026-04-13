@@ -154,6 +154,8 @@ spec:
             - pause
             {{- end }}
           env:
+            - name: LOG_FORMAT
+              value: json
             - name: REGISTRY_STORAGE_S3_ACCESSKEY
               valueFrom:
                 secretKeyRef:

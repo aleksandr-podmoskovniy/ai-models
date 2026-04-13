@@ -80,6 +80,28 @@ our Go-owned components.
 
 - manual grep over explicit log sites in touched files
 
+## Slice 5. Add structured lifecycle logs to dmcr-cleaner
+
+Цель:
+
+- закрыть live operational gap, где `dmcr-garbage-collection` container не
+  пишет вообще ничего;
+- выровнять repo-owned helper под тот же JSON envelope, не трогая основной
+  upstream `dmcr`.
+
+Артефакты:
+
+- updated `images/dmcr/cmd/dmcr-cleaner/*`
+- updated `images/dmcr/internal/garbagecollection/*`
+- added `images/dmcr/internal/logging/*`
+- updated `templates/dmcr/deployment.yaml`
+- updated `images/dmcr/README.md`
+
+Проверки:
+
+- `cd images/dmcr && go test ./internal/logging ./internal/garbagecollection ./cmd/dmcr-cleaner/...`
+- `make helm-template`
+
 ## Rollback point
 
 Если новый logging contract окажется неудачным:
@@ -87,10 +109,13 @@ our Go-owned components.
 1. удалить bundle `plans/active/logging-contract-hardening/`;
 2. вернуть stock `slog` handlers и старые `text` defaults;
 3. убрать explicit `LOG_FORMAT` wiring из manifests.
+4. удалить `images/dmcr/internal/logging/` и вернуть `dmcr-cleaner` на
+   pre-logging behavior.
 
 ## Final validation
 
 - `cd images/controller && go test ./internal/cmdsupport ./cmd/ai-models-controller ./cmd/ai-models-artifact-runtime ./internal/adapters/k8s/sourceworker ./internal/controllers/catalogcleanup`
+- `cd images/dmcr && go test ./internal/logging ./internal/garbagecollection ./cmd/dmcr-cleaner/...`
 - `make helm-template`
 - `make verify`
 - `git diff --check`

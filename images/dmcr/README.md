@@ -23,6 +23,9 @@ only for controller-driven garbage-collection flow:
 - when the controller requests physical blob reclamation, hooks switch DMCR
   into maintenance/read-only mode and the cleaner runs registry
   `garbage-collect`, then marks the request as completed.
+- `dmcr-cleaner` writes repo-owned structured JSON lifecycle logs under the
+  `dmcr-garbage-collection` logger; the main `dmcr` process stays on upstream
+  logging behavior.
 
 The command package stays intentionally thin. The actual garbage-collection
 lifecycle implementation now lives under `images/dmcr/internal/garbagecollection`.

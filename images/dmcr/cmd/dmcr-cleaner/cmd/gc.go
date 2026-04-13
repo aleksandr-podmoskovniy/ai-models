@@ -17,6 +17,7 @@ limitations under the License.
 package cmd
 
 import (
+	"log/slog"
 	"time"
 
 	"github.com/deckhouse/ai-models/dmcr/internal/garbagecollection"
@@ -41,11 +42,22 @@ func newGCCommand() *cobra.Command {
 		Short: "Run registry garbage-collect while DMCR stays in maintenance mode",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			slog.Default().Info(
+				"dmcr garbage collection helper started",
+				slog.String("request_namespace", options.RequestNamespace),
+				slog.String("request_label_selector", options.RequestLabelSelector),
+				slog.Duration("garbage_collection_timeout", options.GCTimeout),
+				slog.Duration("rescan_interval", options.RescanInterval),
+			)
 			client, err := garbagecollection.NewInClusterClient()
 			if err != nil {
 				return err
 			}
-			return garbagecollection.RunLoop(cmd.Context(), client, options)
+			if err := garbagecollection.RunLoop(cmd.Context(), client, options); err != nil {
+				return err
+			}
+			slog.Default().Info("dmcr garbage collection helper stopped")
+			return nil
 		},
 	}
 
