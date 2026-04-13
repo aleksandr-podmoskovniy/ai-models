@@ -111,3 +111,97 @@ Blocking findings нет.
   tuning или file-level parallelism;
 - live cluster still needs a fresh rollout before the `Gemma` smoke can be
   expected to pass with this fix.
+
+## Slice 12. Controller entrypoint shell split
+
+### Что проверено
+
+- `cmd/ai-models-controller` больше не держит env contract, quantity parsing и
+  bootstrap option shaping в одном oversized `run.go`;
+- новые files имеют defendable boundaries:
+  - `env.go` — process env contract and pass-through helpers
+  - `config.go` — parsed manager config and bootstrap option shaping
+  - `resources.go` — publication worker resource/work-volume parsing
+  - `run.go` — thin execution flow
+- split не меняет runtime semantics controller startup path.
+
+### Findings
+
+Blocking findings нет.
+
+### Residual risk
+
+- split уменьшает monolith, но не заменяет будущую repo-wide structural ревизию
+  за пределами controller runtime;
+- отдельный runtime delivery wiring workstream всё ещё остаётся открытым.
+
+## Slice 13. Upload-session service split
+
+### Что проверено
+
+- `internal/adapters/k8s/uploadsession/service.go` больше не смешивает
+  orchestration, secret lifecycle и handle/token projection в одном file;
+- новые files имеют defendable boundaries:
+  - `service.go` — constructor plus `GetOrCreate` orchestration
+  - `lifecycle.go` — session secret lifecycle and explicit expiration sync
+  - `handle.go` — runtime handle shaping and active token resolution
+- split не вернул controller-local обход `uploadsession` seam через прямые
+  `Secret` mutations outside adapter package.
+
+### Findings
+
+Blocking findings нет.
+
+### Residual risk
+
+- package стал чище, но сам `uploadsession` boundary остаётся важным K8s
+  runtime hotspot и дальше не должен обрастать adapter-local policy;
+- следующий cleanup надо продолжать по usage graph, а не превращать текущий
+  split в повод для искусственного дробления package.
+
+## Slice 14. Sourcefetch archive/materialization split
+
+### Что проверено
+
+- `internal/adapters/sourcefetch/archive.go` больше не смешивает archive
+  dispatch, extraction safety и single-file materialization в одном file;
+- новые files имеют defendable boundaries:
+  - `archive.go` — input dispatch plus archive entrypoint
+  - `archive_extract.go` — tar/zip extraction safety and extracted-root logic
+  - `materialize.go` — single-file materialization and file IO helpers
+- split не меняет acquisition/runtime semantics `PrepareModelInput`.
+
+### Findings
+
+Blocking findings нет.
+
+### Residual risk
+
+- `sourcefetch/` всё ещё остаётся крупным adapter boundary и дальше не должен
+  превращаться в контейнер для format/status policy;
+- следующий cleanup уже надо выбирать по usage graph внутри `huggingface.go`
+  или на repo-wide structural surface, а не дробить archive path бесконечно.
+
+## Slice 15. Sourcefetch HuggingFace split
+
+### Что проверено
+
+- `internal/adapters/sourcefetch/huggingface.go` больше не смешивает HF info
+  API helpers, snapshot orchestration и staging/materialization в одном file;
+- новые files имеют defendable boundaries:
+  - `huggingface.go` — top-level HF fetch orchestration
+  - `huggingface_info.go` — HF info API and repo/revision helpers
+  - `huggingface_snapshot.go` — snapshot staging/materialization helpers
+- split не меняет current public HF source contract или source-mirror behavior.
+
+### Findings
+
+Blocking findings нет.
+
+### Residual risk
+
+- `sourcefetch/` всё ещё остаётся крупным acquisition boundary и следующий
+  cleanup надо уже выбирать по usage graph внутри mirror transport or broader
+  repo structure;
+- live `Gemma` validation всё ещё требует fresh rollout, этот slice сам по
+  себе cluster proof не заменяет.

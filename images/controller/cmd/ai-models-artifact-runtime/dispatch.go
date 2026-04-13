@@ -56,7 +56,7 @@ func run(args []string) int {
 }
 
 func configureRuntimeLogger(component string) error {
-	logger, err := cmdsupport.NewComponentLogger(cmdsupport.EnvOr(logFormatEnv, "text"), component)
+	logger, err := cmdsupport.NewComponentLogger(cmdsupport.EnvOr(logFormatEnv, cmdsupport.DefaultLogFormat), component)
 	if err != nil {
 		return err
 	}

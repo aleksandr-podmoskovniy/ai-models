@@ -41,7 +41,9 @@ Current phase-2 slice implemented here:
   `publish-worker`, `upload-session`, `artifact-cleanup`, and
   `materialize-artifact`; the shell now also owns one shared
   component-aware logger setup for all runtime commands instead of letting each
-  subcommand fall back to ad-hoc process logging;
+  subcommand fall back to ad-hoc process logging; controller-owned Go runtime
+  logs are now JSON-by-default with normalized `level` / `ts` / `msg`
+  envelope and explicit `LOG_FORMAT` wiring for live deployment surfaces;
 - `internal/publicationartifact` for controller-owned publication runtime
   result payloads and OCI destination-reference policy; this is no longer the
   old misleading `artifactbackend` seam and no longer keeps a dead request

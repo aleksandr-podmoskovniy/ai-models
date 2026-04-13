@@ -73,6 +73,8 @@ large corrective rebase bundle was completed and archived.
    - keep `STRUCTURE.ru.md` as a live package map, not as a historical refactor
      diary
    - keep support/adapters package inventory aligned with the current tree
+   - keep `cmd/*` entrypoints thin: env contract, quantity parsing and bootstrap
+     composition must not collapse back into one oversized `run.go`
 
 ## Slice 1. Archive giant active bundle
 
@@ -306,6 +308,108 @@ large corrective rebase bundle was completed and archived.
 Проверки:
 
 - `cd images/controller && go test ./internal/adapters/sourcefetch ./internal/adapters/uploadstaging/s3 ./internal/dataplane/publishworker`
+- `make verify`
+- `git diff --check`
+
+## Slice 12. Split oversized controller entrypoint shell
+
+Цель:
+
+- не оставлять `cmd/ai-models-controller/run.go` местом, где снова смешаны:
+  - env contract
+  - flag parsing
+  - resource parsing
+  - bootstrap option shaping;
+- вернуть `cmd/` к defendable thin-shell structure.
+
+Артефакты:
+
+- `cmd/ai-models-controller/env.go`
+- `cmd/ai-models-controller/config.go`
+- `cmd/ai-models-controller/resources.go`
+- simplified `cmd/ai-models-controller/run.go`
+- aligned `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./cmd/ai-models-controller`
+- `make verify`
+- `git diff --check`
+
+## Slice 13. Split `uploadsession` service monolith
+
+Цель:
+
+- не оставлять `internal/adapters/k8s/uploadsession/service.go` местом, где
+  одновременно живут:
+  - request orchestration
+  - session secret lifecycle
+  - stale-secret recreation
+  - explicit expiration sync
+  - upload handle/token projection;
+- сохранить один concrete adapter package без возврата controller-level logic
+  к прямой работе с `Secret`.
+
+Артефакты:
+
+- simplified `internal/adapters/k8s/uploadsession/service.go`
+- `internal/adapters/k8s/uploadsession/lifecycle.go`
+- `internal/adapters/k8s/uploadsession/handle.go`
+- aligned `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/uploadsession`
+- `make verify`
+- `git diff --check`
+
+## Slice 14. Split `sourcefetch` archive/materialization monolith
+
+Цель:
+
+- не оставлять `internal/adapters/sourcefetch/archive.go` местом, где
+  одновременно живут:
+  - archive dispatch
+  - tar/zip extraction safety
+  - extracted-root normalization
+  - single-file materialization
+  - GGUF/file IO helpers;
+- сохранить acquisition semantics без изменения public/runtime contract.
+
+Артефакты:
+
+- simplified `internal/adapters/sourcefetch/archive.go`
+- `internal/adapters/sourcefetch/archive_extract.go`
+- `internal/adapters/sourcefetch/materialize.go`
+- aligned `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/sourcefetch`
+- `make verify`
+- `git diff --check`
+
+## Slice 15. Split `sourcefetch` HuggingFace monolith
+
+Цель:
+
+- не оставлять `internal/adapters/sourcefetch/huggingface.go` местом, где
+  одновременно живут:
+  - HF info API helpers
+  - mirror-or-local snapshot acquisition orchestration
+  - snapshot staging/materialization;
+- сохранить текущий live HF ingest contract without API/runtime drift.
+
+Артефакты:
+
+- simplified `internal/adapters/sourcefetch/huggingface.go`
+- `internal/adapters/sourcefetch/huggingface_info.go`
+- `internal/adapters/sourcefetch/huggingface_snapshot.go`
+- aligned `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/sourcefetch`
 - `make verify`
 - `git diff --check`
 

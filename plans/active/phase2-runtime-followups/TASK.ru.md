@@ -96,6 +96,28 @@
 - вырезать мёртвые shared handoff types, если их responsibility уже живёт в
   более узких live models.
 - восстановить custom-CA trust в presigned source-mirror multipart upload path.
+- разрезать oversized controller entrypoint shell, если `cmd/` снова начинает
+  смешивать env contract, resource parsing и bootstrap wiring в одном файле.
+- держать `cmd/ai-models-controller` defendable как thin shell после недавних
+  runtime/logging slices, а не как новый config monolith.
+- не оставлять `internal/adapters/k8s/uploadsession/service.go` местом, где
+  снова смешаны:
+  - session secret lifecycle
+  - stale-secret recovery
+  - explicit expiration sync
+  - upload handle/token projection.
+- не оставлять `internal/adapters/sourcefetch/archive.go` местом, где
+  одновременно живут:
+  - archive dispatch
+  - extraction safety
+  - extracted-root normalization
+  - single-file materialization
+  - GGUF/file IO helpers.
+- не оставлять `internal/adapters/sourcefetch/huggingface.go` местом, где
+  одновременно живут:
+  - HF model info API helpers
+  - mirror-or-local snapshot acquisition orchestration
+  - snapshot staging/materialization.
 
 ## Non-goals
 
@@ -172,3 +194,5 @@
 - presigned upload path может снова silently bypass'ить storage trust
   settings, если HTTP client wiring останется локальной деталью S3 adapter
   без отдельной regression coverage.
+- если oversized `cmd/*` shell не резать вовремя, он снова станет входной
+  точкой для случайного policy/config drift под видом harmless wiring.

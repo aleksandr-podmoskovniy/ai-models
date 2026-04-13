@@ -106,6 +106,11 @@ images/controller/
   отдельных execution entrypoint.
 - `cmd/` должен оставаться thin shell:
   env/argv parsing, exit codes, wiring into `internal/*`.
+- если entrypoint снова начинает смешивать:
+  - env contract
+  - quantity/resource parsing
+  - bootstrap option shaping
+  в одном `run.go`, это уже живой structural drift, а не harmless wiring.
 
 ### Composition root и process glue
 
@@ -341,6 +346,13 @@ runtime semantics или status logic, это уже не support.
 - Сюда нельзя складывать format validation, publish status или runtime policy.
 - Любой новый кусок здесь должен либо усиливать acquisition path, либо
   уходить в отдельный port/adapter seam вроде `sourcemirror/`.
+- Даже внутри `sourcefetch/` archive dispatch, extraction safety и
+  single-file materialization не должны снова схлопываться в один `archive.go`:
+  routing, extraction и file materialization должны оставаться хотя бы в
+  соседних files того же acquisition package.
+- То же правило для HF path:
+  info API helpers, snapshot orchestration и local staging/materialization не
+  должны снова схлопываться обратно в один `huggingface.go`.
 
 ### `internal/adapters/k8s/uploadsession/` и `internal/adapters/k8s/sourceworker/` уже выровнены по общему runtime contract
 
@@ -348,6 +360,10 @@ runtime semantics или status logic, это уже не support.
 - Upload session adapter теперь ещё и держит controller-owned phase sync
   methods для `publishing/completed/failed`; controller не должен лезть в
   `Secret` напрямую в обход этого runtime seam.
+- Внутри `uploadsession/` orchestration, secret lifecycle и handle/token
+  projection больше не должны снова схлопываться в один oversized `service.go`:
+  `GetOrCreate` остаётся thin, а concrete lifecycle/handle shaping живут в
+  соседних files того же package.
 - Возвращение локального wrapper или отдельного mapping layer будет прямым
   регрессом структуры.
 

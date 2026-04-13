@@ -18,9 +18,9 @@ package cmdsupport
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"log/slog"
-	"os"
 	"strings"
 	"testing"
 
@@ -40,56 +40,60 @@ func TestSetDefaultLoggerBridgesControllerRuntimeAndKlog(t *testing.T) {
 		klog.SetLogger(previousKlog)
 	})
 
-	logger := slog.New(slog.NewTextHandler(&buffer, nil))
+	logger, err := newLogger("json", &buffer)
+	if err != nil {
+		t.Fatalf("newLogger() error = %v", err)
+	}
 	SetDefaultLogger(logger)
 
 	slog.Default().Info("slog message")
 	logf.Log.WithName("controller-runtime").Info("controller-runtime message")
 	klog.Background().WithName("klog").Info("klog message")
 
-	output := buffer.String()
+	rawOutput := buffer.Bytes()
+	for _, line := range bytes.Split(bytes.TrimSpace(rawOutput), []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		if got := bytes.Count(line, []byte(`"logger"`)); got > 1 {
+			t.Fatalf("expected at most one logger field per line, got %d in %q", got, string(line))
+		}
+	}
+
+	records := decodeLogRecords(t, rawOutput)
 	for _, expected := range []string{
 		"slog message",
 		"controller-runtime message",
 		"klog message",
 	} {
-		if !strings.Contains(output, expected) {
-			t.Fatalf("expected output to contain %q, got %q", expected, output)
+		record := findRecordByMessage(t, records, expected)
+		if got, ok := record["level"].(string); !ok || got == "" {
+			t.Fatalf("expected record for %q to contain string level, got %#v", expected, record["level"])
+		}
+		if got, ok := record["ts"].(string); !ok || got == "" {
+			t.Fatalf("expected record for %q to contain string ts, got %#v", expected, record["ts"])
 		}
 	}
 }
 
-func TestNewComponentLoggerAddsComponentAttr(t *testing.T) {
+func TestNewComponentLoggerAddsLoggerAttr(t *testing.T) {
 	var buffer bytes.Buffer
 
-	previousStderr := os.Stderr
-	readPipe, writePipe, err := os.Pipe()
+	logger, err := newComponentLogger("json", "publish-worker", &buffer)
 	if err != nil {
-		t.Fatalf("os.Pipe returned error: %v", err)
+		t.Fatalf("newComponentLogger() error = %v", err)
 	}
-	os.Stderr = writePipe
-	t.Cleanup(func() {
-		os.Stderr = previousStderr
-		_ = readPipe.Close()
-		_ = writePipe.Close()
-	})
+	logger.Info("component test message", slog.String("runtimeKind", "publish-worker"))
 
-	logger, err := NewComponentLogger("text", "publish-worker")
-	if err != nil {
-		t.Fatalf("NewComponentLogger returned error: %v", err)
+	record := findRecordByMessage(t, decodeLogRecords(t, buffer.Bytes()), "component test message")
+	if got, want := record["logger"], "publish-worker"; got != want {
+		t.Fatalf("logger attr = %#v, want %q", got, want)
 	}
-	logger.Info("component test message")
-	_ = writePipe.Close()
-	_, _ = buffer.ReadFrom(readPipe)
-
-	output := buffer.String()
-	for _, expected := range []string{
-		"component=publish-worker",
-		"component test message",
-	} {
-		if !strings.Contains(output, expected) {
-			t.Fatalf("expected output to contain %q, got %q", expected, output)
-		}
+	if got, ok := record["level"].(string); !ok || got != "info" {
+		t.Fatalf("level = %#v, want info", record["level"])
+	}
+	if got, want := record["runtime_kind"], "publish-worker"; got != want {
+		t.Fatalf("runtime_kind attr = %#v, want %q", got, want)
 	}
 }
 
@@ -105,19 +109,56 @@ func TestCommandErrorUsesDefaultLogger(t *testing.T) {
 		klog.SetLogger(previousKlog)
 	})
 
-	SetDefaultLogger(slog.New(slog.NewTextHandler(&buffer, nil)).With("component", "artifact-cleanup"))
+	logger, err := newComponentLogger("json", "artifact-cleanup", &buffer)
+	if err != nil {
+		t.Fatalf("newComponentLogger() error = %v", err)
+	}
+	SetDefaultLogger(logger)
 
 	if code := CommandError("artifact-cleanup", errors.New("boom")); code != 1 {
 		t.Fatalf("unexpected exit code %d", code)
 	}
 
-	output := buffer.String()
-	for _, expected := range []string{
-		"component=artifact-cleanup",
-		"artifact-cleanup exited with error",
-	} {
-		if !strings.Contains(output, expected) {
-			t.Fatalf("expected output to contain %q, got %q", expected, output)
+	record := findRecordByMessage(t, decodeLogRecords(t, buffer.Bytes()), "artifact-cleanup exited with error")
+	if got, want := record["logger"], "artifact-cleanup"; got != want {
+		t.Fatalf("logger attr = %#v, want %q", got, want)
+	}
+	if got, want := record["level"], "error"; got != want {
+		t.Fatalf("level = %#v, want %q", got, want)
+	}
+	if got, ok := record["error"].(string); !ok || !strings.Contains(got, "boom") {
+		t.Fatalf("error field = %#v, want substring %q", record["error"], "boom")
+	}
+}
+
+func decodeLogRecords(t *testing.T, output []byte) []map[string]any {
+	t.Helper()
+
+	lines := bytes.Split(bytes.TrimSpace(output), []byte("\n"))
+	records := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		record := map[string]any{}
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatalf("json.Unmarshal(%q) error = %v", string(line), err)
+		}
+		records = append(records, record)
+	}
+
+	return records
+}
+
+func findRecordByMessage(t *testing.T, records []map[string]any, message string) map[string]any {
+	t.Helper()
+
+	for _, record := range records {
+		if got, _ := record["msg"].(string); got == message {
+			return record
 		}
 	}
+
+	t.Fatalf("did not find log record with msg %q in %#v", message, records)
+	return nil
 }

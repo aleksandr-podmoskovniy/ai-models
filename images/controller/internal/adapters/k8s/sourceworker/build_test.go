@@ -56,15 +56,28 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	if got, want := pod.Spec.Containers[0].Resources.Requests.Cpu().String(), "1"; got != want {
 		t.Fatalf("unexpected cpu request %q", got)
 	}
+	foundTMPDIR := false
+	foundLogFormat := false
 	for _, item := range pod.Spec.Containers[0].Env {
 		if item.Name == "TMPDIR" {
 			if got, want := item.Value, workloadpod.WorkVolumeMountPath; got != want {
 				t.Fatalf("unexpected TMPDIR %q", got)
 			}
-			return
+			foundTMPDIR = true
+		}
+		if item.Name == "LOG_FORMAT" {
+			if got, want := item.Value, "json"; got != want {
+				t.Fatalf("unexpected LOG_FORMAT %q", got)
+			}
+			foundLogFormat = true
 		}
 	}
-	t.Fatal("expected TMPDIR env")
+	if !foundTMPDIR {
+		t.Fatal("expected TMPDIR env")
+	}
+	if !foundLogFormat {
+		t.Fatal("expected LOG_FORMAT env")
+	}
 }
 
 func TestBuildIncludesHuggingFaceAuthTokenEnvFromProjectedSecret(t *testing.T) {
