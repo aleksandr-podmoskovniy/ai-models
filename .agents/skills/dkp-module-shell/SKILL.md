@@ -28,6 +28,13 @@ description: Use for DKP module shell work: module.yaml, Chart.yaml, values/Open
 4. Do not mix controller internals into module shell work unless the plan explicitly says so.
 5. Record every new moving part in docs when it changes future engineering work.
 
+## Hard rules
+
+- No random root-level files or directories as side effects of one task.
+- No repo-local helper forks when the normal DKP module dependency path exists.
+- No values/OpenAPI/template drift.
+- No shell/build change without matching render/verify evidence.
+
 ## Output
 
 A supportable DKP module shell that can survive long-term maintenance.

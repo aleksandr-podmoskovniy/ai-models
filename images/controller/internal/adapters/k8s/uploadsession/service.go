@@ -74,7 +74,7 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 	session, err := uploadsessionstate.SessionFromSecret(sessionSecret)
 	if err != nil {
 		if errors.Is(err, uploadsessionstate.ErrTokenHashMissing) {
-			sessionSecret, rawToken, created, err = s.recreateLegacySessionSecret(ctx, owner, request, plan, sessionSecret)
+			sessionSecret, rawToken, created, err = s.recreateStaleSessionSecret(ctx, owner, request, plan, sessionSecret)
 			if err != nil {
 				return nil, false, err
 			}
@@ -150,7 +150,7 @@ func (s *Service) ensureSecret(
 	return secret, token, true, nil
 }
 
-func (s *Service) recreateLegacySessionSecret(
+func (s *Service) recreateStaleSessionSecret(
 	ctx context.Context,
 	owner client.Object,
 	request publicationports.Request,
@@ -158,7 +158,7 @@ func (s *Service) recreateLegacySessionSecret(
 	secret *corev1.Secret,
 ) (*corev1.Secret, string, bool, error) {
 	if secret == nil {
-		return nil, "", false, errors.New("legacy upload session secret must not be nil")
+		return nil, "", false, errors.New("stale upload session secret must not be nil")
 	}
 	if err := ownedresource.DeleteAll(ctx, s.client, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: secret.Name, Namespace: secret.Namespace},

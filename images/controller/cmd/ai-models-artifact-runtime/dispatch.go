@@ -23,15 +23,16 @@ import (
 )
 
 const (
-	logFormatEnv              = "LOG_FORMAT"
-	publicationOCIInsecureEnv = "PUBLICATION_OCI_INSECURE"
-	commandPublishWorker      = "publish-worker"
-	commandUploadSession      = "upload-session"
-	commandUploadGateway      = "upload-gateway"
-	commandArtifactCleanup    = "artifact-cleanup"
+	logFormatEnv               = "LOG_FORMAT"
+	publicationOCIInsecureEnv  = "PUBLICATION_OCI_INSECURE"
+	commandPublishWorker       = "publish-worker"
+	commandUploadSession       = "upload-session"
+	commandUploadGateway       = "upload-gateway"
+	commandArtifactCleanup     = "artifact-cleanup"
+	commandMaterializeArtifact = "materialize-artifact"
 )
 
-var errMissingCommand = errors.New("expected one of: publish-worker, upload-gateway, artifact-cleanup")
+var errMissingCommand = errors.New("expected one of: publish-worker, upload-gateway, artifact-cleanup, materialize-artifact")
 
 func run(args []string) int {
 	if err := configureRuntimeLogger(runtimeComponent(args)); err != nil {
@@ -47,6 +48,8 @@ func run(args []string) int {
 		return runUploadSession(args[1:])
 	case args[0] == commandArtifactCleanup:
 		return runArtifactCleanup(args[1:])
+	case args[0] == commandMaterializeArtifact:
+		return runMaterializeArtifact(args[1:])
 	default:
 		return cmdsupport.CommandError("ai-models-artifact-runtime", errMissingCommand)
 	}
@@ -73,6 +76,8 @@ func runtimeComponent(args []string) string {
 		return "upload-gateway"
 	case commandArtifactCleanup:
 		return "artifact-cleanup"
+	case commandMaterializeArtifact:
+		return "materialize-artifact"
 	default:
 		return "artifact-runtime"
 	}

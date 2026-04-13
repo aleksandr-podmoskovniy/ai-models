@@ -141,6 +141,7 @@ Relevant files:
 - `tools/install-gocyclo.sh`
 - `tools/check-controller-complexity.sh`
 - `tools/check-controller-loc.sh`
+- `tools/check-controller-test-loc.sh`
 - `tools/check-thin-reconcilers.sh`
 - `tools/test-controller-coverage.sh`
 - `tools/check-controller-test-evidence.sh`
@@ -149,6 +150,7 @@ Current thresholds:
 
 - `gocyclo <= 15`
 - non-test controller file length `<= 350` lines unless explicitly allowlisted
+- controller test file length `<= 350` lines unless explicitly allowlisted
 - thin reconciler rule enforced unless explicitly allowlisted
 
 Temporary debt must be explicit through allowlists under `tools/`, not hidden in

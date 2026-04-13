@@ -27,81 +27,27 @@ description: Use for controller implementation work: reconciliation boundaries, 
 4. Make finalizer and deletion flow easy to reason about.
 5. Keep validations narrow and repeatable.
 6. Do not expand controller scope without an explicit plan.
-7. If the task touches current fat controller packages, follow the corrective refactor order before adding new feature logic.
-8. For phase-2 runtime/materialization work, keep `ModelPack` as the contract,
-   `OCI from registry` as the only runtime input, and concrete tools such as
-   `KitOps`, `Modctl`, or init images behind adapters.
-9. For phase-2 publication API shape, keep the public model simple:
-   - users provide `source`
-   - users provide `inputFormat`
-   - `source` should stay user-facing and minimal:
-     `source.url` or `source.upload`, not nested provider scaffolding
-   - `inputFormat` may stay empty only when the controller can determine it
-     safely and uniquely from contents
-   - fixed internal output (`ModelPack` in OCI) stays implicit
-   - do not leak source-coupled names such as `HuggingFaceDirectory` or
-     `HFCheckpoint` into the public contract when the actual concern is model
-     file format
-10. For phase-2 publication/runtime execution paths, prefer Go-first data-plane
-   code by default:
-   - source worker runtime;
-   - upload session HTTP serving;
-   - archive validation/unpack;
-   - metadata calculation;
-   - cleanup execution.
-   Python or shell may remain only where they are strictly phase-1
-   backend-adjacent or build/install tooling.
-11. If the task continues an existing canonical phase-2 workstream, update that
-   bundle instead of creating a sibling active bundle.
-12. Keep the concrete package map stable:
-   - bootstrap/composition root must use an explicit name such as
-     `internal/bootstrap`; do not keep an `internal/app` package beside
-     `internal/application`, because that naming collision makes the tree
-     ambiguous
-   - reconcilers under `internal/controllers/*`
-   - K8s object/service adapters under `internal/adapters/k8s/*`
-   - shared helper code only under `internal/support/*`
-   - do not keep four different generic folders such as `publication` across
-     `application/`, `domain/`, `ports/`, and `internal/` when the actual
-     responsibilities are narrower; use role-based names such as
-     `publishplan`, `publishstate`, `publishop`, `publishedsnapshot`
-   - shared ports must be implemented by concrete adapters, not by a temporary
-     controller-side wrapper package
-   - canonical owner-based resource naming and owner-label policy live only in
-     `internal/support/resourcenames`, not in package-local `names.go` shims
-   - concrete adapters should consume shared `publishop.OperationContext`
-     directly; do not clone it into local `Request` / `OwnerRef` wrappers
-     unless the adapter truly needs a different boundary
-   - do not keep a second `runtime.go` proxy layer if the same concrete adapter
-     can implement the shared port directly and keep CRUD as unexported helper
-     methods
-   - do not duplicate the same controlled-resource create/reuse shell across
-     multiple adapters; keep one shared helper under `internal/adapters/k8s/*`
-     when only the concrete object type differs
-   - do not duplicate the same workload `Pod` shell (`EmptyDir` workspace,
-     `/tmp` mount, registry CA volumes/mounts) across worker/session adapters;
-     centralize it under `internal/adapters/k8s/*`
-   - do not elevate a controller-local persisted protocol helper into
-     `internal/ports/*` until there is a real second adapter behind that seam;
-     fake shared store interfaces are architecture debt, not reuse
-13. Keep controller tests systematic:
-   - shared scheme/object/fake-client fixtures under `internal/support/testkit`
-   - package-local `test_helpers_test.go` only for adapter-local builders and
-     assertions
-   - split adapter-heavy reconcile coverage by decision family; do not let a
-     single `reconciler_test.go` become the package dumping ground
-   - business decisions stay in domain/application tests, not in helper files
-   - keep one controller-level test evidence inventory in
-     `images/controller/TEST_EVIDENCE.ru.md`; do not scatter package-local
-     `BRANCH_MATRIX.ru.md` files through the tree
-14. If the controller package map changes or grows, sync
-    `images/controller/STRUCTURE.ru.md` so every folder/file keeps an explicit
-    rationale.
-15. Keep controller verification signals explicit:
-   - controller deadcode must be a first-class verify step, not hidden behind
-     hooks output
-   - if a verification shell checks multiple areas, controller-specific output
-     must run first and be named unambiguously
+7. If the task touches current fat controller packages, follow the corrective
+   refactor order before adding new feature logic.
+8. Use neighboring skills instead of duplicating their concerns here:
+   - `controller-architecture-discipline` for package map, LOC discipline,
+     thin reconcilers, and controller test shape
+   - `model-catalog-api` for public `Model` / `ClusterModel` contract
+   - `module-config-contract` for values/OpenAPI boundaries
+9. For phase-2 runtime/materialization work, keep:
+   - `ModelPack` as the publication contract
+   - immutable `OCI from registry` as the only runtime input
+   - concrete tools (`KitOps`, `Modctl`, init images) behind adapters
+10. Prefer Go-first phase-2 data-plane code by default. Python or shell may
+    remain only where they are strictly phase-1 backend-adjacent or
+    build/install tooling.
+11. If the task continues an existing canonical workstream, update that bundle
+    instead of creating a sibling active bundle.
+12. If the controller package map or controller test tree changes, sync:
+    - `images/controller/STRUCTURE.ru.md`
+    - `images/controller/TEST_EVIDENCE.ru.md`
+13. Before handoff, make sure controller-specific verification remains
+    explicit and visible in `make verify`.
 
 ## Output
 

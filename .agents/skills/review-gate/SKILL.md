@@ -28,7 +28,12 @@ description: Use at the end of any substantial task. Reviews the diff against th
    - stale bundles left in `plans/active`
    - current change landed in the correct canonical active bundle and did not create a parallel source of truth
    - implementation drift not reflected in the current bundle
-6. If controller code changed, check whether controller quality gates and corrective architecture rules were respected.
+6. If repo-local workflow surfaces changed (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`), check them as one instruction system:
+   - no lower-level file contradicts a higher-level rule
+   - skill and agent responsibilities are still distinct
+   - no new governance surface was introduced without a real need
+   - the task bundle explicitly captured that governance scope
+7. If controller code changed, check whether controller quality gates and corrective architecture rules were respected.
    - treat ambiguous package naming such as `app` vs `application` as a real
      finding, not a cosmetic nit
    - treat misleading verify output or controller checks hidden behind broader
@@ -58,8 +63,8 @@ description: Use at the end of any substantial task. Reviews the diff against th
      - controller reconciliation relying on MLflow browser-oriented entities
    - for any large-model claim, require a concrete worst-case resource answer
      instead of prose like "uses staging" or "publishes asynchronously"
-7. If the task was substantial or used delegation, confirm whether a final `reviewer` pass is still required.
-8. Return only concrete findings, missing checks, and residual risks.
+8. If the task was substantial or used delegation, confirm whether a final `reviewer` pass is still required.
+9. Return only concrete findings, missing checks, and residual risks.
 
 ## Output
 

@@ -30,6 +30,13 @@ description: Use for module values and OpenAPI contract work: user-facing vs int
 6. Keep defaults safe for rendering and clear for operators.
 7. Do not expose unstable internals as public module API.
 
+## Hard rules
+
+- No dead public knobs without live semantics.
+- No adapter/tool-specific runtime toggles in public values.
+- No fake compatibility layers that outlive the migration they were added for.
+- No public contract expansion without matching template/runtime ownership.
+
 ## Output
 
 A short, stable, and explainable configuration contract.

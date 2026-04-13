@@ -34,10 +34,15 @@ description: Use for ai-models controller implementation or refactor work when t
 8. Before closing a slice, make sure it still passes controller quality gates from `make verify`.
 9. Require state-matrix testing for lifecycle logic plus centralized controller
    test evidence; do not treat happy-path adapter tests as sufficient evidence.
+10. Treat `_test.go` files as part of the architecture:
+   - keep them under the same LOC discipline as production files
+   - split by decision surface
+   - do not hide business logic inside helper-only test files
 
 ## Hard rules
 
 - No fat reconciler growth.
+- No controller test monolith growth.
 - No inline `Pod` / `Service` / `Secret` / `ConfigMap` assembly inside reconciler files.
 - No mixing ConfigMap serialization format with domain contract.
 - No “service” extraction that still mixes K8s object shapes and lifecycle decisions.

@@ -40,6 +40,57 @@
 - Не редактировать upstream-артефакты без описанного patch/rebase процесса.
 - Не тащить в этап 1 задачи этапа 2 и 3 без явного решения в плане.
 - Любая нетривиальная задача сначала превращается в task bundle в `plans/active/<slug>/`.
+- Repo-local workflow rules имеют строгий precedence:
+  - `AGENTS.md`
+  - `.codex/README.md`
+  - `.agents/skills/*`
+  - `.codex/agents/*.toml`
+  Нижний уровень не должен противоречить верхнему.
+- Любая задача, которая меняет `AGENTS.md`, `.codex/*`, `.agents/skills/*` или
+  `.codex/agents/*`, считается governance task и требует отдельного task
+  bundle, а не incidental wording fix inside another workstream.
+
+## Engineering doctrine
+
+### Boundary discipline
+
+- Каждая boundary должна иметь явную причину существования:
+  - ownership
+  - runtime contract
+  - replaceable adapter
+  - durable shared helper
+- Не создавать оболочки поверх уже живого контракта только ради “удобных имён”.
+- Не смешивать в одном месте:
+  - policy
+  - transport/serialization
+  - concrete K8s object shaping
+  - product-facing API semantics
+- Любой новый package/file должен быть defendable по двум вопросам:
+  - почему это отдельная responsibility;
+  - почему эта responsibility не живёт лучше в соседней boundary.
+
+### Long-context resilience
+
+- Durable engineering rules должны жить в repo-local docs/skills/references, а
+  не только в chat context или в одном giant task bundle.
+- Active bundles должны оставаться компактными рабочими поверхностями.
+  Если bundle превращается в historical log, его надо архивировать и открывать
+  новый continuation bundle.
+- Новая работа должна продолжать canonical active bundle для workstream, а не
+  создавать sibling source of truth.
+
+### Systematic testing
+
+- Тесты считаются частью архитектуры, а не приложением к коду.
+- Тестовое дерево должно резаться по decision surface, а не по случайному
+  helper reuse.
+- Happy-path coverage сама по себе не считается достаточным доказательством.
+- Для lifecycle/stateful code обязательны:
+  - negative branches
+  - idempotency/replay
+  - malformed input/result paths
+  - owner/deletion/finalizer behavior where relevant
+- Helper-only test files не должны становиться скрытым слоем бизнес-логики.
 
 ## Обязательный рабочий цикл
 
@@ -54,6 +105,24 @@
 9. Обновить документацию, если изменились архитектура, процесс, API или эксплуатация.
 10. Завершить задачу через `review-gate`, а для substantial tasks с delegation дополнительно через `reviewer`.
 
+## Workflow governance
+
+Если задача меняет repo-local Codex surface:
+
+- `AGENTS.md`
+- `.codex/README.md`
+- `.agents/skills/*`
+- `.codex/agents/*.toml`
+
+то обязательно:
+
+1. вынести её в отдельный task bundle;
+2. явно перечислить touched instruction surfaces;
+3. проверить на противоречия все изменённые уровни, а не только один файл;
+4. не плодить новые skills или agent roles, если проблему можно решить
+   tightening existing boundaries;
+5. завершать задачу только после manual consistency review этих surfaces.
+
 ## Когда обязательно использовать planning
 
 Planning обязателен, если:
@@ -62,6 +131,8 @@ Planning обязателен, если:
 - задача меняет контракт values/OpenAPI/API;
 - задача затрагивает внутренний backend, auth, storage или observability;
 - задача предполагает patching upstream.
+- задача меняет repo-local workflow/governance surface
+  (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`).
 
 ## Режимы orchestration
 
@@ -77,6 +148,12 @@ Delegation обязателен, если:
 - задача затрагивает auth, storage, ingress/TLS, observability, HA или global-vs-local ownership;
 - задача связана с upstream patching, rebase или 3p packaging discipline;
 - задача проектирует или меняет `Model`, `ClusterModel`, status/conditions или controller boundaries.
+
+Исключение:
+
+- governance/doc-only tasks над repo-local workflow surface могут оставаться в
+  `solo`, если цель — tightening and consistency review самих инструкций, а не
+  проектирование нового runtime/API behavior.
 
 ## Когда сабагенты не нужны
 
@@ -145,3 +222,7 @@ Delegation обязателен, если:
 - код, templates, values, docs и сборка согласованы между собой;
 - пройдены релевантные проверки;
 - финальный review не оставил критичных замечаний.
+- если менялся workflow surface, между `AGENTS.md`, `.codex/README.md`,
+  `.agents/skills/*` и `.codex/agents/*.toml` не осталось явных противоречий.
+- если менялись architecture/testing/workflow rules, они зафиксированы в
+  durable repo-local surfaces и не зависят от chat-only context.

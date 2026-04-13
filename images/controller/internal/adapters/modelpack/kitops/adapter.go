@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	modelpackoci "github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/oci"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
 
@@ -79,11 +80,11 @@ func (a *Adapter) Publish(ctx context.Context, input modelpackports.PublishInput
 	if err != nil {
 		return modelpackports.PublishResult{}, err
 	}
-	if err := validateModelPackPayload(inspectPayload); err != nil {
+	if err := modelpackoci.ValidatePayload(inspectPayload); err != nil {
 		return modelpackports.PublishResult{}, err
 	}
 
-	digest := artifactDigestFromInspectPayload(inspectPayload)
+	digest := modelpackoci.ArtifactDigest(inspectPayload)
 	if strings.TrimSpace(digest) == "" {
 		return modelpackports.PublishResult{}, errors.New("kitops inspect payload is missing digest")
 	}
@@ -91,8 +92,8 @@ func (a *Adapter) Publish(ctx context.Context, input modelpackports.PublishInput
 	return modelpackports.PublishResult{
 		Reference: immutableOCIReference(input.ArtifactURI, digest),
 		Digest:    digest,
-		MediaType: artifactMediaTypeFromInspectPayload(inspectPayload),
-		SizeBytes: inspectModelPackSize(inspectPayload),
+		MediaType: modelpackoci.ArtifactMediaType(inspectPayload),
+		SizeBytes: modelpackoci.InspectSizeBytes(inspectPayload),
 	}, nil
 }
 
@@ -147,8 +148,8 @@ func (a *Adapter) login(ctx context.Context, configDir, reference string, auth m
 	return nil
 }
 
-func (a *Adapter) inspectRemote(ctx context.Context, _ string, reference string, auth modelpackports.RegistryAuth) (map[string]any, error) {
-	return inspectRemoteViaRegistry(ctx, reference, auth)
+func (a *Adapter) inspectRemote(ctx context.Context, _ string, reference string, auth modelpackports.RegistryAuth) (modelpackoci.InspectPayload, error) {
+	return modelpackoci.InspectRemote(ctx, reference, auth)
 }
 
 func (a *Adapter) run(ctx context.Context, configDir string, auth modelpackports.RegistryAuth, args ...string) error {

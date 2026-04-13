@@ -151,7 +151,7 @@ client-side multipart completion. The controller then observes the staged
 result from the session Secret, requeues the object, and starts a separate
 publish worker that downloads the staged object, validates/profiles it,
 publishes the final `ModelPack` into `DMCR`, and cleans the staging object on
-success. `status.upload` no longer exposes a legacy helper command; the live
+success. `status.upload` no longer exposes a helper command; the live
 public contract is limited to `expiresAt`, `repository`, `inClusterURL`, and
 optional `externalURL`.
 

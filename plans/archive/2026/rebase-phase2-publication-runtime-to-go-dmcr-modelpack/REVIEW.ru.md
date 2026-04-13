@@ -362,7 +362,7 @@ Findings:
    bug. The registry server now consumes only htpasswd material, while
    controller-owned runtimes consume projected client creds.
 3. Medium: the slice intentionally does not claim consumer-side auth/trust is
-   finished. Read-only projection into a future materializer / `ai-inference`
+   finished. Read-only projection into the standalone materializer / `ai-inference`
    runtime is still absent, and that is now the main remaining drift.
 
 Checks:
@@ -1271,3 +1271,52 @@ Checks:
 - Medium: the only live runtime noise still observed in the cluster is from an
   older rollout of `kube-rbac-proxy` probes. The repo-side helper is already
   corrected, so this is rollout drift, not an unresolved code defect.
+
+## Slice 77 review notes
+
+- No blocking findings against landing the OCI-side delivery/materialization
+  seam now.
+- High: moving registry inspect/validation out of `kitops` and into a shared
+  OCI adapter is the right boundary. `KitOps` remains a pack/push adapter,
+  while the canonical artifact truth now comes from the published registry
+  object itself.
+- High: the new `materialize-artifact` runtime command proves the intended
+  contract directly: immutable published OCI artifact in, local model path out.
+  This is the correct first delivery slice before any `ai-inference` wiring or
+  HF-cache optimization.
+- High: immutable digest handoff is now covered end-to-end:
+  the shared OCI adapter resolves `repo@sha256:...` against the digest itself
+  instead of silently falling back to `latest`, and both unit and command-level
+  tests cover that path.
+- Medium: destination replacement is now safe for the current one-shot
+  materializer semantics. The adapter no longer deletes the previous
+  materialized directory before the final rename; it stages the old directory
+  as a backup and restores it if the swap fails.
+- Medium: root repo docs no longer claim that the phase-2
+  `Model` / `ClusterModel` UX will reuse the old phase-1 backend import path.
+  That stale wording was inconsistent with the landed controller-owned DMCR
+  publication flow.
+- Medium: keeping the marker file and digest-based idempotence inside the same
+  adapter is enough for the current bounded runtime. This is not yet a node
+  cache manager and should not pretend to be one.
+- Medium: the slice correctly avoids reconstructing HF cache layout by
+  default. That would be a runtime-specific optimization and should stay
+  behind the new delivery seam, not become a new canonical artifact format.
+
+## Slice 78 review notes
+
+- No blocking findings against the test-structure hardening slice.
+- High: adding a dedicated test-file LOC gate closes a real repository gap.
+  Before this slice, production files were budgeted but `_test.go` files were
+  free to grow into the same monoliths the structure rules were trying to ban.
+- High: splitting tests by decision surface instead of by helper accretion is
+  the right corrective move for this tree. It makes future slices cheaper:
+  upload handoff, source-worker projection, multipart API, and status
+  projection no longer share the same kitchen-sink files.
+- Medium: keeping package-local helper files such as
+  `test_helpers_test.go` and narrow `*_test.go` helper shells is acceptable
+  here because they stay below the same LOC budget and support multiple
+  decision-specific files in one package.
+- Medium: `TEST_EVIDENCE.ru.md` is now materially closer to the live test tree
+  and can again serve as the single inventory. That is better than adding yet
+  another parallel branch matrix or package-local testing notes.

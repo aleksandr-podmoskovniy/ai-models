@@ -7,6 +7,14 @@
 размазываем одинаковый паттерн по дереву. Evidence остаётся одной точкой
 правды рядом с controller runtime.
 
+Дополнительная discipline для live tree:
+
+- `_test.go` files подчиняются тому же structural budget, что и production
+  code: `< 350` строк на file без allowlist-first мышления;
+- tests режутся по decision surface, а не по случайному helper reuse;
+- shared helper file допустим только если он реально обслуживает несколько
+  маленьких decision-specific test files внутри одного package.
+
 ## `internal/domain/publishstate`
 
 - Decision surface:
@@ -14,12 +22,13 @@
   - upload status equality
   - worker/session observation decisions
   - status/condition projection
-  - explicit terminal `UnsupportedSource` projection for persisted legacy
+  - explicit terminal `UnsupportedSource` projection for persisted
     non-HF remote objects after the HTTP-source removal cut
 - Primary evidence:
   - `operation_test.go`
   - `runtime_decisions_test.go`
   - `status_test.go`
+  - `status_success_test.go`
 - Residual gaps:
   - replay/retry и malformed runtime result остаются на
     `controllers/catalogstatus`, а не в domain
@@ -46,11 +55,14 @@
   - fail-closed handling for malformed terminal payloads
   - upload-session expiry handling before public status projection
   - upload-source reconcile gating when cleanup-handle handoff is already
-    persisted but final ready status is not yet projected
-  - legacy unsupported remote-source rejection staying at controller-owner
+    persisted before the final ready status pass
+  - unsupported non-HF remote-source rejection staying at controller-owner
     boundary instead of leaking deeper into runtime orchestration
 - Primary evidence:
   - `observe_runtime_test.go`
+  - `observe_source_worker_test.go`
+  - `observe_upload_session_test.go`
+  - `ensure_runtime_test.go`
   - `reconcile_gate_test.go`
 - Residual gaps:
   - final status persistence and reconcile replay still belong to
@@ -98,6 +110,23 @@
   - no background garbage collection for completed session secrets; retention
     still follows owner lifecycle rather than a separate session janitor
 
+## `internal/adapters/k8s/uploadsession`
+
+- Decision surface:
+  - controller-owned upload session issuance and replay over Secret-backed
+    session state
+  - shared-gateway URL projection and owner-bound namespace semantics
+  - legacy/stale session secret invalidation before token-hash-based reuse
+  - explicit controller phase sync for `publishing/completed/failed`
+- Primary evidence:
+  - `service_test.go`
+  - `service_lifecycle_test.go`
+  - `service_phase_sync_test.go`
+- Residual gaps:
+  - concrete Pod rendering and kube object shaping stay outside this adapter
+    and remain covered by `dataplane/uploadsession` plus controller-runtime
+    tests
+
 ## `internal/dataplane/uploadsession`
 
 - Decision surface:
@@ -109,6 +138,9 @@
     `uploaded/publishing/completed`
 - Primary evidence:
   - `run_test.go`
+  - `run_session_api_test.go`
+  - `run_multipart_api_test.go`
+  - `run_session_expiry_test.go`
 - Residual gaps:
   - upload gateway still exposes one tokenized session URL contract; bearer
     removal from the public upload URL is a separate API/UX slice
@@ -285,9 +317,27 @@
 - Primary evidence:
   - `ensure_cleanup_finalizer_test.go`
   - `finalize_delete_test.go`
+  - `finalize_delete_progress_test.go`
 - Residual gaps:
   - adapter-level create-race/status replay остаются в
     `controllers/catalogcleanup` tests
+
+## `internal/controllers/catalogstatus`
+
+- Decision surface:
+  - owner-level reconcile gating and runtime selection for `Model` /
+    `ClusterModel`
+  - status projection replay across upload handoff and source-worker progress
+  - upload-session phase sync on `publishing/completed/failed`
+  - explicit `UnsupportedSource` terminal projection without starting runtime
+  - publication audit emission on upload issue and terminal success
+- Primary evidence:
+  - `reconciler_test.go`
+  - `reconciler_upload_test.go`
+  - `test_helpers_test.go`
+- Residual gaps:
+  - envtest-level controller-runtime race replay still remains outside the
+    current fake-client evidence shape
 
 ## `internal/controllers/catalogcleanup`
 

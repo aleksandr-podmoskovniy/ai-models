@@ -18,8 +18,9 @@ The repository currently contains:
   platform and global Deckhouse defaults;
 - native MLflow auth/workspaces, ingress/https, and managed-postgres wiring;
 - phase-2 `Model` / `ClusterModel` API and controller work for source-first
-  publication into OCI-backed `ModelPack` artifacts; live runtime
-  materialization into local paths is still a separate future workstream;
+  publication into OCI-backed `ModelPack` artifacts; a standalone runtime
+  materializer now exists for `OCI -> local path`, while live consumer wiring
+  still remains a separate workstream;
 - `werf` and CI/CD pipelines for module packaging;
 - repo-local guidance and skills for the next slices of backend packaging and
   DKP API work.

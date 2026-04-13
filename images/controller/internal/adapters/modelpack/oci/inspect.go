@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kitops
+package oci
 
 import (
 	"context"
@@ -32,22 +32,24 @@ import (
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
 
-const manifestAcceptHeader = "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.artifact.manifest.v1+json, application/vnd.cncf.oras.artifact.manifest.v1+json"
+const ManifestAcceptHeader = "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.artifact.manifest.v1+json, application/vnd.cncf.oras.artifact.manifest.v1+json"
 
 const (
-	modelPackArtifactType       = "application/vnd.cncf.model.manifest.v1+json"
-	modelPackConfigMediaType    = "application/vnd.cncf.model.config.v1+json"
-	modelPackWeightLayerType    = "application/vnd.cncf.model.weight.v1.tar"
-	modelPackFilepathAnnotation = "org.cncf.model.filepath"
+	ModelPackArtifactType       = "application/vnd.cncf.model.manifest.v1+json"
+	ModelPackConfigMediaType    = "application/vnd.cncf.model.config.v1+json"
+	ModelPackWeightLayerType    = "application/vnd.cncf.model.weight.v1.tar"
+	ModelPackFilepathAnnotation = "org.cncf.model.filepath"
 )
 
-func inspectRemoteViaRegistry(ctx context.Context, reference string, auth modelpackports.RegistryAuth) (map[string]any, error) {
-	manifestURL, err := registryManifestURL(reference)
+type InspectPayload map[string]any
+
+func InspectRemote(ctx context.Context, reference string, auth modelpackports.RegistryAuth) (InspectPayload, error) {
+	manifestURL, err := RegistryManifestURL(reference)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := registryHTTPClient(auth)
+	client, err := RegistryHTTPClient(auth)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +58,7 @@ func inspectRemoteViaRegistry(ctx context.Context, reference string, auth modelp
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", manifestAcceptHeader)
+	req.Header.Set("Accept", ManifestAcceptHeader)
 	req.SetBasicAuth(auth.Username, auth.Password)
 
 	resp, err := client.Do(req)
@@ -88,20 +90,20 @@ func inspectRemoteViaRegistry(ctx context.Context, reference string, auth modelp
 		return nil, fmt.Errorf("failed to decode remote ModelPack manifest: %w", err)
 	}
 
-	configBlob, err := fetchConfigBlob(ctx, client, reference, auth, manifest)
+	configBlob, err := FetchConfigBlob(ctx, client, reference, auth, manifest)
 	if err != nil {
 		return nil, err
 	}
 
-	return map[string]any{
+	return InspectPayload{
 		"digest":     digest,
 		"manifest":   manifest,
 		"configBlob": configBlob,
 	}, nil
 }
 
-func registryManifestURL(reference string) (string, error) {
-	cleanReference := strings.TrimSpace(strings.SplitN(reference, "@", 2)[0])
+func RegistryManifestURL(reference string) (string, error) {
+	cleanReference := strings.TrimSpace(reference)
 	registry, repositoryAndTag, found := strings.Cut(cleanReference, "/")
 	if !found || strings.TrimSpace(registry) == "" || strings.TrimSpace(repositoryAndTag) == "" {
 		return "", fmt.Errorf("invalid OCI reference %q", reference)
@@ -109,7 +111,10 @@ func registryManifestURL(reference string) (string, error) {
 
 	repository := repositoryAndTag
 	ref := "latest"
-	if index := strings.LastIndex(repositoryAndTag, ":"); index >= 0 {
+	if repositoryAndDigest, digest, hasDigest := strings.Cut(repositoryAndTag, "@"); hasDigest {
+		repository = repositoryAndDigest
+		ref = digest
+	} else if index := strings.LastIndex(repositoryAndTag, ":"); index >= 0 {
 		repository = repositoryAndTag[:index]
 		ref = repositoryAndTag[index+1:]
 	}
@@ -124,7 +129,7 @@ func registryManifestURL(reference string) (string, error) {
 	}).String(), nil
 }
 
-func registryBlobURL(reference, digest string) (string, error) {
+func RegistryBlobURL(reference, digest string) (string, error) {
 	cleanReference := strings.TrimSpace(strings.SplitN(reference, "@", 2)[0])
 	registry, repositoryAndTag, found := strings.Cut(cleanReference, "/")
 	if !found || strings.TrimSpace(registry) == "" || strings.TrimSpace(repositoryAndTag) == "" {
@@ -146,7 +151,7 @@ func registryBlobURL(reference, digest string) (string, error) {
 	}).String(), nil
 }
 
-func registryHTTPClient(auth modelpackports.RegistryAuth) (*http.Client, error) {
+func RegistryHTTPClient(auth modelpackports.RegistryAuth) (*http.Client, error) {
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: auth.Insecure} //nolint:gosec
 	if strings.TrimSpace(auth.CAFile) != "" {
 		caPEM, err := os.ReadFile(auth.CAFile)
@@ -167,7 +172,7 @@ func registryHTTPClient(auth modelpackports.RegistryAuth) (*http.Client, error) 
 	}, nil
 }
 
-func fetchConfigBlob(
+func FetchConfigBlob(
 	ctx context.Context,
 	client *http.Client,
 	reference string,
@@ -183,7 +188,39 @@ func fetchConfigBlob(
 		return nil, errors.New("registry manifest config descriptor is missing digest")
 	}
 
-	blobURL, err := registryBlobURL(reference, strings.TrimSpace(digest))
+	body, err := FetchBlob(ctx, client, reference, strings.TrimSpace(digest), auth)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query remote ModelPack config blob: %w", err)
+	}
+
+	var configBlob map[string]any
+	if err := json.Unmarshal(body, &configBlob); err != nil {
+		return nil, fmt.Errorf("failed to decode remote ModelPack config blob: %w", err)
+	}
+
+	return configBlob, nil
+}
+
+func FetchBlob(ctx context.Context, client *http.Client, reference, digest string, auth modelpackports.RegistryAuth) ([]byte, error) {
+	resp, err := GetBlobResponse(ctx, client, reference, digest, auth)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read remote blob: %w", err)
+	}
+	if len(body) == 0 {
+		return nil, errors.New("registry blob response body is empty")
+	}
+
+	return body, nil
+}
+
+func GetBlobResponse(ctx context.Context, client *http.Client, reference, digest string, auth modelpackports.RegistryAuth) (*http.Response, error) {
+	blobURL, err := RegistryBlobURL(reference, digest)
 	if err != nil {
 		return nil, err
 	}
@@ -195,27 +232,13 @@ func fetchConfigBlob(
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query remote ModelPack config blob: %w", err)
+		return nil, fmt.Errorf("failed to query remote blob: %w", err)
 	}
-	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("failed to query remote ModelPack config blob: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		resp.Body.Close()
+		return nil, fmt.Errorf("failed to query remote blob: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read remote ModelPack config blob: %w", err)
-	}
-	if len(body) == 0 {
-		return nil, errors.New("registry config blob response body is empty")
-	}
-
-	var configBlob map[string]any
-	if err := json.Unmarshal(body, &configBlob); err != nil {
-		return nil, fmt.Errorf("failed to decode remote ModelPack config blob: %w", err)
-	}
-
-	return configBlob, nil
+	return resp, nil
 }

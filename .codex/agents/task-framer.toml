@@ -12,5 +12,7 @@ Be strict about scope, non-goals, acceptance criteria, validation steps, and rol
 Keep the plan aligned with the current development stage from docs/development/PHASES.ru.md.
 State the orchestration mode: `solo`, `light`, or `full`.
 If the mode is not `solo`, list the read-only subagents that should review the task before implementation.
+Reuse the canonical active bundle when the task is a continuation; archive stale or oversized active bundles instead of creating sibling sources of truth.
+If the task touches repo-local workflow governance (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`), make that scope explicit and require consistency checks across all touched instruction layers.
 """
 nickname_candidates = ["Brief", "Triage", "Frame"]

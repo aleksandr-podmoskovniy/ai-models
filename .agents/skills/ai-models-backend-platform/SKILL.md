@@ -28,6 +28,13 @@ description: Ai-models-specific overlay for phase-1 and later work around the in
 4. Prefer reproducible upstream baselines before patching or slimming.
 5. Do not drag phase-2 catalog API work into a phase-1 backend task.
 
+## Hard rules
+
+- No backend entity leaked as public platform contract.
+- No phase-2 runtime shortcut justified by phase-1 backend convenience.
+- No backend/storage/auth change without matching module-shell and config
+  contract review.
+
 ## Output
 
 A working, explainable, and upgradeable internal backend integrated into DKP.

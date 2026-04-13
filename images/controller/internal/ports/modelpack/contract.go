@@ -39,10 +39,28 @@ type PublishResult struct {
 	SizeBytes int64
 }
 
+type MaterializeInput struct {
+	ArtifactURI    string
+	ArtifactDigest string
+	DestinationDir string
+	ArtifactFamily string
+}
+
+type MaterializeResult struct {
+	ModelPath  string
+	Digest     string
+	MediaType  string
+	MarkerPath string
+}
+
 type Publisher interface {
 	Publish(ctx context.Context, input PublishInput, auth RegistryAuth) (PublishResult, error)
 }
 
 type Remover interface {
 	Remove(ctx context.Context, reference string, auth RegistryAuth) error
+}
+
+type Materializer interface {
+	Materialize(ctx context.Context, input MaterializeInput, auth RegistryAuth) (MaterializeResult, error)
 }

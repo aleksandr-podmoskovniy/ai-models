@@ -46,7 +46,11 @@ description: Ai-models-specific overlay for phase-2 and later work on Model and 
 10. Do not expose prebuilt external artifacts as a normal public input path.
     The module must build its own canonical `ModelPack` artifact from validated
     raw model contents.
-11. If the task also touches controller boundaries, read `.agents/skills/controller-architecture-discipline/SKILL.md` before implementation.
+11. If the task also touches controller boundaries, use
+    `.agents/skills/controller-architecture-discipline/SKILL.md` for the
+    implementation-side split instead of duplicating those rules here.
+12. If the task changes broader Kubernetes semantics beyond the model catalog
+    overlay, pair this skill with `.agents/skills/k8s-api-design/SKILL.md`.
 
 ## Output
 

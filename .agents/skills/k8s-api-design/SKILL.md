@@ -26,6 +26,13 @@ description: Use for Kubernetes and DKP API design: CRD boundaries, scope, spec/
 4. Keep internal backend details behind the public API.
 5. Prefer boring, stable API semantics over clever shortcuts.
 
+## Hard rules
+
+- No internal transport/storage/output format leaked into public `spec`.
+- No conditions whose reasons/messages are unstable by design.
+- No mixed ownership between `spec`, `status`, and hidden backend state.
+- No placeholder API knob kept “for later”.
+
 ## Output
 
 A Kubernetes-native API that can survive versioning and long-term support.

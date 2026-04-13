@@ -142,7 +142,8 @@ adapter packages.
   В live tree здесь теперь один прямой `publishop.Request`.
   Старый `OperationContext` wrapper удалён как пустая оболочка, которая только
   плодила `request.Request.*`.
-- `internal/ports/modelpack/` — replaceable `ModelPack` contract.
+- `internal/ports/modelpack/` — replaceable `ModelPack` contract:
+  publish/remove/materialize.
 - `internal/ports/uploadstaging/` — отдельный staging contract для upload path.
   В live tree он уже включает не только presign/complete shell, но и чтение
   server-side multipart manifest для resumability/state sync upload session.
@@ -197,6 +198,7 @@ Non-K8s adapters остаются отдельно:
 - `modelformat/`
 - `modelprofile/*`
 - `modelpack/kitops/`
+- `modelpack/oci/`
 - `uploadstaging/s3/`
 
 Главное правило для adapters:
@@ -225,7 +227,53 @@ Non-K8s adapters остаются отдельно:
 `support/*` допустим только как shared helper layer. Если пакет решает policy,
 runtime semantics или status logic, это уже не support.
 
-## 3. Жёсткие правила на следующий refactor
+## 3. Тестовое дерево и discipline
+
+Тесты здесь считаются частью архитектуры, а не шумом вокруг production-кода.
+Если test tree снова превращается в монолит, это такой же structural regession,
+как fat adapter или controller-local god object.
+
+Жёсткие правила:
+
+- `_test.go` файлы в `images/controller/internal` живут под тем же LOC-budget,
+  что и production files:
+  - production: `tools/check-controller-loc.sh`
+  - tests: `tools/check-controller-test-loc.sh`
+  - budget: `< 350` строк без allowlist-first мышления
+- tests режутся по decision surface, а не по “что удобно было положить рядом”:
+  - runtime observe
+  - status projection
+  - owner reconcile
+  - adapter IO contract
+  - command/process shell
+- helper-only test files допустимы только как thin shared seam внутри одного
+  package, когда они реально обслуживают несколько decision files;
+- если пакетный test file начинает смешивать:
+  - разные lifecycle phases
+  - разные runtime kinds
+  - разные owners
+  - разные transport APIs
+  значит его надо делить, а не наращивать allowlist;
+- канонический coverage inventory живёт только в `TEST_EVIDENCE.ru.md`.
+  Новый branch matrix рядом с package создавать нельзя.
+
+Текущий live pattern после refactor:
+
+- `publishobserve` split на:
+  - shared helpers
+  - source-worker observation
+  - upload-session observation
+- `catalogstatus` split на:
+  - source-worker/status projection
+  - upload handoff/status sync
+  - shared reconcile helpers/fakes
+- `dataplane/uploadsession` split на:
+  - handler helpers and tiny pure tests
+  - session API
+  - multipart API
+  - expiry/abort semantics
+
+## 4. Жёсткие правила на следующий refactor
 
 - Не добавлять новый пакет ради одной пустой оболочки поверх уже живого
   контракта.
@@ -242,7 +290,7 @@ runtime semantics или status logic, это уже не support.
 - Не вводить второй persisted bus или второй lifecycle source of truth между
   controller, upload session и publish worker.
 
-## 4. Что надо удалять при следующем касании
+## 5. Что надо удалять при следующем касании
 
 - `MERGE ON TOUCH` micro-files, которые держат только одну константу,
   одну ошибку или один helper внутри уже понятной boundary.
@@ -255,7 +303,7 @@ runtime semantics или status logic, это уже не support.
   `BRANCH_MATRIX.ru.md`.
   Controller-level evidence уже централизована в `TEST_EVIDENCE.ru.md`.
 
-## 5. Текущие findings по live tree
+## 6. Текущие findings по live tree
 
 ### `internal/controllers/catalogcleanup/` остаётся главным controller hotspot
 

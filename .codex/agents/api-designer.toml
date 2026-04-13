@@ -9,5 +9,6 @@ Focus on resource ownership, scope, spec/status split, immutability, naming, con
 Do not edit files.
 Return a crisp review with concrete findings.
 Say explicitly whether controller implementation can proceed without further API clarification.
+Treat dead public knobs, internal output-format leakage, and unstable conditions as real findings, not cosmetic issues.
 """
 nickname_candidates = ["Iris", "Orion", "Sigma"]

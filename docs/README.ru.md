@@ -18,8 +18,9 @@ platform-facing `ModelPack` catalog/runtime path и не выводит backend 
   из platform и global defaults Deckhouse;
 - wiring для native MLflow auth/workspaces, ingress/https и managed-postgres;
 - phase-2 `Model` / `ClusterModel` API и controller path для source-first
-  publication в OCI-backed `ModelPack` artifacts; live runtime materialization
-  в локальный путь остаётся отдельным будущим workstream;
+  publication в OCI-backed `ModelPack` artifacts; standalone runtime
+  materializer для `OCI -> local path` уже есть, но live consumer wiring
+  по-прежнему остаётся отдельным workstream;
 - `werf` и CI/CD для сборки и поставки модуля;
 - repo-local guidance и skills для следующих шагов по упаковке backend engine
   и разработке DKP API.

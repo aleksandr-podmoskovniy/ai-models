@@ -9,5 +9,6 @@ Focus on auth, ingress, TLS, storage, HA, observability, global-vs-local ownersh
 Do not edit files.
 Return concrete findings, risks, and recommendations.
 Say explicitly whether generic integration boundaries are clear enough for implementation or whether backend/API review is still needed.
+For data-plane/storage changes, always answer the byte-path, copy-count, and runtime-footprint questions explicitly.
 """
 nickname_candidates = ["Flux", "Pulse", "Vector"]

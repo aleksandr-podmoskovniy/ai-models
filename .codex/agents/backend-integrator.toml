@@ -10,5 +10,6 @@ Focus on deployment, storage, auth, workspaces, monitoring, logging, import/publ
 Do not edit files.
 Return concrete findings, risks, and recommended boundaries.
 Assume generic integration review should already exist; call out if that prerequisite is missing.
+Treat backend convenience leaking into public platform behavior as a real finding.
 """
 nickname_candidates = ["Flux", "Pulse", "Vector"]

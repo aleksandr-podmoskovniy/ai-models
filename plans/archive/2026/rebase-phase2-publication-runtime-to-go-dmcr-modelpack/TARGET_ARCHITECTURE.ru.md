@@ -60,7 +60,7 @@ Control plane должен быть разбит на:
 ### SOLID / anti-monolith
 
 - controller manager остаётся thin orchestration shell;
-- uploader, publisher, cleaner и future materializer являются отдельными
+- uploader, publisher, cleaner и materializer являются отдельными
   bounded runtimes, даже если временно лежат в одном image/subcommand shell;
 - никакой runtime не должен одновременно быть:
   - edge upload endpoint;
@@ -120,7 +120,7 @@ Control plane должен быть разбит на:
 - upload edge runtime
 - async publish worker
 - artifact cleanup job
-- future materializer runtime for consumers
+- standalone materializer runtime for consumers
 
 ### Hidden ingest / provenance plane
 
@@ -666,8 +666,10 @@ process-manager.
   short-lived per-upload session records;
 - PVC-specific uploader/staging path is still not landed;
 - `KitOps` is still a concrete CLI adapter;
-- materializer/runtime delivery to `ai-inference` is still not landed;
-- consumer-side read-only auth/trust projection into the future materializer is
+- consumer-side materializer/runtime delivery to `ai-inference` is still not
+  landed;
+- consumer-side read-only auth/trust projection into the standalone
+  materializer is
   still not landed.
 
 ## 13. Definition of architectural done

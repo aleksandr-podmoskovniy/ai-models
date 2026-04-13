@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kitops
+package oci
 
 import (
 	"errors"
@@ -22,7 +22,7 @@ import (
 	"strings"
 )
 
-func validateModelPackPayload(payload map[string]any) error {
+func ValidatePayload(payload InspectPayload) error {
 	manifest, _ := payload["manifest"].(map[string]any)
 	if manifest == nil {
 		return errors.New("registry inspect payload is missing manifest")
@@ -45,16 +45,16 @@ func validateModelPackManifest(manifest map[string]any) error {
 	if got := parseInt(manifest["schemaVersion"]); got != 2 {
 		return fmt.Errorf("registry manifest schemaVersion must be 2, got %d", got)
 	}
-	if got := strings.TrimSpace(stringValue(manifest["artifactType"])); got != modelPackArtifactType {
-		return fmt.Errorf("registry manifest artifactType must be %q, got %q", modelPackArtifactType, got)
+	if got := strings.TrimSpace(stringValue(manifest["artifactType"])); got != ModelPackArtifactType {
+		return fmt.Errorf("registry manifest artifactType must be %q, got %q", ModelPackArtifactType, got)
 	}
 
 	configDescriptor, _ := manifest["config"].(map[string]any)
 	if configDescriptor == nil {
 		return errors.New("registry manifest is missing config descriptor")
 	}
-	if got := strings.TrimSpace(stringValue(configDescriptor["mediaType"])); got != modelPackConfigMediaType {
-		return fmt.Errorf("registry manifest config mediaType must be %q, got %q", modelPackConfigMediaType, got)
+	if got := strings.TrimSpace(stringValue(configDescriptor["mediaType"])); got != ModelPackConfigMediaType {
+		return fmt.Errorf("registry manifest config mediaType must be %q, got %q", ModelPackConfigMediaType, got)
 	}
 	if strings.TrimSpace(stringValue(configDescriptor["digest"])) == "" {
 		return errors.New("registry manifest config descriptor is missing digest")
@@ -71,12 +71,12 @@ func validateModelPackLayers(layers []any) error {
 		if layerMap == nil {
 			return fmt.Errorf("registry manifest layer %d is invalid", index)
 		}
-		if got := strings.TrimSpace(stringValue(layerMap["mediaType"])); got != modelPackWeightLayerType {
-			return fmt.Errorf("registry manifest layer %d mediaType must be %q, got %q", index, modelPackWeightLayerType, got)
+		if got := strings.TrimSpace(stringValue(layerMap["mediaType"])); got != ModelPackWeightLayerType {
+			return fmt.Errorf("registry manifest layer %d mediaType must be %q, got %q", index, ModelPackWeightLayerType, got)
 		}
 		annotations, _ := layerMap["annotations"].(map[string]any)
-		if strings.TrimSpace(stringValue(annotations[modelPackFilepathAnnotation])) == "" {
-			return fmt.Errorf("registry manifest layer %d is missing %q annotation", index, modelPackFilepathAnnotation)
+		if strings.TrimSpace(stringValue(annotations[ModelPackFilepathAnnotation])) == "" {
+			return fmt.Errorf("registry manifest layer %d is missing %q annotation", index, ModelPackFilepathAnnotation)
 		}
 		if strings.TrimSpace(stringValue(layerMap["digest"])) == "" {
 			return fmt.Errorf("registry manifest layer %d is missing digest", index)
@@ -115,12 +115,12 @@ func validateModelPackConfigBlob(configBlob map[string]any, layerCount int) erro
 	return nil
 }
 
-func artifactDigestFromInspectPayload(payload map[string]any) string {
+func ArtifactDigest(payload InspectPayload) string {
 	value, _ := payload["digest"].(string)
 	return strings.TrimSpace(value)
 }
 
-func artifactMediaTypeFromInspectPayload(payload map[string]any) string {
+func ArtifactMediaType(payload InspectPayload) string {
 	manifest, _ := payload["manifest"].(map[string]any)
 	if manifest != nil {
 		if artifactType, _ := manifest["artifactType"].(string); strings.TrimSpace(artifactType) != "" {
@@ -130,7 +130,7 @@ func artifactMediaTypeFromInspectPayload(payload map[string]any) string {
 	return ""
 }
 
-func inspectModelPackSize(payload map[string]any) int64 {
+func InspectSizeBytes(payload InspectPayload) int64 {
 	var total int64
 	manifest, _ := payload["manifest"].(map[string]any)
 	if manifest == nil {

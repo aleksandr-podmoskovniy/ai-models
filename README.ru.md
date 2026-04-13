@@ -23,8 +23,9 @@ Phase-1 import flow для моделей:
   чтобы data plane оставался внутри кластера;
 - `tools/upload_hf_model.py` остаётся тонким локальным helper'ом для маленьких
   моделей и быстрых проверок;
-- будущий UX через `Model` / `ClusterModel` должен переиспользовать тот же
-  backend-owned import entrypoint через controller-created Jobs.
+- считать эти скрипты phase-1 backend-операциями; phase-2 путь через
+  `Model` / `ClusterModel` уже controller-owned и публикует канонические
+  OCI `ModelPack` артефакты во внутренний DMCR backend.
 
 Начинать с:
 - `AGENTS.md`

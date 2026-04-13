@@ -152,7 +152,7 @@ multipart upload в module-owned object-storage staging, подписывает 
 отдельный publish worker. Уже он скачивает staged object, валидирует и
 профилирует модель, публикует финальный `ModelPack` в `DMCR` и при успешной
 публикации чистит staging object.
-`status.upload` больше не содержит legacy helper command; live public contract
+`status.upload` больше не содержит helper command; live public contract
 ограничен `expiresAt`, `repository`, `inClusterURL` и optional `externalURL`.
 
 Поверх source contract в `spec` теперь снова есть живой policy layer:

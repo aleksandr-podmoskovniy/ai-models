@@ -35,9 +35,10 @@ description: Use first for any non-trivial request. Converts a human request int
 8. Add one rollback point.
 9. Decide orchestration mode: `solo`, `light`, or `full`.
 10. If the task is not `solo`, name the read-only subagents that should review it before implementation.
-11. If the task defines durable project discipline, encode it in repo-local skills or skill references instead of leaving it only in the current bundle.
-12. Avoid duplicate active slugs for the same workstream, reuse the current canonical active bundle when the request is a continuation, and archive stale/finished bundles when active context drifts.
-13. Save the result in `plans/active/<slug>/TASK.ru.md` and `plans/active/<slug>/PLAN.ru.md`.
+11. If the task touches repo-local workflow governance (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`), make it a dedicated governance bundle and add explicit consistency acceptance criteria across all touched instruction layers.
+12. If the task defines durable project discipline, encode it in repo-local skills or skill references instead of leaving it only in the current bundle.
+13. Avoid duplicate active slugs for the same workstream, reuse the current canonical active bundle when the request is a continuation, and archive stale/finished or oversized active bundles when active context drifts.
+14. Save the result in `plans/active/<slug>/TASK.ru.md` and `plans/active/<slug>/PLAN.ru.md`.
 
 ## Output
 

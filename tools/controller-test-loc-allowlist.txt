@@ -1,0 +1,2 @@
+# Intentionally empty.
+# Keep test files under CONTROLLER_MAX_TEST_FILE_LOC instead of growing this allowlist.

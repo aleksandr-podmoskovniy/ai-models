@@ -28,8 +28,9 @@ Phase-1 operational model import:
   versions so that the registry entry, linked logged model, source run, and S3
   artifacts are deleted together;
 - keep `tools/upload_hf_model.py` as a thin local wrapper for small models and quick checks;
-- future `Model` / `ClusterModel` UX is expected to reuse the same backend-owned
-  import entrypoint via controller-created Jobs.
+- treat those scripts as phase-1 backend operations only; the phase-2
+  `Model` / `ClusterModel` publication path is controller-owned and publishes
+  canonical OCI `ModelPack` artifacts into the internal DMCR backend.
 
 Development entrypoints:
 - `AGENTS.md`

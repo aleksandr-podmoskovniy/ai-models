@@ -38,17 +38,21 @@ Current phase-2 slice implemented here:
   `gpu-control-plane` and `virtualization`;
 - `cmd/ai-models-controller/*` for thin manager-only shell;
 - `cmd/ai-models-artifact-runtime/*` for thin one-shot phase-2 runtime shell:
-  `publish-worker`, `upload-session`, and `artifact-cleanup`; the shell now
-  also owns one shared component-aware logger setup for all runtime commands
-  instead of letting each subcommand fall back to ad-hoc process logging;
+  `publish-worker`, `upload-session`, `artifact-cleanup`, and
+  `materialize-artifact`; the shell now also owns one shared
+  component-aware logger setup for all runtime commands instead of letting each
+  subcommand fall back to ad-hoc process logging;
 - `internal/publicationartifact` for controller-owned publication runtime
   result payloads and OCI destination-reference policy; this is no longer the
   old misleading `artifactbackend` seam and no longer keeps a dead request
   contract;
-- `internal/ports/modelpack` for replaceable `ModelPack` publication/removal
-  contract;
+- `internal/ports/modelpack` for replaceable `ModelPack`
+  publication/removal/materialization contract;
 - `internal/adapters/modelpack/kitops` for the current `KitOps`-based
   implementation of that contract;
+- `internal/adapters/modelpack/oci` for shared OCI-side published artifact
+  inspection, `ModelPack` semantic validation, and standalone runtime
+  materialization into a local path from immutable `DMCR` artifacts;
 - `internal/adapters/sourcefetch` for safe `HuggingFace` source
   acquisition and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport and archive preparation instead of split
@@ -220,7 +224,7 @@ Naming rule:
   `publicationartifact` are required so the tree stays explicit and closer to
   virtualization-style ownership.
 
-Still intentionally out of scope:
+Current controller scope excludes:
 - publication paths beyond the current live input matrix:
   - `HuggingFace URL -> supported Hugging Face checkpoint layouts`
   - `Upload -> Safetensors archive or GGUF file/archive`
@@ -232,10 +236,9 @@ Still intentionally out of scope:
 - richer source auth flows beyond the current minimal projection contract:
   `HuggingFace` supports a projected token secret, but broader source
   integrations and richer auth/session handoff stay out of scope;
-- live runtime integration with `ai-inference`, concrete init-container
-  pod mutation/runtime injection for materializers, and any speculative
-  materialization adapter code before there is a real consumer path; runtime
-  delivery stays a future bounded workstream and must remain adapter-agnostic
-  when it lands;
+- live runtime integration with `ai-inference` and concrete init-container
+  pod mutation/runtime injection; the standalone materializer runtime already
+  exists, while consumer-side wiring remains a separate adapter-agnostic
+  integration step;
 - richer publication hardening beyond the current implementation adapter:
   implementation switching and stronger trust/promotion semantics.

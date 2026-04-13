@@ -90,6 +90,23 @@
 - this is an intentional alpha API break made to reduce controller/runtime
   complexity and keep only the source path that has a clear platform value.
 
+### Current canonical artifact / delivery clarification (2026-04-13)
+
+- the module must stop pretending that `HF` cache, `MLflow` flavor, and the
+  published internal artifact are the same thing;
+- the canonical published unit is an immutable OCI-backed `ModelPack`
+  artifact whose payload is a self-contained runtime-ready model filesystem;
+- supported canonical families for the current phase are:
+  - `hf-safetensors-v1`
+  - `gguf-v1`
+- `HF` local cache stays a downloader/runtime optimization, not a registry
+  format;
+- `MLflow` stays an experiment/lineage system, not the serving registry;
+- runtime delivery must therefore consume:
+  - immutable `status.artifact.uri` from `DMCR`
+  - and materialize it into a local filesystem path
+  instead of rebuilding serving semantics directly from `HF` or `MLflow`.
+
 Переосмыслить и постепенно перевести phase-2 publication/runtime implementation
 на virtualization-style architecture:
 
@@ -277,6 +294,11 @@
   shared worker/session adapters consume one direct `publishop.Request`,
   and legacy backend-centric package names do not survive once the live
   boundary becomes controller-owned.
+- Controller test tree follows the same structural discipline as production
+  code:
+  - decision-surface split instead of kitchen-sink `_test.go`
+  - `< 350` LOC budget enforced for test files
+  - `TEST_EVIDENCE.ru.md` remains the single coverage inventory
 - Observability contract is explicit and bounded:
   - module scrape shell stays protected through `ServiceMonitor` and
     `kube-rbac-proxy` style access;

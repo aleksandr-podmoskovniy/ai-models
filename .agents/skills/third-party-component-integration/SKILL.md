@@ -26,6 +26,12 @@ description: Use for external 3p component integration: upstream import, source-
 4. Minimize local divergence and document every intentional fork point.
 5. Keep update/rebase flow explicit enough to repeat without guesswork.
 
+## Hard rules
+
+- No patching upstream files in-place without explicit patch/rebase discipline.
+- No hidden source-of-truth split between vendored copy, build shell, and docs.
+- No “temporary” local fork without rollback or update story.
+
 ## Output
 
 A 3p integration path that is repeatable, reviewable, and maintainable.

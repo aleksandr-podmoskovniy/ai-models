@@ -3462,3 +3462,88 @@ replacement has landed yet.
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH werf build --dev --env dev --platform=linux/amd64 controller controller-runtime dmcr`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
+
+## Slice 77. Canonical artifact delivery seam
+
+Что сделано:
+
+- explicit ADR landed for the canonical publication/delivery split:
+  - immutable OCI `ModelPack` artifact is the only published runtime truth;
+  - supported canonical families are now documented as:
+    - `hf-safetensors-v1`
+    - `gguf-v1`
+  - `HF` cache and `MLflow` flavor are no longer treated as candidate
+    published formats;
+- introduced a narrow delivery/runtime seam behind the existing internal
+  `ModelPack` contract:
+  - `internal/ports/modelpack` now also exposes `Materializer`;
+  - new OCI-side adapter lives in `internal/adapters/modelpack/oci`;
+  - post-push registry inspect/validation moved out of `kitops` into the same
+    OCI adapter so publish and delivery now read one shared artifact truth;
+- landed a standalone runtime command:
+  - `ai-models-artifact-runtime materialize-artifact`
+  - it pulls an immutable published artifact from `DMCR`
+  - validates the `ModelPack` manifest/config contract
+  - materializes payload layers into a local filesystem path
+  - writes `.ai-models-materialized.json` with digest/family/model-path/ready
+    timestamp
+  - is idempotent for the same digest
+  - replaces an existing destination through backup-rename swap semantics, so
+    a failed final rename does not destroy the last good materialized model
+- kept the boundary intentionally narrow:
+  - no `ai-inference` wiring yet;
+  - no runtime-specific `HF` cache reconstruction by default;
+  - no durable HF mirror in this slice.
+- removed stale phase-1 wording from the repo root docs so `Model` /
+  `ClusterModel` no longer appear to reuse the old backend import scripts;
+- neutralized stale compatibility terminology in the live controller/runtime
+  path:
+  - upload-session recreation now talks about stale session secrets instead of
+    legacy raw-token support;
+  - unsupported non-HF remote source handling no longer carries legacy-only
+    wording in live tests/evidence.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/modelpack/... ./cmd/ai-models-artifact-runtime/...`
+- digest-reference coverage now explicitly includes immutable
+  `repo@sha256:...` references for both OCI inspect and materialization
+  paths;
+- `materialize-artifact` command now has a command-level smoke test over env
+  wiring and a test TLS registry;
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 78. Controller structure and test-discipline hardening
+
+Что сделано:
+
+- test monoliths were split by decision surface instead of keeping kitchen-sink
+  `_test.go` files:
+  - `internal/application/deletion`
+  - `internal/application/publishobserve`
+  - `internal/controllers/catalogstatus`
+  - `internal/domain/publishstate`
+  - `internal/adapters/k8s/uploadsession`
+  - `internal/adapters/modelpack/oci`
+  - `internal/dataplane/uploadsession`
+- the split preserved package-local helper seams but removed multi-surface
+  test files that mixed unrelated lifecycle phases and owners in one file;
+- a dedicated repo quality gate landed for controller tests:
+  - `tools/check-controller-test-loc.sh`
+  - `lint-controller-test-size`
+  - wired into `verify` and `verify-ci`
+- current live structure docs were synchronized:
+  - `images/controller/STRUCTURE.ru.md`
+  - `images/controller/TEST_EVIDENCE.ru.md`
+- the test methodology is now explicit:
+  - `_test.go` files follow the same `< 350` LOC budget as production files;
+  - tests are sliced by decision surface;
+  - `TEST_EVIDENCE.ru.md` remains the single canonical coverage inventory.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/application/deletion ./internal/application/publishobserve ./internal/domain/publishstate ./internal/controllers/catalogstatus ./internal/adapters/k8s/uploadsession ./internal/adapters/modelpack/oci ./internal/dataplane/uploadsession`
+- `ROOT=$(pwd) ./tools/check-controller-test-loc.sh`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`

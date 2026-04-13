@@ -35,14 +35,25 @@ import (
 )
 
 type fakeSourceWorkerRuntime struct {
-	handle *publicationports.SourceWorkerHandle
-	err    error
-	calls  int
+	handle  *publicationports.SourceWorkerHandle
+	handles []*publicationports.SourceWorkerHandle
+	err     error
+	calls   int
 }
 
 func (f *fakeSourceWorkerRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.Request) (*publicationports.SourceWorkerHandle, bool, error) {
 	f.calls++
-	return f.handle, false, f.err
+	if len(f.handles) == 0 {
+		return f.handle, false, f.err
+	}
+	index := f.calls - 1
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(f.handles) {
+		index = len(f.handles) - 1
+	}
+	return f.handles[index], false, f.err
 }
 
 type fakeUploadSessionRuntime struct {

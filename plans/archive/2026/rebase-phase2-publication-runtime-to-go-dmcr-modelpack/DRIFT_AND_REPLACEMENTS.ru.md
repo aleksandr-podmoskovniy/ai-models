@@ -120,8 +120,9 @@ Current drift:
   - controller-owned projected write auth into worker/session/cleanup runtime
   - explicit CA projection and explicit cleanup of derived auth/trust objects;
 - the remaining honest gap is the consumer side:
-  - there is still no materializer/runtime that would receive read-only
-    projected DMCR access in its own namespace.
+  - a standalone materializer runtime now exists, but there is still no
+    consumer-side projection/wiring that would hand it read-only projected
+    DMCR access in its own namespace.
 
 Target replacement:
 
@@ -135,9 +136,11 @@ Target replacement:
 
 Current drift:
 
-- phase-2 publication currently stops at `ModelPack` stored in `DMCR`;
-- there is still no live runtime that turns this artifact back into a local
-  model path for `ai-inference`.
+- phase-2 publication no longer stops strictly at `ModelPack` stored in
+  `DMCR`: a standalone runtime command already materializes immutable OCI
+  artifacts into a local path;
+- there is still no live consumer-side wiring that turns this into a normal
+  `ai-inference` runtime dependency.
 
 Target replacement:
 

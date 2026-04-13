@@ -26,6 +26,14 @@ description: Use for managed platform runtime wiring: auth, ingress, TLS, storag
 4. Prefer stable platform behavior over service-specific convenience options.
 5. Keep operational semantics understandable without reading the source code.
 
+## Hard rules
+
+- No local convenience option that bypasses a DKP global mechanism without a
+  plan-level justification.
+- No hidden auth/TLS/storage prerequisite.
+- No observability contract that exists only in logs or chat and not in repo
+  docs/templates/alerts.
+
 ## Output
 
 A managed runtime integrated into DKP in a predictable way.
