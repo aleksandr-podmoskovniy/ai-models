@@ -32,6 +32,7 @@ func TestDetectRemoteSourceType(t *testing.T) {
 	}{
 		{name: "huggingface root", url: "https://huggingface.co/deepseek-ai/DeepSeek-R1", want: ModelSourceTypeHuggingFace},
 		{name: "huggingface tree", url: "https://huggingface.co/deepseek-ai/DeepSeek-R1/tree/main", want: ModelSourceTypeHuggingFace},
+		{name: "plain http rejected", url: "http://huggingface.co/deepseek-ai/DeepSeek-R1", err: `unsupported source URL scheme "http"`},
 		{name: "generic http rejected", url: "https://downloads.example.com/model.tar.gz", err: `unsupported source URL host "downloads.example.com"`},
 	}
 
@@ -82,14 +83,13 @@ func TestParseHuggingFaceURL(t *testing.T) {
 	}
 }
 
-func TestModelSourceSpecDetectTypeAllowsLegacyHTTPShapeButRejectsProvider(t *testing.T) {
+func TestModelSourceSpecDetectTypeRejectsUnsupportedProvider(t *testing.T) {
 	t.Parallel()
 
 	_, err := (ModelSourceSpec{
-		URL:      "https://downloads.example.com/model.tar.gz",
-		CABundle: "-----BEGIN CERTIFICATE-----\nlegacy\n-----END CERTIFICATE-----",
+		URL: "https://downloads.example.com/model.tar.gz",
 		AuthSecretRef: &SecretReference{
-			Name: "legacy-http-auth",
+			Name: "remote-auth",
 		},
 	}).DetectType()
 	if err == nil {

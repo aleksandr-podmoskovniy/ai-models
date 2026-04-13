@@ -97,6 +97,12 @@ func buildCleanupJob(owner cleanupJobOwner, handle cleanuphandle.Handle, options
 		registryEnv = ociregistry.Env(options.OCIInsecure, options.OCIRegistrySecretName, options.OCIRegistryCASecretName)
 		registryMounts = ociregistry.VolumeMounts(options.OCIRegistryCASecretName)
 		registryVolumes = ociregistry.Volumes(options.OCIRegistryCASecretName)
+		if err := objectstorage.ValidateOptions("cleanup job", options.ObjectStorage); err != nil {
+			return nil, err
+		}
+		objectStorageEnv = objectstorage.Env(options.ObjectStorage)
+		objectStorageMounts = objectstorage.VolumeMounts(options.ObjectStorage.CASecretName)
+		objectStorageVolumes = objectstorage.Volumes(options.ObjectStorage.CASecretName)
 	}
 	if handle.Kind == cleanuphandle.KindUploadStaging {
 		if err := objectstorage.ValidateOptions("cleanup job", options.ObjectStorage); err != nil {

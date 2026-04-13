@@ -63,6 +63,7 @@ func ValidateOptions(component string, options Options) error {
 
 func Env(options Options) []corev1.EnvVar {
 	env := []corev1.EnvVar{
+		{Name: "AI_MODELS_S3_BUCKET", Value: strings.TrimSpace(options.Bucket)},
 		{Name: "AI_MODELS_S3_ENDPOINT_URL", Value: strings.TrimSpace(options.EndpointURL)},
 		{Name: "AI_MODELS_S3_REGION", Value: strings.TrimSpace(options.Region)},
 		{Name: "AI_MODELS_S3_USE_PATH_STYLE", Value: resourcenames.BoolString(options.UsePathStyle)},

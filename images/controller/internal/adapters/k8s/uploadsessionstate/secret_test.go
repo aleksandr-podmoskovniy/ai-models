@@ -17,6 +17,7 @@ limitations under the License.
 package uploadsessionstate
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -55,9 +56,6 @@ func TestNewSecretBuildsIssuedSession(t *testing.T) {
 	if session.UploadTokenHash != uploadsessiontoken.Hash("upload-token") || session.StagingKeyPrefix != "raw/1111-2222" {
 		t.Fatalf("unexpected session %#v", session)
 	}
-	if _, found := secret.Data[tokenKey]; found {
-		t.Fatalf("raw upload token must not be persisted in secret data: %#v", secret.Data)
-	}
 	if got := string(secret.Data[tokenHashKey]); got != uploadsessiontoken.Hash("upload-token") {
 		t.Fatalf("unexpected token hash %q", got)
 	}
@@ -66,25 +64,14 @@ func TestNewSecretBuildsIssuedSession(t *testing.T) {
 	}
 }
 
-func TestMigrateLegacyTokenRewritesSecretData(t *testing.T) {
+func TestSessionFromSecretRequiresTokenHash(t *testing.T) {
 	t.Parallel()
 
 	secret := mustSessionSecret(t)
-	secret.Data[tokenKey] = []byte("legacy-token")
 	delete(secret.Data, tokenHashKey)
 
-	rawToken, changed, err := MigrateLegacyToken(secret)
-	if err != nil {
-		t.Fatalf("MigrateLegacyToken() error = %v", err)
-	}
-	if !changed || rawToken != "legacy-token" {
-		t.Fatalf("unexpected migration result changed=%v rawToken=%q", changed, rawToken)
-	}
-	if _, found := secret.Data[tokenKey]; found {
-		t.Fatalf("raw upload token must be removed after migration: %#v", secret.Data)
-	}
-	if got := string(secret.Data[tokenHashKey]); got != uploadsessiontoken.Hash("legacy-token") {
-		t.Fatalf("unexpected token hash %q", got)
+	if _, err := SessionFromSecret(secret); !errors.Is(err, ErrTokenHashMissing) {
+		t.Fatalf("expected ErrTokenHashMissing, got %v", err)
 	}
 }
 

@@ -25,30 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func MigrateLegacyToken(secret *corev1.Secret) (string, bool, error) {
-	if secret == nil {
-		return "", false, errors.New("upload session secret must not be nil")
-	}
-	if len(secret.Data) == 0 {
-		return "", false, errors.New("upload session secret data must not be empty")
-	}
-	if tokenHash := strings.TrimSpace(string(secret.Data[tokenHashKey])); tokenHash != "" {
-		if !isValidTokenHash(tokenHash) {
-			return "", false, fmt.Errorf("upload session token hash must be a 64-character lowercase hex string")
-		}
-		delete(secret.Data, tokenKey)
-		return "", false, nil
-	}
-
-	legacyToken := strings.TrimSpace(string(secret.Data[tokenKey]))
-	if legacyToken == "" {
-		return "", false, errors.New("upload session token hash must not be empty")
-	}
-	if err := setToken(secretDataAccessor{data: secret.Data}, legacyToken); err != nil {
-		return "", false, err
-	}
-	return legacyToken, true, nil
-}
+var ErrTokenHashMissing = errors.New("upload session token hash must not be empty")
 
 func SetToken(secret *corev1.Secret, rawToken string) error {
 	if secret == nil {
@@ -62,18 +39,13 @@ func SetToken(secret *corev1.Secret, rawToken string) error {
 
 func tokenHashFromSecret(secret *corev1.Secret) (string, error) {
 	tokenHash := strings.TrimSpace(string(secret.Data[tokenHashKey]))
-	if tokenHash != "" {
-		if !isValidTokenHash(tokenHash) {
-			return "", fmt.Errorf("upload session token hash must be a 64-character lowercase hex string")
-		}
-		return tokenHash, nil
+	if tokenHash == "" {
+		return "", ErrTokenHashMissing
 	}
-
-	legacyToken := strings.TrimSpace(string(secret.Data[tokenKey]))
-	if legacyToken == "" {
-		return "", errors.New("upload session token hash must not be empty")
+	if !isValidTokenHash(tokenHash) {
+		return "", fmt.Errorf("upload session token hash must be a 64-character lowercase hex string")
 	}
-	return uploadsessiontoken.Hash(legacyToken), nil
+	return tokenHash, nil
 }
 
 type secretDataAccessor struct {
@@ -89,7 +61,6 @@ func setToken(target secretDataAccessor, rawToken string) error {
 		target.data = make(map[string][]byte, 1)
 	}
 	target.data[tokenHashKey] = []byte(uploadsessiontoken.Hash(rawToken))
-	delete(target.data, tokenKey)
 	return nil
 }
 

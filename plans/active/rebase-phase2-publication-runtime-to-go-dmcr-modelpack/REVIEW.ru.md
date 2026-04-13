@@ -1196,3 +1196,78 @@ Checks:
 - Medium: the next live cluster check still requires another rollout, but the
   code now matches the stronger interpretation of `ModelPack` semantics rather
   than a transport-only approximation.
+
+## Slice 73 review notes
+
+- No blocking findings against the new GC cleanup slice. The live cluster
+  evidence was clear: registry delete/finalizer logic worked, but storage
+  residue still accumulated in two places that the user can see directly in the
+  bucket browser.
+- High: cleaning remote staged raw objects on publish failure is the right
+  boundary. Those objects are controller-owned transit bytes; if publish fails
+  after staging, keeping them is just silent leak.
+- High: pruning `dmcr/.../repositories/<repo>` metadata after remote remove is
+  correct because repository paths are controller-owned and UID-scoped. They
+  are not shared between models, so deleting the whole repository metadata
+  prefix does not cross object boundaries.
+- Medium: keeping the prune inside `artifact-cleanup` and then running the
+  existing `dmcr-cleaner` preserves the current protocol shape instead of
+  inventing a second controller-owned object-storage janitor.
+- Medium: the TLS handshake noise isolated during the same investigation comes
+  from `kube-rbac-proxy` sidecars, not from controller/backend business logic,
+  so it should not block this storage cleanup slice.
+
+## Slice 74 review notes
+
+- No blocking findings against removing the public compatibility bridge for
+  deleted generic remote sources. The module already converged on a strict
+  `HuggingFace|Upload` live matrix, so keeping `source.caBundle` and generic
+  `http(s)` acceptance in the CRD was pure ballast.
+- High: keeping the controller-side `UnsupportedSource` terminal path for
+  already persisted pre-cut objects is the right boundary. It preserves safe
+  reconcile behavior without leaving new legacy input admitted by the API.
+- High: removing upload-session raw-token migration is correct now that the
+  system already persists hash-only tokens and active-session reuse can recover
+  from `status.upload` or rotate a fresh token. Leaving lazy migration in the
+  hot path would keep secret storage semantics ambiguous forever.
+- High: treating S3 `DeleteObjectsOutput.Errors` as a real failure is required
+  for truthful cleanup. Silent partial prefix deletion would directly
+  contradict the GC guarantees the user now validates in the bucket.
+- Medium: switching `kube-rbac-proxy` probes to HTTPS `/healthz` is the right
+  template-level answer to the current sidecar noise, but the effect still
+  needs the next module rollout on the live cluster.
+- Medium: trimming the remaining backend HF metadata noise is a worthwhile repo
+  consistency cut, not a phase-2 runtime dependency. It removes one more
+  conflicting source-metadata philosophy from the repo without changing the
+  current controller-owned publication plane.
+
+## Slice 75 review notes
+
+- No blocking findings against recreating legacy upload-session Secrets instead
+  of keeping raw-token migration code.
+- High: this is the right cleanup boundary for a project that wants zero
+  lingering legacy semantics. A stale secret without `tokenHash` is now
+  treated as invalid controller-owned runtime state, not as a format that the
+  system must understand forever.
+- High: rotating the upload URL token on recreation is correct. Without the
+  original raw token there is nothing truthful to preserve, so trying to keep
+  the old URL alive would only reintroduce ambiguous secret-handling logic.
+- Medium: this changes upgrade behavior for still-active pre-cut upload
+  sessions, but it changes it in the safe direction: stale sessions are
+  recreated cleanly instead of failing unpredictably or retaining raw-token
+  compatibility debt.
+
+## Slice 76 review notes
+
+- No blocking findings against the final backend-helper metadata trim and
+  build-oriented verification pass.
+- High: removing `library_name` and raw HF `tags` from the phase-1 helper is
+  consistent with the controller-side metadata cleanup that already happened.
+  It reduces one more parallel metadata philosophy without changing the live
+  publication plane contract.
+- High: passing real `werf build --dev --env dev --platform=linux/amd64` for
+  `controller`, `controller-runtime`, and `dmcr` materially raises confidence
+  that the repo is in a clean working state rather than just a test-green one.
+- Medium: the only live runtime noise still observed in the cluster is from an
+  older rollout of `kube-rbac-proxy` probes. The repo-side helper is already
+  corrected, so this is rollout drift, not an unresolved code defect.

@@ -26,11 +26,13 @@ import (
 )
 
 type Options struct {
-	HandleJSON     string
-	DryRun         bool
-	Remover        modelpackports.Remover
-	StagingRemover uploadstagingports.Remover
-	RegistryAuth   modelpackports.RegistryAuth
+	HandleJSON          string
+	DryRun              bool
+	Remover             modelpackports.Remover
+	StagingRemover      uploadstagingports.Remover
+	PrefixRemover       uploadstagingports.PrefixRemover
+	ObjectStorageBucket string
+	RegistryAuth        modelpackports.RegistryAuth
 }
 
 func Run(ctx context.Context, options Options) error {
@@ -49,7 +51,10 @@ func Run(ctx context.Context, options Options) error {
 		if options.Remover == nil {
 			return errors.New("artifact cleanup remover must not be nil")
 		}
-		return options.Remover.Remove(ctx, handle.Backend.Reference, options.RegistryAuth)
+		if err := options.Remover.Remove(ctx, handle.Backend.Reference, options.RegistryAuth); err != nil {
+			return err
+		}
+		return pruneBackendRepositoryMetadata(ctx, handle, options.ObjectStorageBucket, options.PrefixRemover)
 	case cleanuphandle.KindUploadStaging:
 		if handle.UploadStaging == nil {
 			return errors.New("upload staging cleanup handle payload must not be empty")
@@ -64,4 +69,28 @@ func Run(ctx context.Context, options Options) error {
 	default:
 		return errors.New("unsupported cleanup handle kind")
 	}
+}
+
+func pruneBackendRepositoryMetadata(
+	ctx context.Context,
+	handle cleanuphandle.Handle,
+	bucket string,
+	remover uploadstagingports.PrefixRemover,
+) error {
+	if remover == nil || handle.Artifact == nil || handle.Backend == nil {
+		return nil
+	}
+
+	prefix := backendRepositoryMetadataPrefix(handle)
+	if prefix == "" {
+		return nil
+	}
+	if bucket == "" {
+		return nil
+	}
+
+	return remover.DeletePrefix(ctx, uploadstagingports.DeletePrefixInput{
+		Bucket: bucket,
+		Prefix: prefix,
+	})
 }

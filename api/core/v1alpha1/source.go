@@ -46,7 +46,7 @@ func DetectRemoteSourceType(rawURL string) (ModelSourceType, error) {
 	if err != nil {
 		return "", err
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+	if parsed.Scheme != "https" {
 		return "", fmt.Errorf("%w %q", ErrUnsupportedSourceURLScheme, parsed.Scheme)
 	}
 

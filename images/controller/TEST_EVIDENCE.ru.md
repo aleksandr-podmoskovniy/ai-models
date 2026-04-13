@@ -88,7 +88,7 @@
 
 - Decision surface:
   - secret-backed upload session lifecycle store
-  - hash-only upload token persistence and legacy token migration
+  - hash-only upload token persistence
   - explicit `issued/probing/uploading/uploaded/publishing/completed/failed/
     aborted/expired` phase transitions
   - persisted multipart part manifest encoding/decoding
@@ -373,3 +373,29 @@
     manifest+config pair, not only in the digest or in `KitOps` CLI output;
   - Slice 72 therefore hardened post-push success criteria to validate those
     `ModelPack` fields directly from `DMCR`.
+
+## Live delete / GC evidence
+
+- Scenario:
+  - delete `ai-models-smoke/tiny-random-phi-smoke-20260412-1` after successful
+    `HF -> Ready` publication;
+- Result:
+  - `ai-model-cleanup-97d13bfc-70b9-43b1-9d35-d77c0b37d7ac` completed;
+  - `dmcr-gc-97d13bfc-70b9-43b1-9d35-d77c0b37d7ac` appeared and then
+    disappeared;
+  - `Model.status.phase=Deleting` temporarily exposed
+    `CleanupCompleted=False reason=CleanupPending`;
+  - the `Model` object was removed after finalizer release;
+  - direct registry reads of both:
+    - `.../manifests/published`
+    - `.../manifests/<digest>`
+    returned `404` after cleanup.
+- Extra inspection:
+  - bucket inspection proved that the old GC path still left visible residue:
+    - old `raw/<uid>/...` objects for failed publishes;
+    - `dmcr/.../repositories/.../_layers/*/link` metadata for deleted repos.
+- Outcome:
+  - live GC protocol was confirmed as functional for logical delete and blob
+    reachability;
+  - Slice 73 was required to close the user-visible object-storage residue that
+    remained after those logical steps.

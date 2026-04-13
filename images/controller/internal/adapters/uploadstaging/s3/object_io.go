@@ -19,11 +19,13 @@ package s3
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 )
 
@@ -90,6 +92,66 @@ func (a *Adapter) Delete(ctx context.Context, input uploadstagingports.DeleteInp
 	return err
 }
 
+func (a *Adapter) DeletePrefix(ctx context.Context, input uploadstagingports.DeletePrefixInput) error {
+	if err := validateDeletePrefixInput(input); err != nil {
+		return err
+	}
+
+	bucket := strings.TrimSpace(input.Bucket)
+	prefix := strings.TrimSpace(input.Prefix)
+	var continuationToken *string
+
+	for {
+		listOutput, err := a.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(bucket),
+			Prefix:            aws.String(prefix),
+			ContinuationToken: continuationToken,
+		})
+		if err != nil {
+			return err
+		}
+		if len(listOutput.Contents) == 0 {
+			if !aws.ToBool(listOutput.IsTruncated) {
+				return nil
+			}
+			continuationToken = listOutput.NextContinuationToken
+			continue
+		}
+
+		identifiers := make([]types.ObjectIdentifier, 0, len(listOutput.Contents))
+		for _, object := range listOutput.Contents {
+			key := strings.TrimSpace(aws.ToString(object.Key))
+			if key == "" {
+				continue
+			}
+			identifiers = append(identifiers, types.ObjectIdentifier{Key: aws.String(key)})
+		}
+		if len(identifiers) == 0 {
+			if !aws.ToBool(listOutput.IsTruncated) {
+				return nil
+			}
+			continuationToken = listOutput.NextContinuationToken
+			continue
+		}
+
+		deleteOutput, err := a.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(bucket),
+			Delete: &types.Delete{Objects: identifiers, Quiet: aws.Bool(true)},
+		})
+		if err != nil {
+			return err
+		}
+		if err := deletePrefixErrors(deleteOutput.Errors); err != nil {
+			return err
+		}
+
+		if !aws.ToBool(listOutput.IsTruncated) {
+			return nil
+		}
+		continuationToken = listOutput.NextContinuationToken
+	}
+}
+
 func validateStatInput(input uploadstagingports.StatInput) error {
 	switch {
 	case strings.TrimSpace(input.Bucket) == "":
@@ -136,4 +198,48 @@ func validateDeleteInput(input uploadstagingports.DeleteInput) error {
 	default:
 		return nil
 	}
+}
+
+func validateDeletePrefixInput(input uploadstagingports.DeletePrefixInput) error {
+	switch {
+	case strings.TrimSpace(input.Bucket) == "":
+		return errors.New("upload staging bucket must not be empty")
+	case strings.TrimSpace(input.Prefix) == "":
+		return errors.New("upload staging prefix must not be empty")
+	default:
+		return nil
+	}
+}
+
+func deletePrefixErrors(errors []types.Error) error {
+	if len(errors) == 0 {
+		return nil
+	}
+
+	messages := make([]string, 0, len(errors))
+	for _, entry := range errors {
+		key := strings.TrimSpace(aws.ToString(entry.Key))
+		code := strings.TrimSpace(aws.ToString(entry.Code))
+		message := strings.TrimSpace(aws.ToString(entry.Message))
+		switch {
+		case key != "" && code != "" && message != "":
+			messages = append(messages, fmt.Sprintf("%s (%s: %s)", key, code, message))
+		case key != "" && code != "":
+			messages = append(messages, fmt.Sprintf("%s (%s)", key, code))
+		case key != "" && message != "":
+			messages = append(messages, fmt.Sprintf("%s (%s)", key, message))
+		case key != "":
+			messages = append(messages, key)
+		case code != "" && message != "":
+			messages = append(messages, fmt.Sprintf("%s: %s", code, message))
+		case code != "":
+			messages = append(messages, code)
+		case message != "":
+			messages = append(messages, message)
+		default:
+			messages = append(messages, "unknown deleteObjects error")
+		}
+	}
+
+	return fmt.Errorf("delete prefix returned object errors: %s", strings.Join(messages, ", "))
 }

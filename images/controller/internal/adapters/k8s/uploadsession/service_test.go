@@ -211,7 +211,7 @@ func TestServiceDeleteRemovesOnlySessionSecret(t *testing.T) {
 	}
 }
 
-func TestServiceGetOrCreateMigratesLegacyTokenStorageAndReusesPersistedUploadURL(t *testing.T) {
+func TestServiceGetOrCreateReusesPersistedUploadURLForExistingSession(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
@@ -221,8 +221,6 @@ func TestServiceGetOrCreateMigratesLegacyTokenStorageAndReusesPersistedUploadURL
 	owner.Status.Upload = &uploadStatus
 
 	secret := mustUploadSessionSecret(t, owner.UID)
-	secret.Data["token"] = []byte("existing-token")
-	delete(secret.Data, "tokenHash")
 
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -246,16 +244,59 @@ func TestServiceGetOrCreateMigratesLegacyTokenStorageAndReusesPersistedUploadURL
 	if handle.UploadStatus.InClusterURL != owner.Status.Upload.InClusterURL {
 		t.Fatalf("expected persisted in-cluster URL to be reused, got %q", handle.UploadStatus.InClusterURL)
 	}
+}
+
+func TestServiceGetOrCreateRecreatesLegacySecretWithoutTokenHash(t *testing.T) {
+	t.Parallel()
+
+	scheme := testkit.NewScheme(t)
+	owner := testkit.NewUploadModel()
+	owner.UID = types.UID("1111-2222")
+	uploadStatus := testUploadStatus()
+	owner.Status.Upload = &uploadStatus
+
+	secret := mustUploadSessionSecret(t, owner.UID)
+	delete(secret.Data, "tokenHash")
+	secret.Data["token"] = []byte("legacy-token")
+
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(owner, secret).
+		Build()
+
+	service, err := NewService(kubeClient, scheme, testUploadOptions())
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	request := testUploadRequest()
+	request.Owner.UID = owner.UID
+
+	handle, created, err := service.GetOrCreate(context.Background(), owner, request)
+	if err != nil {
+		t.Fatalf("GetOrCreate() error = %v", err)
+	}
+	if !created {
+		t.Fatal("expected legacy upload session secret to be recreated")
+	}
+	if handle == nil {
+		t.Fatal("expected upload session handle")
+	}
+	if handle.UploadStatus.InClusterURL == owner.Status.Upload.InClusterURL {
+		t.Fatalf("expected recreated session to rotate upload URL token, got %q", handle.UploadStatus.InClusterURL)
+	}
+	if !strings.Contains(handle.UploadStatus.InClusterURL, "/v1/upload/ai-model-upload-auth-1111-2222?token=") {
+		t.Fatalf("unexpected recreated in-cluster URL %q", handle.UploadStatus.InClusterURL)
+	}
 
 	updatedSecret := &corev1.Secret{}
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(secret), updatedSecret); err != nil {
 		t.Fatalf("Get(updated secret) error = %v", err)
 	}
 	if _, found := updatedSecret.Data["token"]; found {
-		t.Fatalf("raw upload token must be removed from secret after migration: %#v", updatedSecret.Data)
+		t.Fatalf("legacy raw token must not survive secret recreation: %#v", updatedSecret.Data)
 	}
-	if strings.TrimSpace(string(updatedSecret.Data["tokenHash"])) == "" {
-		t.Fatalf("expected token hash to be persisted after migration: %#v", updatedSecret.Data)
+	if _, found := updatedSecret.Data["tokenHash"]; !found {
+		t.Fatalf("expected recreated secret to persist tokenHash, got %#v", updatedSecret.Data)
 	}
 }
 

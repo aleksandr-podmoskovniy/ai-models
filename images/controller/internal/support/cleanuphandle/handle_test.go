@@ -35,7 +35,8 @@ func TestSetOnObjectAndFromObjectRoundTrip(t *testing.T) {
 			Digest: "sha256:deadbeef",
 		},
 		Backend: &BackendArtifactHandle{
-			Reference: "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef",
+			Reference:                "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef",
+			RepositoryMetadataPrefix: "dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deepseek-r1",
 		},
 	}
 
@@ -53,6 +54,9 @@ func TestSetOnObjectAndFromObjectRoundTrip(t *testing.T) {
 
 	if got, want := decoded.Backend.Reference, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef"; got != want {
 		t.Fatalf("unexpected backend reference %q", got)
+	}
+	if got, want := decoded.Backend.RepositoryMetadataPrefix, "dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deepseek-r1"; got != want {
+		t.Fatalf("unexpected backend repository metadata prefix %q", got)
 	}
 }
 

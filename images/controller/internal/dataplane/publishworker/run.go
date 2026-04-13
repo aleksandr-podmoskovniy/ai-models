@@ -87,6 +87,10 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 		},
 	}, fmt.Sprintf("Published from Hugging Face source %s", options.HFModelID))
 	if err != nil {
+		cleanupErr := cleanupRemoteStagedObjects(ctx, options, remote.StagedObjects)
+		if cleanupErr != nil {
+			return publicationartifact.Result{}, errors.Join(err, cleanupErr)
+		}
 		return publicationartifact.Result{}, err
 	}
 	if err := cleanupRemoteStagedObjects(ctx, options, remote.StagedObjects); err != nil {

@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/objectstorage"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -49,6 +50,14 @@ func TestBuildCleanupJob(t *testing.T) {
 		ImagePullSecretName:   "ai-models-module-registry",
 		ServiceAccountName:    "ai-models-controller",
 		OCIRegistrySecretName: "ai-models-dmcr-auth-write",
+		ObjectStorage: objectstorage.Options{
+			Bucket:                "artifacts",
+			EndpointURL:           "https://s3.example.com",
+			Region:                "us-east-1",
+			UsePathStyle:          true,
+			CredentialsSecretName: "ai-models-artifacts",
+			CASecretName:          "ai-models-artifacts",
+		},
 		Env: []corev1.EnvVar{
 			{Name: "AWS_REGION", Value: "us-east-1"},
 		},
@@ -72,4 +81,16 @@ func TestBuildCleanupJob(t *testing.T) {
 	if len(job.Spec.Template.Spec.ImagePullSecrets) != 1 || job.Spec.Template.Spec.ImagePullSecrets[0].Name != "ai-models-module-registry" {
 		t.Fatalf("unexpected imagePullSecrets %#v", job.Spec.Template.Spec.ImagePullSecrets)
 	}
+	if !hasEnvVar(job.Spec.Template.Spec.Containers[0].Env, "AI_MODELS_S3_BUCKET") {
+		t.Fatalf("expected object storage env for backend cleanup job, got %#v", job.Spec.Template.Spec.Containers[0].Env)
+	}
+}
+
+func hasEnvVar(env []corev1.EnvVar, name string) bool {
+	for _, item := range env {
+		if item.Name == name {
+			return true
+		}
+	}
+	return false
 }

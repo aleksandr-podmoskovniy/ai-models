@@ -9,6 +9,7 @@
   terminationMessagePolicy: File
   args:
     - "--secure-listen-address=$(KUBE_RBAC_PROXY_LISTEN_ADDRESS):{{ $settings.listenPort | default "8443" }}"
+    - "--livez-path={{ $settings.healthPath | default "/healthz" }}"
     - "--v={{ $settings.logLevel | default "2" }}"
     - "--logtostderr=true"
     - "--stale-cache-interval={{ $settings.staleCacheInterval | default "1h30m" }}"
@@ -57,11 +58,15 @@
     {{- end }}
   {{- end }}
   livenessProbe:
-    tcpSocket:
+    httpGet:
+      path: {{ $settings.healthPath | default "/healthz" }}
+      scheme: HTTPS
       port: {{ $settings.portName | default "https-metrics" }}
     initialDelaySeconds: 10
   readinessProbe:
-    tcpSocket:
+    httpGet:
+      path: {{ $settings.healthPath | default "/healthz" }}
+      scheme: HTTPS
       port: {{ $settings.portName | default "https-metrics" }}
     initialDelaySeconds: 10
 {{- end -}}

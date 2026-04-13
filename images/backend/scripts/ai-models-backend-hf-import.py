@@ -23,8 +23,7 @@ The flow is:
 2. Log it to MLflow as a local checkpoint.
 3. Optionally register a model version.
 
-This script intentionally keeps the historic `hf-import` filename for backward
-compatibility.
+This script imports a Hugging Face snapshot into the internal backend runtime.
 """
 
 from __future__ import annotations
@@ -238,16 +237,9 @@ def fetch_hf_model_context(
                 {
                     "repo_id": getattr(info, "id", hf_model_id),
                     "resolved_revision": getattr(info, "sha", None),
-                    "private": getattr(info, "private", None),
-                    "gated": getattr(info, "gated", None),
                     "disabled": getattr(info, "disabled", None),
-                    "downloads": getattr(info, "downloads", None),
-                    "likes": getattr(info, "likes", None),
-                    "library_name": getattr(info, "library_name", None),
                     "pipeline_tag": getattr(info, "pipeline_tag", None),
-                    "tags": getattr(info, "tags", None),
                     "license": card_data.get("license"),
-                    "base_model": card_data.get("base_model"),
                 }
             )
         )
@@ -273,9 +265,7 @@ def build_run_params(
             "hf.resolved_revision": hf_context.get("resolved_revision"),
             "hf.task": task,
             "hf.pipeline_tag": hf_context.get("pipeline_tag"),
-            "hf.library_name": hf_context.get("library_name"),
             "hf.license": hf_context.get("license"),
-            "hf.base_model": hf_context.get("base_model"),
             "snapshot.file_count": snapshot_manifest.get("file_count"),
             "snapshot.total_bytes": snapshot_manifest.get("total_bytes"),
             "config.model_type": config_summary.get("model_type"),
@@ -299,8 +289,6 @@ def build_common_tags(
             "hf.pipeline_tag": hf_context.get("pipeline_tag"),
             "hf.task": task,
             "hf.license": hf_context.get("license"),
-            "hf.base_model": hf_context.get("base_model"),
-            "hf.gated": hf_context.get("gated"),
             "snapshot.file_count": snapshot_manifest.get("file_count"),
             "snapshot.total_bytes": snapshot_manifest.get("total_bytes"),
             "config.model_type": config_summary.get("model_type"),
@@ -321,13 +309,7 @@ def build_model_metadata(
                 "requested_revision": hf_context.get("requested_revision"),
                 "resolved_revision": hf_context.get("resolved_revision"),
                 "pipeline_tag": hf_context.get("pipeline_tag"),
-                "library_name": hf_context.get("library_name"),
                 "license": hf_context.get("license"),
-                "base_model": hf_context.get("base_model"),
-                "gated": hf_context.get("gated"),
-                "private": hf_context.get("private"),
-                "downloads": hf_context.get("downloads"),
-                "likes": hf_context.get("likes"),
             }
         ),
         "task": task,
@@ -351,7 +333,6 @@ def build_registered_model_description(
             "Task": task,
             "Pipeline tag": hf_context.get("pipeline_tag"),
             "License": hf_context.get("license"),
-            "Base model": hf_context.get("base_model"),
             "Model type": config_summary.get("model_type"),
             "Architectures": config_summary.get("architectures"),
         }
@@ -416,13 +397,10 @@ def build_import_result(
             "resolved": compact_mapping(
                 {
                     "task": task,
-                    "framework": hf_context.get("library_name") or "transformers",
+                    "framework": "transformers",
                     "family": config_summary.get("model_type"),
-                    "license": hf_context.get("license"),
                     "architecture": first_csv_item(config_summary.get("architectures")),
-                    "format": "HuggingFaceCheckpoint",
                     "contextWindowTokens": config_summary.get("max_position_embeddings"),
-                    "sourceRepoID": hf_context.get("repo_id"),
                 }
             ),
             "mlflow": compact_mapping(

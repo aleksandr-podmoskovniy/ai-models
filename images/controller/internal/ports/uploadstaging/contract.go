@@ -101,6 +101,11 @@ type DeleteInput struct {
 	Key    string
 }
 
+type DeletePrefixInput struct {
+	Bucket string
+	Prefix string
+}
+
 type MultipartStager interface {
 	StartMultipartUpload(ctx context.Context, input StartMultipartUploadInput) (StartMultipartUploadOutput, error)
 	PresignUploadPart(ctx context.Context, input PresignUploadPartInput) (PresignUploadPartOutput, error)
@@ -120,6 +125,10 @@ type Uploader interface {
 
 type Remover interface {
 	Delete(ctx context.Context, input DeleteInput) error
+}
+
+type PrefixRemover interface {
+	DeletePrefix(ctx context.Context, input DeletePrefixInput) error
 }
 
 type Client interface {

@@ -208,11 +208,9 @@ Current phase-2 slice implemented here:
   runtime object alive until the post-status reconcile that projects final
   state, and upload-source reconciles sync the session lifecycle through
   `publishing/completed/failed` without inventing a second persisted state
-  machine; persisted pre-cut non-HF `source.url` objects now terminate as
+  machine; persisted pre-cut non-HF `source.url` objects still terminate as
   `Failed` with `UnsupportedSource` instead of looping forever on reconcile
-  errors, and old apply manifests with legacy non-HF `source.url` or
-  `source.caBundle` are accepted again only as compatibility input and then
-  converge to the same terminal status instead of requiring manual edits;
+  errors;
 - `internal/bootstrap` for manager/bootstrap wiring.
 
 Naming rule:

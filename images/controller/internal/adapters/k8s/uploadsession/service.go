@@ -73,7 +73,16 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 	}
 	session, err := uploadsessionstate.SessionFromSecret(sessionSecret)
 	if err != nil {
-		return nil, false, err
+		if errors.Is(err, uploadsessionstate.ErrTokenHashMissing) {
+			sessionSecret, rawToken, created, err = s.recreateLegacySessionSecret(ctx, owner, request, plan, sessionSecret)
+			if err != nil {
+				return nil, false, err
+			}
+			session, err = uploadsessionstate.SessionFromSecret(sessionSecret)
+		}
+		if err != nil {
+			return nil, false, err
+		}
 	}
 	session, err = s.ensureExplicitTerminalPhase(ctx, sessionSecret, session)
 	if err != nil {
@@ -136,18 +145,34 @@ func (s *Service) ensureSecret(
 		return nil, "", false, err
 	}
 	if !created {
-		legacyToken, migrated, err := uploadsessionstate.MigrateLegacyToken(secret)
-		if err != nil {
-			return nil, "", false, err
-		}
-		if migrated {
-			if err := s.client.Update(ctx, secret); err != nil {
-				return nil, "", false, err
-			}
-		}
-		return secret, legacyToken, false, nil
+		return secret, "", false, nil
 	}
 	return secret, token, true, nil
+}
+
+func (s *Service) recreateLegacySessionSecret(
+	ctx context.Context,
+	owner client.Object,
+	request publicationports.Request,
+	plan publicationapp.UploadSessionPlan,
+	secret *corev1.Secret,
+) (*corev1.Secret, string, bool, error) {
+	if secret == nil {
+		return nil, "", false, errors.New("legacy upload session secret must not be nil")
+	}
+	if err := ownedresource.DeleteAll(ctx, s.client, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: secret.Name, Namespace: secret.Namespace},
+	}); err != nil {
+		return nil, "", false, err
+	}
+	recreated, rawToken, created, err := s.ensureSecret(ctx, owner, request, plan)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if !created {
+		return nil, "", false, errors.New("recreated upload session secret unexpectedly reused an existing object")
+	}
+	return recreated, rawToken, true, nil
 }
 
 func (s *Service) buildHandle(

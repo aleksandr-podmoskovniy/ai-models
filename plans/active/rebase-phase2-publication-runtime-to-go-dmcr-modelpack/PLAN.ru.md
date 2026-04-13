@@ -3283,6 +3283,48 @@ replacement has landed yet.
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`
 
+## Slice 73. GC residue cleanup
+
+Что сделано:
+
+- live cluster delete-cycle for `ai-models-smoke/tiny-random-phi-smoke-20260412-1`
+  proved that the existing GC protocol is alive:
+  - `ai-model-cleanup-<uid>` job completed;
+  - `dmcr-gc-<uid>` request secret appeared;
+  - `CleanupCompleted=False/CleanupPending` was projected while registry GC was
+    running;
+  - the `Model` object disappeared after finalizer release;
+  - direct registry reads of both `published` and immutable digest returned
+    `404` after cleanup;
+- at the same time, live S3 inspection showed two residue classes:
+  - old `raw/<uid>/...` objects from failed remote publishes;
+  - `dmcr/docker/registry/v2/repositories/.../_layers/*/link` metadata left
+    behind for deleted model repositories;
+- `images/controller/internal/dataplane/publishworker/run.go` now explicitly
+  deletes remote staged raw objects not only on success, but also on publish
+  failure after raw staging already happened;
+- backend cleanup handles now carry a stable repository metadata prefix, built
+  in `images/controller/internal/dataplane/publishworker/support.go` and stored
+  in `images/controller/internal/support/cleanuphandle/handle.go`;
+- backend cleanup jobs now get object-storage env/material too, and
+  `artifact-cleanup` can prune the repository metadata prefix after remote
+  `remove` via:
+  - `images/controller/internal/dataplane/artifactcleanup/backend_prefix.go`
+  - `images/controller/internal/dataplane/artifactcleanup/run.go`
+  - `images/controller/internal/adapters/uploadstaging/s3/object_io.go`
+  - `images/controller/internal/cmd/ai-models-artifact-runtime/artifact_cleanup.go`
+- live bucket residue accumulated from earlier broken slices was deleted
+  manually after the code fix so the current test bucket no longer contains:
+  - `raw/*` leftovers for old smoke failures;
+  - `dmcr/.../repositories/ai-models-smoke/*` leftovers for deleted smoke
+    models.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/dataplane/artifactcleanup ./internal/dataplane/publishworker ./internal/controllers/catalogcleanup ./internal/support/cleanuphandle ./internal/adapters/uploadstaging/s3 ./internal/adapters/k8s/objectstorage ./cmd/ai-models-artifact-runtime`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
 ## Slice 72 landed
 
 Цель:
@@ -3327,5 +3369,96 @@ replacement has landed yet.
 Проверки:
 
 - `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/modelpack/kitops`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 74. Final compatibility and runtime noise cleanup
+
+Что сделано:
+
+- removed the last public CRD compatibility bridge for deleted generic remote
+  sources:
+  - `spec.source.url` is HTTPS-only and host-scoped back to Hugging Face in
+    `api/core/v1alpha1/types.go`;
+  - deprecated `spec.source.caBundle` is deleted again from the API and CRDs;
+- kept the controller-side `UnsupportedSource` terminal path only for already
+  persisted pre-cut objects instead of keeping the CRD open for new legacy
+  manifests;
+- removed upload-session raw-token migration code:
+  - session Secrets now require `tokenHash`;
+  - reuse flow rotates or reuses the token only through persisted
+    `status.upload` URLs and never through a legacy raw token field;
+- removed the remaining DMCR auth helper fallback to the old single
+  `password` key:
+  only `write.password` / `read.password` and the projected client secrets are
+  now live;
+- hardened S3 prefix deletion:
+  `DeletePrefix` now fails on per-object `DeleteObjectsOutput.Errors` instead
+  of silently reporting success on partial cleanup failure;
+- reduced recurring `kube-rbac-proxy` TLS EOF noise at the template boundary:
+  - sidecar now gets an explicit `--livez-path=/healthz`;
+  - probes switched from raw `tcpSocket` against an HTTPS port to HTTPS
+    `GET /healthz`;
+- aligned the remaining phase-1 HF import helper with the cleaned metadata
+  philosophy:
+  - removed `downloads`, `likes`, `private`, `gated`, `base_model` noise;
+  - removed `license`, `sourceRepoID`, and `HuggingFaceCheckpoint` from the
+    old backend `resolved` payload;
+  - normalized framework to `transformers`.
+
+Проверки:
+
+- `cd api && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go generate ./...`
+- `cd api && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./core/v1alpha1`
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/k8s/uploadsession ./internal/adapters/k8s/uploadsessionstate ./internal/adapters/uploadstaging/s3 ./internal/dataplane/artifactcleanup ./internal/dataplane/publishworker`
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./...`
+- `python3 -m py_compile images/backend/scripts/ai-models-backend-hf-import.py`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make helm-template`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 75. Recreate legacy upload sessions instead of keeping migration code
+
+Что сделано:
+
+- kept hash-only upload-session storage as the only live secret contract;
+- removed the last operational upgrade tail from that cut:
+  when an already existing upload-session Secret is encountered without
+  `tokenHash`, the service now deletes it and recreates a fresh session
+  instead of:
+  - trying to migrate a raw token;
+  - failing the whole flow on legacy secret shape;
+- the recreated session rotates the upload URL token and stores only the new
+  hash-backed secret state.
+
+Границы slice:
+
+- no raw-token migration path returned;
+- no legacy secret format remains accepted as durable state;
+- controller behavior for stale pre-cut upload-session objects is now
+  deterministic: invalidate and recreate.
+
+Проверки:
+
+- `cd images/controller && PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH go test ./internal/adapters/k8s/uploadsession ./internal/adapters/k8s/uploadsessionstate`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
+- `git diff --check`
+
+## Slice 76. Final build-oriented cleanup pass
+
+Что сделано:
+
+- trimmed the last low-signal HF metadata residue from the phase-1 backend
+  import helper:
+  `library_name` and raw `tags` no longer flow through the helper payloads,
+  run params, or stored backend-side metadata;
+- re-ran build-oriented verification against the real image pipeline instead of
+  stopping at tests and template rendering.
+
+Проверки:
+
+- `python3 -m py_compile images/backend/scripts/ai-models-backend-hf-import.py`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH werf config render --dev --env dev controller controller-runtime dmcr`
+- `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH werf build --dev --env dev --platform=linux/amd64 controller controller-runtime dmcr`
 - `PATH=/opt/homebrew/bin:/usr/local/go/bin:$PATH make verify`
 - `git diff --check`

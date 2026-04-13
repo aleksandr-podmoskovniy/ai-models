@@ -36,7 +36,6 @@ const (
 	OwnerGenerationKey     = "ai-models.deckhouse.io/upload-owner-generation"
 
 	tokenHashKey           = "tokenHash"
-	tokenKey               = "token"
 	expectedSizeBytesKey   = "expectedSizeBytes"
 	stagingKeyPrefixKey    = "stagingKeyPrefix"
 	declaredInputFormatKey = "declaredInputFormat"

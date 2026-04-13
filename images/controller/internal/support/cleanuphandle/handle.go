@@ -32,7 +32,7 @@ type Kind string
 
 const (
 	KindBackendArtifact Kind = "BackendArtifact"
-	KindUploadStaging  Kind = "UploadStaging"
+	KindUploadStaging   Kind = "UploadStaging"
 )
 
 type ArtifactSnapshot struct {
@@ -42,7 +42,8 @@ type ArtifactSnapshot struct {
 }
 
 type BackendArtifactHandle struct {
-	Reference string `json:"reference,omitempty"`
+	Reference                string `json:"reference,omitempty"`
+	RepositoryMetadataPrefix string `json:"repositoryMetadataPrefix,omitempty"`
 }
 
 type UploadStagingHandle struct {

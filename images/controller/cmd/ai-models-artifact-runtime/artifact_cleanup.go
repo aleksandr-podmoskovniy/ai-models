@@ -53,20 +53,22 @@ func runArtifactCleanup(args []string) int {
 	)
 	logger.Info("artifact cleanup started")
 
-	var stagingRemover *uploadstagings3.Adapter
-	if handle.Kind == cleanuphandle.KindUploadStaging {
-		stagingRemover, err = uploadstagings3.New(uploadStagingS3ConfigFromEnv())
+	var objectStorageRemover *uploadstagings3.Adapter
+	if handle.Kind == cleanuphandle.KindUploadStaging || handle.Kind == cleanuphandle.KindBackendArtifact {
+		objectStorageRemover, err = uploadstagings3.New(uploadStagingS3ConfigFromEnv())
 		if err != nil {
 			return cmdsupport.CommandError(commandArtifactCleanup, err)
 		}
 	}
 
 	if err := artifactcleanup.Run(ctx, artifactcleanup.Options{
-		HandleJSON:     handleJSON,
-		DryRun:         dryRun,
-		Remover:        kitops.New(),
-		StagingRemover: stagingRemover,
-		RegistryAuth:   cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
+		HandleJSON:          handleJSON,
+		DryRun:              dryRun,
+		Remover:             kitops.New(),
+		StagingRemover:      objectStorageRemover,
+		PrefixRemover:       objectStorageRemover,
+		ObjectStorageBucket: cmdsupport.EnvOr("AI_MODELS_S3_BUCKET", ""),
+		RegistryAuth:        cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
 	}); err != nil {
 		logger.Error("artifact cleanup failed", slog.Any("error", err))
 		return 1

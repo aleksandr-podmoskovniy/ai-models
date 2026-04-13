@@ -874,9 +874,8 @@ ai-models-reader
 {{- $existingSecret := lookup "v1" "Secret" $namespace $secretName -}}
 {{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
 {{- $existingPassword := (get $existingData "password" | default "" | b64dec) -}}
-{{- $legacyPassword := (get $authData "password" | default "" | b64dec) -}}
 {{- $generatedPassword := printf "A1a%s" (randAlphaNum 37) -}}
-{{- coalesce $serverPassword $existingPassword $legacyPassword $generatedPassword -}}
+{{- coalesce $serverPassword $existingPassword $generatedPassword -}}
 {{- end -}}
 
 {{- define "ai-models.dmcrReadAuthPassword" -}}
