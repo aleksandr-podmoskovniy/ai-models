@@ -22,6 +22,9 @@
   - package map зафиксирован в `images/controller/STRUCTURE.ru.md`
   - coverage inventory зафиксирован в `images/controller/TEST_EVIDENCE.ru.md`
   - test-file LOC gate уже landed.
+- phase-2 live cluster validation уже успела выявить, что second-smoke style
+  HF repos могут нести benign alternative export artifacts вроде `onnx/`,
+  и это не должно ломать canonical `Safetensors` ingest.
 
 Нужен новый компактный canonical active bundle, чтобы следующие bounded slices
 шли без повторного разрастания `plans/active`.

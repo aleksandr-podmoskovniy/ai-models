@@ -41,11 +41,14 @@ func classifyGGUFFile(relative string) (fileAction, bool, bool) {
 		}
 		return fileActionReject, false, false
 	}
-	if isBenignExtraFile(lowerBase) {
-		return fileActionDrop, false, false
-	}
 	if hasForbiddenExtension(lowerBase) {
 		return fileActionReject, false, false
+	}
+	if isAlternativeExportArtifact(strings.ToLower(relative), lowerBase) {
+		return fileActionDrop, false, false
+	}
+	if isBenignExtraFile(lowerBase) {
+		return fileActionDrop, false, false
 	}
 	if strings.HasSuffix(lowerBase, ".gguf") {
 		return fileActionKeep, false, true

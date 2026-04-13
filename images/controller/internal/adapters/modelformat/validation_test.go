@@ -32,12 +32,20 @@ func TestValidateDirSafetensors(t *testing.T) {
 	writeTestFile(t, filepath.Join(root, "config.json"), `{"model_type":"qwen3"}`)
 	writeTestFile(t, filepath.Join(root, "model.safetensors"), "weights")
 	writeTestFile(t, filepath.Join(root, "README.md"), "# docs")
+	writeTestFile(t, filepath.Join(root, "onnx", "model.onnx"), "onnx")
+	writeTestFile(t, filepath.Join(root, "pytorch_model.bin"), "weights")
 
 	if err := ValidateDir(root, modelsv1alpha1.ModelInputFormatSafetensors); err != nil {
 		t.Fatalf("ValidateDir() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "README.md")); !os.IsNotExist(err) {
 		t.Fatalf("expected README.md to be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "onnx", "model.onnx")); !os.IsNotExist(err) {
+		t.Fatalf("expected onnx/model.onnx to be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "pytorch_model.bin")); !os.IsNotExist(err) {
+		t.Fatalf("expected pytorch_model.bin to be removed, stat err = %v", err)
 	}
 }
 
@@ -88,6 +96,8 @@ func TestSelectRemoteFiles(t *testing.T) {
 		"README.md",
 		"config.json",
 		"model-00001-of-00002.safetensors",
+		"onnx/model.onnx",
+		"pytorch_model.bin",
 		"tokenizer.json",
 	})
 	if err != nil {
@@ -123,6 +133,15 @@ func TestSelectRemoteFilesRejectsRemoteCode(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected remote code validation error")
+	}
+
+	_, err = SelectRemoteFiles(modelsv1alpha1.ModelInputFormatSafetensors, []string{
+		"config.json",
+		"model.safetensors",
+		"onnx/model.py",
+	})
+	if err == nil {
+		t.Fatal("expected nested remote code validation error")
 	}
 }
 

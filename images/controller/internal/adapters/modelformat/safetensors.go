@@ -49,11 +49,14 @@ func classifySafetensorsFile(relative string) (fileAction, bool, bool) {
 	if isAllowedMetadataFile(lowerRelative, lowerBase) {
 		return fileActionKeep, false, false
 	}
-	if isBenignExtraFile(lowerBase) {
-		return fileActionDrop, false, false
-	}
 	if hasForbiddenExtension(lowerBase) {
 		return fileActionReject, false, false
+	}
+	if isAlternativeExportArtifact(lowerRelative, lowerBase) {
+		return fileActionDrop, false, false
+	}
+	if isBenignExtraFile(lowerBase) {
+		return fileActionDrop, false, false
 	}
 	if strings.HasSuffix(lowerBase, ".safetensors") {
 		return fileActionKeep, false, true

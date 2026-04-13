@@ -424,6 +424,32 @@
   - Slice 72 therefore hardened post-push success criteria to validate those
     `ModelPack` fields directly from `DMCR`.
 
+## Live second `HF` smoke against a non-phi repo
+
+- Scenario:
+  - `Model` in namespace `ai-models-smoke`
+  - `source.url=https://huggingface.co/hf-internal-testing/tiny-random-LlamaForCausalLM`
+  - `inputFormat=Safetensors`
+  - `runtimeHints.task=text-generation`
+- Result:
+  - controller accepted the spec and started remote ingest;
+  - publish then failed fast with:
+    `input format "Safetensors" rejects source file "onnx/model.onnx"`.
+- Root-cause proof:
+  - live HF API for the repo returned a valid safetensors checkpoint set:
+    `config.json`, `model.safetensors`, tokenizer files, plus an `onnx/`
+    export subtree;
+  - publish worker logs showed the failure came from local source-file
+    selection/validation rather than from `HF`, network, or `DMCR`;
+  - therefore the bug was a false rejection of benign alternative export
+    artifacts in the `Safetensors` ingest path.
+- Outcome:
+  - this smoke validated the need for the current corrective slice in
+    `internal/adapters/modelformat`;
+  - benign alternative export artifacts such as `onnx/` must be ignored for
+    canonical `Safetensors` publication, while remote code still stays
+    reject-only.
+
 ## Live delete / GC evidence
 
 - Scenario:

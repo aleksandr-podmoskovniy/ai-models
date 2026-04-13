@@ -66,6 +66,41 @@ func isAllowedMetadataFile(lowerRelative, lowerBase string) bool {
 	return strings.HasSuffix(lowerBase, ".index.json")
 }
 
+func isAlternativeExportArtifact(lowerRelative, lowerBase string) bool {
+	for _, prefix := range []string{
+		"onnx/",
+		"openvino/",
+		"coreml/",
+		"tflite/",
+	} {
+		if strings.HasPrefix(lowerRelative, prefix) {
+			return true
+		}
+	}
+
+	if slices.Contains([]string{
+		"pytorch_model.bin",
+		"tf_model.h5",
+		"flax_model.msgpack",
+		"rust_model.ot",
+		"model.ckpt.index",
+	}, lowerBase) {
+		return true
+	}
+
+	if strings.HasPrefix(lowerBase, "model.ckpt.") || strings.HasPrefix(lowerBase, "model.ckpt-") {
+		return true
+	}
+
+	return hasSuffix(lowerBase,
+		".onnx",
+		".tflite",
+		".mlmodel",
+		".pdmodel",
+		".pdiparams",
+	)
+}
+
 func isBenignExtraFile(lowerBase string) bool {
 	if strings.HasPrefix(lowerBase, "readme") || strings.HasPrefix(lowerBase, "license") || strings.HasPrefix(lowerBase, "notice") {
 		return true

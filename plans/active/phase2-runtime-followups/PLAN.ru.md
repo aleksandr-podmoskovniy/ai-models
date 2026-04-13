@@ -47,11 +47,18 @@ large corrective rebase bundle was completed and archived.
    - native downloader/cache semantics
    - bounded shared cache strategy
    - future durable mirror only if product signal justifies it
+   - benign alternative export artifacts from HF repos must not fail a valid
+     `Safetensors` publication path
 
 3. Ongoing structural hygiene
    - no return of generic HTTP source
    - no new controller or test monoliths
    - no drift between docs, bundle and live tree
+
+4. Live validation hardening
+   - second HF smoke against a repo different from the original phi test
+   - controller/runtime bugs found by cluster smoke must become bounded
+     corrective slices with focused regressions
 
 ## Slice 1. Archive giant active bundle
 
@@ -100,6 +107,28 @@ large corrective rebase bundle was completed and archived.
 Проверки:
 
 - `sed -n '1,240p' plans/README.md`
+
+## Slice 4. Validate second HF smoke and harden benign side-artifact handling
+
+Цель:
+
+- прогнать живой smoke publish для другого небольшого HF checkpoint;
+- убедиться, что `Safetensors` ingest не ломается на benign alternative export
+  artifacts вроде `onnx/`;
+- если такой bug найден, исправить file-selection/validation path и покрыть
+  его регрессией.
+
+Артефакты:
+
+- updated `images/controller/internal/adapters/modelformat/*`
+- updated tests around remote selection / local validation
+- updated live evidence if the cluster run exposes a real defect
+
+Проверки:
+
+- focused `go test` for `internal/adapters/modelformat`
+- `make verify`
+- live cluster smoke result recorded in the workstream
 
 ## Rollback point
 
