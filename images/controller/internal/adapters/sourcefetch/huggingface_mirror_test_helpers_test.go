@@ -64,10 +64,10 @@ func (f *fakeSourceMirrorStore) DeleteSnapshot(context.Context, sourcemirrorport
 }
 
 type fakeMirrorUploadStaging struct {
-	server  *httptest.Server
-	objects map[string][]byte
-	uploads map[string]*fakeMultipartUpload
-	nextID  int
+	serverURL string
+	objects   map[string][]byte
+	uploads   map[string]*fakeMultipartUpload
+	nextID    int
 }
 
 type fakeMultipartUpload struct {
@@ -79,9 +79,21 @@ func newFakeMirrorUploadStaging(t interface{ Cleanup(func()) }) *fakeMirrorUploa
 		objects: make(map[string][]byte),
 		uploads: make(map[string]*fakeMultipartUpload),
 	}
-	client.server = httptest.NewServer(http.HandlerFunc(client.handleUploadPart))
-	t.Cleanup(client.server.Close)
+	server := httptest.NewServer(http.HandlerFunc(client.handleUploadPart))
+	client.serverURL = server.URL
+	t.Cleanup(server.Close)
 	return client
+}
+
+func newFakeMirrorUploadStagingTLS(t interface{ Cleanup(func()) }) (*fakeMirrorUploadStaging, *http.Client) {
+	client := &fakeMirrorUploadStaging{
+		objects: make(map[string][]byte),
+		uploads: make(map[string]*fakeMultipartUpload),
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(client.handleUploadPart))
+	client.serverURL = server.URL
+	t.Cleanup(server.Close)
+	return client, server.Client()
 }
 
 func (f *fakeMirrorUploadStaging) StartMultipartUpload(_ context.Context, input uploadstagingports.StartMultipartUploadInput) (uploadstagingports.StartMultipartUploadOutput, error) {
@@ -93,7 +105,7 @@ func (f *fakeMirrorUploadStaging) StartMultipartUpload(_ context.Context, input 
 
 func (f *fakeMirrorUploadStaging) PresignUploadPart(_ context.Context, input uploadstagingports.PresignUploadPartInput) (uploadstagingports.PresignUploadPartOutput, error) {
 	return uploadstagingports.PresignUploadPartOutput{
-		URL: f.server.URL + "/multipart/" + input.UploadID + "/" + strconv.FormatInt(int64(input.PartNumber), 10),
+		URL: f.serverURL + "/multipart/" + input.UploadID + "/" + strconv.FormatInt(int64(input.PartNumber), 10),
 	}, nil
 }
 

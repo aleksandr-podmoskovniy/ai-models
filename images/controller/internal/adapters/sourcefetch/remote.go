@@ -19,6 +19,7 @@ package sourcefetch
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -44,10 +45,11 @@ type RemoteOptions struct {
 }
 
 type SourceMirrorOptions struct {
-	Bucket     string
-	Client     uploadstagingports.Client
-	Store      sourcemirrorports.Store
-	BasePrefix string
+	Bucket           string
+	Client           uploadstagingports.Client
+	UploadHTTPClient *http.Client
+	Store            sourcemirrorports.Store
+	BasePrefix       string
 }
 
 type RemoteResult struct {

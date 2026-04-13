@@ -44,6 +44,7 @@ type Config struct {
 }
 
 type Adapter struct {
+	httpClient *http.Client
 	client     *s3.Client
 	presign    *s3.PresignClient
 	downloader *manager.Downloader
@@ -78,11 +79,19 @@ func New(cfg Config) (*Adapter, error) {
 		options.BaseEndpoint = aws.String(strings.TrimSpace(cfg.EndpointURL))
 	})
 	return &Adapter{
+		httpClient: httpClient,
 		client:     client,
 		presign:    s3.NewPresignClient(client),
 		downloader: manager.NewDownloader(client),
 		uploader:   manager.NewUploader(client),
 	}, nil
+}
+
+func (a *Adapter) HTTPClient() *http.Client {
+	if a == nil {
+		return nil
+	}
+	return a.httpClient
 }
 
 func (c Config) Validate() error {

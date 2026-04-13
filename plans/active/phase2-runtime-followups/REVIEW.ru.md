@@ -87,3 +87,27 @@ Blocking findings нет.
 - cleanup сам по себе не уменьшает adapter/package count;
 - следующий structural drift надо продолжать давить по usage graph, а не по
   чисто текстовым rename-идеям.
+
+## Slice 11. Source-mirror custom-CA trust fix
+
+### Что проверено
+
+- presigned multipart upload path больше не использует `http.DefaultClient`
+  вслепую, если upload-staging adapter уже владеет CA-aware HTTP client;
+- wiring не размазан через ad-hoc config duplicate:
+  источник trust остаётся в S3 adapter, а source-mirror path только
+  переиспользует тот же transport;
+- regression coverage есть на двух уровнях:
+  - custom-CA TLS presigned upload endpoint
+  - publishworker wiring of the propagated HTTP client
+
+### Findings
+
+Blocking findings нет.
+
+### Residual risk
+
+- fix закрывает correctness на custom-CA endpoint, но не добавляет throughput
+  tuning или file-level parallelism;
+- live cluster still needs a fresh rollout before the `Gemma` smoke can be
+  expected to pass with this fix.

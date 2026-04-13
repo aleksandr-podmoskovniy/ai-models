@@ -589,6 +589,35 @@
   - this path also avoids introducing one more full local copy of the model
     just to satisfy `kitops`.
 
+## Live `Gemma 4` smoke after source-mirror transport landing
+
+- Scenario:
+  - `Model` in namespace `ai-models-smoke`
+  - `source.url=https://huggingface.co/google/gemma-4-E2B-it`
+  - same live cluster after resumable source-mirror byte path landed
+- Result:
+  - object was accepted, but failed before resolved revision/artifact publish;
+  - status and events showed:
+    - `RemoteIngestStarted`
+    - `PublicationFailed`
+    - `Put "https://s3.api.apiac.ru/.../UploadPart...": tls: failed to verify certificate: x509: certificate signed by unknown authority`
+- Root-cause proof:
+  - object-storage adapter in `internal/adapters/uploadstaging/s3/adapter.go`
+    already builds a CA-aware HTTP transport from the configured CA bundle;
+  - source-mirror multipart upload in
+    `internal/adapters/sourcefetch/huggingface_mirror_transport.go` was still
+    issuing presigned `PUT` requests via `http.DefaultClient`;
+  - therefore the new source-mirror byte path bypassed the configured S3 CA
+    trust and regressed on clusters with custom-CA object storage.
+- Outcome:
+  - corrective slice required:
+    - preserve the CA-aware HTTP client inside the S3 adapter;
+    - propagate it through publishworker/sourcefetch into
+      `SourceMirrorOptions`;
+    - use it for presigned multipart `UploadPart`;
+    - add regression coverage against a TLS endpoint trusted only by that
+      custom client.
+
 ## Live delete / GC evidence
 
 - Scenario:

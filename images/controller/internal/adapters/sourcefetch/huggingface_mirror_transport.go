@@ -269,7 +269,11 @@ func uploadMirrorPart(
 		return uploadstagingports.CompletedPart{}, err
 	}
 	request.Header.Set("Content-Type", huggingFaceMirrorUploadMimeType)
-	response, err := http.DefaultClient.Do(request)
+	httpClient := http.DefaultClient
+	if options != nil && options.UploadHTTPClient != nil {
+		httpClient = options.UploadHTTPClient
+	}
+	response, err := httpClient.Do(request)
 	if err != nil {
 		return uploadstagingports.CompletedPart{}, err
 	}

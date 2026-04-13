@@ -283,6 +283,32 @@ large corrective rebase bundle was completed and archived.
 - `make verify`
 - `git diff --check`
 
+## Slice 11. Restore custom-CA trust for source-mirror multipart uploads
+
+Цель:
+
+- убрать regression, при котором presigned multipart upload в source mirror
+  bypass'ит configured S3 CA trust;
+- не использовать `http.DefaultClient` для presigned `UploadPart`, если
+  upload-staging adapter уже владеет CA-aware HTTP transport.
+
+Артефакты:
+
+- `internal/adapters/uploadstaging/s3/adapter.go` exposes its CA-aware HTTP client
+- `internal/dataplane/publishworker/rawstage.go` propagates that client into
+  `sourcefetch.SourceMirrorOptions`
+- `internal/adapters/sourcefetch/huggingface_mirror_transport.go` uses the
+  propagated client for presigned multipart `PUT`
+- regressions for:
+  - custom-CA TLS presigned upload endpoint
+  - source-mirror wiring from upload-staging client into mirror options
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/sourcefetch ./internal/adapters/uploadstaging/s3 ./internal/dataplane/publishworker`
+- `make verify`
+- `git diff --check`
+
 ## Final validation
 
 - `find plans/active -maxdepth 2 -type f | sort`

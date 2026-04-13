@@ -19,6 +19,7 @@ package publishworker
 import (
 	"context"
 	"errors"
+	"net/http"
 	"path"
 	"strings"
 
@@ -27,6 +28,10 @@ import (
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
+
+type uploadHTTPClientProvider interface {
+	HTTPClient() *http.Client
+}
 
 func remoteRawStage(options Options) *sourcefetch.RawStageOptions {
 	if strings.TrimSpace(options.RawStageBucket) == "" || strings.TrimSpace(options.RawStageKeyPrefix) == "" {
@@ -72,8 +77,9 @@ func remoteSourceMirror(options Options) *sourcefetch.SourceMirrorOptions {
 		return nil
 	}
 	return &sourcefetch.SourceMirrorOptions{
-		Bucket: strings.TrimSpace(options.RawStageBucket),
-		Client: options.UploadStaging,
+		Bucket:           strings.TrimSpace(options.RawStageBucket),
+		Client:           options.UploadStaging,
+		UploadHTTPClient: uploadStagingHTTPClient(options.UploadStaging),
 		Store: &sourcemirrorobjectstore.Adapter{
 			Uploader:   options.UploadStaging,
 			Downloader: options.UploadStaging,
@@ -82,4 +88,12 @@ func remoteSourceMirror(options Options) *sourcefetch.SourceMirrorOptions {
 		},
 		BasePrefix: path.Join(options.RawStageKeyPrefix, ".mirror"),
 	}
+}
+
+func uploadStagingHTTPClient(client uploadstagingports.Client) *http.Client {
+	provider, ok := client.(uploadHTTPClientProvider)
+	if !ok {
+		return nil
+	}
+	return provider.HTTPClient()
 }

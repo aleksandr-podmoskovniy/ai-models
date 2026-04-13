@@ -55,6 +55,11 @@
 - следующий structural drift вскрылся уже не в naming, а в shared contracts:
   `internal/ports/publishop` всё ещё держал мёртвый `Result`, хотя live tree
   уже использует `publishedsnapshot.Result` и `publicationartifact.Result`.
+- live `Gemma 4` smoke после landed source-mirror byte path вскрыл новый
+  bounded regression:
+  presigned multipart upload в source mirror шёл через `http.DefaultClient`,
+  поэтому bypass'ил custom S3 CA trust и падал на
+  `x509: certificate signed by unknown authority`.
 
 Нужен новый компактный canonical active bundle, чтобы следующие bounded slices
 шли без повторного разрастания `plans/active`.
@@ -90,6 +95,7 @@
 - выровнять package map controller runtime и удалить live naming collisions.
 - вырезать мёртвые shared handoff types, если их responsibility уже живёт в
   более узких live models.
+- восстановить custom-CA trust в presigned source-mirror multipart upload path.
 
 ## Non-goals
 
@@ -144,6 +150,9 @@
 - в shared port packages больше не остаётся мёртвых result-wrapper types,
   которые не участвуют в live runtime path и только создают ложную общую
   boundary.
+- presigned multipart upload path для source mirror использует тот же
+  CA-aware HTTP trust contract, что и основной S3 adapter, и не ломается на
+  custom-CA object-storage endpoint.
 
 ## Риски
 
@@ -160,3 +169,6 @@
   превратится в монолит.
 - misleading package names могут снова замаскировать реальные boundaries и
   привести к следующему structural drift при первом же новом adapter slice.
+- presigned upload path может снова silently bypass'ить storage trust
+  settings, если HTTP client wiring останется локальной деталью S3 adapter
+  без отдельной regression coverage.
