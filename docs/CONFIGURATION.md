@@ -237,6 +237,42 @@ maintenance/read-only mode, runs physical blob garbage collection, and only
 then lets the controller remove the finalizer, while keeping backend internals
 out of public status.
 
+Runtime delivery no longer stops at a standalone materializer binary. The
+controller runtime now also carries a reusable K8s-side delivery adapter over
+that binary:
+
+- `materialize-artifact` now supports a cache-root contract and keeps
+  `store/<digest>/model` plus `/data/modelcache/current`;
+- `k8s/modeldelivery` now owns concrete consumer-side `PodTemplateSpec`
+  mutation over that init container and reuses an already mounted
+  `/data/modelcache` volume from the workload instead of inventing a second
+  volume contract;
+- runtime delivery now validates storage topology before mutation:
+  per-pod mounts and StatefulSet claim templates are accepted, a direct shared
+  PVC on multi-replica workloads now requires `ReadWriteMany`, and shared RWX
+  caches coordinate a single writer directly on the shared cache root;
+- the controller now adopts annotated `Deployment`, `StatefulSet`,
+  `DaemonSet`, and `CronJob` workloads directly:
+  `ai-models.deckhouse.io/model=<name>` for namespaced `Model` and
+  `ai-models.deckhouse.io/clustermodel=<name>` for `ClusterModel`;
+- the workload must already mount writable storage at `/data/modelcache`;
+  ai-models no longer invents a second delivery volume and does not mutate
+  direct `Job` objects through this controller-owned patch path;
+- generic runtime delivery stays controller-driven and opt-in instead of
+  adding blocking mutating or validating admission hooks for foreign workload
+  kinds; the controller now watches only opt-in or already-managed workloads
+  plus referenced `Model` / `ClusterModel` objects;
+- runtime containers are not patched with model env vars; runtimes read the
+  stable local path `/data/modelcache/current` explicitly in their own config;
+- OCI auth/CA reuse the existing controller-owned projected DMCR access,
+  including cross-namespace projection into the runtime namespace, instead of
+  inventing a second delivery-specific secret model.
+
+This still does not hard-wire `ai-models` into a concrete `ai-inference`
+module inside this repo. The landed seam is now a concrete consumer-side K8s
+service that another module can call without reimplementing materialization or
+registry-access projection.
+
 The HF import path now also leaves production-grade metadata in MLflow:
 
 - the source run gets HF-related params and tags;

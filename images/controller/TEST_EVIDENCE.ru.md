@@ -273,6 +273,57 @@
     adapter/runtime integration concern, not a unit-testable pure decision
     table
 
+## `internal/adapters/k8s/modeldelivery`
+
+- Decision surface:
+  - concrete consumer-side `PodTemplateSpec` mutation over
+    `materialize-artifact`
+  - reuse existing workload-mounted `/data/modelcache` storage instead of
+    inventing a second delivery volume contract
+  - stable local runtime path contract:
+    `/data/modelcache/current`
+  - topology rules:
+    per-pod mounts and StatefulSet claim templates pass, shared direct PVC on
+    multi-replica workloads requires RWX and cache-root single writer
+  - cross-namespace reuse of projected OCI auth/CA without a second
+    delivery-specific secret model
+- Primary evidence:
+  - `service_test.go`
+  - `service_topology_test.go`
+  - `render_test.go`
+  - `workload_hints_test.go`
+  - `materialize_artifact_test.go`
+  - `materialize_coordination_test.go`
+  - `internal/adapters/k8s/ociregistry/projection_test.go`
+  - `internal/adapters/modelpack/oci/materialize_test.go`
+- Residual gaps:
+  - concrete runtime wiring is landed as a reusable K8s service, but an
+    external consumer module still needs its own thin overlay to call it
+
+## `internal/controllers/workloaddelivery`
+
+- Decision surface:
+  - top-level workload annotation contract:
+    `ai-models.deckhouse.io/model` /
+    `ai-models.deckhouse.io/clustermodel`
+  - controller-owned mutation only for workloads with mutable
+    `PodTemplateSpec`
+  - generic workload delivery stays out of admission webhook surface and
+    keeps narrow opt-in / managed watch scope plus reverse reconcile from
+    referenced `Model` / `ClusterModel`
+  - stale delivery cleanup when annotation disappears or referenced model is
+    not `Ready`
+  - fail-closed shared direct PVC topology without leaked projected OCI auth
+- Primary evidence:
+  - `internal/controllers/workloaddelivery/annotations_test.go`
+  - `internal/controllers/workloaddelivery/predicate_test.go`
+  - `internal/controllers/workloaddelivery/reconciler_test.go`
+  - `cmd/ai-models-controller/config_test.go`
+  - `internal/adapters/k8s/modeldelivery/service_topology_test.go`
+- Residual gaps:
+  - live cluster proof for shared `RWX` writer/waiter coordination through the
+    workload delivery controller is still pending rollout
+
 ## `internal/adapters/sourcefetch`
 
 - Decision surface:

@@ -39,6 +39,15 @@ type WorkVolumeOptions struct {
 	PersistentVolumeClaimName string
 }
 
+type VolumeType = WorkVolumeType
+
+const (
+	VolumeTypeEmptyDir              = WorkVolumeTypeEmptyDir
+	VolumeTypePersistentVolumeClaim = WorkVolumeTypePersistentVolumeClaim
+)
+
+type VolumeOptions = WorkVolumeOptions
+
 type RuntimeOptions struct {
 	Namespace               string
 	Image                   string
@@ -94,19 +103,23 @@ func ValidateRuntimeOptions(component string, options RuntimeOptions) error {
 }
 
 func validateWorkVolumeOptions(component string, options WorkVolumeOptions) error {
+	return validateVolumeOptions(component, "work volume", options)
+}
+
+func validateVolumeOptions(component, volumeLabel string, options VolumeOptions) error {
 	switch options.Type {
 	case WorkVolumeTypeEmptyDir:
 		if options.EmptyDirSizeLimit.Sign() <= 0 {
-			return fmt.Errorf("%s work volume emptyDir sizeLimit must be greater than zero", component)
+			return fmt.Errorf("%s %s emptyDir sizeLimit must be greater than zero", component, volumeLabel)
 		}
 		return nil
 	case WorkVolumeTypePersistentVolumeClaim:
 		if strings.TrimSpace(options.PersistentVolumeClaimName) == "" {
-			return fmt.Errorf("%s work volume persistentVolumeClaim name must not be empty", component)
+			return fmt.Errorf("%s %s persistentVolumeClaim name must not be empty", component, volumeLabel)
 		}
 		return nil
 	default:
-		return fmt.Errorf("%s work volume type %q is unsupported", component, options.Type)
+		return fmt.Errorf("%s %s type %q is unsupported", component, volumeLabel, options.Type)
 	}
 }
 

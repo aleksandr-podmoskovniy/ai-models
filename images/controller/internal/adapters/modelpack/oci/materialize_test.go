@@ -179,3 +179,35 @@ func TestMaterializerReplacesStaleDestination(t *testing.T) {
 		t.Fatalf("unexpected digest %q", got)
 	}
 }
+
+func TestMaterializerNormalizesRootPayloadIntoStableModelPath(t *testing.T) {
+	t.Parallel()
+
+	server, auth, _ := newModelPackTestServer(t, modelPackServerOptions{
+		layerTar: tarBytes(t, map[string]string{
+			"config.json":           `{"model_type":"phi"}`,
+			"tokenizer_config.json": `{"tokenizer_class":"AutoTokenizer"}`,
+		}),
+	})
+	defer server.Close()
+
+	destination := filepath.Join(t.TempDir(), "current")
+	result, err := NewMaterializer().Materialize(context.Background(), modelpackports.MaterializeInput{
+		ArtifactURI:    serverReference(server, "@sha256:deadbeef"),
+		DestinationDir: destination,
+		ArtifactFamily: "hf-safetensors-v1",
+	}, auth)
+	if err != nil {
+		t.Fatalf("Materialize() error = %v", err)
+	}
+
+	if got, want := result.ModelPath, filepath.Join(destination, modelpackports.MaterializedModelPathName); got != want {
+		t.Fatalf("unexpected model path %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(result.ModelPath, "config.json")); err != nil {
+		t.Fatalf("expected normalized model config.json: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "config.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected root payload to move under stable model path, stat err = %v", err)
+	}
+}

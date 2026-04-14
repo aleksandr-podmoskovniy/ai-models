@@ -25,7 +25,9 @@ import (
 	apiinstall "github.com/deckhouse/ai-models/api/core/install"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	"github.com/deckhouse/ai-models/controller/internal/monitoring/catalogmetrics"
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -39,6 +41,7 @@ import (
 type Options struct {
 	CleanupJobs        catalogcleanup.Options
 	PublicationRuntime catalogstatus.Options
+	WorkloadDelivery   workloaddelivery.Options
 	Runtime            RuntimeOptions
 }
 
@@ -54,6 +57,7 @@ type App struct {
 	logger             *slog.Logger
 	cleanupJobs        catalogcleanup.Options
 	publicationRuntime catalogstatus.Options
+	workloadDelivery   workloaddelivery.Options
 	runtime            RuntimeOptions
 }
 
@@ -67,12 +71,16 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 	if err := options.PublicationRuntime.Validate(); err != nil {
 		return nil, err
 	}
+	if err := options.WorkloadDelivery.Validate(); err != nil {
+		return nil, err
+	}
 
 	runtimeOptions := normalizeRuntimeOptions(options.Runtime)
 
 	return &App{
 		cleanupJobs:        options.CleanupJobs,
 		publicationRuntime: options.PublicationRuntime,
+		workloadDelivery:   options.WorkloadDelivery,
 		logger:             logger,
 		runtime:            runtimeOptions,
 	}, nil
@@ -81,6 +89,9 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 func (a *App) Run(ctx context.Context) error {
 	scheme := runtime.NewScheme()
 	apiinstall.Install(scheme)
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		return err
+	}
 	if err := batchv1.AddToScheme(scheme); err != nil {
 		return err
 	}
@@ -112,6 +123,9 @@ func (a *App) Run(ctx context.Context) error {
 	if err := catalogstatus.SetupWithManager(mgr, a.publicationRuntime); err != nil {
 		return err
 	}
+	if err := workloaddelivery.SetupWithManager(mgr, a.workloadDelivery); err != nil {
+		return err
+	}
 	catalogmetrics.SetupCollector(
 		mgr.GetCache(),
 		metrics.Registry,
@@ -141,6 +155,13 @@ func (a *App) Run(ctx context.Context) error {
 			slog.String("publicationRuntimeImage", a.publicationRuntime.Runtime.Image),
 			slog.Int("publicationMaxConcurrentWorkers", a.publicationRuntime.MaxConcurrentWorkers),
 			slog.String("publicationWorkVolumeType", string(a.publicationRuntime.Runtime.WorkVolume.Type)),
+		)
+	}
+	if a.workloadDelivery.Enabled() {
+		a.logger.Info(
+			"controller workload delivery configured",
+			slog.String("deliveryRuntimeImage", a.workloadDelivery.Service.Render.RuntimeImage),
+			slog.String("deliveryRegistrySourceNamespace", a.workloadDelivery.Service.RegistrySourceNamespace),
 		)
 	}
 

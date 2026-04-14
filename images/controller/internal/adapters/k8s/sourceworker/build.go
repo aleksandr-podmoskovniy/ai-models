@@ -20,16 +20,12 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 func Build(request publicationports.Request, options Options, projectedAuthSecretName string) (*corev1.Pod, error) {
@@ -63,15 +59,7 @@ func buildWithPlan(
 		return nil, err
 	}
 
-	container := corev1.Container{
-		Name:            "publish",
-		Image:           options.Image,
-		ImagePullPolicy: imagePullPolicyFor(options),
-		Args:            append([]string{"publish-worker"}, buildArgs(request, sourcePlan, artifactURI, options)...),
-		Env:             buildEnv(options, sourcePlan, projectedAuthSecretName),
-		VolumeMounts:    buildVolumeMounts(options, sourcePlan),
-		Resources:       options.Resources,
-	}
+	container := buildContainer(request, sourcePlan, artifactURI, options, projectedAuthSecretName)
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -80,145 +68,8 @@ func buildWithPlan(
 			Labels:      buildLabels(request.Owner),
 			Annotations: resourcenames.OwnerAnnotations(request.Owner.Kind, request.Owner.Name, request.Owner.Namespace),
 		},
-		Spec: corev1.PodSpec{
-			RestartPolicy:      corev1.RestartPolicyNever,
-			ServiceAccountName: options.ServiceAccountName,
-			ImagePullSecrets:   imagePullSecrets(options.ImagePullSecretName),
-			Volumes:            buildVolumes(options, sourcePlan, projectedAuthSecretName),
-			Containers:         []corev1.Container{container},
-		},
+		Spec: buildPodSpec(options, sourcePlan, projectedAuthSecretName, container),
 	}, nil
-}
-
-func imagePullPolicyFor(options Options) corev1.PullPolicy {
-	if options.ImagePullPolicy != "" {
-		return options.ImagePullPolicy
-	}
-	return corev1.PullIfNotPresent
-}
-
-func imagePullSecrets(secretName string) []corev1.LocalObjectReference {
-	if strings.TrimSpace(secretName) == "" {
-		return nil
-	}
-	return []corev1.LocalObjectReference{{Name: strings.TrimSpace(secretName)}}
-}
-
-func buildLabels(owner publicationports.Owner) map[string]string {
-	return resourcenames.OwnerLabels("ai-models-publication", owner.Kind, owner.Name, owner.UID, owner.Namespace)
-}
-
-func buildEnv(
-	options Options,
-	plan publicationapp.SourceWorkerPlan,
-	projectedAuthSecretName string,
-) []corev1.EnvVar {
-	env := ociregistry.Env(options.OCIInsecure, options.OCIRegistrySecretName, options.OCIRegistryCASecretName)
-	env = append(env, corev1.EnvVar{
-		Name:  "TMPDIR",
-		Value: workloadpod.WorkVolumeMountPath,
-	})
-	env = append(env, corev1.EnvVar{
-		Name:  "LOG_FORMAT",
-		Value: options.LogFormat,
-	})
-	env = append(env, storageprojection.Env(options.ObjectStorage)...)
-	if plan.HuggingFace != nil && plan.HuggingFace.AuthSecretRef != nil {
-		env = append(env, corev1.EnvVar{
-			Name: "HF_TOKEN",
-			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef: &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{Name: projectedAuthSecretName},
-					Key:                  "token",
-				},
-			},
-		})
-	}
-	return env
-}
-
-func buildVolumeMounts(options Options, plan publicationapp.SourceWorkerPlan) []corev1.VolumeMount {
-	var extra []corev1.VolumeMount
-	extra = storageprojection.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
-	return workloadpod.VolumeMounts(options.RuntimeOptions, extra...)
-}
-
-func buildVolumes(
-	options Options,
-	_ publicationapp.SourceWorkerPlan,
-	_ string,
-) []corev1.Volume {
-	var extra []corev1.Volume
-	extra = storageprojection.Volumes(options.ObjectStorage.CASecretName, extra...)
-	return workloadpod.Volumes(options.RuntimeOptions, extra...)
-}
-
-func buildArgs(
-	request publicationports.Request,
-	plan publicationapp.SourceWorkerPlan,
-	artifactURI string,
-	options Options,
-) []string {
-	args := []string{
-		"--artifact-uri", artifactURI,
-		"--source-type", string(plan.SourceType),
-		"--snapshot-dir", workloadpod.WorkVolumeMountPath,
-	}
-	if strings.TrimSpace(string(plan.InputFormat)) != "" {
-		args = append(args, "--input-format", string(plan.InputFormat))
-	}
-	if plan.Task != "" {
-		args = append(args, "--task", plan.Task)
-	}
-	for _, engine := range plan.RuntimeEngines {
-		args = append(args, "--runtime-engine", engine)
-	}
-	return append(args, sourceArgs(plan, request.Owner.UID, options.ObjectStorage.Bucket)...)
-}
-
-func sourceArgs(plan publicationapp.SourceWorkerPlan, ownerUID types.UID, rawBucket string) []string {
-	if plan.HuggingFace != nil {
-		return append(huggingFaceArgs(plan.HuggingFace), remoteRawStageArgs(ownerUID, rawBucket)...)
-	}
-	if plan.Upload != nil {
-		return uploadArgs(plan.Upload)
-	}
-	return nil
-}
-
-func huggingFaceArgs(source *publicationapp.HuggingFaceSourcePlan) []string {
-	args := []string{"--hf-model-id", source.RepoID}
-	if strings.TrimSpace(source.Revision) != "" {
-		args = append(args, "--revision", source.Revision)
-	}
-	return args
-}
-
-func uploadArgs(source *publicationapp.UploadSourcePlan) []string {
-	args := []string{
-		"--upload-stage-bucket", source.Stage.Bucket,
-		"--upload-stage-key", source.Stage.Key,
-	}
-	if strings.TrimSpace(source.Stage.FileName) != "" {
-		args = append(args, "--upload-stage-file-name", source.Stage.FileName)
-	}
-	return args
-}
-
-func remoteRawStageArgs(ownerUID types.UID, rawBucket string) []string {
-	if strings.TrimSpace(rawBucket) == "" {
-		return nil
-	}
-
-	keyPrefix, err := resourcenames.UploadStagingObjectPrefix(ownerUID)
-	if err != nil {
-		return nil
-	}
-
-	return []string{
-		"--raw-stage-bucket", rawBucket,
-		"--raw-stage-key-prefix", keyPrefix + "/source-url",
-	}
 }
 
 func validateProjectedAuthSecretName(

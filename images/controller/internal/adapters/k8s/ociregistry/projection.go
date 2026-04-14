@@ -48,6 +48,30 @@ func EnsureProjectedAccess(
 	sourceAuthSecretName string,
 	sourceCASecretName string,
 ) (Projection, error) {
+	return EnsureProjectedAccessFromSourceNamespace(
+		ctx,
+		kubeClient,
+		scheme,
+		owner,
+		namespace,
+		ownerUID,
+		namespace,
+		sourceAuthSecretName,
+		sourceCASecretName,
+	)
+}
+
+func EnsureProjectedAccessFromSourceNamespace(
+	ctx context.Context,
+	kubeClient client.Client,
+	scheme *runtime.Scheme,
+	owner client.Object,
+	targetNamespace string,
+	ownerUID types.UID,
+	sourceNamespace string,
+	sourceAuthSecretName string,
+	sourceCASecretName string,
+) (Projection, error) {
 	switch {
 	case kubeClient == nil:
 		return Projection{}, errors.New("oci registry projection client must not be nil")
@@ -55,17 +79,20 @@ func EnsureProjectedAccess(
 		return Projection{}, errors.New("oci registry projection scheme must not be nil")
 	case owner == nil:
 		return Projection{}, errors.New("oci registry projection owner must not be nil")
-	case strings.TrimSpace(namespace) == "":
+	case strings.TrimSpace(targetNamespace) == "":
 		return Projection{}, errors.New("oci registry projection namespace must not be empty")
 	case strings.TrimSpace(sourceAuthSecretName) == "":
 		return Projection{}, errors.New("oci registry projection source auth secret name must not be empty")
+	}
+	if strings.TrimSpace(sourceNamespace) == "" {
+		sourceNamespace = targetNamespace
 	}
 
 	authSecretName, err := resourcenames.OCIRegistryAuthSecretName(ownerUID)
 	if err != nil {
 		return Projection{}, err
 	}
-	if err := ensureProjectedAuthSecret(ctx, kubeClient, scheme, owner, namespace, authSecretName, sourceAuthSecretName); err != nil {
+	if err := ensureProjectedAuthSecret(ctx, kubeClient, scheme, owner, targetNamespace, authSecretName, sourceNamespace, sourceAuthSecretName); err != nil {
 		return Projection{}, err
 	}
 
@@ -78,7 +105,7 @@ func EnsureProjectedAccess(
 	if err != nil {
 		return Projection{}, err
 	}
-	if err := ensureProjectedCASecret(ctx, kubeClient, scheme, owner, namespace, caSecretName, sourceCASecretName); err != nil {
+	if err := ensureProjectedCASecret(ctx, kubeClient, scheme, owner, targetNamespace, caSecretName, sourceNamespace, sourceCASecretName); err != nil {
 		return Projection{}, err
 	}
 	projection.CASecretName = caSecretName
@@ -116,12 +143,13 @@ func ensureProjectedAuthSecret(
 	kubeClient client.Client,
 	scheme *runtime.Scheme,
 	owner client.Object,
-	namespace string,
+	targetNamespace string,
 	projectedSecretName string,
+	sourceNamespace string,
 	sourceSecretName string,
 ) error {
 	sourceSecret := &corev1.Secret{}
-	sourceKey := client.ObjectKey{Name: sourceSecretName, Namespace: namespace}
+	sourceKey := client.ObjectKey{Name: sourceSecretName, Namespace: sourceNamespace}
 	if err := kubeClient.Get(ctx, sourceKey, sourceSecret); err != nil {
 		return err
 	}
@@ -134,7 +162,7 @@ func ensureProjectedAuthSecret(
 	projectedSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      projectedSecretName,
-			Namespace: namespace,
+			Namespace: targetNamespace,
 		},
 	}
 	_, err = controllerutil.CreateOrUpdate(ctx, kubeClient, projectedSecret, func() error {
@@ -150,25 +178,26 @@ func ensureProjectedCASecret(
 	kubeClient client.Client,
 	scheme *runtime.Scheme,
 	owner client.Object,
-	namespace string,
+	targetNamespace string,
 	projectedSecretName string,
+	sourceNamespace string,
 	sourceSecretName string,
 ) error {
 	sourceSecret := &corev1.Secret{}
-	sourceKey := client.ObjectKey{Name: sourceSecretName, Namespace: namespace}
+	sourceKey := client.ObjectKey{Name: sourceSecretName, Namespace: sourceNamespace}
 	if err := kubeClient.Get(ctx, sourceKey, sourceSecret); err != nil {
 		return err
 	}
 
 	cert := bytes.TrimSpace(sourceSecret.Data["ca.crt"])
 	if len(cert) == 0 {
-		return fmt.Errorf("oci registry CA secret %s/%s must contain ca.crt", namespace, sourceSecretName)
+		return fmt.Errorf("oci registry CA secret %s/%s must contain ca.crt", sourceNamespace, sourceSecretName)
 	}
 
 	projectedSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      projectedSecretName,
-			Namespace: namespace,
+			Namespace: targetNamespace,
 		},
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, kubeClient, projectedSecret, func() error {

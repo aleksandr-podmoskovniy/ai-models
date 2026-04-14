@@ -38,10 +38,11 @@ large corrective rebase bundle was completed and archived.
 
 Текущие живые направления:
 
-1. Runtime delivery wiring
+1. Runtime delivery closure in-repo
    - consumer-side use of `materialize-artifact`
    - read-only DMCR auth projection
-   - local model path contract for runtimes
+   - fixed local cache-root contract for runtimes
+   - concrete reusable `PodTemplateSpec` mutation service
 
 2. `HuggingFace` ingest hardening
    - native downloader/cache semantics
@@ -75,6 +76,11 @@ large corrective rebase bundle was completed and archived.
    - keep support/adapters package inventory aligned with the current tree
    - keep `cmd/*` entrypoints thin: env contract, quantity parsing and bootstrap
      composition must not collapse back into one oversized `run.go`
+
+6. Consumer-module adoption outside `ai-models`
+   - in-repo runtime delivery seam must stay reusable and concrete
+   - future runtime modules should add only thin overlays over
+     `k8s/modeldelivery`, not reimplement delivery
 
 ## Slice 1. Archive giant active bundle
 
@@ -311,6 +317,100 @@ large corrective rebase bundle was completed and archived.
 - `make verify`
 - `git diff --check`
 
+## Slice 22. Split catalogmetrics collector internals
+
+Цель:
+
+- убрать ещё один локальный монолит из controller runtime tree;
+- не оставлять `internal/monitoring/catalogmetrics/collector.go` местом, где
+  одновременно живут descriptor shell, Kubernetes list paths и per-kind metric
+  emission.
+
+Артефакты:
+
+- `internal/monitoring/catalogmetrics/collector.go` as thin collector shell
+- `internal/monitoring/catalogmetrics/collect.go` for list/read paths
+- `internal/monitoring/catalogmetrics/report.go` for metric emission helpers
+- updated `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/monitoring/catalogmetrics`
+- `make verify`
+- `git diff --check`
+
+## Slice 23. Split publishworker runtime internals
+
+Цель:
+
+- убрать следующий локальный монолит из dataplane runtime tree;
+- не оставлять `internal/dataplane/publishworker/run.go` местом, где
+  одновременно живут worker-level contract shell, HF-specific remote path и
+  profile/publish resolution.
+
+Артефакты:
+
+- `internal/dataplane/publishworker/run.go` as thin worker contract shell
+- `internal/dataplane/publishworker/huggingface.go` for HF fetch/publish path
+- `internal/dataplane/publishworker/profile.go` for profile resolution and
+  publish handoff
+- updated `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/dataplane/publishworker`
+- `make verify`
+- `git diff --check`
+
+## Slice 24. Split Safetensors profile resolver internals
+
+Цель:
+
+- убрать следующий локальный монолит из concrete modelprofile tree;
+- не оставлять `internal/adapters/modelprofile/safetensors/profile.go` местом,
+  где одновременно живут top-level `Resolve`, checkpoint config parsing/value
+  helpers и capability inference.
+
+Артефакты:
+
+- `internal/adapters/modelprofile/safetensors/profile.go` as thin orchestration
+- `internal/adapters/modelprofile/safetensors/config.go` for config/value
+  parsing helpers
+- `internal/adapters/modelprofile/safetensors/detect.go` for family/context/
+  precision/quantization/parameter inference helpers
+- updated `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelprofile/safetensors`
+- `make verify`
+- `git diff --check`
+
+## Slice 25. Split publishstate policy validation internals
+
+Цель:
+
+- убрать следующий локальный монолит из domain tree;
+- не оставлять `internal/domain/publishstate/policy_validation.go` местом,
+  где одновременно живут policy evaluation, inferred model capability mapping
+  и normalization/intersection helpers.
+
+Артефакты:
+
+- `internal/domain/publishstate/policy_validation.go` as top-level policy
+  evaluation shell
+- `internal/domain/publishstate/policy_infer.go` for inferred model type and
+  endpoint capability mapping
+- `internal/domain/publishstate/policy_normalize.go` for normalization and
+  set-intersection helpers
+- updated `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/domain/publishstate`
+- `make verify`
+- `git diff --check`
+
 ## Slice 12. Split oversized controller entrypoint shell
 
 Цель:
@@ -410,6 +510,355 @@ large corrective rebase bundle was completed and archived.
 Проверки:
 
 - `cd images/controller && go test ./internal/adapters/sourcefetch`
+- `make verify`
+- `git diff --check`
+
+## Slice 16. Land reusable runtime delivery wiring
+
+Цель:
+
+- закрыть open workstream, где `materialize-artifact` уже существует, но
+  consumer-side wiring отсутствует;
+- не изобретать concrete inference consumer inside `ai-models`, а собрать
+  reusable K8s adapter над already-landed materializer и OCI auth projection;
+- зафиксировать stable local cache-root contract for runtimes.
+
+Артефакты:
+
+- updated `internal/ports/modelpack/*` for stable materialized model path contract
+- updated `internal/adapters/modelpack/oci/*` to enforce that contract
+- new `internal/adapters/k8s/modeldelivery/*`
+- updated `images/controller/STRUCTURE.ru.md`
+- updated `images/controller/README.md`
+- updated `docs/README.md`
+- updated `docs/README.ru.md`
+- updated `docs/CONFIGURATION.md`
+- updated `docs/CONFIGURATION.ru.md`
+- updated `images/controller/TEST_EVIDENCE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelpack/oci ./internal/adapters/k8s/modeldelivery ./cmd/ai-models-artifact-runtime`
+- `make verify`
+- `git diff --check`
+
+## Slice 17. Split OCI materializer internals after runtime delivery landing
+
+Цель:
+
+- не оставлять `internal/adapters/modelpack/oci/materialize.go` новым локальным
+  монолитом сразу после landing runtime delivery contract;
+- вынести в отдельные files distinct concerns:
+  - stable materialized-path contract normalization
+  - destination safe-swap
+  - marker-based reuse
+- удержать `STRUCTURE.ru.md` в синхроне с реальным package tree.
+
+Артефакты:
+
+- simplified `internal/adapters/modelpack/oci/materialize.go`
+- new `internal/adapters/modelpack/oci/materialize_contract.go`
+- new `internal/adapters/modelpack/oci/materialize_destination.go`
+- new `internal/adapters/modelpack/oci/materialize_reuse.go`
+- aligned `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelpack/oci ./cmd/ai-models-artifact-runtime`
+- `make verify`
+- `git diff --check`
+
+## Slice 18. Reuse shared bounded-volume contract for runtime delivery
+
+Цель:
+
+- не держать два параллельных bounded-volume contracts в
+  `k8s/workloadpod` и `k8s/modeldelivery`;
+- reuse already-live `workloadpod` volume semantics for the new consumer-side
+  delivery seam without inventing second mini-framework for PVC/EmptyDir;
+- выровнять wording и package map after the merge.
+
+Статус:
+
+- historical intermediate slice; later simplified further by Slice 27,
+  which removed `modeldelivery`-owned volume policy entirely in favor of
+  user-owned `/data/modelcache`.
+
+Артефакты:
+
+- updated `internal/adapters/k8s/workloadpod/options.go`
+- updated `internal/adapters/k8s/workloadpod/render.go`
+- updated `internal/adapters/k8s/modeldelivery/options.go`
+- updated `internal/adapters/k8s/modeldelivery/render.go`
+- updated `internal/adapters/k8s/modeldelivery/render_test.go`
+- aligned `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/workloadpod ./internal/adapters/k8s/modeldelivery`
+- `make verify`
+- `git diff --check`
+
+## Slice 19. Split sourceworker pod rendering internals
+
+Цель:
+
+- не оставлять `internal/adapters/k8s/sourceworker/build.go` следующей
+  oversized pod-rendering точкой после cleanup `cmd/*`, `uploadsession/` и
+  `oci/materialize`;
+- вынести distinct concerns:
+  - top-level build orchestration
+  - runtime env/volume/pod shaping
+  - source-specific argv shaping for `HuggingFace` and `Upload`;
+- сохранить current publish-worker pod semantics without new adapter layers.
+
+Артефакты:
+
+- simplified `internal/adapters/k8s/sourceworker/build.go`
+- new `internal/adapters/k8s/sourceworker/build_runtime.go`
+- new `internal/adapters/k8s/sourceworker/build_args.go`
+- aligned `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/sourceworker`
+- `make verify`
+- `git diff --check`
+
+## Slice 20. Split cmdsupport shared process glue
+
+Цель:
+
+- не оставлять `internal/cmdsupport/common.go` shared-process monolith после
+  logging-contract hardening;
+- вынести separate concerns:
+  - env parsing/pass-through helpers
+  - structured logging contract and controller-runtime/klog bridge
+  - runtime signal/termination helpers;
+- сохранить current runtime entrypoint semantics unchanged.
+
+Артефакты:
+
+- simplified `internal/cmdsupport/common.go`
+- new `internal/cmdsupport/env.go`
+- new `internal/cmdsupport/logging.go`
+- new `internal/cmdsupport/runtime.go`
+- aligned `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/cmdsupport ./cmd/ai-models-controller ./cmd/ai-models-artifact-runtime`
+- `make verify`
+- `git diff --check`
+
+## Slice 21. Split kitops concrete adapter internals
+
+Цель:
+
+- не оставлять `internal/adapters/modelpack/kitops/adapter.go` oversized
+  concrete adapter entrypoint;
+- вынести separate concerns:
+  - publish/remove orchestration
+  - command/auth shell
+  - Kitfile/context prep
+  - OCI reference and runtime env helpers;
+- сохранить current `KitOps = pack/push/remove shell` boundary unchanged.
+
+Артефакты:
+
+- simplified `internal/adapters/modelpack/kitops/adapter.go`
+- new `internal/adapters/modelpack/kitops/command.go`
+- new `internal/adapters/modelpack/kitops/context.go`
+- new `internal/adapters/modelpack/kitops/reference.go`
+- aligned `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelpack/kitops`
+- `make verify`
+- `git diff --check`
+
+## Slice 26. Close concrete runtime delivery service
+
+Цель:
+
+- довести `k8s/modeldelivery` от reusable render seam до concrete
+  consumer-side K8s service;
+- закрыть compile/verify drift вокруг cross-namespace projected DMCR auth/CA
+  reuse;
+- зафиксировать в docs и bundle, что in-repo runtime delivery boundary теперь
+  действительно landed, а внешним runtime modules остаётся только thin
+  overlay over this service.
+
+Артефакты:
+
+- fixed `internal/adapters/k8s/ociregistry/projection.go`
+- updated `internal/adapters/k8s/ociregistry/projection_test.go`
+- updated `internal/adapters/k8s/modeldelivery/service_test.go`
+- aligned:
+  - `docs/CONFIGURATION.md`
+  - `docs/CONFIGURATION.ru.md`
+  - `images/controller/README.md`
+  - `images/controller/STRUCTURE.ru.md`
+  - `images/controller/TEST_EVIDENCE.ru.md`
+  - `plans/active/phase2-runtime-followups/TASK.ru.md`
+  - `plans/active/phase2-runtime-followups/REVIEW.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/ociregistry ./internal/adapters/k8s/modeldelivery`
+- `cd images/controller && go test ./cmd/ai-models-artifact-runtime ./internal/adapters/modelpack/oci`
+- `make verify`
+- `git diff --check`
+
+## Slice 27. Simplify runtime delivery to user-owned `/data/modelcache`
+
+Цель:
+
+- убрать из landed runtime-delivery surface старый contract
+  `emptyDir + runtime env + target container`;
+- зафиксировать один delivery hook:
+  workload сам предоставляет storage mount at `/data/modelcache`;
+- перевести `materialize-artifact` на cache-root semantics:
+  `store/<digest>/model` plus `current` symlink.
+
+Артефакты:
+
+- updated `cmd/ai-models-artifact-runtime/materialize_artifact.go`
+- updated `cmd/ai-models-artifact-runtime/materialize_artifact_test.go`
+- updated `internal/adapters/k8s/modeldelivery/*`
+- aligned:
+  - `docs/CONFIGURATION.md`
+  - `docs/CONFIGURATION.ru.md`
+  - `images/controller/README.md`
+  - `images/controller/STRUCTURE.ru.md`
+  - `images/controller/TEST_EVIDENCE.ru.md`
+  - `plans/active/phase2-runtime-followups/TASK.ru.md`
+  - `plans/active/phase2-runtime-followups/REVIEW.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./cmd/ai-models-artifact-runtime ./internal/adapters/k8s/modeldelivery ./internal/adapters/modelpack/oci`
+- `make verify`
+- `git diff --check`
+
+## Slice 28. Fail-closed runtime delivery topology
+
+Цель:
+
+- закрепить корректную storage topology для reusable runtime delivery seam;
+- допустить per-pod storage и StatefulSet claim templates;
+- fail-closed reject'ить direct shared PVC на multi-replica workloads до
+  отдельного RWX writer/waiter slice.
+
+Артефакты:
+
+- updated `internal/adapters/k8s/modeldelivery/service.go`
+- added `internal/adapters/k8s/modeldelivery/topology.go`
+- added `internal/adapters/k8s/modeldelivery/workload_hints.go`
+- updated:
+  - `internal/adapters/k8s/modeldelivery/service_test.go`
+  - `internal/adapters/k8s/modeldelivery/workload_hints_test.go`
+  - `docs/CONFIGURATION.md`
+  - `docs/CONFIGURATION.ru.md`
+  - `images/controller/README.md`
+  - `images/controller/STRUCTURE.ru.md`
+  - `images/controller/TEST_EVIDENCE.ru.md`
+  - `plans/active/phase2-runtime-followups/TASK.ru.md`
+  - `plans/active/phase2-runtime-followups/REVIEW.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/modeldelivery`
+- `cd images/controller && go test ./cmd/ai-models-artifact-runtime ./internal/adapters/modelpack/oci`
+- `make verify`
+- `git diff --check`
+
+## Slice 29. Shared RWX runtime cache coordination
+
+Цель:
+
+- довести reusable runtime delivery seam до корректного shared RWX path;
+- допустить direct shared PVC на multi-replica workloads только при
+  `ReadWriteMany`;
+- координировать single writer прямо на shared cache root внутри
+  `materialize-artifact`, не добавляя новых user-facing knobs и не требуя
+  extra RBAC от service account'ов consumer workload'ов.
+
+Артефакты:
+
+- updated `cmd/ai-models-artifact-runtime/materialize_artifact.go`
+- added `cmd/ai-models-artifact-runtime/materialize_coordination.go`
+- added `cmd/ai-models-artifact-runtime/materialize_coordination_test.go`
+- added `internal/adapters/k8s/modeldelivery/coordination.go`
+- updated:
+  - `internal/adapters/k8s/modeldelivery/render.go`
+  - `internal/adapters/k8s/modeldelivery/render_test.go`
+  - `internal/adapters/k8s/modeldelivery/service.go`
+  - `internal/adapters/k8s/modeldelivery/service_topology_test.go`
+  - `internal/adapters/k8s/modeldelivery/topology.go`
+  - `docs/CONFIGURATION.md`
+  - `docs/CONFIGURATION.ru.md`
+  - `images/controller/README.md`
+  - `images/controller/STRUCTURE.ru.md`
+  - `images/controller/TEST_EVIDENCE.ru.md`
+  - `plans/active/phase2-runtime-followups/TASK.ru.md`
+  - `plans/active/phase2-runtime-followups/REVIEW.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/modeldelivery ./cmd/ai-models-artifact-runtime`
+- `cd images/controller && go test ./internal/adapters/modelpack/oci`
+- `make verify`
+- `git diff --check`
+
+## Slice 30. Controller-owned workload delivery adoption
+
+Цель:
+
+- довести runtime delivery до live controller-owned path внутри `ai-models`;
+- принять только top-level workload annotations
+  `ai-models.deckhouse.io/model` /
+  `ai-models.deckhouse.io/clustermodel` без новых knobs;
+- мутировать только workload kinds с mutable `PodTemplateSpec`;
+- fail-closed чистить stale managed state и reject'ить invalid shared PVC
+  topology без leaked projected OCI auth;
+- удержать workload delivery вне generic admission webhook surface: controller
+  должен watch'ить только opt-in/managed workloads и requeue'ить их по
+  referenced `Model` / `ClusterModel`, а не через steady-state polling по
+  всему cluster workload set.
+
+Артефакты:
+
+- added `internal/controllers/workloaddelivery/annotations.go`
+- added `internal/controllers/workloaddelivery/options.go`
+- added `internal/controllers/workloaddelivery/predicate.go`
+- added `internal/controllers/workloaddelivery/reconciler.go`
+- added `internal/controllers/workloaddelivery/resolve.go`
+- added `internal/controllers/workloaddelivery/setup.go`
+- added `internal/controllers/workloaddelivery/template.go`
+- added `internal/controllers/workloaddelivery/watch.go`
+- added:
+  - `internal/controllers/workloaddelivery/annotations_test.go`
+  - `internal/controllers/workloaddelivery/predicate_test.go`
+  - `internal/controllers/workloaddelivery/reconciler_test.go`
+  - `cmd/ai-models-controller/config_test.go`
+- updated:
+  - `internal/bootstrap/bootstrap.go`
+  - `cmd/ai-models-controller/config.go`
+  - `internal/adapters/k8s/modeldelivery/service.go`
+  - `templates/controller/rbac.yaml`
+  - `docs/CONFIGURATION.md`
+  - `docs/CONFIGURATION.ru.md`
+  - `images/controller/README.md`
+  - `images/controller/STRUCTURE.ru.md`
+  - `images/controller/TEST_EVIDENCE.ru.md`
+  - `plans/active/phase2-runtime-followups/TASK.ru.md`
+  - `plans/active/phase2-runtime-followups/REVIEW.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/controllers/workloaddelivery ./internal/bootstrap ./cmd/ai-models-controller ./internal/adapters/k8s/modeldelivery`
 - `make verify`
 - `git diff --check`
 

@@ -96,6 +96,11 @@
 - вырезать мёртвые shared handoff types, если их responsibility уже живёт в
   более узких live models.
 - восстановить custom-CA trust в presigned source-mirror multipart upload path.
+- довести runtime delivery до reusable consumer-side wiring:
+  - stable local model path contract
+  - read-only DMCR auth projection reuse
+  - concrete `PodTemplateSpec` mutation and init-container wiring for
+    `materialize-artifact`
 - разрезать oversized controller entrypoint shell, если `cmd/` снова начинает
   смешивать env contract, resource parsing и bootstrap wiring в одном файле.
 - держать `cmd/ai-models-controller` defendable как thin shell после недавних
@@ -143,6 +148,11 @@
 - `images/controller/internal/adapters/*`
 - `images/controller/STRUCTURE.ru.md`
 - `images/controller/TEST_EVIDENCE.ru.md`
+- `images/controller/README.md`
+- `docs/README.md`
+- `docs/README.ru.md`
+- `docs/CONFIGURATION.md`
+- `docs/CONFIGURATION.ru.md`
 
 ## Критерии приёмки
 
@@ -175,6 +185,55 @@
 - presigned multipart upload path для source mirror использует тот же
   CA-aware HTTP trust contract, что и основной S3 adapter, и не ломается на
   custom-CA object-storage endpoint.
+- consumer-side runtime delivery больше не остаётся только intent в docs:
+  concrete reusable K8s `PodTemplateSpec` mutation service над
+  `materialize-artifact` landed, stable local cache-root contract
+  `/data/modelcache/current` зафиксирован, а read-only DMCR auth/CA
+  projection reused без нового ad-hoc shell и с cross-namespace
+  runtime-namespace delivery.
+- runtime delivery topology должна оставаться fail-closed:
+  per-pod storage и StatefulSet claim templates допускаются, direct shared PVC
+  на multi-replica workloads должен требовать `ReadWriteMany`, а shared RWX
+  cache обязан координировать одного writer прямо на shared cache root.
+- touched delivery/runtime code не должен оставлять новый локальный монолит в
+  `internal/adapters/modelpack/oci/materialize.go` и не должен снова уводить
+  `STRUCTURE.ru.md` от реального package tree.
+- reusable `modeldelivery` seam не должен тащить второй bounded-volume
+  contract рядом с уже существующим `workloadpod` runtime surface.
+- reusable `modeldelivery` seam не должен автоматически invent storage:
+  workload сам предоставляет mount на `/data/modelcache`, а delivery wiring
+  inject'ит только `materialize-artifact`, projected OCI auth/CA и digest
+  rollout annotation без runtime env patching.
+- concrete controller-owned workload delivery path должен принять этот seam
+  без новых user-facing knobs: только top-level annotations
+  `ai-models.deckhouse.io/model` / `ai-models.deckhouse.io/clustermodel`,
+  только mutable workload templates, только user-provided `/data/modelcache`
+  storage, и без ложной поддержки прямых `Job`.
+- generic workload delivery не должен превращаться в cluster-wide admission
+  choke point: никаких blocking mutating/validating hooks на чужие workload
+  kinds, только controller-driven opt-in adoption, узкий watch scope по
+  opt-in/managed workloads и reverse reconcile от `Model` / `ClusterModel`.
+- `sourceworker/build.go` не должен оставаться следующей oversized pod-rendering
+  точкой, где вместе живут orchestration, env shaping, volume shaping и
+  source-specific argv.
+- `cmdsupport/common.go` после logging hardening не должен оставаться shared
+  process-level god-file, который одновременно держит env, runtime signal glue
+  и structured logging contract.
+- `modelpack/kitops/adapter.go` не должен оставаться следующей oversized
+  concrete adapter entrypoint, где смешаны publish/remove orchestration,
+  command/auth shell, Kitfile context prep и OCI reference helpers.
+- `internal/monitoring/catalogmetrics/collector.go` не должен оставаться
+  collector-local god-file, где вместе живут descriptor shell, Kubernetes list
+  paths и per-kind metric emission.
+- `internal/dataplane/publishworker/run.go` не должен оставаться dataplane-local
+  god-file, где вместе живут worker contract shell, HF-specific remote path и
+  profile/publish resolution.
+- `internal/adapters/modelprofile/safetensors/profile.go` не должен оставаться
+  resolver-local god-file, где вместе живут `Resolve`, checkpoint config
+  parsing/value helpers и capability inference.
+- `internal/domain/publishstate/policy_validation.go` не должен оставаться
+  domain-local god-file, где вместе живут policy evaluation, inferred model
+  capability mapping и normalization/intersection helpers.
 
 ## Риски
 

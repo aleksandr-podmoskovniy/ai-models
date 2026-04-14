@@ -16,7 +16,13 @@ limitations under the License.
 
 package modelpack
 
-import "context"
+import (
+	"context"
+	"path/filepath"
+	"strings"
+)
+
+const MaterializedModelPathName = "model"
 
 type RegistryAuth struct {
 	Username string
@@ -63,4 +69,13 @@ type Remover interface {
 
 type Materializer interface {
 	Materialize(ctx context.Context, input MaterializeInput, auth RegistryAuth) (MaterializeResult, error)
+}
+
+func MaterializedModelPath(destinationDir string) string {
+	destinationDir = filepath.Clean(strings.TrimSpace(destinationDir))
+	if destinationDir == "" || destinationDir == "." {
+		return MaterializedModelPathName
+	}
+
+	return filepath.Join(destinationDir, MaterializedModelPathName)
 }

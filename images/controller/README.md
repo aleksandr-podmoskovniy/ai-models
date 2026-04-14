@@ -55,6 +55,22 @@ Current phase-2 slice implemented here:
 - `internal/adapters/modelpack/oci` for shared OCI-side published artifact
   inspection, `ModelPack` semantic validation, and standalone runtime
   materialization into a local path from immutable `DMCR` artifacts;
+- `internal/adapters/k8s/modeldelivery` for reusable consumer-side
+  `PodTemplateSpec` mutation over `materialize-artifact`, fixed
+  `/data/modelcache` cache-root contract over user-provided storage,
+  topology-aware per-pod versus direct shared PVC handling with RWX
+  single-writer cache-root coordination, and cross-namespace read-only DMCR
+  auth/CA projection into the runtime namespace without runtime env patching;
+- `internal/controllers/workloaddelivery` for controller-owned adoption of
+  annotated `Deployment` / `StatefulSet` / `DaemonSet` / `CronJob`
+  workloads: it resolves `Model` or `ClusterModel`, reuses the shared
+  `k8s/modeldelivery` service, writes digest rollout annotations onto
+  `PodTemplateSpec`, fail-closes when user-provided `/data/modelcache`
+  storage topology is invalid instead of inventing a second storage contract,
+  and stays controller-driven instead of introducing generic mutating or
+  validating admission hooks for foreign workload kinds; watch scope is now
+  narrow to opt-in or already-managed workloads plus referenced
+  `Model` / `ClusterModel` objects;
 - `internal/adapters/sourcefetch` for safe `HuggingFace` source
   acquisition and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport and archive preparation instead of split
@@ -217,6 +233,12 @@ Current phase-2 slice implemented here:
   machine; persisted pre-cut non-HF `source.url` objects still terminate as
   `Failed` with `UnsupportedSource` instead of looping forever on reconcile
   errors;
+- `internal/controllers/workloaddelivery` for direct workload mutation over
+  top-level annotations `ai-models.deckhouse.io/model` and
+  `ai-models.deckhouse.io/clustermodel`; this controller intentionally stays
+  on mutable workload templates (`Deployment`, `StatefulSet`, `DaemonSet`,
+  `CronJob`) and does not pretend that direct `Job` mutation is safe after
+  creation;
 - `internal/bootstrap` for manager/bootstrap wiring.
 
 Naming rule:
@@ -239,8 +261,8 @@ Current controller scope excludes:
   `HuggingFace` supports a projected token secret, but broader source
   integrations and richer auth/session handoff stay out of scope;
 - live runtime integration with `ai-inference` and concrete init-container
-  pod mutation/runtime injection; the standalone materializer runtime already
-  exists, while consumer-side wiring remains a separate adapter-agnostic
-  integration step;
+  pod mutation/runtime injection; reusable consumer-side wiring now exists,
+  but concrete `ai-inference` integration remains a separate adapter-specific
+  step;
 - richer publication hardening beyond the current implementation adapter:
   implementation switching and stronger trust/promotion semantics.

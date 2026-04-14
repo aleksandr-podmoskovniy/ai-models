@@ -61,9 +61,11 @@ images/controller/
     controllers/
       catalogstatus/
       catalogcleanup/
+      workloaddelivery/
     adapters/
       k8s/
         auditevent/
+        modeldelivery/
         ociregistry/
         ownedresource/
         sourceworker/
@@ -118,6 +120,8 @@ images/controller/
 - `internal/cmdsupport/` — только shared process-level glue.
 - `cmdsupport` нельзя снова превращать в место, которое знает concrete
   adapters, runtime payload models или source-specific env parsing.
+- Внутри `cmdsupport/` process/runtime helpers, env helpers и structured
+  logging тоже не должны снова схлопываться в один oversized `common.go`.
 
 ### Domain
 
@@ -125,6 +129,9 @@ images/controller/
   terminal semantics, status/conditions.
 - `internal/domain/ingestadmission/` — дешёвые и source-agnostic fail-fast
   admission invariants до heavy byte path.
+Внутри `publishstate/` policy validation тоже не должна снова смешивать
+top-level policy evaluation, inferred model capability mapping и
+normalization/intersection helpers в одном oversized `policy_validation.go`.
 
 Domain не должен знать concrete Kubernetes objects, Pod shaping, Secret CRUD
 или конкретный transport.
@@ -182,11 +189,22 @@ adapter packages.
 `monitoring/catalogmetrics` тоже не надо растворять в `bootstrap/`:
 collector boundary — это отдельный runtime contract между manager cache и
 platform observability surface.
+Внутри `catalogmetrics/` listing Kubernetes objects, descriptor shell и
+per-kind metric emission тоже не должны снова схлопываться обратно в один
+oversized `collector.go`.
 
 ### Controllers
 
 - `internal/controllers/catalogstatus/` — live owner publication lifecycle.
 - `internal/controllers/catalogcleanup/` — delete/finalizer owner.
+- `internal/controllers/workloaddelivery/` — owner controller for top-level
+  workload annotations `ai-models.deckhouse.io/model` /
+  `ai-models.deckhouse.io/clustermodel`, который мутирует только workloads с
+  mutable `PodTemplateSpec` (`Deployment`, `StatefulSet`, `DaemonSet`,
+  `CronJob`) и реиспользует shared `k8s/modeldelivery` service; generic
+  workload delivery намеренно не уходит в admission webhook surface и вместо
+  этого держит узкий watch scope: только opt-in/managed workloads и связанные
+  `Model` / `ClusterModel`.
 
 Controller package оправдан только ownership, а не тем, что код “проще читать”.
 Если owner не меняется, перенос в новый controller package почти наверняка
@@ -197,6 +215,7 @@ Controller package оправдан только ownership, а не тем, чт
 `internal/adapters/k8s/*` держит concrete Kubernetes shaping и CRUD:
 
 - `sourceworker/`
+- `modeldelivery/`
 - `uploadsession/`
 - `uploadsessionstate/`
 - `ociregistry/`
@@ -218,6 +237,22 @@ Non-K8s adapters остаются отдельно:
 Главное правило для adapters:
 
 - не тащить сюда public/status policy;
+- `k8s/modeldelivery/` остаётся reusable consumer-side runtime seam:
+  он держит concrete `PodTemplateSpec` mutation service и render helpers
+  поверх уже существующих `modelpack` и `ociregistry`, reuses user-provided
+  workload storage mounted at `/data/modelcache`, включая cross-namespace
+  read-only DMCR auth/CA projection в runtime namespace, topology checks для
+  per-pod mounts / StatefulSet claim templates / direct shared PVC и RWX
+  single-writer coordination прямо на shared cache root, а не invents новый
+  inference-owned API,
+  второй volume contract или отдельный auth shell;
+- `modelpack/kitops/` остаётся только concrete pack/push/remove shell:
+  publish/remove orchestration, command/auth shell, Kitfile context prep и OCI
+  reference helpers не должны снова схлопываться обратно в один oversized
+  `adapter.go`;
+- `modelprofile/safetensors/` остаётся concrete profile resolver, но внутри не
+  должен снова смешивать top-level `Resolve`, checkpoint config parsing/value
+  helpers и model-capability inference в одном oversized `profile.go`;
 - не заводить adapter-local request wrappers поверх уже существующих ports;
 - не возвращать runtime proxy layers, если concrete adapter и так реализует
   shared contract напрямую.
@@ -233,6 +268,9 @@ Non-K8s adapters остаются отдельно:
 
 Это controller-owned one-shot runtimes. Их нельзя смешивать с reconciler code и
 нельзя откатывать назад в backend scripts.
+Внутри `publishworker/` top-level worker contract, HF-specific remote path,
+upload path, raw provenance и profile/publish resolution тоже не должны снова
+схлопываться обратно в один oversized `run.go`.
 
 ### Shared support
 
@@ -364,6 +402,10 @@ runtime semantics или status logic, это уже не support.
   projection больше не должны снова схлопываться в один oversized `service.go`:
   `GetOrCreate` остаётся thin, а concrete lifecycle/handle shaping живут в
   соседних files того же package.
+- Внутри `sourceworker/` pod orchestration, runtime env/volume shaping и
+  source-specific argv тоже не должны снова схлопываться в один oversized
+  `build.go`: orchestration остаётся thin, а pod shaping и source arg shaping
+  живут в соседних files того же package.
 - Возвращение локального wrapper или отдельного mapping layer будет прямым
   регрессом структуры.
 

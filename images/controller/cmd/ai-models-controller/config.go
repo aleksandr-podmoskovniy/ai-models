@@ -19,15 +19,19 @@ package main
 import (
 	"time"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	"github.com/deckhouse/ai-models/controller/internal/bootstrap"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
+
+const defaultDMCRReadAuthSecretName = "ai-models-dmcr-auth-read"
 
 type managerConfig struct {
 	LogFormat string
@@ -220,6 +224,19 @@ func (c managerConfig) bootstrapOptions(workVolumeType workloadpod.WorkVolumeTyp
 			UploadGateway: catalogstatus.UploadGatewayOptions{
 				ServiceName: c.UploadServiceName,
 				PublicHost:  c.UploadPublicHost,
+			},
+		},
+		WorkloadDelivery: workloaddelivery.Options{
+			Service: modeldelivery.ServiceOptions{
+				Render: modeldelivery.Options{
+					RuntimeImage:   cmdsupport.FallbackString(c.PublicationWorkerImage, c.CleanupJobImage),
+					LogFormat:      c.LogFormat,
+					OCIInsecure:    c.PublicationOCIInsecure,
+					CacheMountPath: modeldelivery.DefaultCacheMountPath,
+				},
+				RegistrySourceNamespace:      cmdsupport.FallbackString(c.PublicationWorkerNamespace, c.CleanupJobNamespace),
+				RegistrySourceAuthSecretName: defaultDMCRReadAuthSecretName,
+				RegistrySourceCASecretName:   c.PublicationOCICASecretName,
 			},
 		},
 		Runtime: bootstrap.RuntimeOptions{

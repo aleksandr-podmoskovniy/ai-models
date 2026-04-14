@@ -126,6 +126,10 @@ func materializeFresh(
 	if err != nil {
 		return modelpackports.MaterializeResult{}, err
 	}
+	modelPath, err = ensureMaterializedModelContract(stagingRoot, modelPath)
+	if err != nil {
+		return modelpackports.MaterializeResult{}, err
+	}
 	modelRelativePath, err := filepath.Rel(stagingRoot, modelPath)
 	if err != nil {
 		return modelpackports.MaterializeResult{}, err
@@ -153,46 +157,6 @@ func materializeFresh(
 	}, nil
 }
 
-func replaceMaterializedDestination(stagingRoot, destination string) error {
-	parent := materializationParent(destination)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
-		return err
-	}
-
-	backupDir, hadExisting, err := stageExistingDestination(destination)
-	if err != nil {
-		return err
-	}
-
-	if err := os.Rename(stagingRoot, destination); err != nil {
-		if hadExisting {
-			_ = os.Rename(backupDir, destination)
-		}
-		return err
-	}
-	if hadExisting {
-		return os.RemoveAll(backupDir)
-	}
-	return nil
-}
-
-func stageExistingDestination(destination string) (string, bool, error) {
-	if _, err := os.Stat(destination); errors.Is(err, os.ErrNotExist) {
-		return "", false, nil
-	} else if err != nil {
-		return "", false, err
-	}
-
-	backupDir := destination + ".previous"
-	if err := os.RemoveAll(backupDir); err != nil {
-		return "", false, err
-	}
-	if err := os.Rename(destination, backupDir); err != nil {
-		return "", false, err
-	}
-	return backupDir, true, nil
-}
-
 func materializationParent(destination string) string {
 	parent := filepath.Dir(destination)
 	if strings.TrimSpace(parent) == "" || parent == "." {
@@ -213,29 +177,6 @@ func validateExpectedDigest(input modelpackports.MaterializeInput, actual string
 		return fmt.Errorf("published artifact digest mismatch: expected %q, got %q", expected, actual)
 	}
 	return nil
-}
-
-func maybeReuseMaterialization(destination, digest string) (modelpackports.MaterializeResult, bool, error) {
-	marker, err := readMarker(destination)
-	if err != nil {
-		return modelpackports.MaterializeResult{}, false, err
-	}
-	if marker == nil {
-		return modelpackports.MaterializeResult{}, false, nil
-	}
-	if strings.TrimSpace(marker.Digest) != strings.TrimSpace(digest) {
-		return modelpackports.MaterializeResult{}, false, nil
-	}
-	if strings.TrimSpace(marker.ModelPath) == "" {
-		return modelpackports.MaterializeResult{}, false, nil
-	}
-	if _, err := os.Stat(marker.ModelPath); err != nil {
-		return modelpackports.MaterializeResult{}, false, nil
-	}
-	return modelpackports.MaterializeResult{
-		ModelPath:  marker.ModelPath,
-		MarkerPath: filepath.Join(destination, markerFileName),
-	}, true, nil
 }
 
 func readMarker(destination string) (*materializedMarker, error) {

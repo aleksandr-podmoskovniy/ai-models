@@ -38,13 +38,13 @@ func VolumeMounts(options RuntimeOptions, extra ...corev1.VolumeMount) []corev1.
 func Volumes(options RuntimeOptions, extra ...corev1.Volume) []corev1.Volume {
 	volumes := []corev1.Volume{{
 		Name:         WorkVolumeName,
-		VolumeSource: workVolumeSource(options.WorkVolume),
+		VolumeSource: VolumeSource(options.WorkVolume),
 	}}
 	volumes = append(volumes, ociregistry.Volumes(options.OCIRegistryCASecretName)...)
 	return append(volumes, extra...)
 }
 
-func workVolumeSource(options WorkVolumeOptions) corev1.VolumeSource {
+func VolumeSource(options VolumeOptions) corev1.VolumeSource {
 	switch options.Type {
 	case WorkVolumeTypePersistentVolumeClaim:
 		return corev1.VolumeSource{

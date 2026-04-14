@@ -19,8 +19,9 @@ The repository currently contains:
 - native MLflow auth/workspaces, ingress/https, and managed-postgres wiring;
 - phase-2 `Model` / `ClusterModel` API and controller work for source-first
   publication into OCI-backed `ModelPack` artifacts; a standalone runtime
-  materializer now exists for `OCI -> local path`, while live consumer wiring
-  still remains a separate workstream;
+  materializer and reusable consumer-side K8s wiring now exist for
+  `OCI -> local path`, while concrete runtime integration still remains a
+  separate workstream;
 - `werf` and CI/CD pipelines for module packaging;
 - repo-local guidance and skills for the next slices of backend packaging and
   DKP API work.

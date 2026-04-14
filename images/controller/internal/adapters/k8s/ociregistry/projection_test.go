@@ -95,6 +95,52 @@ func TestEnsureProjectedAccessCopiesAuthAndCA(t *testing.T) {
 	}
 }
 
+func TestEnsureProjectedAccessFromSourceNamespaceCopiesIntoTargetNamespace(t *testing.T) {
+	t.Parallel()
+
+	scheme := testkit.NewScheme(t)
+	owner := testkit.NewModel()
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			owner,
+			testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
+			testkit.NewOCIRegistryCASecret("d8-ai-models", "ai-models-dmcr-ca"),
+		).
+		Build()
+
+	projection, err := EnsureProjectedAccessFromSourceNamespace(
+		context.Background(),
+		kubeClient,
+		scheme,
+		owner,
+		"team-a",
+		types.UID("1111-2222"),
+		"d8-ai-models",
+		"ai-models-dmcr-auth-read",
+		"ai-models-dmcr-ca",
+	)
+	if err != nil {
+		t.Fatalf("EnsureProjectedAccessFromSourceNamespace() error = %v", err)
+	}
+
+	projectedAuth := &corev1.Secret{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: projection.AuthSecretName, Namespace: "team-a"}, projectedAuth); err != nil {
+		t.Fatalf("Get(projected auth secret) error = %v", err)
+	}
+	if got, want := string(projectedAuth.Data["username"]), "ai-models"; got != want {
+		t.Fatalf("unexpected projected username %q", got)
+	}
+
+	projectedCA := &corev1.Secret{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: projection.CASecretName, Namespace: "team-a"}, projectedCA); err != nil {
+		t.Fatalf("Get(projected ca secret) error = %v", err)
+	}
+	if got := string(projectedCA.Data["ca.crt"]); got == "" {
+		t.Fatal("expected projected ca.crt")
+	}
+}
+
 func TestDeleteProjectedAccessDeletesProjectedSecrets(t *testing.T) {
 	t.Parallel()
 
