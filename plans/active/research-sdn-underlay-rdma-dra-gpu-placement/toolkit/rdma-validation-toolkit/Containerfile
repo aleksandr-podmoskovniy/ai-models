@@ -1,0 +1,49 @@
+FROM nvidia/cuda:12.2.2-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TOOLKIT_VERSION=0.2.0
+ENV PERFTEST_VERSION=24.10.0-0.66
+ENV PERFTEST_DIR=/opt/perftest-cuda/bin
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      autoconf \
+      automake \
+      build-essential \
+      ca-certificates \
+      ethtool \
+      git \
+      ibverbs-utils \
+      iperf3 \
+      iproute2 \
+      iputils-ping \
+      jq \
+      libibumad-dev \
+      libibverbs-dev \
+      libpci-dev \
+      librdmacm-dev \
+      libtool \
+      pciutils \
+      pkg-config \
+      python3 \
+      rdma-core \
+      sockperf && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch "${PERFTEST_VERSION}" https://github.com/linux-rdma/perftest.git /tmp/perftest && \
+    cd /tmp/perftest && \
+    ./autogen.sh && \
+    ./configure CUDA_H_PATH=/usr/local/cuda/include/cuda.h && \
+    make -j"$(nproc)" && \
+    mkdir -p "${PERFTEST_DIR}" && \
+    cp ib_write_bw ib_read_bw ib_send_lat "${PERFTEST_DIR}/" && \
+    rm -rf /tmp/perftest
+
+COPY bin/rdma-validate /usr/local/bin/rdma-validate
+
+RUN chmod 0755 /usr/local/bin/rdma-validate
+
+WORKDIR /work
+
+ENTRYPOINT ["/usr/local/bin/rdma-validate"]
+CMD ["help"]

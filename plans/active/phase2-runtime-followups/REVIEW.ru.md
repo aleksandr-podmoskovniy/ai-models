@@ -538,3 +538,27 @@ Blocking findings нет.
 - если future work попытается вернуть generic workload delivery в admission
   webhook surface, это уже будет architectural regression relative to current
   safer controller-owned path.
+
+## Slice 31. Fix workload-delivery bootstrap default regression
+
+### Что проверено
+
+- live cluster defect оказался реальным code bug, а не rollout noise:
+  новый `ai-models-controller` pod падал на startup с
+  `runtime delivery init container name must not be empty`;
+- root cause был в том, что `workloaddelivery.Options.Validate()` валидировал
+  сырые `modeldelivery.Options`, не прогнав defaults normalization;
+- после фикса validation идёт по normalized options, и default
+  `InitContainerName` снова совместим с controller bootstrap path.
+
+### Findings
+
+Blocking findings нет.
+
+### Residual risk
+
+- live cluster ещё требует новый rollout, иначе stuck deployment останется на
+  старом broken image revision и runtime delivery не дойдёт до практической
+  проверки;
+- даже после bootstrap fix runtime-delivery path всё ещё не имеет live proof
+  на annotated workload topology, только code/test proof.

@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpudirect-validation-pod
+  namespace: sdn-rdma-test
+  annotations:
+    network.deckhouse.io/networks-spec: |
+      [
+        {
+          "type": "UnderlayNetwork",
+          "name": "__UNDERLAY_NETWORK__",
+          "bindingMode": "DPDK"
+        }
+      ]
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    kubernetes.io/hostname: __NODE_NAME__
+  tolerations:
+  - key: dedicated.apiac.ru
+    operator: Equal
+    value: w-gpu
+    effect: NoExecute
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: __GPU_RESOURCECLAIMTEMPLATE__
+  containers:
+  - name: toolkit
+    image: __IMAGE__
+    imagePullPolicy: IfNotPresent
+    command: ["sleep", "infinity"]
+    securityContext:
+      runAsUser: 0
+      allowPrivilegeEscalation: false
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        add: ["NET_ADMIN", "NET_RAW", "IPC_LOCK"]
+    resources:
+      claims:
+      - name: gpu

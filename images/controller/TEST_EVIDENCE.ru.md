@@ -316,9 +316,11 @@
   - fail-closed shared direct PVC topology without leaked projected OCI auth
 - Primary evidence:
   - `internal/controllers/workloaddelivery/annotations_test.go`
+  - `internal/controllers/workloaddelivery/options_test.go`
   - `internal/controllers/workloaddelivery/predicate_test.go`
   - `internal/controllers/workloaddelivery/reconciler_test.go`
   - `cmd/ai-models-controller/config_test.go`
+  - `internal/bootstrap/bootstrap_test.go`
   - `internal/adapters/k8s/modeldelivery/service_topology_test.go`
 - Residual gaps:
   - live cluster proof for shared `RWX` writer/waiter coordination through the

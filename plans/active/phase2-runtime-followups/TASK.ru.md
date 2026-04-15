@@ -213,6 +213,10 @@
   choke point: никаких blocking mutating/validating hooks на чужие workload
   kinds, только controller-driven opt-in adoption, узкий watch scope по
   opt-in/managed workloads и reverse reconcile от `Model` / `ClusterModel`.
+- live rollout текущего workload-delivery slice не должен ломать bootstrap:
+  delivery defaults, на которые рассчитывает controller config, обязаны
+  проходить validation до старта manager, иначе новый controller pod не
+  сможет подняться и phase-2 runtime останется на старом rollout.
 - `sourceworker/build.go` не должен оставаться следующей oversized pod-rendering
   точкой, где вместе живут orchestration, env shaping, volume shaping и
   source-specific argv.

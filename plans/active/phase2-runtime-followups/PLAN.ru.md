@@ -862,6 +862,33 @@ large corrective rebase bundle was completed and archived.
 - `make verify`
 - `git diff --check`
 
+## Slice 31. Fix workload-delivery bootstrap default regression
+
+Цель:
+
+- закрыть live rollout defect, при котором новый `ai-models-controller` pod
+  падает на startup из-за того, что workload-delivery validation смотрит на
+  ненормализованные defaults;
+- зафиксировать regression tests на уровне `workloaddelivery.Options.Validate`
+  и `bootstrap.New`, чтобы default `InitContainerName` больше не ломал
+  manager bootstrap.
+
+Артефакты:
+
+- updated `internal/controllers/workloaddelivery/options.go`
+- added `internal/controllers/workloaddelivery/options_test.go`
+- updated `internal/bootstrap/bootstrap_test.go`
+- updated:
+  - `images/controller/TEST_EVIDENCE.ru.md`
+  - `plans/active/phase2-runtime-followups/TASK.ru.md`
+  - `plans/active/phase2-runtime-followups/REVIEW.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/controllers/workloaddelivery ./internal/bootstrap ./cmd/ai-models-controller`
+- `make verify`
+- `git diff --check`
+
 ## Final validation
 
 - `find plans/active -maxdepth 2 -type f | sort`

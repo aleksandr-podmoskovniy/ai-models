@@ -42,13 +42,14 @@ func (o Options) Validate() error {
 	if !o.Enabled() {
 		return nil
 	}
-	if err := modeldelivery.ValidateOptions(o.Service.Render); err != nil {
+	normalized := normalizeOptions(o)
+	if err := modeldelivery.ValidateOptions(normalized.Service.Render); err != nil {
 		return err
 	}
 	switch {
-	case strings.TrimSpace(o.Service.RegistrySourceNamespace) == "":
+	case strings.TrimSpace(normalized.Service.RegistrySourceNamespace) == "":
 		return errors.New("workload delivery registry source namespace must not be empty")
-	case strings.TrimSpace(o.Service.RegistrySourceAuthSecretName) == "":
+	case strings.TrimSpace(normalized.Service.RegistrySourceAuthSecretName) == "":
 		return errors.New("workload delivery registry source auth secret name must not be empty")
 	}
 	return nil

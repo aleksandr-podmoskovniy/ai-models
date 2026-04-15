@@ -1,0 +1,616 @@
+#!/usr/bin/env bash
+# Copyright 2026 Flant JSC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -euo pipefail
+
+TOOLKIT_VERSION="${TOOLKIT_VERSION:-0.2.0}"
+LOG_DIR="${LOG_DIR:-/tmp/rdma-validation}"
+DIRECT_IFACE="${DIRECT_IFACE:-}"
+DIRECT_IP="${DIRECT_IP:-}"
+PEER_IP="${PEER_IP:-}"
+RDMA_DEV="${RDMA_DEV:-mlx5_0}"
+GID_INDEX="${GID_INDEX:-3}"
+DURATION="${DURATION:-10}"
+SIZE="${SIZE:-65536}"
+LAT_SIZE="${LAT_SIZE:-64}"
+QPS="${QPS:-8}"
+TCP_STREAMS="${TCP_STREAMS:-4}"
+MTU="${MTU:-4096}"
+GPU_INDEX="${GPU_INDEX:-0}"
+GPU_BUS_ID="${GPU_BUS_ID:-}"
+PERFTEST_DIR="${PERFTEST_DIR:-/opt/perftest-cuda/bin}"
+PERFTEST_WRITE="${PERFTEST_WRITE:-${PERFTEST_DIR}/ib_write_bw}"
+PERFTEST_SEND_LAT="${PERFTEST_SEND_LAT:-${PERFTEST_DIR}/ib_send_lat}"
+MIN_TCP_BW_GBPS="${MIN_TCP_BW_GBPS:-}"
+MIN_RDMA_BW_GBPS="${MIN_RDMA_BW_GBPS:-}"
+MIN_GPUDIRECT_BW_GBPS="${MIN_GPUDIRECT_BW_GBPS:-}"
+MAX_TCP_LAT_USEC="${MAX_TCP_LAT_USEC:-}"
+MAX_RDMA_LAT_USEC="${MAX_RDMA_LAT_USEC:-}"
+MIN_RDMA_OVER_TCP_RATIO="${MIN_RDMA_OVER_TCP_RATIO:-}"
+MIN_GPUDIRECT_OVER_TCP_RATIO="${MIN_GPUDIRECT_OVER_TCP_RATIO:-}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  rdma-validate help
+  rdma-validate inventory
+  rdma-validate bind-ip
+  rdma-validate cleanup-ip
+  rdma-validate tcp-bw-server
+  rdma-validate tcp-bw-client
+  rdma-validate tcp-lat-server
+  rdma-validate tcp-lat-client
+  rdma-validate tcp-rtt-client
+  rdma-validate rdma-bw-server
+  rdma-validate rdma-bw-client
+  rdma-validate rdma-lat-server
+  rdma-validate rdma-lat-client
+  rdma-validate gpudirect-bw-server
+  rdma-validate gpudirect-bw-client
+  rdma-validate report
+  rdma-validate check
+
+Environment:
+  DIRECT_IFACE   Linux netdev inside the pod, e.g. enp193s0np0
+  DIRECT_IP      Local direct IP with CIDR, e.g. 172.31.141.1/30
+  PEER_IP        Peer direct IP without CIDR, e.g. 172.31.141.2
+  RDMA_DEV       RDMA verbs device, default: mlx5_0
+  GID_INDEX      RoCE GID index, default: 3
+  DURATION       Duration for bandwidth tests, default: 10
+  SIZE           Payload size for RDMA bandwidth tests, default: 65536
+  LAT_SIZE       Payload size for latency tests, default: 64
+  QPS            Number of QPs for RDMA BW tests, default: 8
+  TCP_STREAMS    Parallel iperf3 streams, default: 4
+  MTU            Verbs MTU passed to perftest, default: 4096
+  GPU_INDEX      CUDA ordinal for --use_cuda, default: 0
+  GPU_BUS_ID     Exact PCI BUS ID for --use_cuda_bus_id, optional
+  LOG_DIR        Raw logs and jsonl summaries, default: /tmp/rdma-validation
+  MIN_* / MAX_*  Optional check thresholds, used by rdma-validate check
+
+Notes:
+  - Server commands block and should run in one pod.
+  - Client commands run the test, print raw output, and append one JSON summary line.
+  - Use gpudirect-bw-* only in pods that already have both GPU and RDMA devices.
+  - report prints the latest collected comparison summary from results.jsonl.
+  - check enforces optional thresholds and exits non-zero on failures.
+EOF
+}
+
+ensure_dir() {
+  mkdir -p "${LOG_DIR}"
+}
+
+require_env() {
+  local name="$1"
+  if [[ -z "${!name:-}" ]]; then
+    echo "missing required environment variable: ${name}" >&2
+    exit 1
+  fi
+}
+
+require_cmd() {
+  local cmd="$1"
+  if [[ "${cmd}" == */* ]]; then
+    if [[ ! -x "${cmd}" ]]; then
+      echo "required executable not found: ${cmd}" >&2
+      exit 1
+    fi
+  else
+    if ! command -v "${cmd}" >/dev/null 2>&1; then
+      echo "required command not found: ${cmd}" >&2
+      exit 1
+    fi
+  fi
+}
+
+log_path() {
+  local name="$1"
+  printf '%s/%s.log' "${LOG_DIR}" "${name}"
+}
+
+jsonl_path() {
+  printf '%s/results.jsonl' "${LOG_DIR}"
+}
+
+run_logged() {
+  local name="$1"
+  shift
+  local log_file
+  log_file="$(log_path "${name}")"
+  ensure_dir
+  : > "${log_file}"
+  {
+    printf '# started_at=%s\n' "$(date -Is)"
+    printf '+'
+    printf ' %q' "$@"
+    printf '\n'
+  } | tee -a "${log_file}"
+  "$@" 2>&1 | tee -a "${log_file}"
+}
+
+append_result() {
+  local test_name="$1"
+  local mode="$2"
+  local summary_json="$3"
+  ensure_dir
+  jq -nc \
+    --arg ts "$(date -Is)" \
+    --arg toolkit_version "${TOOLKIT_VERSION}" \
+    --arg test_name "${test_name}" \
+    --arg mode "${mode}" \
+    --arg direct_iface "${DIRECT_IFACE}" \
+    --arg direct_ip "${DIRECT_IP}" \
+    --arg peer_ip "${PEER_IP}" \
+    --arg rdma_dev "${RDMA_DEV}" \
+    --arg gid_index "${GID_INDEX}" \
+    --argjson summary "${summary_json}" \
+    '{
+      ts: $ts,
+      toolkit_version: $toolkit_version,
+      test_name: $test_name,
+      mode: $mode,
+      direct_iface: $direct_iface,
+      direct_ip: $direct_ip,
+      peer_ip: $peer_ip,
+      rdma_dev: $rdma_dev,
+      gid_index: ($gid_index | tonumber),
+      summary: $summary
+    }' | tee -a "$(jsonl_path)"
+}
+
+parse_iperf3_bw() {
+  local log_file="$1"
+  local sender receiver
+  sender="$(sed -nE 's/.* ([0-9.]+) Gbits\/sec +sender$/\1/p' "${log_file}" | tail -1)"
+  receiver="$(sed -nE 's/.* ([0-9.]+) Gbits\/sec +receiver$/\1/p' "${log_file}" | tail -1)"
+  jq -nc \
+    --arg unit "Gb/sec" \
+    --arg sender "${sender:-unknown}" \
+    --arg receiver "${receiver:-unknown}" \
+    '{unit: $unit, sender_gbps: $sender, receiver_gbps: $receiver}'
+}
+
+parse_sockperf() {
+  local log_file="$1"
+  local metric avg p50 p99 p999
+  metric="$(sed -nE 's/^sockperf: Summary: (Latency|Round trip) is .*/\1/p' "${log_file}" | tail -1)"
+  avg="$(sed -nE 's/^sockperf: Summary: (Latency|Round trip) is ([0-9.]+) usec$/\2/p' "${log_file}" | tail -1)"
+  p50="$(sed -nE 's/^sockperf: ---> percentile 50.000 = *([0-9.]+)$/\1/p' "${log_file}" | tail -1)"
+  p99="$(sed -nE 's/^sockperf: ---> percentile 99.000 = *([0-9.]+)$/\1/p' "${log_file}" | tail -1)"
+  p999="$(sed -nE 's/^sockperf: ---> percentile 99.900 = *([0-9.]+)$/\1/p' "${log_file}" | tail -1)"
+  jq -nc \
+    --arg metric "${metric:-unknown}" \
+    --arg unit "usec" \
+    --arg avg "${avg:-unknown}" \
+    --arg p50 "${p50:-unknown}" \
+    --arg p99 "${p99:-unknown}" \
+    --arg p999 "${p999:-unknown}" \
+    '{metric: $metric, unit: $unit, avg: $avg, p50: $p50, p99: $p99, p999: $p999}'
+}
+
+parse_ib_write_bw() {
+  local log_file="$1"
+  local avg rate
+  read -r avg rate < <(
+    awk '
+      $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9.]+$/ && $4 ~ /^[0-9.]+$/ && $5 ~ /^[0-9.]+$/ {
+        bw=$4; mpps=$5
+      }
+      END { print bw, mpps }
+    ' "${log_file}"
+  )
+  jq -nc \
+    --arg unit "Gb/sec" \
+    --arg msg_rate_unit "Mpps" \
+    --arg avg "${avg:-unknown}" \
+    --arg msg_rate "${rate:-unknown}" \
+    '{unit: $unit, average_gbps: $avg, msg_rate: $msg_rate, msg_rate_unit: $msg_rate_unit}'
+}
+
+parse_gpudirect_bw() {
+  local log_file="$1"
+  local base_json cuda_used gpu_name gpu_selector
+  base_json="$(parse_ib_write_bw "${log_file}")"
+  if grep -Eq 'initializing CUDA|cuMemAlloc|Picking device No\\.' "${log_file}"; then
+    cuda_used="true"
+  else
+    cuda_used="false"
+  fi
+  gpu_name="$(sed -nE 's/.*device name = \\[(.*)\\].*/\1/p' "${log_file}" | head -1)"
+  if [[ -n "${GPU_BUS_ID}" ]]; then
+    gpu_selector="${GPU_BUS_ID}"
+  else
+    gpu_selector="index:${GPU_INDEX}"
+  fi
+  jq -nc \
+    --argjson base "${base_json}" \
+    --arg gpu_name "${gpu_name:-unknown}" \
+    --arg gpu_selector "${gpu_selector}" \
+    --argjson cuda_used "${cuda_used}" \
+    '$base + {
+      cuda_used: $cuda_used,
+      gpu_name: $gpu_name,
+      gpu_selector: $gpu_selector
+    }'
+}
+
+parse_ib_send_lat() {
+  local log_file="$1"
+  local avg p99 p999
+  read -r avg p99 p999 < <(
+    awk '
+      $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9.]+$/ && $4 ~ /^[0-9.]+$/ &&
+      $5 ~ /^[0-9.]+$/ && $6 ~ /^[0-9.]+$/ && $7 ~ /^[0-9.]+$/ && $8 ~ /^[0-9.]+$/ && $9 ~ /^[0-9.]+$/ {
+        avg=$6; p99=$8; p999=$9
+      }
+      END { print avg, p99, p999 }
+    ' "${log_file}"
+  )
+  jq -nc \
+    --arg unit "usec" \
+    --arg avg "${avg:-unknown}" \
+    --arg p99 "${p99:-unknown}" \
+    --arg p999 "${p999:-unknown}" \
+    '{unit: $unit, avg: $avg, p99: $p99, p999: $p999}'
+}
+
+cuda_args() {
+  if [[ -n "${GPU_BUS_ID}" ]]; then
+    printf -- '--use_cuda_bus_id=%s' "${GPU_BUS_ID}"
+  else
+    printf -- '--use_cuda=%s' "${GPU_INDEX}"
+  fi
+}
+
+results_file_path() {
+  printf '%s' "$(jsonl_path)"
+}
+
+has_value() {
+  local value="$1"
+  [[ -n "${value}" && "${value}" != "null" && "${value}" != "unknown" ]]
+}
+
+compare_float() {
+  local left="$1"
+  local op="$2"
+  local right="$3"
+  awk -v left="${left}" -v right="${right}" "BEGIN { if (left ${op} right) exit 0; exit 1 }"
+}
+
+build_report_json() {
+  local results_file="${1:-$(results_file_path)}"
+  if [[ ! -s "${results_file}" ]]; then
+    echo "results file is missing or empty: ${results_file}" >&2
+    exit 1
+  fi
+  jq -sc '
+    def latest($name): ([ .[] | select(.test_name == $name) ] | last);
+    def n: if . == null or . == "" or . == "unknown" then null else (tonumber) end;
+    def summary($name): (latest($name) | .summary);
+    def field($name; $field): (summary($name) | if . == null then null else .[$field] end);
+    {
+      tcp_bw_gbps: (field("tcp_bw"; "receiver_gbps") | n),
+      tcp_bw_sender_gbps: (field("tcp_bw"; "sender_gbps") | n),
+      tcp_latency_usec: (field("tcp_latency"; "avg") | n),
+      tcp_rtt_usec: (field("tcp_rtt"; "avg") | n),
+      rdma_bw_gbps: (field("rdma_bw"; "average_gbps") | n),
+      rdma_latency_usec: (field("rdma_latency"; "avg") | n),
+      gpudirect_bw_gbps: (field("gpudirect_bw"; "average_gbps") | n),
+      gpudirect_cuda_used: (field("gpudirect_bw"; "cuda_used") // null),
+      gpudirect_gpu_name: (field("gpudirect_bw"; "gpu_name") // null),
+      gpudirect_gpu_selector: (field("gpudirect_bw"; "gpu_selector") // null)
+    }
+    | . + {
+        rdma_over_tcp_ratio:
+          (if .tcp_bw_gbps != null and .rdma_bw_gbps != null and .tcp_bw_gbps > 0 then (.rdma_bw_gbps / .tcp_bw_gbps) else null end),
+        gpudirect_over_tcp_ratio:
+          (if .tcp_bw_gbps != null and .gpudirect_bw_gbps != null and .tcp_bw_gbps > 0 then (.gpudirect_bw_gbps / .tcp_bw_gbps) else null end)
+      }
+  ' "${results_file}"
+}
+
+report() {
+  local results_file report_json
+  results_file="$(results_file_path)"
+  report_json="$(build_report_json "${results_file}")"
+  printf 'summary_from=%s\n' "${results_file}"
+  printf 'tcp_bw_gbps=%s\n' "$(jq -r '.tcp_bw_gbps // "n/a"' <<<"${report_json}")"
+  printf 'tcp_bw_sender_gbps=%s\n' "$(jq -r '.tcp_bw_sender_gbps // "n/a"' <<<"${report_json}")"
+  printf 'tcp_latency_usec=%s\n' "$(jq -r '.tcp_latency_usec // "n/a"' <<<"${report_json}")"
+  printf 'tcp_rtt_usec=%s\n' "$(jq -r '.tcp_rtt_usec // "n/a"' <<<"${report_json}")"
+  printf 'rdma_bw_gbps=%s\n' "$(jq -r '.rdma_bw_gbps // "n/a"' <<<"${report_json}")"
+  printf 'rdma_latency_usec=%s\n' "$(jq -r '.rdma_latency_usec // "n/a"' <<<"${report_json}")"
+  printf 'rdma_over_tcp_ratio=%s\n' "$(jq -r '.rdma_over_tcp_ratio // "n/a"' <<<"${report_json}")"
+  printf 'gpudirect_bw_gbps=%s\n' "$(jq -r '.gpudirect_bw_gbps // "n/a"' <<<"${report_json}")"
+  printf 'gpudirect_over_tcp_ratio=%s\n' "$(jq -r '.gpudirect_over_tcp_ratio // "n/a"' <<<"${report_json}")"
+  printf 'gpudirect_cuda_used=%s\n' "$(jq -r '.gpudirect_cuda_used // "n/a"' <<<"${report_json}")"
+  printf 'gpudirect_gpu_name=%s\n' "$(jq -r '.gpudirect_gpu_name // "n/a"' <<<"${report_json}")"
+  printf 'gpudirect_gpu_selector=%s\n' "$(jq -r '.gpudirect_gpu_selector // "n/a"' <<<"${report_json}")"
+  printf '\njson:\n%s\n' "${report_json}"
+}
+
+check_metric_min() {
+  local label="$1"
+  local value="$2"
+  local threshold="$3"
+  local unit="$4"
+  if ! has_value "${threshold}"; then
+    return 0
+  fi
+  if ! has_value "${value}"; then
+    printf 'FAIL %s: missing value, expected >= %s %s\n' "${label}" "${threshold}" "${unit}" >&2
+    return 1
+  fi
+  if compare_float "${value}" ">=" "${threshold}"; then
+    printf 'PASS %s: %s %s >= %s %s\n' "${label}" "${value}" "${unit}" "${threshold}" "${unit}"
+    return 0
+  fi
+  printf 'FAIL %s: %s %s < %s %s\n' "${label}" "${value}" "${unit}" "${threshold}" "${unit}" >&2
+  return 1
+}
+
+check_metric_max() {
+  local label="$1"
+  local value="$2"
+  local threshold="$3"
+  local unit="$4"
+  if ! has_value "${threshold}"; then
+    return 0
+  fi
+  if ! has_value "${value}"; then
+    printf 'FAIL %s: missing value, expected <= %s %s\n' "${label}" "${threshold}" "${unit}" >&2
+    return 1
+  fi
+  if compare_float "${value}" "<=" "${threshold}"; then
+    printf 'PASS %s: %s %s <= %s %s\n' "${label}" "${value}" "${unit}" "${threshold}" "${unit}"
+    return 0
+  fi
+  printf 'FAIL %s: %s %s > %s %s\n' "${label}" "${value}" "${unit}" "${threshold}" "${unit}" >&2
+  return 1
+}
+
+check_gpudirect_proof() {
+  local value="$1"
+  if ! has_value "${MIN_GPUDIRECT_BW_GBPS}"; then
+    return 0
+  fi
+  if [[ "${value}" == "true" ]]; then
+    printf 'PASS gpudirect_cuda_used: CUDA markers found in perftest output\n'
+    return 0
+  fi
+  printf 'FAIL gpudirect_cuda_used: CUDA markers not found in perftest output\n' >&2
+  return 1
+}
+
+check() {
+  local report_json failures
+  report_json="$(build_report_json)"
+  failures=0
+
+  check_metric_min tcp_bw_gbps "$(jq -r '.tcp_bw_gbps // empty' <<<"${report_json}")" "${MIN_TCP_BW_GBPS}" "Gb/sec" || failures=$((failures + 1))
+  check_metric_min rdma_bw_gbps "$(jq -r '.rdma_bw_gbps // empty' <<<"${report_json}")" "${MIN_RDMA_BW_GBPS}" "Gb/sec" || failures=$((failures + 1))
+  check_metric_min gpudirect_bw_gbps "$(jq -r '.gpudirect_bw_gbps // empty' <<<"${report_json}")" "${MIN_GPUDIRECT_BW_GBPS}" "Gb/sec" || failures=$((failures + 1))
+  check_metric_max tcp_latency_usec "$(jq -r '.tcp_latency_usec // empty' <<<"${report_json}")" "${MAX_TCP_LAT_USEC}" "usec" || failures=$((failures + 1))
+  check_metric_max rdma_latency_usec "$(jq -r '.rdma_latency_usec // empty' <<<"${report_json}")" "${MAX_RDMA_LAT_USEC}" "usec" || failures=$((failures + 1))
+  check_metric_min rdma_over_tcp_ratio "$(jq -r '.rdma_over_tcp_ratio // empty' <<<"${report_json}")" "${MIN_RDMA_OVER_TCP_RATIO}" "x" || failures=$((failures + 1))
+  check_metric_min gpudirect_over_tcp_ratio "$(jq -r '.gpudirect_over_tcp_ratio // empty' <<<"${report_json}")" "${MIN_GPUDIRECT_OVER_TCP_RATIO}" "x" || failures=$((failures + 1))
+  check_gpudirect_proof "$(jq -r '.gpudirect_cuda_used // empty' <<<"${report_json}")" || failures=$((failures + 1))
+
+  if [[ "${failures}" -ne 0 ]]; then
+    printf 'check_failed=%s\n' "${failures}" >&2
+    exit 1
+  fi
+  printf 'check_passed=true\n'
+}
+
+inventory() {
+  ensure_dir
+  local log_file
+  log_file="$(log_path inventory)"
+  : > "${log_file}"
+  {
+    printf '# started_at=%s\n' "$(date -Is)"
+    printf 'hostname=%s\n' "$(hostname)"
+    printf 'toolkit_version=%s\n' "${TOOLKIT_VERSION}"
+    printf 'direct_iface=%s\n' "${DIRECT_IFACE}"
+    printf 'direct_ip=%s\n' "${DIRECT_IP}"
+    printf 'peer_ip=%s\n' "${PEER_IP}"
+    printf 'rdma_dev=%s\n' "${RDMA_DEV}"
+    printf 'gid_index=%s\n' "${GID_INDEX}"
+    printf '\n## ip -br link\n'
+    ip -br link || true
+    printf '\n## ip -br addr\n'
+    ip -br addr || true
+    printf '\n## /dev/infiniband\n'
+    ls -l /dev/infiniband || true
+    printf '\n## ibv_devices\n'
+    ibv_devices || true
+    printf '\n## ibv_devinfo\n'
+    ibv_devinfo -d "${RDMA_DEV}" -v || true
+    printf '\n## rdma link\n'
+    rdma link show || true
+    printf '\n## nvidia-smi -L\n'
+    nvidia-smi -L || true
+    printf '\n## CUDA-aware perftest help\n'
+    "${PERFTEST_WRITE}" --help | egrep -i 'use_cuda|cuda_dmabuf|cuda_bus_id' || true
+  } | tee -a "${log_file}"
+}
+
+bind_ip() {
+  require_env DIRECT_IFACE
+  require_env DIRECT_IP
+  run_logged bind-ip ip addr replace "${DIRECT_IP}" dev "${DIRECT_IFACE}"
+  run_logged bind-ip-show ip -br addr show dev "${DIRECT_IFACE}"
+}
+
+cleanup_ip() {
+  require_env DIRECT_IFACE
+  require_env DIRECT_IP
+  local base_ip
+  base_ip="${DIRECT_IP%%/*}"
+  run_logged cleanup-ip ip addr del "${DIRECT_IP}" dev "${DIRECT_IFACE}" || true
+  run_logged cleanup-ip-show ip -br addr show dev "${DIRECT_IFACE}"
+  printf 'removed %s from %s\n' "${base_ip}" "${DIRECT_IFACE}" || true
+}
+
+tcp_bw_server() {
+  require_env DIRECT_IP
+  require_cmd iperf3
+  run_logged tcp-bw-server iperf3 -s -B "${DIRECT_IP%%/*}" -1
+}
+
+tcp_bw_client() {
+  require_env PEER_IP
+  require_env DIRECT_IP
+  require_cmd iperf3
+  run_logged tcp-bw-client iperf3 -c "${PEER_IP}" -B "${DIRECT_IP%%/*}" -P "${TCP_STREAMS}" -t "${DURATION}"
+  append_result tcp_bw client "$(parse_iperf3_bw "$(log_path tcp-bw-client)")"
+}
+
+tcp_lat_server() {
+  require_env DIRECT_IP
+  require_cmd sockperf
+  run_logged tcp-lat-server sockperf server --tcp -i "${DIRECT_IP%%/*}"
+}
+
+tcp_lat_client() {
+  require_env PEER_IP
+  require_env DIRECT_IP
+  require_cmd sockperf
+  run_logged tcp-lat-client \
+    sockperf ping-pong --tcp -i "${PEER_IP}" --client_ip "${DIRECT_IP%%/*}" -m "${LAT_SIZE}" -t "${DURATION}"
+  append_result tcp_latency client "$(parse_sockperf "$(log_path tcp-lat-client)")"
+}
+
+tcp_rtt_client() {
+  require_env PEER_IP
+  require_env DIRECT_IP
+  require_cmd sockperf
+  run_logged tcp-rtt-client \
+    sockperf ping-pong --tcp -i "${PEER_IP}" --client_ip "${DIRECT_IP%%/*}" -m "${LAT_SIZE}" -t "${DURATION}" --full-rtt
+  append_result tcp_rtt client "$(parse_sockperf "$(log_path tcp-rtt-client)")"
+}
+
+rdma_bw_server() {
+  require_cmd "${PERFTEST_WRITE}"
+  run_logged rdma-bw-server \
+    "${PERFTEST_WRITE}" -d "${RDMA_DEV}" -x "${GID_INDEX}" -m "${MTU}" -s "${SIZE}" -q "${QPS}" -D "${DURATION}" -F --report_gbits
+}
+
+rdma_bw_client() {
+  require_env PEER_IP
+  require_cmd "${PERFTEST_WRITE}"
+  run_logged rdma-bw-client \
+    "${PERFTEST_WRITE}" -d "${RDMA_DEV}" -x "${GID_INDEX}" -m "${MTU}" -s "${SIZE}" -q "${QPS}" -D "${DURATION}" -F --report_gbits "${PEER_IP}"
+  append_result rdma_bw client "$(parse_ib_write_bw "$(log_path rdma-bw-client)")"
+}
+
+rdma_lat_server() {
+  require_cmd "${PERFTEST_SEND_LAT}"
+  run_logged rdma-lat-server \
+    "${PERFTEST_SEND_LAT}" -d "${RDMA_DEV}" -x "${GID_INDEX}" -m "${MTU}" -s "${LAT_SIZE}" -F -n 10000
+}
+
+rdma_lat_client() {
+  require_env PEER_IP
+  require_cmd "${PERFTEST_SEND_LAT}"
+  run_logged rdma-lat-client \
+    "${PERFTEST_SEND_LAT}" -d "${RDMA_DEV}" -x "${GID_INDEX}" -m "${MTU}" -s "${LAT_SIZE}" -F -n 10000 "${PEER_IP}"
+  append_result rdma_latency client "$(parse_ib_send_lat "$(log_path rdma-lat-client)")"
+}
+
+gpudirect_bw_server() {
+  require_cmd "${PERFTEST_WRITE}"
+  local cuda_flag
+  cuda_flag="$(cuda_args)"
+  run_logged gpudirect-bw-server \
+    "${PERFTEST_WRITE}" -d "${RDMA_DEV}" -x "${GID_INDEX}" -m "${MTU}" -s "${SIZE}" -q "${QPS}" -F --report_gbits -D "${DURATION}" "${cuda_flag}"
+}
+
+gpudirect_bw_client() {
+  require_env PEER_IP
+  require_cmd "${PERFTEST_WRITE}"
+  local cuda_flag
+  cuda_flag="$(cuda_args)"
+  run_logged gpudirect-bw-client \
+    "${PERFTEST_WRITE}" -d "${RDMA_DEV}" -x "${GID_INDEX}" -m "${MTU}" -s "${SIZE}" -q "${QPS}" -F --report_gbits -D "${DURATION}" "${cuda_flag}" "${PEER_IP}"
+  append_result gpudirect_bw client "$(parse_gpudirect_bw "$(log_path gpudirect-bw-client)")"
+}
+
+main() {
+  local cmd="${1:-help}"
+  shift || true
+  case "${cmd}" in
+    help|-h|--help)
+      usage
+      ;;
+    inventory)
+      inventory
+      ;;
+    bind-ip)
+      bind_ip
+      ;;
+    cleanup-ip)
+      cleanup_ip
+      ;;
+    tcp-bw-server)
+      tcp_bw_server
+      ;;
+    tcp-bw-client)
+      tcp_bw_client
+      ;;
+    tcp-lat-server)
+      tcp_lat_server
+      ;;
+    tcp-lat-client)
+      tcp_lat_client
+      ;;
+    tcp-rtt-client)
+      tcp_rtt_client
+      ;;
+    rdma-bw-server)
+      rdma_bw_server
+      ;;
+    rdma-bw-client)
+      rdma_bw_client
+      ;;
+    rdma-lat-server)
+      rdma_lat_server
+      ;;
+    rdma-lat-client)
+      rdma_lat_client
+      ;;
+    gpudirect-bw-server)
+      gpudirect_bw_server
+      ;;
+    gpudirect-bw-client)
+      gpudirect_bw_client
+      ;;
+    report)
+      report
+      ;;
+    check)
+      check
+      ;;
+    *)
+      echo "unknown command: ${cmd}" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

@@ -21,10 +21,12 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -117,5 +119,39 @@ func TestNewAllowsCleanupOnlyRuntimeWithoutPublicationPlaneConfiguration(t *test
 
 	if application.publicationRuntime.Enabled() {
 		t.Fatal("expected publication runtime to stay disabled")
+	}
+}
+
+func TestNewAcceptsWorkloadDeliveryWithDefaultInitContainerName(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	_, err := New(logger, Options{
+		CleanupJobs: catalogcleanup.Options{
+			CleanupJob: catalogcleanup.CleanupJobOptions{
+				Namespace:             "d8-ai-models",
+				Image:                 "backend:latest",
+				OCIRegistrySecretName: "ai-models-dmcr-auth-write",
+				ObjectStorage: storageprojection.Options{
+					Bucket:                "ai-models",
+					EndpointURL:           "https://s3.example.com",
+					Region:                "us-east-1",
+					UsePathStyle:          true,
+					CredentialsSecretName: "ai-models-artifacts",
+				},
+			},
+		},
+		WorkloadDelivery: workloaddelivery.Options{
+			Service: modeldelivery.ServiceOptions{
+				Render: modeldelivery.Options{
+					RuntimeImage: "example.com/ai-models/controller-runtime:dev",
+				},
+				RegistrySourceNamespace:      "d8-ai-models",
+				RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
 	}
 }
