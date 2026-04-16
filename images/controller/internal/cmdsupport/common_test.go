@@ -40,7 +40,7 @@ func TestSetDefaultLoggerBridgesControllerRuntimeAndKlog(t *testing.T) {
 		klog.SetLogger(previousKlog)
 	})
 
-	logger, err := newLogger("json", &buffer)
+	logger, err := newLogger("json", "info", &buffer)
 	if err != nil {
 		t.Fatalf("newLogger() error = %v", err)
 	}
@@ -79,7 +79,7 @@ func TestSetDefaultLoggerBridgesControllerRuntimeAndKlog(t *testing.T) {
 func TestNewComponentLoggerAddsLoggerAttr(t *testing.T) {
 	var buffer bytes.Buffer
 
-	logger, err := newComponentLogger("json", "publish-worker", &buffer)
+	logger, err := newComponentLogger("json", "info", "publish-worker", &buffer)
 	if err != nil {
 		t.Fatalf("newComponentLogger() error = %v", err)
 	}
@@ -109,7 +109,7 @@ func TestCommandErrorUsesDefaultLogger(t *testing.T) {
 		klog.SetLogger(previousKlog)
 	})
 
-	logger, err := newComponentLogger("json", "artifact-cleanup", &buffer)
+	logger, err := newComponentLogger("json", "info", "artifact-cleanup", &buffer)
 	if err != nil {
 		t.Fatalf("newComponentLogger() error = %v", err)
 	}
@@ -161,4 +161,33 @@ func findRecordByMessage(t *testing.T, records []map[string]any, message string)
 
 	t.Fatalf("did not find log record with msg %q in %#v", message, records)
 	return nil
+}
+
+func TestNewLoggerHonorsConfiguredLevel(t *testing.T) {
+	var buffer bytes.Buffer
+
+	logger, err := newLogger("json", "error", &buffer)
+	if err != nil {
+		t.Fatalf("newLogger() error = %v", err)
+	}
+
+	logger.Info("suppressed info")
+	logger.Error("kept error")
+
+	records := decodeLogRecords(t, buffer.Bytes())
+	if len(records) != 1 {
+		t.Fatalf("record count = %d, want 1", len(records))
+	}
+	if got, want := records[0]["msg"], "kept error"; got != want {
+		t.Fatalf("msg = %#v, want %q", got, want)
+	}
+	if got, want := records[0]["level"], "error"; got != want {
+		t.Fatalf("level = %#v, want %q", got, want)
+	}
+}
+
+func TestNewLoggerRejectsUnsupportedLevel(t *testing.T) {
+	if _, err := newLogger("json", "trace", &bytes.Buffer{}); err == nil {
+		t.Fatal("expected unsupported log level to fail")
+	}
 }

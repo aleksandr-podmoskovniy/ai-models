@@ -67,6 +67,15 @@ large corrective rebase bundle was completed and archived.
      `Gemma 4` checkpoint before any API redesign around `repoID + revision`
    - live `Gemma 4` smoke must also confirm that published `ModelPack`
      contains real model bytes in `DMCR`, not only manifest/config shells
+   - next live surface is a larger official checkpoint with shared RWX cache
+     and `3` workload replicas, so that current topology/coordination claims
+     are validated on a non-trivial runtime path rather than only on
+     single-replica smoke
+   - `gemma-3-12b-it` already proved that current format policy is too narrow
+     for real HF layouts, so future live smoke must separate:
+     - source-file policy failures;
+     - long-running but potentially healthy publication;
+     - runtime delivery defects after publication
 
 5. Structural package-map hygiene
    - remove misleading package names that collide with already existing live
@@ -81,6 +90,12 @@ large corrective rebase bundle was completed and archived.
    - in-repo runtime delivery seam must stay reusable and concrete
    - future runtime modules should add only thin overlays over
      `k8s/modeldelivery`, not reimplement delivery
+
+7. HF corpus policy and runtime observability
+   - file-policy decisions should come from a representative HF corpus, not
+     from one failing repo at a time
+   - publish/materialize paths need explicit progress logging at stable step
+     boundaries plus a real log-level contract instead of start/finish only
 
 ## Slice 1. Archive giant active bundle
 
@@ -888,6 +903,94 @@ large corrective rebase bundle was completed and archived.
 - `cd images/controller && go test ./internal/controllers/workloaddelivery ./internal/bootstrap ./cmd/ai-models-controller`
 - `make verify`
 - `git diff --check`
+
+## Slice 32. Validate large-model RWX runtime delivery on 3 replicas
+
+Цель:
+
+- прогнать live path `HuggingFace -> DMCR -> runtime` на большом official
+  checkpoint `google/gemma-3-12b-it`;
+- поднять workload с `ReadWriteMany` cache и `3` репликами;
+- проверить фактическое поведение shared cache coordination:
+  - сколько writer'ов реально materialize'ят cache root;
+  - сходятся ли follower replicas на том же digest/path;
+  - остаётся ли published/runtime path рабочим без ручного data seeding.
+
+Артефакты:
+
+- updated:
+  - `plans/active/phase2-runtime-followups/TASK.ru.md`
+  - `plans/active/phase2-runtime-followups/PLAN.ru.md`
+  - `plans/active/phase2-runtime-followups/REVIEW.ru.md`
+- live cluster evidence recorded from:
+  - `Model` / `ClusterModel` status
+  - `dmcr` / controller logs where needed
+  - runtime workload events, pod status and shared-cache filesystem checks
+
+Проверки:
+
+- `kubectl get module ai-models`
+- `kubectl -n d8-ai-models get deploy ai-models ai-models-controller dmcr`
+- live `Model` apply/watch result for `google/gemma-3-12b-it`
+- live `Deployment` or `StatefulSet` watch result for `3` replicas on `RWX`
+  storage
+
+## Slice 33. Rework HF file policy from a real corpus
+
+Цель:
+
+- пройтись по representative set of `Hugging Face` repos for supported
+  families and formats;
+- зафиксировать common file names/types that appear in practice;
+- пересобрать keep / benign-drop / hard-reject policy так, чтобы current
+  source contract не ломался на половине реальных repos из-за harmless chat,
+  tokenizer или metadata files.
+
+Артефакты:
+
+- updated `internal/adapters/modelformat/*`
+- expanded tests around remote selection / auto-detect for real-world file sets
+- updated:
+  - `images/controller/TEST_EVIDENCE.ru.md`
+  - `plans/active/phase2-runtime-followups/TASK.ru.md`
+  - `plans/active/phase2-runtime-followups/PLAN.ru.md`
+  - optional bundle notes with the sampled HF corpus and verdict
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelformat ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
+- `make verify`
+- focused live re-check of a previously failing HF repo layout if the policy changes
+
+## Slice 34. Make publication/runtime logging transparent
+
+Цель:
+
+- ввести единый `LOG_LEVEL`-style contract alongside existing `LOG_FORMAT`;
+- довести publish/materialize/source-fetch paths до explicit progress logging on
+  stable step boundaries;
+- сделать long-running `Publishing` and `materializing` states diagnosable по
+  логам одного pod без ad-hoc shelling into the container.
+
+Артефакты:
+
+- updated logging support under `internal/cmdsupport/*`
+- updated controller/runtime env wiring for worker pods and runtime containers
+- updated publish/materialize/source-fetch step logs
+- updated tests and docs for the new log contract
+- updated:
+  - `images/controller/README.md`
+  - `docs/CONFIGURATION.md`
+  - `docs/CONFIGURATION.ru.md`
+  - `plans/active/phase2-runtime-followups/TASK.ru.md`
+  - `plans/active/phase2-runtime-followups/PLAN.ru.md`
+  - `plans/active/phase2-runtime-followups/REVIEW.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/cmdsupport ./cmd/ai-models-artifact-runtime ./internal/adapters/k8s/sourceworker ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
+- `make verify`
+- live sanity check on an active publish worker or materializer pod logs
 
 ## Final validation
 

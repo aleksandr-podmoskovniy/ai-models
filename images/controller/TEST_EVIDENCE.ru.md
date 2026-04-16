@@ -216,7 +216,7 @@
 - Decision surface:
   - source-agnostic input-format validation policy
   - automatic format detection when `spec.inputFormat` is empty
-  - file allowlist / rejectlist policy
+  - file keep / benign-drop / hard-reject policy
   - benign-extra stripping before `ModelPack` packaging
   - required file and required asset enforcement
   - single-file `GGUF` acceptance alongside archive-based inputs
@@ -559,8 +559,10 @@
   - this smoke validated the need for the current corrective slice in
     `internal/adapters/modelformat`;
   - benign alternative export artifacts such as `onnx/` must be ignored for
-    canonical `Safetensors` publication, while remote code still stays
-    reject-only.
+    canonical `Safetensors` publication;
+  - helper scripts and eval/docs payloads should be stripped rather than fail a
+    valid repo;
+  - hard reject should stay reserved for compiled/native or archive payloads.
 
 ## Live `Gemma 4` smoke on the current public `HuggingFace` contract
 

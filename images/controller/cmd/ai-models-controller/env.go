@@ -25,6 +25,7 @@ import (
 
 const (
 	logFormatEnv                        = "LOG_FORMAT"
+	logLevelEnv                         = "LOG_LEVEL"
 	cleanupJobImageEnv                  = "CLEANUP_JOB_IMAGE"
 	cleanupJobImagePullSecretEnv        = "CLEANUP_JOB_IMAGE_PULL_SECRET_NAME"
 	cleanupJobNamespaceEnv              = "CLEANUP_JOB_NAMESPACE"
@@ -64,7 +65,7 @@ const (
 	leaderElectionNamespaceEnv          = "LEADER_ELECTION_NAMESPACE"
 )
 
-const defaultCleanupPassThrough = "LOG_FORMAT,SSL_CERT_FILE,REQUESTS_CA_BUNDLE,AWS_CA_BUNDLE"
+const defaultCleanupPassThrough = "LOG_FORMAT,LOG_LEVEL,SSL_CERT_FILE,REQUESTS_CA_BUNDLE,AWS_CA_BUNDLE"
 
 const (
 	defaultPublicationMaxConcurrentWorkers = 1
@@ -77,18 +78,22 @@ const (
 	defaultPublicationWorkerEphemeralLimit = "50Gi"
 )
 
-func cleanupJobEnv(passThrough, logFormat string) []corev1.EnvVar {
+func cleanupJobEnv(passThrough, logFormat, logLevel string) []corev1.EnvVar {
 	env := cmdsupport.PassThroughEnv(passThrough)
-	if strings.TrimSpace(logFormat) == "" {
+	env = upsertEnvValue(env, logFormatEnv, logFormat)
+	env = upsertEnvValue(env, logLevelEnv, logLevel)
+	return env
+}
+
+func upsertEnvValue(env []corev1.EnvVar, name, value string) []corev1.EnvVar {
+	if strings.TrimSpace(value) == "" {
 		return env
 	}
-
 	for index := range env {
-		if env[index].Name == logFormatEnv {
-			env[index].Value = logFormat
+		if env[index].Name == name {
+			env[index].Value = value
 			return env
 		}
 	}
-
-	return append(env, corev1.EnvVar{Name: logFormatEnv, Value: logFormat})
+	return append(env, corev1.EnvVar{Name: name, Value: value})
 }

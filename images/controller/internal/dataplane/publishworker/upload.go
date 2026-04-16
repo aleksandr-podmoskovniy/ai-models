@@ -19,9 +19,11 @@ package publishworker
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
@@ -35,30 +37,62 @@ func publishFromUpload(ctx context.Context, options Options) (publicationartifac
 	if strings.TrimSpace(options.UploadPath) == "" && options.UploadStage == nil {
 		return publicationartifact.Result{}, errors.New("upload source requires either upload-path or upload staging handle")
 	}
+	logger := slog.Default().With(
+		slog.String("sourceType", string(modelsv1alpha1.ModelSourceTypeUpload)),
+		slog.Bool("localUploadPathProvided", strings.TrimSpace(options.UploadPath) != ""),
+		slog.Bool("uploadStageEnabled", options.UploadStage != nil),
+	)
 
 	workspace, cleanupDir, err := ensureWorkspace(options.SnapshotDir, "ai-model-upload-publish-")
 	if err != nil {
 		return publicationartifact.Result{}, err
 	}
 	defer cleanupDir()
+	logger.Debug("upload publication workspace prepared", slog.String("workspace", workspace))
 
+	sourcePrepareStarted := time.Now()
+	logger.Info("upload source preparation started")
 	uploadPath, cleanupUpload, err := ensureUploadPath(ctx, options, workspace)
 	if err != nil {
 		return publicationartifact.Result{}, err
 	}
 	defer cleanupUpload()
+	if info, statErr := os.Stat(uploadPath); statErr == nil {
+		logger.Info(
+			"upload source preparation completed",
+			slog.Int64("durationMs", time.Since(sourcePrepareStarted).Milliseconds()),
+			slog.String("uploadPath", uploadPath),
+			slog.Int64("uploadSizeBytes", info.Size()),
+		)
+	}
 
+	checkpointPrepareStarted := time.Now()
+	logger.Info("upload checkpoint materialization started")
 	checkpointDir, err := sourcefetch.PrepareModelInput(uploadPath, filepath.Join(workspace, "checkpoint"))
 	if err != nil {
 		return publicationartifact.Result{}, err
 	}
+	logger.Info(
+		"upload checkpoint materialization completed",
+		slog.Int64("durationMs", time.Since(checkpointPrepareStarted).Milliseconds()),
+		slog.String("checkpointDir", checkpointDir),
+	)
+
 	inputFormat, err := resolveUploadInputFormat(checkpointDir, options.InputFormat)
 	if err != nil {
 		return publicationartifact.Result{}, err
 	}
+	logger.Info("upload input format resolved", slog.String("resolvedInputFormat", strings.TrimSpace(string(inputFormat))))
+
+	validationStarted := time.Now()
+	logger.Info("upload checkpoint validation started")
 	if err := modelformat.ValidateDir(checkpointDir, inputFormat); err != nil {
 		return publicationartifact.Result{}, err
 	}
+	logger.Info(
+		"upload checkpoint validation completed",
+		slog.Int64("durationMs", time.Since(validationStarted).Milliseconds()),
+	)
 
 	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, checkpointDir, inputFormat, sourceProfileInput{
 		Task:           options.Task,
@@ -67,8 +101,17 @@ func publishFromUpload(ctx context.Context, options Options) (publicationartifac
 	if err != nil {
 		return publicationartifact.Result{}, err
 	}
-	if err := cleanupUploadStage(ctx, options); err != nil {
-		return publicationartifact.Result{}, err
+
+	if options.UploadStage != nil {
+		cleanupStarted := time.Now()
+		logger.Info("upload staging cleanup started")
+		if err := cleanupUploadStage(ctx, options); err != nil {
+			return publicationartifact.Result{}, err
+		}
+		logger.Info(
+			"upload staging cleanup completed",
+			slog.Int64("durationMs", time.Since(cleanupStarted).Milliseconds()),
+		)
 	}
 
 	rawSource := uploadRawProvenance(options.UploadStage)

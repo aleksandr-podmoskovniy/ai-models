@@ -34,24 +34,22 @@ func ggufRules() formatRules {
 func classifyGGUFFile(relative string) (fileAction, bool, bool) {
 	base := filepath.Base(relative)
 	lowerBase := strings.ToLower(base)
+	lowerRelative := strings.ToLower(relative)
 
-	if strings.HasPrefix(base, ".") {
-		if base == ".gitattributes" {
-			return fileActionDrop, false, false
-		}
-		return fileActionReject, false, false
-	}
-	if hasForbiddenExtension(lowerBase) {
-		return fileActionReject, false, false
-	}
-	if isAlternativeExportArtifact(strings.ToLower(relative), lowerBase) {
+	if hasDroppedPathComponent(relative) {
 		return fileActionDrop, false, false
 	}
-	if isBenignExtraFile(lowerBase) {
+	if isModelCompanionFile(lowerRelative, lowerBase) {
+		return fileActionKeep, false, false
+	}
+	if hasDroppedScriptExtension(lowerBase) || isAlternativeExportArtifact(lowerRelative, lowerBase) || isBenignExtraFile(lowerBase) {
 		return fileActionDrop, false, false
+	}
+	if hasHardRejectExtension(lowerBase) {
+		return fileActionReject, false, false
 	}
 	if strings.HasSuffix(lowerBase, ".gguf") {
 		return fileActionKeep, false, true
 	}
-	return fileActionReject, false, false
+	return fileActionDrop, false, false
 }

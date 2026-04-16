@@ -30,6 +30,7 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 
 	config := managerConfig{
 		LogFormat:                      "json",
+		LogLevel:                       "debug",
 		CleanupJobImage:                "example.com/controller-runtime:dev",
 		CleanupJobNamespace:            "d8-ai-models",
 		PublicationWorkerNamespace:     "d8-ai-models",
@@ -50,6 +51,9 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	if got, want := options.WorkloadDelivery.Service.Render.RuntimeImage, config.CleanupJobImage; got != want {
 		t.Fatalf("delivery runtime image = %q, want %q", got, want)
 	}
+	if got, want := options.WorkloadDelivery.Service.Render.LogLevel, config.LogLevel; got != want {
+		t.Fatalf("delivery runtime log level = %q, want %q", got, want)
+	}
 	if got, want := options.WorkloadDelivery.Service.Render.CacheMountPath, modeldelivery.DefaultCacheMountPath; got != want {
 		t.Fatalf("delivery cache mount path = %q, want %q", got, want)
 	}
@@ -61,5 +65,8 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	}
 	if got, want := options.WorkloadDelivery.Service.RegistrySourceCASecretName, config.PublicationOCICASecretName; got != want {
 		t.Fatalf("delivery source CA secret = %q, want %q", got, want)
+	}
+	if got, want := options.PublicationRuntime.RuntimeLogLevel, config.LogLevel; got != want {
+		t.Fatalf("publication runtime log level = %q, want %q", got, want)
 	}
 }

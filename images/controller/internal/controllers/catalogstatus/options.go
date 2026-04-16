@@ -38,6 +38,7 @@ import (
 type Options struct {
 	Runtime              PublicationRuntimeOptions
 	RuntimeLogFormat     string
+	RuntimeLogLevel      string
 	MaxConcurrentWorkers int
 	UploadGateway        UploadGatewayOptions
 }
@@ -76,7 +77,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	sourceWorkers, err := sourceworker.NewService(
 		mgr.GetClient(),
 		mgr.GetScheme(),
-		sourceWorkerOptions(options.Runtime, options.MaxConcurrentWorkers, options.RuntimeLogFormat),
+		sourceWorkerOptions(options.Runtime, options.MaxConcurrentWorkers, options.RuntimeLogFormat, options.RuntimeLogLevel),
 	)
 	if err != nil {
 		return err
@@ -137,10 +138,11 @@ func (o Options) Validate() error {
 	return storageprojection.ValidateOptions("publication runtime", o.Runtime.ObjectStorage)
 }
 
-func sourceWorkerOptions(runtime PublicationRuntimeOptions, maxConcurrentWorkers int, logFormat string) sourceworker.Options {
+func sourceWorkerOptions(runtime PublicationRuntimeOptions, maxConcurrentWorkers int, logFormat, logLevel string) sourceworker.Options {
 	return sourceworker.Options{
 		RuntimeOptions:       runtime,
 		LogFormat:            logFormat,
+		LogLevel:             logLevel,
 		MaxConcurrentWorkers: maxConcurrentWorkers,
 	}
 }

@@ -29,14 +29,24 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const DefaultLogFormat = "json"
+const (
+	DefaultLogFormat = "json"
+	DefaultLogLevel  = "info"
+)
 
-func NewLogger(format string) (*slog.Logger, error) {
-	return newLogger(format, os.Stderr)
+func NewLogger(format, level string) (*slog.Logger, error) {
+	return newLogger(format, level, os.Stderr)
 }
 
-func newLogger(format string, writer io.Writer) (*slog.Logger, error) {
-	options := &slog.HandlerOptions{ReplaceAttr: normalizeLogAttr}
+func newLogger(format, level string, writer io.Writer) (*slog.Logger, error) {
+	resolvedLevel, err := parseLogLevel(level)
+	if err != nil {
+		return nil, err
+	}
+	options := &slog.HandlerOptions{
+		Level:       resolvedLevel,
+		ReplaceAttr: normalizeLogAttr,
+	}
 
 	switch format {
 	case "text":
@@ -48,8 +58,8 @@ func newLogger(format string, writer io.Writer) (*slog.Logger, error) {
 	}
 }
 
-func NewComponentLogger(format, component string) (*slog.Logger, error) {
-	logger, err := NewLogger(format)
+func NewComponentLogger(format, level, component string) (*slog.Logger, error) {
+	logger, err := NewLogger(format, level)
 	if err != nil {
 		return nil, err
 	}
@@ -61,8 +71,8 @@ func NewComponentLogger(format, component string) (*slog.Logger, error) {
 	return logger.With(slog.String("logger", component)), nil
 }
 
-func newComponentLogger(format, component string, writer io.Writer) (*slog.Logger, error) {
-	logger, err := newLogger(format, writer)
+func newComponentLogger(format, level, component string, writer io.Writer) (*slog.Logger, error) {
+	logger, err := newLogger(format, level, writer)
 	if err != nil {
 		return nil, err
 	}
@@ -124,4 +134,19 @@ func normalizeLogKey(key string) string {
 	}
 
 	return builder.String()
+}
+
+func parseLogLevel(level string) (slog.Level, error) {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "", DefaultLogLevel:
+		return slog.LevelInfo, nil
+	case "debug":
+		return slog.LevelDebug, nil
+	case "warn", "warning":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	default:
+		return 0, fmt.Errorf("unsupported log level %q", level)
+	}
 }

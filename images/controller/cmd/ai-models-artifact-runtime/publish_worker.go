@@ -110,7 +110,13 @@ func runPublishWorker(args []string) int {
 		modelsv1alpha1.ModelInputFormat(inputFormat),
 		task,
 	)
-	logger.Info("publication worker started")
+	cmdsupport.SetDefaultLogger(logger)
+	logger.Info(
+		"publication worker started",
+		slog.Int("runtimeEngineCount", len(runtimeEngines)),
+		slog.Bool("uploadStageEnabled", uploadStage != nil),
+		slog.Bool("rawStageEnabled", uploadStagingClient != nil && strings.TrimSpace(rawStageBucket) != "" && strings.TrimSpace(rawStageKeyPrefix) != ""),
+	)
 
 	result, err := publishworker.Run(ctx, publishworker.Options{
 		SourceType:         modelsv1alpha1.ModelSourceType(sourceType),

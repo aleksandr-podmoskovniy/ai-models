@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -103,8 +104,14 @@ func materializeWithCoordination(
 	if cfg.Mode == "" {
 		return run(ctx)
 	}
+	logger := slog.Default().With(
+		slog.String("coordinationMode", cfg.Mode),
+		slog.String("coordinationHolder", cfg.HolderID),
+		slog.String("destinationDir", destinationDir),
+	)
 
 	lock := newMaterializationLock(cacheRoot, destinationDir, cfg.HolderID)
+	waitLogged := false
 
 	for {
 		result, ready, err := readyCoordinatedMaterialization(cacheRoot, destinationDir)
@@ -112,6 +119,7 @@ func materializeWithCoordination(
 			return modelpackports.MaterializeResult{}, err
 		}
 		if ready {
+			logger.Info("coordinated materialization reused ready cache")
 			return result, nil
 		}
 
@@ -120,12 +128,14 @@ func materializeWithCoordination(
 			return modelpackports.MaterializeResult{}, err
 		}
 		if acquired {
+			logger.Info("coordinated materialization lock acquired", slog.String("lockPath", lock.Path))
 			result, ready, err = readyCoordinatedMaterialization(cacheRoot, destinationDir)
 			if err != nil {
 				release()
 				return modelpackports.MaterializeResult{}, err
 			}
 			if ready {
+				logger.Info("coordinated materialization reused ready cache after lock acquisition")
 				release()
 				return result, nil
 			}
@@ -138,6 +148,10 @@ func materializeWithCoordination(
 			result, err = finalizeCoordinatedMaterialization(cacheRoot, destinationDir, result)
 			release()
 			return result, err
+		}
+		if !waitLogged {
+			logger.Info("coordinated materialization waiting for active writer", slog.String("lockPath", lock.Path))
+			waitLogged = true
 		}
 
 		select {
@@ -180,6 +194,12 @@ func finalizeCoordinatedMaterialization(cacheRoot, destinationDir string, result
 	if err := updateCurrentMaterializationLink(cacheRoot, result.ModelPath); err != nil {
 		return modelpackports.MaterializeResult{}, err
 	}
+	slog.Default().Info(
+		"coordinated materialization updated current cache link",
+		slog.String("cacheRoot", cacheRoot),
+		slog.String("destinationDir", destinationDir),
+		slog.String("targetModelPath", result.ModelPath),
+	)
 	result.ModelPath = filepath.Join(filepath.Clean(cacheRoot), cacheCurrentPath)
 	return result, nil
 }
@@ -214,6 +234,7 @@ func tryAcquireMaterializationLock(lock materializationLock) (bool, func(), erro
 		return false, nil, err
 	}
 	if stale {
+		slog.Default().Warn("coordinated materialization removed stale lock", slog.String("lockPath", lock.Path))
 		_ = os.RemoveAll(lock.Path)
 	}
 	return false, nil, nil

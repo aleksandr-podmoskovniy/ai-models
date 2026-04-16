@@ -32,8 +32,33 @@ const (
 
 type validationState struct{ hasConfig, hasAsset bool }
 
+var droppedDirectoryNames = []string{
+	"assets",
+	"benchmark",
+	"benchmarks",
+	"docs",
+	"encoding",
+	"eval",
+	"evaluation",
+	"example",
+	"examples",
+	"figures",
+	"images",
+	"notebooks",
+	"onnx",
+	"openvino",
+	"coreml",
+	"tflite",
+	"original",
+	"metal",
+	"scripts",
+	"test",
+	"tests",
+}
+
 func shouldDropDirectory(relative string) bool {
-	return filepath.Base(relative) == "__MACOSX"
+	base := strings.ToLower(filepath.Base(relative))
+	return base == "__macosx" || strings.HasPrefix(base, ".") || slices.Contains(droppedDirectoryNames, base)
 }
 
 func normalizeRemotePath(path string) string {
@@ -44,7 +69,19 @@ func normalizeRemotePath(path string) string {
 	return trimmed
 }
 
-func isAllowedMetadataFile(lowerRelative, lowerBase string) bool {
+func hasDroppedPathComponent(relative string) bool {
+	for _, part := range strings.Split(strings.ToLower(filepath.ToSlash(relative)), "/") {
+		if part == "" {
+			continue
+		}
+		if part == "__macosx" || strings.HasPrefix(part, ".") || slices.Contains(droppedDirectoryNames, part) {
+			return true
+		}
+	}
+	return false
+}
+
+func isModelCompanionFile(lowerRelative, lowerBase string) bool {
 	if slices.Contains([]string{
 		"generation_config.json",
 		"tokenizer.json",
@@ -60,10 +97,40 @@ func isAllowedMetadataFile(lowerRelative, lowerBase string) bool {
 		"spiece.model",
 		"sentencepiece.bpe.model",
 		"chat_template.jinja",
+		"modules.json",
+		"dtypes.json",
+		"params",
+		"params.json",
 	}, lowerRelative) {
 		return true
 	}
-	return strings.HasSuffix(lowerBase, ".index.json")
+	if strings.HasSuffix(lowerBase, ".index.json") {
+		return true
+	}
+	if !hasSuffix(lowerBase, ".json", ".yaml", ".yml", ".xml", ".jinja", ".model", ".txt") {
+		return false
+	}
+	for _, token := range []string{
+		"config",
+		"tokenizer",
+		"vocab",
+		"merge",
+		"special_tokens",
+		"added_tokens",
+		"preprocessor",
+		"processor",
+		"chat_template",
+		"module",
+		"pooling",
+		"params",
+		"dtype",
+		"template",
+	} {
+		if strings.Contains(lowerBase, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func isAlternativeExportArtifact(lowerRelative, lowerBase string) bool {
@@ -72,6 +139,8 @@ func isAlternativeExportArtifact(lowerRelative, lowerBase string) bool {
 		"openvino/",
 		"coreml/",
 		"tflite/",
+		"original/",
+		"metal/",
 	} {
 		if strings.HasPrefix(lowerRelative, prefix) {
 			return true
@@ -84,10 +153,14 @@ func isAlternativeExportArtifact(lowerRelative, lowerBase string) bool {
 		"flax_model.msgpack",
 		"rust_model.ot",
 		"model.ckpt.index",
+		"model.bin",
 	}, lowerBase) {
 		return true
 	}
 
+	if strings.HasPrefix(lowerBase, "pytorch_model") && strings.HasSuffix(lowerBase, ".bin") {
+		return true
+	}
 	if strings.HasPrefix(lowerBase, "model.ckpt.") || strings.HasPrefix(lowerBase, "model.ckpt-") {
 		return true
 	}
@@ -98,34 +171,55 @@ func isAlternativeExportArtifact(lowerRelative, lowerBase string) bool {
 		".mlmodel",
 		".pdmodel",
 		".pdiparams",
+		".pt",
+		".pth",
+		".h5",
+		".msgpack",
+		".ot",
+		".imatrix",
+		".gguf_file",
 	)
 }
 
 func isBenignExtraFile(lowerBase string) bool {
-	if strings.HasPrefix(lowerBase, "readme") || strings.HasPrefix(lowerBase, "license") || strings.HasPrefix(lowerBase, "notice") {
+	if strings.HasPrefix(lowerBase, "readme") || strings.HasPrefix(lowerBase, "license") || strings.HasPrefix(lowerBase, "notice") || strings.Contains(lowerBase, "usage_policy") || lowerBase == "use_policy" {
 		return true
 	}
-	return hasSuffix(lowerBase, ".md", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg")
+	return hasSuffix(lowerBase, ".md", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".pdf", ".txt", ".jsonl", ".csv")
 }
 
-func hasForbiddenExtension(lowerBase string) bool {
+func hasDroppedScriptExtension(lowerBase string) bool {
 	return hasSuffix(lowerBase,
 		".py",
 		".sh",
 		".bash",
 		".zsh",
-		".so",
-		".dll",
-		".dylib",
-		".exe",
 		".bat",
 		".cmd",
-		".jar",
-		".class",
 		".php",
 		".pl",
 		".rb",
 		".ps1",
+	)
+}
+
+func hasHardRejectExtension(lowerBase string) bool {
+	return hasSuffix(lowerBase,
+		".so",
+		".dll",
+		".dylib",
+		".exe",
+		".jar",
+		".class",
+		".wasm",
+		".zip",
+		".tar",
+		".tgz",
+		".gz",
+		".bz2",
+		".xz",
+		".7z",
+		".rar",
 	)
 }
 

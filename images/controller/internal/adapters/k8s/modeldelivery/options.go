@@ -32,13 +32,16 @@ const (
 	ResolvedDigestAnnotation = "ai-models.deckhouse.io/resolved-digest"
 
 	LogFormatEnv     = "LOG_FORMAT"
+	LogLevelEnv      = "LOG_LEVEL"
 	defaultLogFormat = "json"
+	defaultLogLevel  = "info"
 )
 
 type Options struct {
 	RuntimeImage    string
 	ImagePullPolicy corev1.PullPolicy
 	LogFormat       string
+	LogLevel        string
 	OCIInsecure     bool
 
 	InitContainerName string
@@ -51,6 +54,9 @@ func NormalizeOptions(options Options) Options {
 	}
 	if strings.TrimSpace(options.LogFormat) == "" {
 		options.LogFormat = defaultLogFormat
+	}
+	if strings.TrimSpace(options.LogLevel) == "" {
+		options.LogLevel = defaultLogLevel
 	}
 	if strings.TrimSpace(options.InitContainerName) == "" {
 		options.InitContainerName = DefaultInitContainerName

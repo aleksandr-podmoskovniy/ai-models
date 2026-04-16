@@ -60,6 +60,27 @@
   presigned multipart upload в source mirror шёл через `http.DefaultClient`,
   поэтому bypass'ил custom S3 CA trust и падал на
   `x509: certificate signed by unknown authority`.
+- после landing controller-owned workload delivery и RWX coordination ещё не
+  закрыт live proof на большом checkpoint и multi-replica shared-cache
+  topology:
+  - нужен отдельный smoke на `google/gemma-3-12b-it`;
+  - нужен explicit path `HuggingFace -> DMCR -> runtime`;
+  - нужен факт, что `ReadWriteMany` cache корректно обслуживает `3` реплики
+    одного workload без повторного полной materialization per replica и без
+    race на shared cache root.
+- live попытка взять `google/gemma-3-12b-it` показала более широкий contract
+  gap, чем single-repo exception:
+  - current `Safetensors` file policy reject'ит `chat_template.json`;
+  - auto-detect branch падает на той же раскладке, потому что для `GGUF`
+    reject'ится `added_tokens.json`;
+  - значит текущий format policy слишком узкий для реального `Hugging Face`
+    corpus и требует evidence-based redesign вместо точечных whitelist fixes.
+- отдельный live symptom вскрылся на `google/gemma-4-E4B-it`:
+  - publish worker может долго оставаться в `Publishing`;
+  - worker pod логирует только старт и терминальный результат;
+  - текущая publication/runtime observability недостаточна для эксплуатации и
+    для локализации bottleneck между source-info, file selection, mirror,
+    materialization, pack/push и inspect.
 
 Нужен новый компактный canonical active bundle, чтобы следующие bounded slices
 шли без повторного разрастания `plans/active`.
@@ -101,6 +122,18 @@
   - read-only DMCR auth projection reuse
   - concrete `PodTemplateSpec` mutation and init-container wiring for
     `materialize-artifact`
+- прогнать live RWX smoke на большом official checkpoint
+  `google/gemma-3-12b-it` и зафиксировать фактическое поведение shared cache на
+  `3` репликах.
+- собрать corpus по реальным `Hugging Face` repos и на его основе пересмотреть
+  file policy:
+  - что keep;
+  - что benign drop;
+  - что должно оставаться hard reject.
+- довести publication/runtime logging до прозрачного contract:
+  - единый log-level control;
+  - явные progress logs по основным step boundaries;
+  - live-observable fields, достаточные для локализации торможения и отказа.
 - разрезать oversized controller entrypoint shell, если `cmd/` снова начинает
   смешивать env contract, resource parsing и bootstrap wiring в одном файле.
 - держать `cmd/ai-models-controller` defendable как thin shell после недавних
@@ -167,6 +200,9 @@
   small `Gemma 4` checkpoint;
 - по результату есть готовый working manifest или зафиксированный bounded
   defect с фактами из live cluster.
+- current public `HuggingFace` source contract дополнительно проверен живьём на
+  большом official checkpoint `google/gemma-3-12b-it` без fallback на upload
+  path.
 - опубликованный `ModelPack` после live smoke содержит реальные model bytes, а
   не пустой tar layer или symlink shell;
 - corrective regression не допускает возврата symlink-based `kitops` packing
@@ -195,6 +231,26 @@
   per-pod storage и StatefulSet claim templates допускаются, direct shared PVC
   на multi-replica workloads должен требовать `ReadWriteMany`, а shared RWX
   cache обязан координировать одного writer прямо на shared cache root.
+- large-model live smoke должен подтверждать или опровергать этот контракт
+  фактами из кластера:
+  - `RWX` cache mounted into one workload with `3` replicas;
+  - runtime path materializes large model into shared cache root;
+  - follower replicas не ломают shared cache и не расходятся по digest/state;
+  - если полная single-download semantics не выполняется, bounded defect
+    зафиксирован с фактами из logs/events/runtime filesystem.
+- file policy больше не строится на ad-hoc guesses:
+  - есть зафиксированная выборка `Hugging Face` repos из разных семейств и
+    форматов;
+  - common metadata/chat/tokenizer files разведены на `keep` vs benign `drop`;
+  - hard rejects сужены до реально опасных или принципиально unsupported
+    artefact classes.
+- publication/runtime logging больше не остаётся только старт/финиш envelope:
+  - есть единый `LOG_LEVEL`-style contract;
+  - normal `info` показывает step transitions и ключевые counters/identifiers;
+  - `debug` можно включить для более подробной step-local диагностики без
+    изменения кода и без ad-hoc `fmt.Printf`;
+  - live cluster symptoms вроде долгого `Publishing` можно локализовать по
+    логам одного worker pod без ручного перебора внутренних функций.
 - touched delivery/runtime code не должен оставлять новый локальный монолит в
   `internal/adapters/modelpack/oci/materialize.go` и не должен снова уводить
   `STRUCTURE.ru.md` от реального package tree.

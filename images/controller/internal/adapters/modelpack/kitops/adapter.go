@@ -20,9 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	modelpackoci "github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/oci"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
@@ -48,6 +50,11 @@ func (a *Adapter) Publish(ctx context.Context, input modelpackports.PublishInput
 	if strings.TrimSpace(input.ArtifactURI) == "" {
 		return modelpackports.PublishResult{}, errors.New("artifact URI must not be empty")
 	}
+	logger := slog.Default().With(
+		slog.String("artifactURI", strings.TrimSpace(input.ArtifactURI)),
+		slog.String("modelDir", strings.TrimSpace(input.ModelDir)),
+		slog.String("publisher", "kitops"),
+	)
 
 	configDir, err := os.MkdirTemp("", "ai-model-kitops-config-")
 	if err != nil {
@@ -67,14 +74,28 @@ func (a *Adapter) Publish(ctx context.Context, input modelpackports.PublishInput
 	if err := a.login(ctx, configDir, input.ArtifactURI, auth); err != nil {
 		return modelpackports.PublishResult{}, err
 	}
+	logger.Debug(
+		"kitops publication environment prepared",
+		slog.String("configDir", configDir),
+		slog.String("contextDir", contextDir),
+	)
+
+	packStarted := time.Now()
+	logger.Info("kitops pack started")
 	if err := a.run(ctx, configDir, auth, "pack", input.ModelDir, "-f", filepath.Join(contextDir, "Kitfile"), "-t", input.ArtifactURI, "--use-model-pack"); err != nil {
 		return modelpackports.PublishResult{}, fmt.Errorf("failed to pack ModelPack: %w", err)
 	}
+	logger.Info("kitops pack completed", slog.Int64("durationMs", time.Since(packStarted).Milliseconds()))
 	pushArgs := append([]string{"push", input.ArtifactURI}, connectionFlags(auth)...)
+	pushStarted := time.Now()
+	logger.Info("kitops push started")
 	if err := a.run(ctx, configDir, auth, pushArgs...); err != nil {
 		return modelpackports.PublishResult{}, fmt.Errorf("failed to push ModelPack: %w", err)
 	}
+	logger.Info("kitops push completed", slog.Int64("durationMs", time.Since(pushStarted).Milliseconds()))
 
+	inspectStarted := time.Now()
+	logger.Info("modelpack remote inspect started")
 	inspectPayload, err := a.inspectRemote(ctx, configDir, input.ArtifactURI, auth)
 	if err != nil {
 		return modelpackports.PublishResult{}, err
@@ -87,6 +108,13 @@ func (a *Adapter) Publish(ctx context.Context, input modelpackports.PublishInput
 	if strings.TrimSpace(digest) == "" {
 		return modelpackports.PublishResult{}, errors.New("kitops inspect payload is missing digest")
 	}
+	logger.Info(
+		"modelpack remote inspect completed",
+		slog.Int64("durationMs", time.Since(inspectStarted).Milliseconds()),
+		slog.String("artifactDigest", digest),
+		slog.String("artifactMediaType", modelpackoci.ArtifactMediaType(inspectPayload)),
+		slog.Int64("artifactSizeBytes", modelpackoci.InspectSizeBytes(inspectPayload)),
+	)
 
 	return modelpackports.PublishResult{
 		Reference: immutableOCIReference(input.ArtifactURI, digest),

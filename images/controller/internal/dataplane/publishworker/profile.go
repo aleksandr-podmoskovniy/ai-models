@@ -19,7 +19,9 @@ package publishworker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	ggufprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/gguf"
@@ -48,12 +50,30 @@ func resolveAndPublish(
 	input sourceProfileInput,
 	description string,
 ) (publicationdata.ResolvedProfile, modelpackports.PublishResult, error) {
+	logger := slog.Default().With(
+		slog.String("checkpointDir", strings.TrimSpace(checkpointDir)),
+		slog.String("resolvedInputFormat", strings.TrimSpace(string(inputFormat))),
+	)
+
+	resolveStarted := time.Now()
+	logger.Info("publication profile resolution started")
 	resolvedProfile, err := resolveProfile(checkpointDir, inputFormat, input)
 	if err != nil {
 		return publicationdata.ResolvedProfile{}, modelpackports.PublishResult{}, err
 	}
 	resolvedProfile = attachResolvedProfileProvenance(resolvedProfile, input.Provenance)
+	logger.Info(
+		"publication profile resolution completed",
+		slog.Int64("durationMs", time.Since(resolveStarted).Milliseconds()),
+		slog.String("resolvedTask", strings.TrimSpace(resolvedProfile.Task)),
+		slog.String("resolvedFamily", strings.TrimSpace(resolvedProfile.Family)),
+		slog.Int("compatibleRuntimeCount", len(resolvedProfile.CompatibleRuntimes)),
+		slog.Int("supportedEndpointTypeCount", len(resolvedProfile.SupportedEndpointTypes)),
+		slog.Int64("parameterCount", resolvedProfile.ParameterCount),
+	)
 
+	publishStarted := time.Now()
+	logger.Info("modelpack publication started", slog.String("artifactURI", strings.TrimSpace(options.ArtifactURI)))
 	publishResult, err := options.ModelPackPublisher.Publish(ctx, modelpackports.PublishInput{
 		ModelDir:    checkpointDir,
 		ArtifactURI: options.ArtifactURI,
@@ -62,6 +82,13 @@ func resolveAndPublish(
 	if err != nil {
 		return publicationdata.ResolvedProfile{}, modelpackports.PublishResult{}, err
 	}
+	logger.Info(
+		"modelpack publication completed",
+		slog.Int64("durationMs", time.Since(publishStarted).Milliseconds()),
+		slog.String("artifactDigest", strings.TrimSpace(publishResult.Digest)),
+		slog.String("artifactMediaType", strings.TrimSpace(publishResult.MediaType)),
+		slog.Int64("artifactSizeBytes", publishResult.SizeBytes),
+	)
 
 	return resolvedProfile, publishResult, nil
 }

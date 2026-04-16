@@ -67,6 +67,9 @@ func TestRenderBuildsMaterializerAgainstExistingCacheMount(t *testing.T) {
 	if got := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_CACHE_ROOT"); got != DefaultCacheMountPath {
 		t.Fatalf("cache root env = %q, want %q", got, DefaultCacheMountPath)
 	}
+	if got := envValue(rendered.InitContainer.Env, LogLevelEnv); got != defaultLogLevel {
+		t.Fatalf("log level env = %q, want %q", got, defaultLogLevel)
+	}
 	if got := envValue(rendered.InitContainer.Env, "AI_MODELS_OCI_CA_FILE"); got != ociregistry.CAFilePath {
 		t.Fatalf("unexpected OCI CA env %q", got)
 	}

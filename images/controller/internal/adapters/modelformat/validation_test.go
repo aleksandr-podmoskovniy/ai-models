@@ -31,12 +31,22 @@ func TestValidateDirSafetensors(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "config.json"), `{"model_type":"qwen3"}`)
 	writeTestFile(t, filepath.Join(root, "model.safetensors"), "weights")
+	writeTestFile(t, filepath.Join(root, "chat_template.json"), `{"template":"..."}`)
+	writeTestFile(t, filepath.Join(root, "1_Pooling", "config.json"), `{"pooling_mode":"cls"}`)
 	writeTestFile(t, filepath.Join(root, "README.md"), "# docs")
 	writeTestFile(t, filepath.Join(root, "onnx", "model.onnx"), "onnx")
 	writeTestFile(t, filepath.Join(root, "pytorch_model.bin"), "weights")
+	writeTestFile(t, filepath.Join(root, "modeling_qwen.py"), "print('helper')")
+	writeTestFile(t, filepath.Join(root, ".eval_results", "result.yaml"), "score: 1")
 
 	if err := ValidateDir(root, modelsv1alpha1.ModelInputFormatSafetensors); err != nil {
 		t.Fatalf("ValidateDir() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "chat_template.json")); err != nil {
+		t.Fatalf("expected chat_template.json to remain, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "1_Pooling", "config.json")); err != nil {
+		t.Fatalf("expected 1_Pooling/config.json to remain, stat err = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "README.md")); !os.IsNotExist(err) {
 		t.Fatalf("expected README.md to be removed, stat err = %v", err)
@@ -46,6 +56,12 @@ func TestValidateDirSafetensors(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "pytorch_model.bin")); !os.IsNotExist(err) {
 		t.Fatalf("expected pytorch_model.bin to be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "modeling_qwen.py")); !os.IsNotExist(err) {
+		t.Fatalf("expected modeling_qwen.py to be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".eval_results")); !os.IsNotExist(err) {
+		t.Fatalf("expected .eval_results to be removed, stat err = %v", err)
 	}
 }
 
@@ -60,16 +76,16 @@ func TestValidateDirGGUF(t *testing.T) {
 	}
 }
 
-func TestValidateDirRejectsForbiddenFile(t *testing.T) {
+func TestValidateDirRejectsHardRejectPayload(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "config.json"), `{"model_type":"qwen3"}`)
 	writeTestFile(t, filepath.Join(root, "model.safetensors"), "weights")
-	writeTestFile(t, filepath.Join(root, "model.py"), "print('boom')")
+	writeTestFile(t, filepath.Join(root, "libpayload.so"), "boom")
 
 	if err := ValidateDir(root, modelsv1alpha1.ModelInputFormatSafetensors); err == nil {
-		t.Fatal("expected forbidden file validation error")
+		t.Fatal("expected hard-reject payload validation error")
 	}
 }
 
@@ -95,9 +111,16 @@ func TestSelectRemoteFiles(t *testing.T) {
 	selected, err := SelectRemoteFiles(modelsv1alpha1.ModelInputFormatSafetensors, []string{
 		"README.md",
 		"config.json",
+		"chat_template.json",
+		"config_sentence_transformers.json",
+		"1_Pooling/config.json",
+		"modules.json",
+		"video_preprocessor_config.json",
 		"model-00001-of-00002.safetensors",
 		"onnx/model.onnx",
+		"original/params.json",
 		"pytorch_model.bin",
+		"modeling_phi3.py",
 		"tokenizer.json",
 	})
 	if err != nil {
@@ -105,6 +128,11 @@ func TestSelectRemoteFiles(t *testing.T) {
 	}
 	if !slices.Equal(selected, []string{
 		"config.json",
+		"chat_template.json",
+		"config_sentence_transformers.json",
+		"1_Pooling/config.json",
+		"modules.json",
+		"video_preprocessor_config.json",
 		"model-00001-of-00002.safetensors",
 		"tokenizer.json",
 	}) {
@@ -113,35 +141,46 @@ func TestSelectRemoteFiles(t *testing.T) {
 
 	selected, err = SelectRemoteFiles(modelsv1alpha1.ModelInputFormatGGUF, []string{
 		"README.md",
+		"params",
+		"tokenizer_config.json",
+		"imatrix_unsloth.gguf_file",
 		"deepseek-r1-q4_k_m.gguf",
 	})
 	if err != nil {
 		t.Fatalf("SelectRemoteFiles(GGUF) error = %v", err)
 	}
-	if !slices.Equal(selected, []string{"deepseek-r1-q4_k_m.gguf"}) {
+	if !slices.Equal(selected, []string{"params", "tokenizer_config.json", "deepseek-r1-q4_k_m.gguf"}) {
 		t.Fatalf("unexpected gguf selected files %#v", selected)
 	}
 }
 
-func TestSelectRemoteFilesRejectsRemoteCode(t *testing.T) {
+func TestSelectRemoteFilesDropsHelperScripts(t *testing.T) {
+	t.Parallel()
+
+	selected, err := SelectRemoteFiles(modelsv1alpha1.ModelInputFormatSafetensors, []string{
+		"config.json",
+		"model.safetensors",
+		"modeling_qwen.py",
+		"sample_finetune.py",
+	})
+	if err != nil {
+		t.Fatalf("SelectRemoteFiles() error = %v", err)
+	}
+	if !slices.Equal(selected, []string{"config.json", "model.safetensors"}) {
+		t.Fatalf("unexpected selected files %#v", selected)
+	}
+}
+
+func TestSelectRemoteFilesRejectsCompiledPayload(t *testing.T) {
 	t.Parallel()
 
 	_, err := SelectRemoteFiles(modelsv1alpha1.ModelInputFormatSafetensors, []string{
 		"config.json",
 		"model.safetensors",
-		"modeling_qwen.py",
+		"libpayload.so",
 	})
 	if err == nil {
-		t.Fatal("expected remote code validation error")
-	}
-
-	_, err = SelectRemoteFiles(modelsv1alpha1.ModelInputFormatSafetensors, []string{
-		"config.json",
-		"model.safetensors",
-		"onnx/model.py",
-	})
-	if err == nil {
-		t.Fatal("expected nested remote code validation error")
+		t.Fatal("expected compiled payload validation error")
 	}
 }
 

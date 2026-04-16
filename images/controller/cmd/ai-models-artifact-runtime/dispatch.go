@@ -24,6 +24,7 @@ import (
 
 const (
 	logFormatEnv               = "LOG_FORMAT"
+	logLevelEnv                = "LOG_LEVEL"
 	publicationOCIInsecureEnv  = "PUBLICATION_OCI_INSECURE"
 	commandPublishWorker       = "publish-worker"
 	commandUploadSession       = "upload-session"
@@ -56,7 +57,11 @@ func run(args []string) int {
 }
 
 func configureRuntimeLogger(component string) error {
-	logger, err := cmdsupport.NewComponentLogger(cmdsupport.EnvOr(logFormatEnv, cmdsupport.DefaultLogFormat), component)
+	logger, err := cmdsupport.NewComponentLogger(
+		cmdsupport.EnvOr(logFormatEnv, cmdsupport.DefaultLogFormat),
+		cmdsupport.EnvOr(logLevelEnv, cmdsupport.DefaultLogLevel),
+		component,
+	)
 	if err != nil {
 		return err
 	}

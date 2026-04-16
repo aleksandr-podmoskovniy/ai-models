@@ -562,3 +562,87 @@ Blocking findings нет.
   проверки;
 - даже после bootstrap fix runtime-delivery path всё ещё не имеет live proof
   на annotated workload topology, только code/test proof.
+
+## Slice 33. Rework HF file policy from a real corpus
+
+### Что проверено
+
+- решение больше не строится на ad-hoc whitelist guesses:
+  отдельный corpus note зафиксирован в
+  `plans/active/phase2-runtime-followups/HF_FILE_POLICY_CORPUS.ru.md`;
+- выборка по `85` HF repos показала, что старый policy false-reject'ил `47`
+  поддерживаемых `Safetensors`/`GGUF` repos на harmless side files;
+- новая policy оставляет required asset contract прежним, но разводит payload'ы
+  на:
+  - `keep` для config/tokenizer/chat/module/pooling companions
+  - `drop` для docs/eval assets/helper scripts/alternative exports
+  - `hard reject` только для compiled/native и archive payload classes;
+- upload и HF fetch paths остаются согласованными:
+  `modelformat`, `sourcefetch` и `publishworker` теперь тестами подтверждают
+  одинаковую семантику strip vs reject.
+
+### Проверки
+
+- `cd images/controller && go test ./internal/adapters/modelformat ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
+
+### Findings
+
+Blocking findings нет.
+
+### Residual risk
+
+- это всё ещё file-composition policy, а не deep content scanning:
+  malicious content внутри harmless-looking text/json payload'ов по-прежнему
+  не анализируется на publication stage;
+- часть mixed-format repos всё ещё может потребовать отдельной product-policy
+  развилки, если later slices захотят deterministic preference между
+  `Safetensors` and `GGUF` в одном и том же HF repo.
+
+## Slice 34. Publication/runtime logging transparency
+
+### Что проверено
+
+- изменение осталось в scope текущего bundle и не потащило новый product/API
+  contract:
+  - shared logging contract в `internal/cmdsupport/*`
+  - controller/runtime env wiring
+  - publish/materialize/source-fetch/modelpack step logs
+  - docs и focused tests;
+- controller bootstrap сохранил явный root logger bridge в `slog`,
+  `controller-runtime/pkg/log` и `k8s.io/klog/v2`, а runtime entrypoints
+  получили единый `LOG_LEVEL` alongside existing `LOG_FORMAT`;
+- long-running publication/materialization paths больше не остаются только
+  start/finish envelope:
+  появились стабильные step-boundary logs для source fetch, upload handling,
+  publication profile, `kitops` pack/push, OCI materialization и shared `RWX`
+  coordination;
+- logging hardening не оставил новый monolith:
+  oversized `sourcefetch/huggingface.go` был разрезан обратно после first-pass
+  regression на controller complexity gate.
+
+### Проверки
+
+- `cd images/controller && go test ./internal/cmdsupport ./cmd/ai-models-artifact-runtime ./cmd/ai-models-controller ./internal/adapters/k8s/sourceworker ./internal/adapters/k8s/modeldelivery ./internal/controllers/catalogstatus ./internal/dataplane/publishworker ./internal/adapters/sourcefetch ./internal/adapters/modelpack/kitops ./internal/adapters/modelpack/oci`
+- `git diff --check`
+- `make verify`
+
+### Findings
+
+Blocking findings нет.
+
+### Missing checks
+
+- planned live sanity check на active publish worker/materializer pod не
+  выполнен:
+  указанный pod `ai-model-publish-6d8b4370-2009-4a74-bfb0-88b30072803b` уже
+  отсутствует в кластере, а нового active publish/materialize pod на момент
+  проверки не было.
+
+### Residual risk
+
+- после rollout всё ещё нужен один практический smoke:
+  поднять новый publish/materialize run и проверить, что на `info` видны
+  стабильные step boundaries, а на `debug` появляются дополнительные
+  diagnostic fields без log spam;
+- separate HF file-policy redesign остаётся следующим bounded slice и не
+  закрывается этим logging hardening.

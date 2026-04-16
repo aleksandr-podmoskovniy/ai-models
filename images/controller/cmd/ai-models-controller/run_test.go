@@ -24,12 +24,16 @@ import (
 
 func TestCleanupJobEnvKeepsParsedLogFormat(t *testing.T) {
 	t.Setenv(logFormatEnv, "text")
+	t.Setenv(logLevelEnv, "warn")
 	t.Setenv("SSL_CERT_FILE", "/etc/custom/ca.pem")
 
-	env := cleanupJobEnv("LOG_FORMAT,SSL_CERT_FILE", "json")
+	env := cleanupJobEnv("LOG_FORMAT,LOG_LEVEL,SSL_CERT_FILE", "json", "debug")
 
 	if got := envValue(env, logFormatEnv); got != "json" {
 		t.Fatalf("LOG_FORMAT = %q, want json", got)
+	}
+	if got := envValue(env, logLevelEnv); got != "debug" {
+		t.Fatalf("LOG_LEVEL = %q, want debug", got)
 	}
 	if got := envValue(env, "SSL_CERT_FILE"); got != "/etc/custom/ca.pem" {
 		t.Fatalf("SSL_CERT_FILE = %q, want /etc/custom/ca.pem", got)

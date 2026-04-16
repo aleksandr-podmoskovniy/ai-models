@@ -43,7 +43,10 @@ Current phase-2 slice implemented here:
   component-aware logger setup for all runtime commands instead of letting each
   subcommand fall back to ad-hoc process logging; controller-owned Go runtime
   logs are now JSON-by-default with normalized `level` / `ts` / `msg`
-  envelope and explicit `LOG_FORMAT` wiring for live deployment surfaces;
+  envelope plus explicit `LOG_FORMAT` / `LOG_LEVEL` wiring for live deployment
+  surfaces; long-running publish/materialize flows now emit stable step-boundary
+  `info` progress events and optional `debug` detail for source selection,
+  mirror/download, pack/push, remote inspect and shared-cache coordination;
 - `internal/publicationartifact` for controller-owned publication runtime
   result payloads and OCI destination-reference policy; this is no longer the
   old misleading `artifactbackend` seam and no longer keeps a dead request

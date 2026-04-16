@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,7 +55,13 @@ func (m *Materializer) Materialize(ctx context.Context, input modelpackports.Mat
 	if err := validateMaterializeInput(input); err != nil {
 		return modelpackports.MaterializeResult{}, err
 	}
+	logger := slog.Default().With(
+		slog.String("artifactURI", strings.TrimSpace(input.ArtifactURI)),
+		slog.String("destinationDir", strings.TrimSpace(input.DestinationDir)),
+	)
 
+	inspectStarted := time.Now()
+	logger.Info("oci materialization remote inspect started")
 	payload, err := InspectRemote(ctx, input.ArtifactURI, auth)
 	if err != nil {
 		return modelpackports.MaterializeResult{}, err
@@ -62,6 +69,7 @@ func (m *Materializer) Materialize(ctx context.Context, input modelpackports.Mat
 	if err := ValidatePayload(payload); err != nil {
 		return modelpackports.MaterializeResult{}, err
 	}
+	logger.Info("oci materialization remote inspect completed", slog.Int64("durationMs", time.Since(inspectStarted).Milliseconds()))
 
 	digest := ArtifactDigest(payload)
 	if strings.TrimSpace(digest) == "" {
@@ -78,6 +86,12 @@ func (m *Materializer) Materialize(ctx context.Context, input modelpackports.Mat
 	if reused {
 		result.Digest = digest
 		result.MediaType = ArtifactMediaType(payload)
+		logger.Info(
+			"oci materialization reused existing destination",
+			slog.String("artifactDigest", digest),
+			slog.String("modelPath", result.ModelPath),
+			slog.String("markerPath", result.MarkerPath),
+		)
 		return result, nil
 	}
 
@@ -101,6 +115,11 @@ func materializeFresh(
 	payload InspectPayload,
 ) (modelpackports.MaterializeResult, error) {
 	digest := ArtifactDigest(payload)
+	logger := slog.Default().With(
+		slog.String("artifactURI", strings.TrimSpace(input.ArtifactURI)),
+		slog.String("artifactDigest", strings.TrimSpace(digest)),
+		slog.String("destinationDir", strings.TrimSpace(input.DestinationDir)),
+	)
 
 	client, err := RegistryHTTPClient(auth)
 	if err != nil {
@@ -117,10 +136,14 @@ func materializeFresh(
 			_ = os.RemoveAll(stagingRoot)
 		}
 	}()
+	logger.Debug("oci materialization staging prepared", slog.String("stagingRoot", stagingRoot))
 
+	extractStarted := time.Now()
+	logger.Info("oci materialization layer extraction started", slog.Int("layerCount", layerCount(payload)))
 	if err := extractLayers(ctx, client, input.ArtifactURI, auth, payload, stagingRoot); err != nil {
 		return modelpackports.MaterializeResult{}, err
 	}
+	logger.Info("oci materialization layer extraction completed", slog.Int64("durationMs", time.Since(extractStarted).Milliseconds()))
 
 	modelPath, err := resolveModelPath(stagingRoot, payload)
 	if err != nil {
@@ -139,6 +162,7 @@ func materializeFresh(
 		return modelpackports.MaterializeResult{}, err
 	}
 	success = true
+	logger.Info("oci materialization destination replaced", slog.String("destinationDir", input.DestinationDir))
 
 	finalModelPath := input.DestinationDir
 	if strings.TrimSpace(modelRelativePath) != "." && strings.TrimSpace(modelRelativePath) != "" {
@@ -148,6 +172,7 @@ func materializeFresh(
 	if err != nil {
 		return modelpackports.MaterializeResult{}, err
 	}
+	logger.Info("oci materialization marker written", slog.String("markerPath", markerPath), slog.String("modelPath", finalModelPath))
 
 	return modelpackports.MaterializeResult{
 		ModelPath:  finalModelPath,
@@ -155,6 +180,12 @@ func materializeFresh(
 		MediaType:  ArtifactMediaType(payload),
 		MarkerPath: markerPath,
 	}, nil
+}
+
+func layerCount(payload InspectPayload) int {
+	manifest, _ := payload["manifest"].(map[string]any)
+	layers, _ := manifest["layers"].([]any)
+	return len(layers)
 }
 
 func materializationParent(destination string) string {

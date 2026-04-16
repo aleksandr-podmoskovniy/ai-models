@@ -58,6 +58,7 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	}
 	foundTMPDIR := false
 	foundLogFormat := false
+	foundLogLevel := false
 	for _, item := range pod.Spec.Containers[0].Env {
 		if item.Name == "TMPDIR" {
 			if got, want := item.Value, workloadpod.WorkVolumeMountPath; got != want {
@@ -71,12 +72,21 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 			}
 			foundLogFormat = true
 		}
+		if item.Name == "LOG_LEVEL" {
+			if got, want := item.Value, "debug"; got != want {
+				t.Fatalf("unexpected LOG_LEVEL %q", got)
+			}
+			foundLogLevel = true
+		}
 	}
 	if !foundTMPDIR {
 		t.Fatal("expected TMPDIR env")
 	}
 	if !foundLogFormat {
 		t.Fatal("expected LOG_FORMAT env")
+	}
+	if !foundLogLevel {
+		t.Fatal("expected LOG_LEVEL env")
 	}
 }
 

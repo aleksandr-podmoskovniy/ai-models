@@ -37,29 +37,23 @@ func classifySafetensorsFile(relative string) (fileAction, bool, bool) {
 	lowerBase := strings.ToLower(base)
 	lowerRelative := strings.ToLower(relative)
 
-	if strings.HasPrefix(base, ".") {
-		if base == ".gitattributes" {
-			return fileActionDrop, false, false
-		}
-		return fileActionReject, false, false
+	if hasDroppedPathComponent(relative) {
+		return fileActionDrop, false, false
 	}
 	if relative == "config.json" {
 		return fileActionKeep, true, false
 	}
-	if isAllowedMetadataFile(lowerRelative, lowerBase) {
+	if isModelCompanionFile(lowerRelative, lowerBase) {
 		return fileActionKeep, false, false
 	}
-	if hasForbiddenExtension(lowerBase) {
+	if hasDroppedScriptExtension(lowerBase) || isAlternativeExportArtifact(lowerRelative, lowerBase) || isBenignExtraFile(lowerBase) {
+		return fileActionDrop, false, false
+	}
+	if hasHardRejectExtension(lowerBase) {
 		return fileActionReject, false, false
-	}
-	if isAlternativeExportArtifact(lowerRelative, lowerBase) {
-		return fileActionDrop, false, false
-	}
-	if isBenignExtraFile(lowerBase) {
-		return fileActionDrop, false, false
 	}
 	if strings.HasSuffix(lowerBase, ".safetensors") {
 		return fileActionKeep, false, true
 	}
-	return fileActionReject, false, false
+	return fileActionDrop, false, false
 }

@@ -86,6 +86,7 @@ func testOptions() Options {
 			},
 		},
 		LogFormat:            "json",
+		LogLevel:             "debug",
 		MaxConcurrentWorkers: 1,
 	}
 }

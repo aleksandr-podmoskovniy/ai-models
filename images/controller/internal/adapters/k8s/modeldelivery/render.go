@@ -83,6 +83,7 @@ func buildInitEnv(input Input, options Options) []corev1.EnvVar {
 	env := ociregistry.Env(options.OCIInsecure, input.RegistryAccess.AuthSecretName, input.RegistryAccess.CASecretName)
 	env = append(env,
 		corev1.EnvVar{Name: LogFormatEnv, Value: options.LogFormat},
+		corev1.EnvVar{Name: LogLevelEnv, Value: options.LogLevel},
 		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_URI", Value: input.Artifact.URI},
 		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_DIGEST", Value: input.Artifact.Digest},
 		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_CACHE_ROOT", Value: options.CacheMountPath},

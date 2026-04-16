@@ -101,14 +101,43 @@ func TestPublishFromUploadInfersSafetensorsTaskFromCheckpoint(t *testing.T) {
 	}
 }
 
-func TestPublishFromUploadRejectsForbiddenFile(t *testing.T) {
+func TestPublishFromUploadDropsHelperScript(t *testing.T) {
+	t.Parallel()
+
+	archivePath := filepath.Join(t.TempDir(), "checkpoint.tar")
+	if err := createTestTar(archivePath,
+		tarEntry{name: "checkpoint/config.json", content: []byte(`{"model_type":"qwen3","architectures":["Qwen3ForCausalLM"],"torch_dtype":"bfloat16","text_config":{"hidden_size":2,"intermediate_size":2,"num_hidden_layers":1,"num_attention_heads":1,"num_key_value_heads":1,"max_position_embeddings":16,"vocab_size":32}}`)},
+		tarEntry{name: "checkpoint/model.safetensors", content: []byte("weights")},
+		tarEntry{name: "checkpoint/model.py", content: []byte("print('boom')")},
+	); err != nil {
+		t.Fatalf("createTestTar() error = %v", err)
+	}
+
+	result, err := run(context.Background(), Options{
+		SourceType:         modelsv1alpha1.ModelSourceTypeUpload,
+		ArtifactURI:        "registry.example.com/ai-models/catalog/model:published",
+		UploadPath:         archivePath,
+		InputFormat:        modelsv1alpha1.ModelInputFormatSafetensors,
+		Task:               "text-generation",
+		RuntimeEngines:     []string{"KServe"},
+		ModelPackPublisher: fakePublisher{},
+	})
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got, want := result.Resolved.Format, "Safetensors"; got != want {
+		t.Fatalf("unexpected resolved format %q", got)
+	}
+}
+
+func TestPublishFromUploadRejectsCompiledPayload(t *testing.T) {
 	t.Parallel()
 
 	archivePath := filepath.Join(t.TempDir(), "checkpoint.tar")
 	if err := createTestTar(archivePath,
 		tarEntry{name: "checkpoint/config.json", content: []byte(`{"model_type":"qwen3"}`)},
 		tarEntry{name: "checkpoint/model.safetensors", content: []byte("weights")},
-		tarEntry{name: "checkpoint/model.py", content: []byte("print('boom')")},
+		tarEntry{name: "checkpoint/libpayload.so", content: []byte("boom")},
 	); err != nil {
 		t.Fatalf("createTestTar() error = %v", err)
 	}

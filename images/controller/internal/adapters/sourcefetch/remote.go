@@ -56,6 +56,7 @@ type RemoteResult struct {
 	SourceType    modelsv1alpha1.ModelSourceType
 	ModelDir      string
 	InputFormat   modelsv1alpha1.ModelInputFormat
+	SelectedFiles []string
 	Provenance    RemoteProvenance
 	Fallbacks     RemoteProfileFallbacks
 	Metadata      RemoteMetadata

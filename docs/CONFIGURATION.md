@@ -123,6 +123,12 @@ controller accepts source secrets with one of `token`, `HF_TOKEN`, or
 The controller-owned publication worker hardens tar/zip extraction and rejects
 path traversal, symlink, hard link, and other special archive entries instead
 of relying on raw `extractall`.
+For operations, the publication/runtime shell now exposes one structured-log
+contract: `LOG_FORMAT` controls the envelope (`json` or `text`), while
+`LOG_LEVEL` switches `debug` / `info` / `warn` / `error`. Normal `info`
+contains step-boundary progress events with durations, file counts, and
+artifact size/digest, while `debug` adds local paths, file samples, and
+shared-cache coordination details without ad-hoc `printf`.
 
 `spec.source.upload` now follows a controller-owned session flow rather
 than a batch import. The controller creates one short-lived session Secret per
@@ -184,11 +190,13 @@ local upload, the controller now validates and sanitizes the project
 composition before packaging. The current live rules are:
 
 - `Safetensors`: requires a root `config.json`, at least one `.safetensors`
-  file, allows known config/tokenizer/index companions, strips benign extras
-  such as `README.md` and images, and rejects active or ambiguous files such
-  as `.py`, `.sh`, `.dll`, `.so`, or other unsupported payloads.
-- `GGUF`: requires at least one `.gguf` file, strips benign extras, and rejects
-  the same active or ambiguous payloads.
+  file, keeps known config/tokenizer/chat/pooling/module companions, strips
+  benign extras such as `README.md`, evaluation assets, helper scripts, and
+  alternative-export subtrees, and hard-rejects only compiled/native or
+  archive payloads such as `.so`, `.dll`, `.exe`, `.zip`, or `.tar`.
+- `GGUF`: requires at least one `.gguf` file, strips the same benign extras and
+  helper payloads, preserves companion metadata when useful, and keeps the
+  same hard-reject boundary for compiled/native or archive payloads.
 
 If `spec.inputFormat` is omitted, the controller tries to determine it
 automatically:
@@ -267,6 +275,10 @@ that binary:
 - OCI auth/CA reuse the existing controller-owned projected DMCR access,
   including cross-namespace projection into the runtime namespace, instead of
   inventing a second delivery-specific secret model.
+- the shared `RWX` cache path now logs coordination state explicitly:
+  ready-cache reuse, waiting for the active writer, lock acquisition, and
+  `current` symlink updates are visible directly in init-container logs under
+  the same `LOG_FORMAT` / `LOG_LEVEL` contract.
 
 This still does not hard-wire `ai-models` into a concrete `ai-inference`
 module inside this repo. The landed seam is now a concrete consumer-side K8s

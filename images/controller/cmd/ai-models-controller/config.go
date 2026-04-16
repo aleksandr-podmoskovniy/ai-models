@@ -35,6 +35,7 @@ const defaultDMCRReadAuthSecretName = "ai-models-dmcr-auth-read"
 
 type managerConfig struct {
 	LogFormat string
+	LogLevel  string
 
 	CleanupJobImage               string
 	CleanupJobImagePullSecretName string
@@ -82,6 +83,7 @@ type managerConfig struct {
 func defaultManagerConfig() managerConfig {
 	return managerConfig{
 		LogFormat:                            cmdsupport.EnvOr(logFormatEnv, cmdsupport.DefaultLogFormat),
+		LogLevel:                             cmdsupport.EnvOr(logLevelEnv, cmdsupport.DefaultLogLevel),
 		CleanupJobImage:                      cmdsupport.EnvOr(cleanupJobImageEnv, ""),
 		CleanupJobImagePullSecretName:        cmdsupport.EnvOr(cleanupJobImagePullSecretEnv, ""),
 		CleanupJobNamespace:                  cmdsupport.EnvOr(cleanupJobNamespaceEnv, cmdsupport.EnvOr("POD_NAMESPACE", "d8-ai-models")),
@@ -127,6 +129,7 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 
 	flags := cmdsupport.NewFlagSet("ai-models-controller")
 	flags.StringVar(&config.LogFormat, "log-format", config.LogFormat, "Log format: text or json.")
+	flags.StringVar(&config.LogLevel, "log-level", config.LogLevel, "Log level: debug, info, warn, or error.")
 	flags.StringVar(&config.CleanupJobImage, "cleanup-job-image", config.CleanupJobImage, "Runtime image used for cleanup Jobs.")
 	flags.StringVar(&config.CleanupJobImagePullSecretName, "cleanup-job-image-pull-secret-name", config.CleanupJobImagePullSecretName, "Optional imagePullSecret name used by cleanup Jobs.")
 	flags.StringVar(&config.CleanupJobNamespace, "cleanup-job-namespace", config.CleanupJobNamespace, "Namespace where cleanup Jobs are created.")
@@ -197,12 +200,13 @@ func (c managerConfig) bootstrapOptions(workVolumeType workloadpod.WorkVolumeTyp
 				OCIRegistrySecretName:   c.PublicationOCISecretName,
 				OCIRegistryCASecretName: c.PublicationOCICASecretName,
 				ObjectStorage:           artifactsObjectStorage,
-				Env:                     cleanupJobEnv(c.CleanupJobEnvPassThrough, c.LogFormat),
+				Env:                     cleanupJobEnv(c.CleanupJobEnvPassThrough, c.LogFormat, c.LogLevel),
 			},
 			RequeueAfter: 5 * time.Second,
 		},
 		PublicationRuntime: catalogstatus.Options{
 			RuntimeLogFormat: c.LogFormat,
+			RuntimeLogLevel:  c.LogLevel,
 			Runtime: catalogstatus.PublicationRuntimeOptions{
 				Namespace:               c.PublicationWorkerNamespace,
 				Image:                   cmdsupport.FallbackString(c.PublicationWorkerImage, c.CleanupJobImage),
@@ -231,6 +235,7 @@ func (c managerConfig) bootstrapOptions(workVolumeType workloadpod.WorkVolumeTyp
 				Render: modeldelivery.Options{
 					RuntimeImage:   cmdsupport.FallbackString(c.PublicationWorkerImage, c.CleanupJobImage),
 					LogFormat:      c.LogFormat,
+					LogLevel:       c.LogLevel,
 					OCIInsecure:    c.PublicationOCIInsecure,
 					CacheMountPath: modeldelivery.DefaultCacheMountPath,
 				},

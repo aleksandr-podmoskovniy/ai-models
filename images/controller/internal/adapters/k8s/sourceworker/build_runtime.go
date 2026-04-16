@@ -88,6 +88,7 @@ func buildEnv(
 	env = append(env,
 		corev1.EnvVar{Name: "TMPDIR", Value: workloadpod.WorkVolumeMountPath},
 		corev1.EnvVar{Name: "LOG_FORMAT", Value: options.LogFormat},
+		corev1.EnvVar{Name: "LOG_LEVEL", Value: options.LogLevel},
 	)
 	env = append(env, storageprojection.Env(options.ObjectStorage)...)
 	if plan.HuggingFace != nil && plan.HuggingFace.AuthSecretRef != nil {

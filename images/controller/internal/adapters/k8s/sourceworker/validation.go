@@ -29,6 +29,7 @@ import (
 type Options struct {
 	workloadpod.RuntimeOptions
 	LogFormat            string
+	LogLevel             string
 	MaxConcurrentWorkers int
 }
 
@@ -37,6 +38,10 @@ func normalizeOptions(options Options) Options {
 	options.LogFormat = strings.TrimSpace(options.LogFormat)
 	if options.LogFormat == "" {
 		options.LogFormat = "json"
+	}
+	options.LogLevel = strings.TrimSpace(options.LogLevel)
+	if options.LogLevel == "" {
+		options.LogLevel = "info"
 	}
 	if options.MaxConcurrentWorkers <= 0 {
 		options.MaxConcurrentWorkers = 1

@@ -92,6 +92,7 @@ func runMaterializeArtifact(args []string) int {
 			slog.String("coordinationHolder", coordination.HolderID),
 		)
 	}
+	cmdsupport.SetDefaultLogger(logger)
 	logger.Info("artifact materialization started")
 
 	input := modelpack.MaterializeInput{

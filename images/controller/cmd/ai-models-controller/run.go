@@ -40,7 +40,7 @@ func runManager(args []string) int {
 		return 1
 	}
 
-	logger, err := cmdsupport.NewComponentLogger(config.LogFormat, "controller")
+	logger, err := cmdsupport.NewComponentLogger(config.LogFormat, config.LogLevel, "controller")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ai-models-controller: %v\n", err)
 		return 1

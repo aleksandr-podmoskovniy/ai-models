@@ -40,14 +40,19 @@ func TestDetectDirFormatSafetensors(t *testing.T) {
 	}
 }
 
-func TestDetectDirFormatRejectsHiddenDirectory(t *testing.T) {
+func TestDetectDirFormatDropsHiddenDirectory(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, ".cache", "model.gguf"), "weights")
+	writeTestFile(t, filepath.Join(root, ".cache", "ignored.gguf"), "weights")
+	writeTestFile(t, filepath.Join(root, "model.gguf"), "weights")
 
-	if _, err := DetectDirFormat(root); err == nil {
-		t.Fatal("expected hidden-directory detection error")
+	format, err := DetectDirFormat(root)
+	if err != nil {
+		t.Fatalf("DetectDirFormat() error = %v", err)
+	}
+	if got, want := format, modelsv1alpha1.ModelInputFormatGGUF; got != want {
+		t.Fatalf("unexpected format %q", got)
 	}
 }
 
