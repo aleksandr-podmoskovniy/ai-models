@@ -17,8 +17,8 @@ variables:
   WERF_VERSION: "2 stable"
   BASE_IMAGES_VERSION: v0.5.55
   GOLANG_VERSION: "1.25.7"
-  DMT_VERSION: "0.1.68"
-  MODULE_SDK_VERSION: "0.10.3"
+  DMT_VERSION: "0.1.69"
+  MODULE_SDK_VERSION: "0.10.0"
 
 default:
   tags:

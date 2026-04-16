@@ -17,7 +17,7 @@
 set -euo pipefail
 
 INSTALL_DIR=${INSTALL_DIR:-$(pwd)/.bin}
-VERSION=${MODULE_SDK_VERSION:-0.10.3}
+VERSION=${MODULE_SDK_VERSION:-0.10.0}
 BINARY_PATH="${INSTALL_DIR}/module-sdk"
 WRAPPER_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/module-sdk-wrapper.sh"
 

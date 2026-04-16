@@ -17,7 +17,7 @@
 set -euo pipefail
 
 INSTALL_DIR=${INSTALL_DIR:-$(pwd)/.bin}
-VERSION=${DMT_VERSION:-0.1.68}
+VERSION=${DMT_VERSION:-0.1.69}
 REPO="deckhouse/dmt"
 
 case "$(uname -s)" in

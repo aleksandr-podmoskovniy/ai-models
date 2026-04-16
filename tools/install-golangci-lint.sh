@@ -17,7 +17,7 @@
 set -euo pipefail
 
 INSTALL_DIR=${INSTALL_DIR:-$(pwd)/.bin}
-VERSION=${GOLANGCI_LINT_VERSION:-2.6.2}
+VERSION=${GOLANGCI_LINT_VERSION:-2.11.1}
 BINARY="${INSTALL_DIR}/golangci-lint"
 
 mkdir -p "${INSTALL_DIR}"

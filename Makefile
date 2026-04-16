@@ -8,11 +8,11 @@ export PATH := $(BIN_DIR):$(PATH)
 GO ?= $(shell command -v go 2>/dev/null || { test -x /opt/homebrew/bin/go && echo /opt/homebrew/bin/go; } || { test -x /usr/local/go/bin/go && echo /usr/local/go/bin/go; })
 GOFMT ?= $(dir $(GO))gofmt
 GOFLAGS ?= -count=1
-GOLANGCI_LINT_VERSION ?= 2.6.2
+GOLANGCI_LINT_VERSION ?= 2.11.1
 GOCYCLO_VERSION ?= 0.6.0
 DEADCODE_VERSION ?= 0.43.0
-DMT_VERSION ?= 0.1.68
-MODULE_SDK_VERSION ?= 0.10.3
+DMT_VERSION ?= 0.1.69
+MODULE_SDK_VERSION ?= 0.10.0
 OPERATOR_SDK_VERSION ?= 1.42.2
 HELM_DESIRED_VERSION ?= 3.20.1
 

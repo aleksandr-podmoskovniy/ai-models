@@ -10,12 +10,13 @@
 ## Toolchain
 
 - Go `1.25.7`
-- DMT `0.1.68`
-- Module SDK `0.10.3`
+- DMT `0.1.69`
+- Module SDK `0.10.0`
 - Operator SDK `1.42.2`
 - Helm `3.20.1`
 - werf `2.63.1`
 - Deckhouse lib-helm helper subset `1.70.1` in `templates/deckhouse-lib.tpl`
+- golangci-lint `2.11.1`
 - Deckhouse base images `v0.5.55`
 
 Полный source-of-truth по Deckhouse base images хранится в

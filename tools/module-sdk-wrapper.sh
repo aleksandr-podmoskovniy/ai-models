@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-MODULE_SDK_VERSION="${MODULE_SDK_VERSION:-0.10.3}"
+MODULE_SDK_VERSION="${MODULE_SDK_VERSION:-0.10.0}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 main() {
