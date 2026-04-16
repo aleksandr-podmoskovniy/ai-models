@@ -143,7 +143,7 @@ func TestHandleDMCRGarbageCollectionKeepsModeDisabledForQueuedRequest(t *testing
 					requestLabelKey: requestLabelValue,
 				},
 				Annotations: map[string]string{
-					"ai-models.deckhouse.io/dmcr-gc-requested-at": "2026-04-16T12:00:00Z",
+					"ai.deckhouse.io/dmcr-gc-requested-at": "2026-04-16T12:00:00Z",
 				},
 			},
 		}

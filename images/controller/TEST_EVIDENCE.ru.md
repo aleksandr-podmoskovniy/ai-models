@@ -304,8 +304,8 @@
 
 - Decision surface:
   - top-level workload annotation contract:
-    `ai-models.deckhouse.io/model` /
-    `ai-models.deckhouse.io/clustermodel`
+    `ai.deckhouse.io/model` /
+    `ai.deckhouse.io/clustermodel`
   - controller-owned mutation only for workloads with mutable
     `PodTemplateSpec`
   - generic workload delivery stays out of admission webhook surface and

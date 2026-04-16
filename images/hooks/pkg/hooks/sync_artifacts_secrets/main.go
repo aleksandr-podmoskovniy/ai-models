@@ -43,8 +43,8 @@ const (
 	syncedCredentialsSecretName              = "ai-models-artifacts"
 	syncedCASecretName                       = "ai-models-artifacts-ca"
 	sourceSecretSnapshotFilter               = `{"name": .metadata.name, "data": {"accessKey": .data.accessKey, "secretKey": .data.secretKey, "ca.crt": .data."ca.crt"}}`
-	sourceSecretAnnotationNamespace          = "ai-models.deckhouse.io/source-secret-namespace"
-	sourceSecretAnnotationName               = "ai-models.deckhouse.io/source-secret-name"
+	sourceSecretAnnotationNamespace          = "ai.deckhouse.io/source-secret-namespace"
+	sourceSecretAnnotationName               = "ai.deckhouse.io/source-secret-name"
 )
 
 var _ = registry.RegisterFunc(config, Reconcile)

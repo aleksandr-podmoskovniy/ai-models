@@ -26,9 +26,9 @@ import (
 const (
 	secretSnapshotName     = "dmcr-garbage-collection-secret"
 	internalValuesPath     = "aiModels.internal.dmcr"
-	requestLabelKey        = "ai-models.deckhouse.io/dmcr-gc-request"
+	requestLabelKey        = "ai.deckhouse.io/dmcr-gc-request"
 	requestLabelValue      = "true"
-	switchAnnotationKey    = "ai-models.deckhouse.io/dmcr-gc-switch"
+	switchAnnotationKey    = "ai.deckhouse.io/dmcr-gc-switch"
 	moduleNamespace        = "d8-ai-models"
 	secretSnapshotJQFilter = `{
 		"metadata": {

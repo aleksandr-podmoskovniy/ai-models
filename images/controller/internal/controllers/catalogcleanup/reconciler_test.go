@@ -299,7 +299,7 @@ func assertCleanupJobExists(t *testing.T, kubeClient client.Client, jobName stri
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: "d8-ai-models", Name: jobName}, &job); err != nil {
 		t.Fatalf("Get(job) error = %v", err)
 	}
-	if got, want := job.Labels["ai-models.deckhouse.io/owner-kind"], modelsv1alpha1.ModelKind; got != want {
+	if got, want := job.Labels["ai.deckhouse.io/owner-kind"], modelsv1alpha1.ModelKind; got != want {
 		t.Fatalf("unexpected owner-kind label %q", got)
 	}
 }

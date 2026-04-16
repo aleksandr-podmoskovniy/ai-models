@@ -38,5 +38,5 @@ go run "sigs.k8s.io/controller-tools/cmd/controller-gen@${CONTROLLER_GEN_VERSION
   "output:crd:dir=${OUTPUT_DIR}"
 
 mkdir -p "${ROOT}/crds"
-cp "${OUTPUT_DIR}/ai-models.deckhouse.io_models.yaml" "${ROOT}/crds/"
-cp "${OUTPUT_DIR}/ai-models.deckhouse.io_clustermodels.yaml" "${ROOT}/crds/"
+cp "${OUTPUT_DIR}/ai.deckhouse.io_models.yaml" "${ROOT}/crds/"
+cp "${OUTPUT_DIR}/ai.deckhouse.io_clustermodels.yaml" "${ROOT}/crds/"

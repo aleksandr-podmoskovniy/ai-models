@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	ModelAnnotation        = "ai-models.deckhouse.io/model"
-	ClusterModelAnnotation = "ai-models.deckhouse.io/clustermodel"
+	ModelAnnotation        = "ai.deckhouse.io/model"
+	ClusterModelAnnotation = "ai.deckhouse.io/clustermodel"
 )
 
 type ReferenceScope string

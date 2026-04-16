@@ -833,8 +833,8 @@ large corrective rebase bundle was completed and archived.
 
 - довести runtime delivery до live controller-owned path внутри `ai-models`;
 - принять только top-level workload annotations
-  `ai-models.deckhouse.io/model` /
-  `ai-models.deckhouse.io/clustermodel` без новых knobs;
+  `ai.deckhouse.io/model` /
+  `ai.deckhouse.io/clustermodel` без новых knobs;
 - мутировать только workload kinds с mutable `PodTemplateSpec`;
 - fail-closed чистить stale managed state и reject'ить invalid shared PVC
   topology без leaked projected OCI auth;

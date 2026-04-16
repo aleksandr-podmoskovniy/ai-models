@@ -35,14 +35,14 @@ const (
 	uploadStagingPrefix          = "raw"
 
 	AppNameLabelKey        = "app.kubernetes.io/name"
-	OwnerKindLabelKey      = "ai-models.deckhouse.io/owner-kind"
-	OwnerNameLabelKey      = "ai-models.deckhouse.io/owner-name"
-	OwnerUIDLabelKey       = "ai-models.deckhouse.io/owner-uid"
-	OwnerNamespaceLabelKey = "ai-models.deckhouse.io/owner-namespace"
+	OwnerKindLabelKey      = "ai.deckhouse.io/owner-kind"
+	OwnerNameLabelKey      = "ai.deckhouse.io/owner-name"
+	OwnerUIDLabelKey       = "ai.deckhouse.io/owner-uid"
+	OwnerNamespaceLabelKey = "ai.deckhouse.io/owner-namespace"
 
-	OwnerKindAnnotationKey      = "ai-models.deckhouse.io/owner-kind-full"
-	OwnerNameAnnotationKey      = "ai-models.deckhouse.io/owner-name-full"
-	OwnerNamespaceAnnotationKey = "ai-models.deckhouse.io/owner-namespace-full"
+	OwnerKindAnnotationKey      = "ai.deckhouse.io/owner-kind-full"
+	OwnerNameAnnotationKey      = "ai.deckhouse.io/owner-name-full"
+	OwnerNamespaceAnnotationKey = "ai.deckhouse.io/owner-namespace-full"
 )
 
 func PrefixedName(prefix string, uid types.UID) (string, error) {

@@ -241,8 +241,8 @@ Current phase-2 slice implemented here:
   `Failed` with `UnsupportedSource` instead of looping forever on reconcile
   errors;
 - `internal/controllers/workloaddelivery` for direct workload mutation over
-  top-level annotations `ai-models.deckhouse.io/model` and
-  `ai-models.deckhouse.io/clustermodel`; this controller intentionally stays
+  top-level annotations `ai.deckhouse.io/model` and
+  `ai.deckhouse.io/clustermodel`; this controller intentionally stays
   on mutable workload templates (`Deployment`, `StatefulSet`, `DaemonSet`,
   `CronJob`) and does not pretend that direct `Job` mutation is safe after
   creation;

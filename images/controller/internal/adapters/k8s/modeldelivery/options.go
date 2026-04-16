@@ -29,7 +29,7 @@ const (
 	DefaultCacheMountPath    = "/data/modelcache"
 	DefaultCurrentPathName   = "current"
 
-	ResolvedDigestAnnotation = "ai-models.deckhouse.io/resolved-digest"
+	ResolvedDigestAnnotation = "ai.deckhouse.io/resolved-digest"
 
 	LogFormatEnv     = "LOG_FORMAT"
 	LogLevelEnv      = "LOG_LEVEL"

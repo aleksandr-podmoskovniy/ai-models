@@ -217,8 +217,8 @@ oversized `collector.go`.
 - `internal/controllers/catalogstatus/` — live owner publication lifecycle.
 - `internal/controllers/catalogcleanup/` — delete/finalizer owner.
 - `internal/controllers/workloaddelivery/` — owner controller for top-level
-  workload annotations `ai-models.deckhouse.io/model` /
-  `ai-models.deckhouse.io/clustermodel`, который мутирует только workloads с
+  workload annotations `ai.deckhouse.io/model` /
+  `ai.deckhouse.io/clustermodel`, который мутирует только workloads с
   mutable `PodTemplateSpec` (`Deployment`, `StatefulSet`, `DaemonSet`,
   `CronJob`) и реиспользует shared `k8s/modeldelivery` service; generic
   workload delivery намеренно не уходит в admission webhook surface и вместо

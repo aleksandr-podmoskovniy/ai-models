@@ -147,7 +147,7 @@ func TestBuildTruncatesOwnerLabelsToKubernetesLimit(t *testing.T) {
 		t.Fatalf("Build() error = %v", err)
 	}
 
-	if got := len(pod.Labels["ai-models.deckhouse.io/owner-name"]); got > 63 {
+	if got := len(pod.Labels["ai.deckhouse.io/owner-name"]); got > 63 {
 		t.Fatalf("owner-name label length = %d, want <= 63", got)
 	}
 }

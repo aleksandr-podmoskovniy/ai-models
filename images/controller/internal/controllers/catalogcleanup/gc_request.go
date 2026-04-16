@@ -30,11 +30,11 @@ import (
 )
 
 const (
-	dmcrGCRequestLabelKey        = "ai-models.deckhouse.io/dmcr-gc-request"
+	dmcrGCRequestLabelKey        = "ai.deckhouse.io/dmcr-gc-request"
 	dmcrGCRequestLabelValue      = "true"
-	dmcrGCRequestedAnnotationKey = "ai-models.deckhouse.io/dmcr-gc-requested-at"
-	dmcrGCSwitchAnnotationKey    = "ai-models.deckhouse.io/dmcr-gc-switch"
-	dmcrGCDoneAnnotationKey      = "ai-models.deckhouse.io/dmcr-gc-done"
+	dmcrGCRequestedAnnotationKey = "ai.deckhouse.io/dmcr-gc-requested-at"
+	dmcrGCSwitchAnnotationKey    = "ai.deckhouse.io/dmcr-gc-switch"
+	dmcrGCDoneAnnotationKey      = "ai.deckhouse.io/dmcr-gc-done"
 	dmcrGCRequestNamePrefix      = "dmcr-gc-"
 	dmcrGCRequestTimestampRFC    = time.RFC3339Nano
 )

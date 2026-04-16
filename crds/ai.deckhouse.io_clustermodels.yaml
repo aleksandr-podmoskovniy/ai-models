@@ -7,17 +7,17 @@ metadata:
   labels:
     heritage: deckhouse
     module: ai-models
-  name: models.ai-models.deckhouse.io
+  name: clustermodels.ai.deckhouse.io
 spec:
-  group: ai-models.deckhouse.io
+  group: ai.deckhouse.io
   names:
     categories:
     - ai-models
-    kind: Model
-    listKind: ModelList
-    plural: models
-    singular: model
-  scope: Namespaced
+    kind: ClusterModel
+    listKind: ClusterModelList
+    plural: clustermodels
+    singular: clustermodel
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.phase
@@ -37,10 +37,8 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          Model is the namespaced public catalog object for team-scoped published models.
-
-          Artifact-producing parts of spec are expected to become immutable after the
-          controller accepts the object.
+          ClusterModel is the cluster-scoped public catalog object for curated shared
+          published models.
         properties:
           apiVersion:
             description: |-
@@ -415,6 +413,10 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: spec.source.authSecretRef.namespace is required for ClusterModel
+          rule: '!has(self.spec.source.authSecretRef) || (has(self.spec.source.authSecretRef.namespace)
+            && size(self.spec.source.authSecretRef.namespace) > 0)'
     served: true
     storage: true
     subresources:

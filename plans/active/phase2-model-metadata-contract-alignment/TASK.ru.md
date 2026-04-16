@@ -52,15 +52,23 @@ backend/runtime детали в public API.
 - `status.conditions` и `status.phase` остались короткими, explainable и
   согласованными с ADR:
   минимальный набор condition types без decorative controller-internal stages.
+- platform-wide naming surface вокруг AI API был выровнен под единый prefix
+  `ai.deckhouse.io`, а не `ai-models.deckhouse.io`, чтобы `Model`,
+  будущие inference resources и higher-level AI services жили под одной
+  API/annotation namespace и различались по `kind`, а не по отдельным group
+  prefixes.
 
 ## Scope
 
 - обновить `Model` / `ClusterModel` API types вокруг runtime/endpoint metadata;
+- переименовать public API group, generated CRD names и связанные platform
+  prefixes c `ai-models.deckhouse.io` на `ai.deckhouse.io`;
 - обновить controller profile resolution, publication snapshot и status
   projection;
 - упростить public condition/status contract вокруг publish/delete lifecycle;
 - обновить policy validation и current docs/test evidence;
-- выровнять repo wording с internal ADR semantics по runtime vs topology.
+- выровнять repo wording с internal ADR semantics по runtime vs topology и
+  unified AI API naming.
 
 ## Non-goals
 
@@ -68,23 +76,31 @@ backend/runtime детали в public API.
 - не добавлять сейчас новые runtime engines или реальный inference scheduler;
 - не переписывать весь taxonomy model types beyond the minimum needed for this
   contract cleanup;
-- не редактировать сами ADR в `internal-docs` в рамках этого slice;
 - не смешивать этот workstream с предыдущим DMCR GC slice.
 
 ## Затрагиваемые области
 
 - `api/core/v1alpha1/*`
+- `api/core/*`
+- `api/scripts/*`
+- `crds/*`
+- `templates/controller/*`
 - `images/controller/internal/application/publishplan/*`
 - `images/controller/internal/domain/publishstate/*`
 - `images/controller/internal/publishedsnapshot/*`
 - `images/controller/internal/dataplane/publishworker/*`
 - `images/controller/internal/adapters/modelprofile/*`
 - `images/controller/internal/adapters/k8s/sourceworker/*`
+- `images/controller/internal/controllers/workloaddelivery/*`
+- `images/controller/internal/controllers/catalogcleanup/*`
+- `images/controller/internal/support/*`
+- `api/README.md`
 - `images/controller/README.md`
 - `images/controller/STRUCTURE.ru.md`
 - `images/controller/TEST_EVIDENCE.ru.md`
 - `docs/CONFIGURATION.md`
 - `docs/CONFIGURATION.ru.md`
+- `/Users/myskat_90/flant/aleksandr-podmoskovniy/internal-docs/2026-03-18-ai-models-catalog.md`
 
 ## Критерии приёмки
 
@@ -109,6 +125,15 @@ backend/runtime детали в public API.
   `Model` / `ClusterModel` lifecycle;
 - docs и test evidence объясняют новый split:
   model metadata vs inference runtime vs distributed topology.
+- `Model` / `ClusterModel` CRD group, generated CRD names, controller RBAC and
+  repo docs используют единый platform prefix `ai.deckhouse.io`;
+- controller-owned annotations, labels, finalizers и helper constants больше не
+  держат старый `ai-models.deckhouse.io` prefix там, где они являются частью
+  platform-facing naming surface;
+- generated artifacts (`crds/*`, codegen verify scripts) согласованы с новым
+  API group и не требуют ручного patching после regenerate;
+- ADR и repo docs больше не расходятся с live code по API group, source
+  contract и minimal status model.
 
 ### Architecture acceptance criteria
 
@@ -119,10 +144,14 @@ backend/runtime детали в public API.
   wrapper-on-wrapper refactor;
 - changes stay bounded to metadata/public contract and do not spill into DMCR,
   backend, or workload delivery runtime behavior.
+- API group rename делается как один platform naming decision, а не
+  patchwork-set of local aliases.
 
 ## Риски
 
 - можно сломать backward compatibility тестов и status projection;
+- можно оставить hybrid cluster/runtime surface, где часть code/docs/rbac/crds
+  уже на `ai.deckhouse.io`, а часть всё ещё на `ai-models.deckhouse.io`;
 - можно оставить полурабочий hybrid contract, где часть кода живёт в старых
   `KServe/KubeRay`, а часть уже в `VLLM/...`;
 - можно переусложнить runtime compatibility logic без реального source of

@@ -29,8 +29,8 @@ import (
 )
 
 const (
-	modelReferenceIndexField        = "ai-models.deckhouse.io/workloaddelivery-model-ref"
-	clusterModelReferenceIndexField = "ai-models.deckhouse.io/workloaddelivery-clustermodel-ref"
+	modelReferenceIndexField        = "ai.deckhouse.io/workloaddelivery-model-ref"
+	clusterModelReferenceIndexField = "ai.deckhouse.io/workloaddelivery-clustermodel-ref"
 )
 
 func indexWorkloadReferences(ctx context.Context, indexer client.FieldIndexer) error {

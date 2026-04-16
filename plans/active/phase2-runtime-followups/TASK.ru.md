@@ -262,7 +262,7 @@
   rollout annotation без runtime env patching.
 - concrete controller-owned workload delivery path должен принять этот seam
   без новых user-facing knobs: только top-level annotations
-  `ai-models.deckhouse.io/model` / `ai-models.deckhouse.io/clustermodel`,
+  `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel`,
   только mutable workload templates, только user-provided `/data/modelcache`
   storage, и без ложной поддержки прямых `Job`.
 - generic workload delivery не должен превращаться в cluster-wide admission

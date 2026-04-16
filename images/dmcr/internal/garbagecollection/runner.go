@@ -36,11 +36,11 @@ import (
 )
 
 const (
-	RequestLabelKey              = "ai-models.deckhouse.io/dmcr-gc-request"
+	RequestLabelKey              = "ai.deckhouse.io/dmcr-gc-request"
 	RequestLabelValue            = "true"
-	RequestQueuedAtAnnotationKey = "ai-models.deckhouse.io/dmcr-gc-requested-at"
-	switchAnnotationKey          = "ai-models.deckhouse.io/dmcr-gc-switch"
-	doneAnnotationKey            = "ai-models.deckhouse.io/dmcr-gc-done"
+	RequestQueuedAtAnnotationKey = "ai.deckhouse.io/dmcr-gc-requested-at"
+	switchAnnotationKey          = "ai.deckhouse.io/dmcr-gc-switch"
+	doneAnnotationKey            = "ai.deckhouse.io/dmcr-gc-done"
 	DefaultRegistryBinary        = "/usr/bin/dmcr"
 	DefaultConfigPath            = "/etc/docker/registry/config.yml"
 	DefaultRescanInterval        = 5 * time.Second

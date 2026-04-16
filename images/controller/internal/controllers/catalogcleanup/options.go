@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const Finalizer = "ai-models.deckhouse.io/model-cleanup"
+const Finalizer = "ai.deckhouse.io/model-cleanup"
 
 const (
 	modelControllerName        = "catalogcleanup-model"

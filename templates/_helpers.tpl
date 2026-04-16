@@ -148,15 +148,15 @@ memory: 64Mi
 {{- end -}}
 
 {{- define "ai-models.dmcrGCRequestLabelKey" -}}
-ai-models.deckhouse.io/dmcr-gc-request
+ai.deckhouse.io/dmcr-gc-request
 {{- end -}}
 
 {{- define "ai-models.dmcrGCSwitchAnnotationKey" -}}
-ai-models.deckhouse.io/dmcr-gc-switch
+ai.deckhouse.io/dmcr-gc-switch
 {{- end -}}
 
 {{- define "ai-models.dmcrGCDoneAnnotationKey" -}}
-ai-models.deckhouse.io/dmcr-gc-done
+ai.deckhouse.io/dmcr-gc-done
 {{- end -}}
 
 {{- define "ai-models.dmcrGarbageCollectionModeEnabled" -}}

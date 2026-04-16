@@ -269,8 +269,8 @@ that binary:
   caches coordinate a single writer directly on the shared cache root;
 - the controller now adopts annotated `Deployment`, `StatefulSet`,
   `DaemonSet`, and `CronJob` workloads directly:
-  `ai-models.deckhouse.io/model=<name>` for namespaced `Model` and
-  `ai-models.deckhouse.io/clustermodel=<name>` for `ClusterModel`;
+  `ai.deckhouse.io/model=<name>` for namespaced `Model` and
+  `ai.deckhouse.io/clustermodel=<name>` for `ClusterModel`;
 - the workload must already mount writable storage at `/data/modelcache`;
   ai-models no longer invents a second delivery volume and does not mutate
   direct `Job` objects through this controller-owned patch path;

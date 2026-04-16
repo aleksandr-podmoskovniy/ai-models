@@ -17,4 +17,4 @@ limitations under the License.
 package core
 
 // GroupName is the API group name for public ai-models resources.
-const GroupName = "ai-models.deckhouse.io"
+const GroupName = "ai.deckhouse.io"

@@ -32,8 +32,8 @@ import (
 )
 
 const (
-	ExpiresAtAnnotationKey = "ai-models.deckhouse.io/upload-expires-at"
-	OwnerGenerationKey     = "ai-models.deckhouse.io/upload-owner-generation"
+	ExpiresAtAnnotationKey = "ai.deckhouse.io/upload-expires-at"
+	OwnerGenerationKey     = "ai.deckhouse.io/upload-owner-generation"
 
 	tokenHashKey           = "tokenHash"
 	expectedSizeBytesKey   = "expectedSizeBytes"

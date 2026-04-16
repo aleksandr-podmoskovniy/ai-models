@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const AnnotationKey = "ai-models.deckhouse.io/cleanup-handle"
+const AnnotationKey = "ai.deckhouse.io/cleanup-handle"
 
 type Kind string
 

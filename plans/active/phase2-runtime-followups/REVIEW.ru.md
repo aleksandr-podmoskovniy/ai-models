@@ -516,8 +516,8 @@ Blocking findings нет.
 - `ai-models` теперь сам доводит runtime delivery до live workload mutation
   path через `internal/controllers/workloaddelivery`;
 - user-facing contract остался минимальным:
-  только top-level annotations `ai-models.deckhouse.io/model` и
-  `ai-models.deckhouse.io/clustermodel`;
+  только top-level annotations `ai.deckhouse.io/model` и
+  `ai.deckhouse.io/clustermodel`;
 - generic workload delivery не ушёл в admission webhook surface: mutation
   остаётся controller-driven и opt-in only, а watch scope сузился до
   opt-in/managed workloads плюс referenced `Model` / `ClusterModel`;
