@@ -21,22 +21,28 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"time"
 
 	apiinstall "github.com/deckhouse/ai-models/api/core/install"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	"github.com/deckhouse/ai-models/controller/internal/monitoring/catalogmetrics"
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
+
+const defaultControllerCacheSyncTimeout = 10 * time.Minute
 
 type Options struct {
 	CleanupJobs        catalogcleanup.Options
@@ -102,17 +108,7 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		Metrics: metricsserver.Options{
-			BindAddress: a.runtime.MetricsBindAddress,
-		},
-		HealthProbeBindAddress:        a.runtime.HealthProbeBindAddress,
-		LeaderElection:                a.runtime.LeaderElection,
-		LeaderElectionID:              a.runtime.LeaderElectionID,
-		LeaderElectionNamespace:       a.runtime.LeaderElectionNamespace,
-		LeaderElectionReleaseOnCancel: true,
-	})
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), managerOptions(scheme, a.logger, a.runtime))
 	if err != nil {
 		return err
 	}
@@ -188,4 +184,30 @@ func normalizeRuntimeOptions(options RuntimeOptions) RuntimeOptions {
 	}
 
 	return options
+}
+
+func managerOptions(scheme *runtime.Scheme, logger *slog.Logger, runtimeOptions RuntimeOptions) ctrl.Options {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	bridged := logr.FromSlogHandler(logger.Handler())
+
+	return ctrl.Options{
+		Scheme: scheme,
+		Logger: bridged,
+		Metrics: metricsserver.Options{
+			BindAddress: runtimeOptions.MetricsBindAddress,
+		},
+		HealthProbeBindAddress:        runtimeOptions.HealthProbeBindAddress,
+		LeaderElection:                runtimeOptions.LeaderElection,
+		LeaderElectionID:              runtimeOptions.LeaderElectionID,
+		LeaderElectionNamespace:       runtimeOptions.LeaderElectionNamespace,
+		LeaderElectionReleaseOnCancel: true,
+		Controller: config.Controller{
+			CacheSyncTimeout: defaultControllerCacheSyncTimeout,
+			RecoverPanic:     ptr.To(true),
+			UsePriorityQueue: ptr.To(true),
+			Logger:           bridged,
+		},
+	}
 }

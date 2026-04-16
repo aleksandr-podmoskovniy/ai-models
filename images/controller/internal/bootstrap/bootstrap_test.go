@@ -29,6 +29,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 )
 
 func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
@@ -153,5 +154,44 @@ func TestNewAcceptsWorkloadDeliveryWithDefaultInitContainerName(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
+	}
+}
+
+func TestManagerOptionsSetProductionControllerDefaults(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	scheme := k8sruntime.NewScheme()
+	options := managerOptions(scheme, logger, RuntimeOptions{
+		MetricsBindAddress:      ":18080",
+		HealthProbeBindAddress:  ":18081",
+		LeaderElection:          true,
+		LeaderElectionID:        "ai-models-controller.deckhouse.io",
+		LeaderElectionNamespace: "d8-ai-models",
+	})
+
+	if options.Scheme != scheme {
+		t.Fatal("expected manager options to preserve provided scheme")
+	}
+	if got, want := options.Metrics.BindAddress, ":18080"; got != want {
+		t.Fatalf("unexpected metrics bind address %q, want %q", got, want)
+	}
+	if got, want := options.HealthProbeBindAddress, ":18081"; got != want {
+		t.Fatalf("unexpected health probe bind address %q, want %q", got, want)
+	}
+	if options.Logger.GetSink() == nil {
+		t.Fatal("expected manager logger to be configured")
+	}
+	if options.Controller.Logger.GetSink() == nil {
+		t.Fatal("expected controller logger defaults to be configured")
+	}
+	if got, want := options.Controller.CacheSyncTimeout, defaultControllerCacheSyncTimeout; got != want {
+		t.Fatalf("unexpected controller cache sync timeout %s, want %s", got, want)
+	}
+	if options.Controller.RecoverPanic == nil || !*options.Controller.RecoverPanic {
+		t.Fatal("expected controller recover panic default to be enabled")
+	}
+	if options.Controller.UsePriorityQueue == nil || !*options.Controller.UsePriorityQueue {
+		t.Fatal("expected controller priority queue default to be enabled")
 	}
 }

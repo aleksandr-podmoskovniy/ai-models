@@ -132,6 +132,166 @@
 - если `V1` на этом железе окажется достаточно стабильным, только тогда имеет
   смысл думать о дальнейшем уходе от `V0`.
 
+## Что видно по `V1` в `0.15.1` и `0.17.1` на `V100/Volta`
+
+Если смотреть уже не на `0.10.2`, а на более поздние ветки `V1`, то картина
+такая.
+
+### Что совпадает у `0.15.1` и `0.17.1`
+
+В обеих версиях официальный CUDA install guide пишет одно и то же:
+
+- `GPU: compute capability 7.0 or higher`
+- `V100` указан прямо в списке примеров
+
+Источники:
+
+- `v0.15.1`:
+  <https://raw.githubusercontent.com/vllm-project/vllm/v0.15.1/docs/getting_started/installation/gpu.cuda.inc.md>
+- `v0.17.1`:
+  <https://raw.githubusercontent.com/vllm-project/vllm/v0.17.1/docs/getting_started/installation/gpu.cuda.inc.md>
+
+То есть формально обе ветки считают `V100` поддерживаемой CUDA-платформой.
+
+В обеих версиях в коде остаётся тот же базовый вывод по типам данных:
+
+- для `Pascal, Volta and Turing` поддерживаются только `float16` и `float32`
+- `BF16` требует `compute capability >= 8.0`
+
+Источники:
+
+- `v0.15.1`:
+  <https://raw.githubusercontent.com/vllm-project/vllm/v0.15.1/vllm/platforms/cuda.py>
+- `v0.17.1`:
+  <https://raw.githubusercontent.com/vllm-project/vllm/v0.17.1/vllm/platforms/cuda.py>
+
+Практический вывод здесь жёсткий:
+
+- для `V100` и на `0.15.1`, и на `0.17.1` надо идти только через
+  `dtype=half`.
+
+### Что важно по feature surface на `Volta`
+
+В feature matrix у `0.15.1` и `0.17.1` для `Volta` одинаково указано:
+
+- `Chunked Prefill`: `❌`
+- `Automatic Prefix Caching`: `❌`
+- `CUDA graph`: `✅`
+- `LoRA`, `speculative decoding`, `beam search` и прочее — в целом `✅`
+
+Источники:
+
+- `v0.15.1`:
+  <https://raw.githubusercontent.com/vllm-project/vllm/v0.15.1/docs/features/README.md>
+- `v0.17.1`:
+  <https://raw.githubusercontent.com/vllm-project/vllm/v0.17.1/docs/features/README.md>
+
+Это важно для длинного контекста:
+
+- `V1` на `Volta` не даёт нам ту же красивую картину по long-context
+  оптимизациям, которую хочется ожидать по общим рассказам про `V1`;
+- поэтому сам по себе переход на `0.15+` или `0.17+` не решает проблему
+  длинного окна на `V100`.
+
+### Что видно по backend'ам на `Volta`
+
+В `0.17.1` backend table показывает:
+
+- `FLASH_ATTN FA2` требует `>= 8.0`
+- `FLASHINFER` заявлен как поддерживающий `7.x-9.x`
+- `FLEX_ATTENTION` и `TRITON_ATTN` имеют более широкий диапазон совместимости
+
+Источник:
+
+- <https://raw.githubusercontent.com/vllm-project/vllm/v0.17.1/docs/design/attention_backends.md>
+
+Практически это означает:
+
+- на `V100` запуск теоретически возможен;
+- но нельзя наивно предполагать, что любой автоматически выбранный backend
+  будет одинаково хорошо работать на `sm70`.
+
+### Что видно по коду `V1-only`
+
+В `0.15.1` и `0.17.1` auto worker уже выставляется в
+`vllm.v1.worker.gpu_worker.Worker`.
+
+То есть это уже именно `V1`-ветки, а не dual-path с живым `V0`.
+
+Источники:
+
+- `v0.15.1`:
+  <https://raw.githubusercontent.com/vllm-project/vllm/v0.15.1/vllm/platforms/cuda.py>
+- `v0.17.1`:
+  <https://raw.githubusercontent.com/vllm-project/vllm/v0.17.1/vllm/platforms/cuda.py>
+
+Отдельно в `v0.17.1` guide по `V1` прямо написано:
+
+- `We have fully deprecated V0`
+
+Источник:
+
+- <https://raw.githubusercontent.com/vllm-project/vllm/v0.17.1/docs/usage/v1_guide.md>
+
+### Реальные upstream-сигналы по `V100`
+
+Ниже важны не только docs, но и фактические issue reports.
+
+Положительный сигнал:
+
+- issue `#17808` описывает реальный запуск `vLLM 0.8.3` на `single V100 GPU`
+  для двух моделей;
+- проблема там не в том, что `V100` не поддерживается, а в некорректном
+  поведении disaggregated prefill;
+- это значит, что `V1`-runtime путь на `V100` в принципе живой.
+
+Источник:
+
+- <https://github.com/vllm-project/vllm/issues/17808>
+
+Отрицательный, но очень полезный сигнал:
+
+- issue `#26565` на `vLLM 0.11.0` показывает запуск на `V100 (sm70)`, где
+  движок уже загружает модель и доходит до `v1` worker path, но затем падает
+  в sampler path, потому что `FlashInfer requires GPUs with sm75 or higher`;
+- то есть это не “`V100` в целом не поддерживается”, а конкретная проблема
+  backend/sampler-выбора на старой архитектуре.
+
+Источник:
+
+- <https://github.com/vllm-project/vllm/issues/26565>
+
+### Практический вывод по `0.15.1` и `0.17.1`
+
+Для нашего стенда это сводится к такому:
+
+- `0.15.1`:
+  - уже настоящий `V1`-профиль;
+  - формально поддерживает `V100`;
+  - всё ещё живёт с теми же ограничениями `Volta` по `BF16`, `CP` и `APC`;
+  - выглядит как более разумный первый кандидат, если хочется проверить
+    `V1`-ветку после `0.10.2`.
+- `0.17.1`:
+  - тоже формально поддерживает `V100`;
+  - тоже уже `V1-only`;
+  - несёт те же ограничения `Volta`;
+  - рискованнее как первый шаг, потому что отката на `V0` уже нет, а issue
+    `#26565` показывает реальный backend landmine на `sm70`.
+
+Итоговый порядок проверки на этом железе лучше делать таким:
+
+1. `0.10.2` + `V0`
+2. `0.10.2` + `V1`
+3. `0.15.1` + `V1`
+4. только потом `0.17.1` + `V1`
+
+Если нужна одна короткая инженерная фраза, она такая:
+
+- `0.15.1` и `0.17.1` на `V100` запускаться могут;
+- но это не “полноценный modern V1 experience”, а `V1` с ограничениями
+  `Volta` и с повышенным вниманием к тому, какой backend реально выбирается
+  внутри рантайма.
+
 ## Версии `KubeRay`, `Ray` и образ
 
 По текущим upstream-документам:

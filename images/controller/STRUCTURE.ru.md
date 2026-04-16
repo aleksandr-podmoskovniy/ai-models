@@ -83,6 +83,7 @@ images/controller/
         safetensors/
       modelpack/
         kitops/
+        oci/
       uploadstaging/
         s3/
     dataplane/
@@ -108,6 +109,16 @@ images/controller/
   отдельных execution entrypoint.
 - `cmd/` должен оставаться thin shell:
   env/argv parsing, exit codes, wiring into `internal/*`.
+- В live tree `ai-models-controller/` уже разложен по отдельным shell-файлам:
+  `env.go`, `config.go`, `resources.go`, `run.go`.
+  Это важно, потому что controller runtime contract не должен снова
+  схлопываться в giant `main.go`.
+- `ai-models-artifact-runtime/` тоже уже не один dispatcher file:
+  `dispatch.go` держит только command routing,
+  `staging_config.go` — staging env contract,
+  `materialize_coordination.go` — shared-cache coordination для materialize
+  path.
+  Это live execution shell того же runtime image, а не “временные helper files”.
 - если entrypoint снова начинает смешивать:
   - env contract
   - quantity/resource parsing
@@ -118,6 +129,14 @@ images/controller/
 
 - `internal/bootstrap/` — composition root manager runtime.
 - `internal/cmdsupport/` — только shared process-level glue.
+- В live tree `bootstrap.go` владеет ровно тем, чем и должен владеть
+  production composition root:
+  scheme assembly, `ctrl.Manager`, owner controller registration,
+  health/ready checks и metrics collector wiring.
+- Там же теперь централизованы manager-level controller defaults:
+  bridged logger для `controller-runtime`, panic recovery, priority queue и
+  enlarged cache sync timeout.
+  Это production runtime shell, а не detail отдельного owner package.
 - `cmdsupport` нельзя снова превращать в место, которое знает concrete
   adapters, runtime payload models или source-specific env parsing.
 - Внутри `cmdsupport/` process/runtime helpers, env helpers и structured
@@ -209,6 +228,9 @@ oversized `collector.go`.
 Controller package оправдан только ownership, а не тем, что код “проще читать”.
 Если owner не меняется, перенос в новый controller package почти наверняка
 будет patchwork.
+Для secondary watches правило жёстче:
+если mapping использует только metadata, watch не должен тащить full object
+cache. Именно поэтому `catalogstatus` держит pod watch как metadata-only path.
 
 ### Concrete adapters
 
@@ -250,6 +272,10 @@ Non-K8s adapters остаются отдельно:
   publish/remove orchestration, command/auth shell, Kitfile context prep и OCI
   reference helpers не должны снова схлопываться обратно в один oversized
   `adapter.go`;
+- `modelpack/oci/` остаётся consumer-side inspect/materialize boundary для уже
+  опубликованного OCI ModelPack artifact:
+  registry HTTP, manifest/config validation и layer materialization не должны
+  утекать ни в `publicationartifact/`, ни в `dataplane/publishworker/`;
 - `modelprofile/safetensors/` остаётся concrete profile resolver, но внутри не
   должен снова смешивать top-level `Resolve`, checkpoint config parsing/value
   helpers и model-capability inference в одном oversized `profile.go`;
@@ -271,6 +297,9 @@ Non-K8s adapters остаются отдельно:
 Внутри `publishworker/` top-level worker contract, HF-specific remote path,
 upload path, raw provenance и profile/publish resolution тоже не должны снова
 схлопываться обратно в один oversized `run.go`.
+`materialize-artifact` остаётся рядом с ними в том же runtime image contract,
+но не переезжает в controller manager:
+это byte-path runtime, а не reconcile owner.
 
 ### Shared support
 
@@ -409,6 +438,13 @@ runtime semantics или status logic, это уже не support.
 - Возвращение локального wrapper или отдельного mapping layer будет прямым
   регрессом структуры.
 
+### `internal/controllers/catalogstatus/` теперь жёстче режет watch pressure
+
+- Pod secondary watch здесь нужен только как enqueue trigger по owner metadata.
+- Поэтому live setup использует metadata-only watch вместо полного pod cache.
+- Возврат на full pod watch без новой live потребности в `spec`/`status` будет
+  production regression по памяти и cache noise.
+
 ### `internal/adapters/k8s/storageprojection/` должен остаться тупым projection glue
 
 - Этот пакет существует только для env/volume projection object-storage creds и
@@ -455,6 +491,67 @@ runtime semantics или status logic, это уже не support.
   - OCI artifact reference policy.
 - Если package снова начнёт принимать backend-specific semantics, это будет
   прямой structural regression.
+
+## 7. Сверка с production patterns `virtualization`
+
+### Что совпадает с production pattern
+
+- Отдельный composition root для controller manager уже есть:
+  `cmd/ai-models-controller/*` собирает config/runtime shell, а
+  `internal/bootstrap/` регистрирует owners, probes и metrics.
+  По обязанностям это тот же production concern, что и
+  `cmd/virtualization-controller/main.go`, только без giant-shell drift.
+- Owner controllers уже вырезаны по ownership, как и в
+  `../virtualization/images/virtualization-artifact/pkg/controller/<owner>`:
+  `catalogstatus/`, `catalogcleanup/`, `workloaddelivery/`.
+- Watch/indexer logic держится рядом с owner setup, а не размазывается по
+  случайным helpers:
+  это совпадает с production-паттерном `workload-updater` и controller-local
+  `internal/watcher` packages в `virtualization`.
+- Manager runtime теперь также держит production controller defaults
+  централизованно, а не оставляет их implicit defaults:
+  logger bridge, panic recovery, priority queue и cache sync timeout задаются
+  в composition root так же осознанно, как в `virtualization` они задаются на
+  controller setup path.
+- Metrics collector живёт отдельной runtime boundary, как и
+  `../virtualization/images/virtualization-artifact/pkg/monitoring/metrics/*`:
+  list/read path, metric descriptors и emission split остаются не в
+  reconciler code.
+
+### Что отличается намеренно и почему это не drift
+
+- `ai-models` держит runtime code под `internal/`, а не под `pkg/`, потому что
+  это module-local executable surface, а не экспортируемая library boundary.
+- `ai-models` жёстче режет command shell, чем текущий
+  `virtualization-controller/main.go`:
+  env parsing, resource parsing, bootstrap wiring и artifact-runtime dispatch
+  уже вынесены в соседние files.
+  Для этого репозитория это production improvement, а не отклонение вниз.
+- `ai-models` оставляет явные `application/`, `ports/`, `adapters/`,
+  `dataplane/` seams между controller owners и byte-path runtimes.
+  В `virtualization` часть похожих ролей живёт controller-local под
+  `pkg/controller/<owner>/internal`, но здесь shared publication/upload
+  contracts реально переиспользуются несколькими owners и runtime paths, так
+  что отдельные cross-owner boundaries оправданы.
+- `catalogmetrics/` остаётся одним package вместо дерева per-kind collectors,
+  потому что live public truth surface здесь узкая:
+  только `Model` и `ClusterModel`.
+  Раздробление в `metrics/model` / `metrics/clustermodel` сейчас было бы
+  premature patchwork.
+- Отдельный global package вроде `pkg/controller/watchers` из `virtualization`
+  здесь пока не нужен:
+  текущие watch paths не имеют достаточного cross-owner reuse и лучше остаются
+  рядом со своим owner.
+
+### Текущий вердикт
+
+- На `2026-04-16` controller/runtime code не требует forced rewiring под
+  `virtualization`, но уже потребовал два bounded hardening changes:
+  - explicit manager/controller defaults в composition root;
+  - metadata-only pod watch для `catalogstatus`.
+- Если появится реальное cross-owner reuse watchers/metrics/service seams, его
+  надо будет выносить так же жёстко, как это сделано в `virtualization`, но
+  делать это заранее “ради похожести” нельзя.
 
 Если этот документ снова начнёт разрастаться в каталог на сотни строк, это
 будет означать не “сложную архитектуру”, а то, что документ снова обслуживает

@@ -23,6 +23,8 @@ Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
 - release `bundle` должен забирать `Chart.yaml`, `Chart.lock` и
   vendored `charts/`, иначе release payload начинает расходиться с live render
   path;
+- release `bundle` также должен забирать `monitoring/`, если модуль уже
+  держит Prometheus rules или Grafana dashboards как часть install contract;
 - `.helmignore` не должен исключать `charts/`, иначе dependency physically
   лежит в репо, но не участвует в render path;
 - repo-local helper fork в `templates/` не должен становиться primary source of
@@ -122,6 +124,19 @@ Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
   image; raw external `from:` допустим только как явный временный debt, если в
   base-image map пока нет эквивалента;
 - `images/` не должен превращаться в свалку unrelated tooling или docs.
+
+### `monitoring/`
+
+`monitoring/` хранит module-owned monitoring payload, который должен ехать в
+release bundle так же, как в `virtualization` и `gpu-control-plane`.
+
+Правила:
+- `monitoring/prometheus-rules/` и `monitoring/grafana-dashboards/` считаются
+  install/release contract, а не локальными dev-only артефактами;
+- если monitoring assets живут в репозитории, `werf` bundle не должен их
+  терять;
+- build-only metadata вроде `build/components/versions.yml` не надо по
+  инерции тащить в bundle, если это не install-time contract модуля.
 
 ### `docs/development/`
 

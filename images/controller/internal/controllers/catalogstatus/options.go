@@ -108,7 +108,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	if err := ctrl.NewControllerManagedBy(mgr).
 		Named(modelControllerName).
 		For(&modelsv1alpha1.Model{}).
-		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(mapPodToModelRequests)).
+		WatchesMetadata(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(mapPodToModelRequests)).
 		Complete(&ModelReconciler{base}); err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(clusterModelControllerName).
 		For(&modelsv1alpha1.ClusterModel{}).
-		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(mapPodToClusterModelRequests)).
+		WatchesMetadata(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(mapPodToClusterModelRequests)).
 		Complete(&ClusterModelReconciler{base})
 }
 
