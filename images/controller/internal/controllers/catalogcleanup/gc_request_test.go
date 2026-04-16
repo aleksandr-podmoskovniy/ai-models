@@ -50,8 +50,8 @@ func TestBuildDMCRGCRequestSecretIncludesSharedOwnerLabels(t *testing.T) {
 	if got, want := secret.Labels[resourcenames.OwnerNamespaceLabelKey], "team-a"; got != want {
 		t.Fatalf("unexpected owner-namespace label %q", got)
 	}
-	if secret.Annotations[dmcrGCSwitchAnnotationKey] == "" {
-		t.Fatal("expected switch annotation on garbage-collection request secret")
+	if secret.Annotations[dmcrGCRequestedAnnotationKey] == "" {
+		t.Fatal("expected queued-request annotation on garbage-collection request secret")
 	}
 }
 
@@ -100,7 +100,10 @@ func TestEnsureGarbageCollectionRequestRefreshesMetadataOnExistingSecret(t *test
 	if updated.Annotations[dmcrGCDoneAnnotationKey] != "" {
 		t.Fatalf("expected done annotation to be removed, got %#v", updated.Annotations)
 	}
-	if updated.Annotations[dmcrGCSwitchAnnotationKey] == "" {
-		t.Fatalf("expected switch annotation to be set, got %#v", updated.Annotations)
+	if updated.Annotations[dmcrGCRequestedAnnotationKey] == "" {
+		t.Fatalf("expected queued-request annotation to be set, got %#v", updated.Annotations)
+	}
+	if updated.Annotations[dmcrGCSwitchAnnotationKey] != "" {
+		t.Fatalf("expected active switch annotation to stay cleared, got %#v", updated.Annotations)
 	}
 }

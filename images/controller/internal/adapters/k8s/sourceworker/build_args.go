@@ -43,9 +43,6 @@ func buildArgs(
 	if plan.Task != "" {
 		args = append(args, "--task", plan.Task)
 	}
-	for _, engine := range plan.RuntimeEngines {
-		args = append(args, "--runtime-engine", engine)
-	}
 	return append(args, sourceArgs(plan, request.Owner.UID, options.ObjectStorage.Bucket)...)
 }
 

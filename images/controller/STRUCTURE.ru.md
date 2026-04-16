@@ -279,6 +279,10 @@ Non-K8s adapters остаются отдельно:
 - `modelprofile/safetensors/` остаётся concrete profile resolver, но внутри не
   должен снова смешивать top-level `Resolve`, checkpoint config parsing/value
   helpers и model-capability inference в одном oversized `profile.go`;
+- `modelprofile/*` публикует platform-facing metadata о модели:
+  semantic endpoint types допустимы, а runtime/topology guesswork нет.
+  Deployment topology вроде `KubeRay` не должна masquerade as runtime
+  compatibility модели;
 - не заводить adapter-local request wrappers поверх уже существующих ports;
 - не возвращать runtime proxy layers, если concrete adapter и так реализует
   shared contract напрямую.

@@ -95,8 +95,7 @@ func publishFromUpload(ctx context.Context, options Options) (publicationartifac
 	)
 
 	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, checkpointDir, inputFormat, sourceProfileInput{
-		Task:           options.Task,
-		RuntimeEngines: options.RuntimeEngines,
+		Task: options.Task,
 	}, "Published from uploaded model input")
 	if err != nil {
 		return publicationartifact.Result{}, err

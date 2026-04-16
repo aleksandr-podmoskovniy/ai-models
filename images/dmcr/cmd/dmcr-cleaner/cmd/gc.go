@@ -27,10 +27,11 @@ import (
 
 func newGCCommand() *cobra.Command {
 	options := garbagecollection.Options{
-		RegistryBinary: garbagecollection.DefaultRegistryBinary,
-		ConfigPath:     garbagecollection.DefaultConfigPath,
-		GCTimeout:      10 * time.Minute,
-		RescanInterval: garbagecollection.DefaultRescanInterval,
+		RegistryBinary:  garbagecollection.DefaultRegistryBinary,
+		ConfigPath:      garbagecollection.DefaultConfigPath,
+		GCTimeout:       10 * time.Minute,
+		RescanInterval:  garbagecollection.DefaultRescanInterval,
+		ActivationDelay: garbagecollection.DefaultActivationDelay,
 	}
 
 	command := &cobra.Command{
@@ -48,6 +49,7 @@ func newGCCommand() *cobra.Command {
 				slog.String("request_label_selector", options.RequestLabelSelector),
 				slog.Duration("garbage_collection_timeout", options.GCTimeout),
 				slog.Duration("rescan_interval", options.RescanInterval),
+				slog.Duration("activation_delay", options.ActivationDelay),
 			)
 			client, err := garbagecollection.NewInClusterClient()
 			if err != nil {
@@ -67,6 +69,7 @@ func newGCCommand() *cobra.Command {
 	runCommand.Flags().StringVar(&options.ConfigPath, "config-path", garbagecollection.DefaultConfigPath, "Path to the active DMCR registry config file.")
 	runCommand.Flags().DurationVar(&options.GCTimeout, "garbage-collection-timeout", 10*time.Minute, "Maximum time allowed for one registry garbage-collect run.")
 	runCommand.Flags().DurationVar(&options.RescanInterval, "rescan-interval", garbagecollection.DefaultRescanInterval, "Polling interval used while waiting for new pending garbage-collection requests.")
+	runCommand.Flags().DurationVar(&options.ActivationDelay, "activation-delay", garbagecollection.DefaultActivationDelay, "Minimum time a queued request must stay pending before the helper arms a maintenance GC cycle.")
 	_ = runCommand.MarkFlagRequired("request-namespace")
 
 	command.AddCommand(runCommand)

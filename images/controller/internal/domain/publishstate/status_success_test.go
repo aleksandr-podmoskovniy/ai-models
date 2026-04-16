@@ -51,9 +51,9 @@ func TestProjectStatusSucceeded(t *testing.T) {
 			},
 			LaunchPolicy: &modelsv1alpha1.ModelLaunchPolicy{
 				AllowedRuntimes: []modelsv1alpha1.ModelRuntimeEngine{
-					modelsv1alpha1.ModelRuntimeEngineKServe,
+					modelsv1alpha1.ModelRuntimeEngineVLLM,
 				},
-				PreferredRuntime: modelsv1alpha1.ModelRuntimeEngineKServe,
+				PreferredRuntime: modelsv1alpha1.ModelRuntimeEngineVLLM,
 				AllowedAcceleratorVendors: []modelsv1alpha1.ModelAcceleratorVendor{
 					modelsv1alpha1.ModelAcceleratorVendorNVIDIA,
 				},
@@ -94,8 +94,8 @@ func TestProjectStatusSucceeded(t *testing.T) {
 					ParameterCount:               8_000_000_000,
 					Quantization:                 "bnb-nf4",
 					ContextWindowTokens:          8192,
-					SupportedEndpointTypes:       []string{"OpenAIChatCompletions", "OpenAICompletions"},
-					CompatibleRuntimes:           []string{"KServe"},
+					SupportedEndpointTypes:       []string{"Chat", "TextGeneration"},
+					CompatibleRuntimes:           []string{"VLLM"},
 					CompatibleAcceleratorVendors: []string{"NVIDIA", "AMD"},
 					CompatiblePrecisions:         []string{"int4"},
 					MinimumLaunch: publicationdata.MinimumLaunch{
@@ -170,8 +170,8 @@ func TestProjectStatusSucceededValidationFailure(t *testing.T) {
 					Task:                   "text-generation",
 					Framework:              "transformers",
 					Format:                 "Safetensors",
-					SupportedEndpointTypes: []string{"OpenAIChatCompletions", "OpenAICompletions"},
-					CompatibleRuntimes:     []string{"KServe"},
+					SupportedEndpointTypes: []string{"Chat", "TextGeneration"},
+					CompatibleRuntimes:     []string{"VLLM"},
 				},
 			},
 			CleanupHandle: &handle,

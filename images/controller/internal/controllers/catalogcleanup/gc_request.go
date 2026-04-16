@@ -30,12 +30,13 @@ import (
 )
 
 const (
-	dmcrGCRequestLabelKey     = "ai-models.deckhouse.io/dmcr-gc-request"
-	dmcrGCRequestLabelValue   = "true"
-	dmcrGCSwitchAnnotationKey = "ai-models.deckhouse.io/dmcr-gc-switch"
-	dmcrGCDoneAnnotationKey   = "ai-models.deckhouse.io/dmcr-gc-done"
-	dmcrGCRequestNamePrefix   = "dmcr-gc-"
-	dmcrGCRequestTimestampRFC = time.RFC3339Nano
+	dmcrGCRequestLabelKey        = "ai-models.deckhouse.io/dmcr-gc-request"
+	dmcrGCRequestLabelValue      = "true"
+	dmcrGCRequestedAnnotationKey = "ai-models.deckhouse.io/dmcr-gc-requested-at"
+	dmcrGCSwitchAnnotationKey    = "ai-models.deckhouse.io/dmcr-gc-switch"
+	dmcrGCDoneAnnotationKey      = "ai-models.deckhouse.io/dmcr-gc-done"
+	dmcrGCRequestNamePrefix      = "dmcr-gc-"
+	dmcrGCRequestTimestampRFC    = time.RFC3339Nano
 )
 
 func dmcrGCRequestSecretName(ownerUID types.UID) string {
@@ -48,7 +49,7 @@ func dmcrGCRequestSecretName(ownerUID types.UID) string {
 
 func buildDMCRGCRequestSecret(namespace string, owner cleanupJobOwner) *corev1.Secret {
 	annotations := map[string]string{
-		dmcrGCSwitchAnnotationKey: time.Now().UTC().Format(dmcrGCRequestTimestampRFC),
+		dmcrGCRequestedAnnotationKey: time.Now().UTC().Format(dmcrGCRequestTimestampRFC),
 	}
 
 	return &corev1.Secret{
@@ -69,6 +70,9 @@ func observeDMCRGCRequestState(secret *corev1.Secret) deletionapp.GarbageCollect
 	if secret.Annotations[dmcrGCSwitchAnnotationKey] != "" {
 		return deletionapp.GarbageCollectionStateRequested
 	}
+	if secret.Annotations[dmcrGCRequestedAnnotationKey] != "" {
+		return deletionapp.GarbageCollectionStateQueued
+	}
 	if secret.Annotations[dmcrGCDoneAnnotationKey] != "" {
 		return deletionapp.GarbageCollectionStateComplete
 	}
@@ -86,10 +90,11 @@ func (r *baseReconciler) ensureGarbageCollectionRequest(ctx context.Context, own
 	default:
 		existing.Labels = mergeLabels(existing.Labels, garbageCollectionRequestLabels(owner))
 		if existing.Annotations == nil {
-			existing.Annotations = make(map[string]string, 2)
+			existing.Annotations = make(map[string]string, 3)
 		}
+		existing.Annotations[dmcrGCRequestedAnnotationKey] = time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
 		delete(existing.Annotations, dmcrGCDoneAnnotationKey)
-		existing.Annotations[dmcrGCSwitchAnnotationKey] = time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
+		delete(existing.Annotations, dmcrGCSwitchAnnotationKey)
 		return r.client.Update(ctx, &existing)
 	}
 }

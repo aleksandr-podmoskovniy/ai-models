@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,13 +36,15 @@ import (
 )
 
 const (
-	RequestLabelKey       = "ai-models.deckhouse.io/dmcr-gc-request"
-	RequestLabelValue     = "true"
-	switchAnnotationKey   = "ai-models.deckhouse.io/dmcr-gc-switch"
-	doneAnnotationKey     = "ai-models.deckhouse.io/dmcr-gc-done"
-	DefaultRegistryBinary = "/usr/bin/dmcr"
-	DefaultConfigPath     = "/etc/docker/registry/config.yml"
-	DefaultRescanInterval = 5 * time.Second
+	RequestLabelKey              = "ai-models.deckhouse.io/dmcr-gc-request"
+	RequestLabelValue            = "true"
+	RequestQueuedAtAnnotationKey = "ai-models.deckhouse.io/dmcr-gc-requested-at"
+	switchAnnotationKey          = "ai-models.deckhouse.io/dmcr-gc-switch"
+	doneAnnotationKey            = "ai-models.deckhouse.io/dmcr-gc-done"
+	DefaultRegistryBinary        = "/usr/bin/dmcr"
+	DefaultConfigPath            = "/etc/docker/registry/config.yml"
+	DefaultRescanInterval        = 5 * time.Second
+	DefaultActivationDelay       = 10 * time.Minute
 )
 
 type Options struct {
@@ -51,6 +54,7 @@ type Options struct {
 	ConfigPath           string
 	GCTimeout            time.Duration
 	RescanInterval       time.Duration
+	ActivationDelay      time.Duration
 }
 
 func DefaultRequestLabelSelector() string {
@@ -81,13 +85,14 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 		slog.String("request_label_selector", options.RequestLabelSelector),
 		slog.Duration("garbage_collection_timeout", options.GCTimeout),
 		slog.Duration("rescan_interval", options.RescanInterval),
+		slog.Duration("activation_delay", options.ActivationDelay),
 	)
 
 	signalContext, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	for {
-		handled, err := runPendingRequestCycle(signalContext, client, options, func() time.Time {
+		handled, err := runRequestCycle(signalContext, client, options, func() time.Time {
 			return time.Now().UTC()
 		})
 		if err != nil {
@@ -105,24 +110,58 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 	}
 }
 
-func runPendingRequestCycle(
+func runRequestCycle(
 	ctx context.Context,
 	client kubernetes.Interface,
 	options Options,
 	now func() time.Time,
 ) (bool, error) {
-	pendingSecrets, err := listPendingRequestSecrets(ctx, client, options.RequestNamespace, options.RequestLabelSelector)
+	requestSecrets, err := listRequestSecrets(ctx, client, options.RequestNamespace, options.RequestLabelSelector)
 	if err != nil {
 		return false, err
 	}
-	if len(pendingSecrets) == 0 {
+	activeSecrets := activeRequestSecrets(requestSecrets)
+	if len(activeSecrets) > 0 {
+		maintenanceModeEnabled, err := registryMaintenanceModeEnabled(options.ConfigPath)
+		if err != nil {
+			return false, err
+		}
+		if !maintenanceModeEnabled {
+			return false, nil
+		}
+		return runActiveRequestCycle(ctx, client, options, activeSecrets)
+	}
+
+	queuedSecrets := queuedRequestSecrets(requestSecrets)
+	if len(queuedSecrets) == 0 {
 		return false, nil
 	}
 
-	requestNames := secretNames(pendingSecrets)
+	if !shouldActivateGarbageCollection(queuedSecrets, now(), options.ActivationDelay) {
+		return false, nil
+	}
+
+	if err := armQueuedRequests(ctx, client, options.RequestNamespace, queuedSecrets, now()); err != nil {
+		return true, err
+	}
+	slog.Default().Info(
+		"dmcr garbage collection maintenance cycle armed",
+		slog.Int("request_count", len(queuedSecrets)),
+		slog.Any("request_names", secretNames(queuedSecrets)),
+	)
+	return true, nil
+}
+
+func runActiveRequestCycle(
+	ctx context.Context,
+	client kubernetes.Interface,
+	options Options,
+	activeSecrets []corev1.Secret,
+) (bool, error) {
+	requestNames := secretNames(activeSecrets)
 	slog.Default().Info(
 		"dmcr garbage collection requested",
-		slog.Int("request_count", len(pendingSecrets)),
+		slog.Int("request_count", len(activeSecrets)),
 		slog.Any("request_names", requestNames),
 	)
 
@@ -132,7 +171,7 @@ func runPendingRequestCycle(
 	}
 
 	attrs := []any{
-		slog.Int("request_count", len(pendingSecrets)),
+		slog.Int("request_count", len(activeSecrets)),
 		slog.Any("request_names", requestNames),
 	}
 	if trimmedOutput := strings.TrimSpace(string(output)); trimmedOutput != "" {
@@ -140,12 +179,12 @@ func runPendingRequestCycle(
 	}
 	slog.Default().Info("dmcr garbage collection completed", attrs...)
 
-	if err := markRequestsDone(ctx, client, options.RequestNamespace, pendingSecrets, now()); err != nil {
+	if err := deleteRequests(ctx, client, options.RequestNamespace, activeSecrets); err != nil {
 		return true, err
 	}
 	slog.Default().Info(
-		"dmcr garbage collection requests marked done",
-		slog.Int("request_count", len(pendingSecrets)),
+		"dmcr garbage collection requests removed",
+		slog.Int("request_count", len(activeSecrets)),
 		slog.Any("request_names", requestNames),
 	)
 
@@ -168,22 +207,38 @@ func applyDefaultOptions(options Options) Options {
 	if options.RescanInterval <= 0 {
 		options.RescanInterval = DefaultRescanInterval
 	}
+	if options.ActivationDelay <= 0 {
+		options.ActivationDelay = DefaultActivationDelay
+	}
 	return options
 }
 
-func listPendingRequestSecrets(ctx context.Context, client kubernetes.Interface, namespace, labelSelector string) ([]corev1.Secret, error) {
+func listRequestSecrets(ctx context.Context, client kubernetes.Interface, namespace, labelSelector string) ([]corev1.Secret, error) {
 	secretList, err := client.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{LabelSelector: labelSelector})
 	if err != nil {
 		return nil, fmt.Errorf("list dmcr garbage-collection request secrets: %w", err)
 	}
+	return secretList.Items, nil
+}
 
-	pending := make([]corev1.Secret, 0, len(secretList.Items))
-	for _, secret := range secretList.Items {
-		if shouldRunGarbageCollection(secret) {
-			pending = append(pending, secret)
+func queuedRequestSecrets(secrets []corev1.Secret) []corev1.Secret {
+	queued := make([]corev1.Secret, 0, len(secrets))
+	for _, secret := range secrets {
+		if isQueuedRequest(secret) {
+			queued = append(queued, secret)
 		}
 	}
-	return pending, nil
+	return queued
+}
+
+func activeRequestSecrets(secrets []corev1.Secret) []corev1.Secret {
+	active := make([]corev1.Secret, 0, len(secrets))
+	for _, secret := range secrets {
+		if shouldRunGarbageCollection(secret) {
+			active = append(active, secret)
+		}
+	}
+	return active
 }
 
 func shouldRunGarbageCollection(secret corev1.Secret) bool {
@@ -193,12 +248,40 @@ func shouldRunGarbageCollection(secret corev1.Secret) bool {
 	return strings.TrimSpace(secret.Annotations[switchAnnotationKey]) != ""
 }
 
+func isQueuedRequest(secret corev1.Secret) bool {
+	if secret.Labels[RequestLabelKey] != RequestLabelValue {
+		return false
+	}
+	if strings.TrimSpace(secret.Annotations[switchAnnotationKey]) != "" {
+		return false
+	}
+	return strings.TrimSpace(secret.Annotations[RequestQueuedAtAnnotationKey]) != ""
+}
+
 func secretNames(secrets []corev1.Secret) []string {
 	names := make([]string, 0, len(secrets))
 	for _, secret := range secrets {
 		names = append(names, secret.Name)
 	}
 	return names
+}
+
+func shouldActivateGarbageCollection(secrets []corev1.Secret, now time.Time, activationDelay time.Duration) bool {
+	if len(secrets) == 0 {
+		return false
+	}
+
+	for _, secret := range secrets {
+		requestedAt, err := time.Parse(time.RFC3339Nano, secret.Annotations[RequestQueuedAtAnnotationKey])
+		if err != nil {
+			return true
+		}
+		if now.Sub(requestedAt) >= activationDelay {
+			return true
+		}
+	}
+
+	return false
 }
 
 func execGarbageCollect(ctx context.Context, options Options) ([]byte, error) {
@@ -217,27 +300,74 @@ func execGarbageCollect(ctx context.Context, options Options) ([]byte, error) {
 	return output, nil
 }
 
-func markRequestsDone(
+func armQueuedRequests(
 	ctx context.Context,
 	client kubernetes.Interface,
 	namespace string,
 	secrets []corev1.Secret,
-	finishedAt time.Time,
+	armedAt time.Time,
 ) error {
 	for _, secret := range secrets {
 		secretCopy := secret.DeepCopy()
 		if secretCopy.Annotations == nil {
-			secretCopy.Annotations = make(map[string]string, 2)
+			secretCopy.Annotations = make(map[string]string, 3)
 		}
-		delete(secretCopy.Annotations, switchAnnotationKey)
-		secretCopy.Annotations[doneAnnotationKey] = finishedAt.Format(time.RFC3339Nano)
+		delete(secretCopy.Annotations, doneAnnotationKey)
+		secretCopy.Annotations[switchAnnotationKey] = armedAt.Format(time.RFC3339Nano)
 
 		if _, err := client.CoreV1().Secrets(namespace).Update(ctx, secretCopy, metav1.UpdateOptions{}); err != nil {
 			if apierrors.IsNotFound(err) {
 				continue
 			}
-			return fmt.Errorf("mark dmcr garbage-collection request %s as done: %w", secretCopy.Name, err)
+			return fmt.Errorf("arm dmcr garbage-collection request %s: %w", secretCopy.Name, err)
 		}
 	}
 	return nil
+}
+
+func deleteRequests(
+	ctx context.Context,
+	client kubernetes.Interface,
+	namespace string,
+	secrets []corev1.Secret,
+) error {
+	for _, secret := range secrets {
+		if err := client.CoreV1().Secrets(namespace).Delete(ctx, secret.Name, metav1.DeleteOptions{}); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return fmt.Errorf("delete dmcr garbage-collection request %s: %w", secret.Name, err)
+		}
+	}
+	return nil
+}
+
+type registryConfig struct {
+	Storage registryStorageConfig `yaml:"storage"`
+}
+
+type registryStorageConfig struct {
+	Maintenance registryMaintenanceConfig `yaml:"maintenance"`
+}
+
+type registryMaintenanceConfig struct {
+	Readonly registryReadonlyConfig `yaml:"readonly"`
+}
+
+type registryReadonlyConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+func registryMaintenanceModeEnabled(configPath string) (bool, error) {
+	payload, err := os.ReadFile(configPath)
+	if err != nil {
+		return false, fmt.Errorf("read dmcr config: %w", err)
+	}
+
+	var config registryConfig
+	if err := yaml.Unmarshal(payload, &config); err != nil {
+		return false, fmt.Errorf("parse dmcr config: %w", err)
+	}
+
+	return config.Storage.Maintenance.Readonly.Enabled, nil
 }

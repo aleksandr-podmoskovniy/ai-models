@@ -33,7 +33,7 @@ type policyValidationResult struct {
 
 func validatePublishedModel(spec modelsv1alpha1.ModelSpec, snapshot publicationdata.Snapshot) policyValidationResult {
 	inferredType := inferModelType(snapshot.Resolved.Task)
-	supportedEndpoints := inferEndpointTypes(snapshot.Resolved.Task)
+	supportedEndpoints := resolvedEndpointTypes(snapshot.Resolved)
 
 	if result := validateModelType(spec.ModelType, inferredType); !result.Valid {
 		return result
@@ -99,7 +99,8 @@ func validateLaunchPolicy(policy *modelsv1alpha1.ModelLaunchPolicy, resolved pub
 	if result := validatePreferredRuntime(policy, resolved.CompatibleRuntimes); !result.Valid {
 		return result
 	}
-	if len(policy.AllowedRuntimes) > 0 && len(intersectRuntimeEngines(policy.AllowedRuntimes, resolved.CompatibleRuntimes)) == 0 {
+	if len(policy.AllowedRuntimes) > 0 && len(resolved.CompatibleRuntimes) > 0 &&
+		len(intersectRuntimeEngines(policy.AllowedRuntimes, resolved.CompatibleRuntimes)) == 0 {
 		return invalidPolicy(
 			modelsv1alpha1.ModelConditionReasonRuntimeNotSupported,
 			fmt.Sprintf("launchPolicy.allowedRuntimes=%v does not intersect with resolved compatible runtimes %v", policy.AllowedRuntimes, resolved.CompatibleRuntimes),
@@ -130,7 +131,7 @@ func validatePreferredRuntime(policy *modelsv1alpha1.ModelLaunchPolicy, compatib
 			fmt.Sprintf("launchPolicy.preferredRuntime=%q must be included in launchPolicy.allowedRuntimes", policy.PreferredRuntime),
 		)
 	}
-	if containsString(compatibleRuntimes, string(policy.PreferredRuntime)) {
+	if len(compatibleRuntimes) == 0 || containsString(compatibleRuntimes, string(policy.PreferredRuntime)) {
 		return validPolicy()
 	}
 	return invalidPolicy(

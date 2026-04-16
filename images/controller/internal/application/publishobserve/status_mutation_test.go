@@ -40,8 +40,8 @@ func TestPlanUnsupportedSourceCatalogStatusMutation(t *testing.T) {
 	if plan.Status.Source != nil {
 		t.Fatalf("unexpected source status %#v", plan.Status.Source)
 	}
-	artifactPublished := apimeta.FindStatusCondition(plan.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactPublished))
-	if artifactPublished == nil || artifactPublished.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
-		t.Fatalf("unexpected artifact published condition %#v", artifactPublished)
+	artifactResolved := apimeta.FindStatusCondition(plan.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactResolved))
+	if artifactResolved == nil || artifactResolved.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
+		t.Fatalf("unexpected artifact resolved condition %#v", artifactResolved)
 	}
 }

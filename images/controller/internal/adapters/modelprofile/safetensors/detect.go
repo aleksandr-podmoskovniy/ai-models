@@ -159,13 +159,6 @@ func estimateParameterCount(config map[string]any) int64 {
 	return embedding + (numLayers * perLayer)
 }
 
-func compatibleRuntimes(runtimeEngines []string) []string {
-	if len(runtimeEngines) > 0 {
-		return profilecommon.UniqueStrings(runtimeEngines)
-	}
-	return []string{"KServe", "KubeRay"}
-}
-
 func compatiblePrecisions(precision string) []string {
 	if strings.TrimSpace(precision) == "" {
 		return nil

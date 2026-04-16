@@ -45,7 +45,7 @@ func TestCleanupJobProgressDecision(t *testing.T) {
 			want: FinalizeDeleteDecision{
 				CreateJob:     true,
 				UpdateStatus:  true,
-				StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
+				StatusReason:  modelsv1alpha1.ModelConditionReasonPending,
 				StatusMessage: "job created",
 				Requeue:       true,
 			},
@@ -56,7 +56,7 @@ func TestCleanupJobProgressDecision(t *testing.T) {
 			jobState: CleanupJobStateRunning,
 			want: FinalizeDeleteDecision{
 				UpdateStatus:  true,
-				StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
+				StatusReason:  modelsv1alpha1.ModelConditionReasonPending,
 				StatusMessage: "job running",
 				Requeue:       true,
 			},
@@ -67,7 +67,7 @@ func TestCleanupJobProgressDecision(t *testing.T) {
 			jobState: CleanupJobStateFailed,
 			want: FinalizeDeleteDecision{
 				UpdateStatus:  true,
-				StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupFailed,
+				StatusReason:  modelsv1alpha1.ModelConditionReasonFailed,
 				StatusMessage: "job failed",
 				Requeue:       true,
 			},
@@ -84,7 +84,7 @@ func TestCleanupJobProgressDecision(t *testing.T) {
 			jobState: CleanupJobState("Unknown"),
 			want: FinalizeDeleteDecision{
 				UpdateStatus:  true,
-				StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupFailed,
+				StatusReason:  modelsv1alpha1.ModelConditionReasonFailed,
 				StatusMessage: "job unsupported",
 				Requeue:       true,
 			},
@@ -117,32 +117,32 @@ func TestGarbageCollectionProgressDecision(t *testing.T) {
 		want  FinalizeDeleteDecision
 	}{
 		{
-			name:  "missing gc requests registry cleanup",
+			name:  "missing gc enqueues registry cleanup and removes finalizer",
 			state: GarbageCollectionStateMissing,
 			want: FinalizeDeleteDecision{
 				EnsureGarbageCollectionRequest: true,
-				UpdateStatus:                   true,
-				StatusReason:                   modelsv1alpha1.ModelConditionReasonCleanupPending,
-				StatusMessage:                  "registry garbage collection requested",
-				Requeue:                        true,
+				RemoveFinalizer:                true,
 			},
 		},
 		{
-			name:  "requested gc keeps pending status",
+			name:  "queued gc removes finalizer",
+			state: GarbageCollectionStateQueued,
+			want: FinalizeDeleteDecision{
+				RemoveFinalizer: true,
+			},
+		},
+		{
+			name:  "requested gc removes finalizer",
 			state: GarbageCollectionStateRequested,
 			want: FinalizeDeleteDecision{
-				UpdateStatus:  true,
-				StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
-				StatusMessage: "registry garbage collection is still running",
-				Requeue:       true,
+				RemoveFinalizer: true,
 			},
 		},
 		{
-			name:  "completed gc removes finalizer and request",
+			name:  "completed gc removes finalizer",
 			state: GarbageCollectionStateComplete,
 			want: FinalizeDeleteDecision{
-				DeleteGarbageCollectionRequest: true,
-				RemoveFinalizer:                true,
+				RemoveFinalizer: true,
 			},
 		},
 		{
@@ -150,7 +150,7 @@ func TestGarbageCollectionProgressDecision(t *testing.T) {
 			state: GarbageCollectionState("Other"),
 			want: FinalizeDeleteDecision{
 				UpdateStatus:  true,
-				StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupFailed,
+				StatusReason:  modelsv1alpha1.ModelConditionReasonFailed,
 				StatusMessage: "registry garbage collection entered an unsupported state",
 				Requeue:       true,
 			},

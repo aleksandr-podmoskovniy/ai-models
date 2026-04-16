@@ -31,10 +31,9 @@ import (
 )
 
 type sourceProfileInput struct {
-	Task           string
-	TaskHint       string
-	RuntimeEngines []string
-	Provenance     sourceProfileProvenance
+	Task       string
+	TaskHint   string
+	Provenance sourceProfileProvenance
 }
 
 type sourceProfileProvenance struct {
@@ -101,16 +100,14 @@ func resolveProfile(
 	switch inputFormat {
 	case modelsv1alpha1.ModelInputFormatSafetensors:
 		return safetensorsprofile.Resolve(safetensorsprofile.Input{
-			CheckpointDir:  checkpointDir,
-			Task:           input.Task,
-			TaskHint:       input.TaskHint,
-			RuntimeEngines: input.RuntimeEngines,
+			CheckpointDir: checkpointDir,
+			Task:          input.Task,
+			TaskHint:      input.TaskHint,
 		})
 	case modelsv1alpha1.ModelInputFormatGGUF:
 		return ggufprofile.Resolve(ggufprofile.Input{
-			ModelDir:       checkpointDir,
-			Task:           input.Task,
-			RuntimeEngines: input.RuntimeEngines,
+			ModelDir: checkpointDir,
+			Task:     input.Task,
 		})
 	default:
 		return publicationdata.ResolvedProfile{}, fmt.Errorf("unsupported model input format %q", inputFormat)

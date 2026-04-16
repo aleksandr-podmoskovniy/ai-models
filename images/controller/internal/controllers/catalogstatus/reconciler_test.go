@@ -214,12 +214,12 @@ func TestModelReconcilerMarksUnsupportedRemoteSourceFailedWithoutRuntime(t *test
 	if failed.Status.Source != nil {
 		t.Fatalf("unsupported remote source must not project resolvedType, got %#v", failed.Status.Source)
 	}
-	artifactPublished := apimeta.FindStatusCondition(failed.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactPublished))
-	if artifactPublished == nil || artifactPublished.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
-		t.Fatalf("unexpected artifact published condition %#v", artifactPublished)
+	artifactResolved := apimeta.FindStatusCondition(failed.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactResolved))
+	if artifactResolved == nil || artifactResolved.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
+		t.Fatalf("unexpected artifact resolved condition %#v", artifactResolved)
 	}
 	ready := apimeta.FindStatusCondition(failed.Status.Conditions, string(modelsv1alpha1.ModelConditionReady))
-	if ready == nil || ready.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
+	if ready == nil || ready.Reason != string(modelsv1alpha1.ModelConditionReasonFailed) {
 		t.Fatalf("unexpected ready condition %#v", ready)
 	}
 }

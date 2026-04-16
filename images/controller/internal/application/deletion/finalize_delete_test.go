@@ -50,7 +50,7 @@ func TestFinalizeDelete(t *testing.T) {
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonCleanupFailed || !got.Requeue {
+				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonFailed || !got.Requeue {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
@@ -76,7 +76,7 @@ func TestFinalizeDelete(t *testing.T) {
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonCleanupBlocked || !got.Requeue {
+				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonFailed || !got.Requeue {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
@@ -91,7 +91,7 @@ func TestFinalizeDelete(t *testing.T) {
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if !got.CreateJob || !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonCleanupPending || !got.Requeue {
+				if !got.CreateJob || !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonPending || !got.Requeue {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
@@ -106,7 +106,7 @@ func TestFinalizeDelete(t *testing.T) {
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if got.CreateJob || !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonCleanupPending || !got.Requeue {
+				if got.CreateJob || !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonPending || !got.Requeue {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
@@ -121,13 +121,13 @@ func TestFinalizeDelete(t *testing.T) {
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonCleanupFailed || !got.Requeue {
+				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonFailed || !got.Requeue {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
 		},
 		{
-			name: "completed cleanup job requests garbage collection",
+			name: "completed cleanup job enqueues garbage collection and removes finalizer",
 			input: FinalizeDeleteInput{
 				HasFinalizer:           true,
 				HandleFound:            true,
@@ -137,13 +137,29 @@ func TestFinalizeDelete(t *testing.T) {
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if !got.EnsureGarbageCollectionRequest || !got.UpdateStatus || !got.Requeue {
+				if !got.EnsureGarbageCollectionRequest || !got.RemoveFinalizer || got.UpdateStatus || got.Requeue {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
 		},
 		{
-			name: "requested garbage collection requeues",
+			name: "queued garbage collection removes finalizer",
+			input: FinalizeDeleteInput{
+				HasFinalizer:           true,
+				HandleFound:            true,
+				HandleKind:             cleanuphandle.KindBackendArtifact,
+				JobState:               CleanupJobStateComplete,
+				GarbageCollectionState: GarbageCollectionStateQueued,
+			},
+			assert: func(t *testing.T, got FinalizeDeleteDecision) {
+				t.Helper()
+				if got.EnsureGarbageCollectionRequest || !got.RemoveFinalizer || got.UpdateStatus || got.Requeue {
+					t.Fatalf("unexpected decision %#v", got)
+				}
+			},
+		},
+		{
+			name: "requested garbage collection removes finalizer",
 			input: FinalizeDeleteInput{
 				HasFinalizer:           true,
 				HandleFound:            true,
@@ -153,13 +169,13 @@ func TestFinalizeDelete(t *testing.T) {
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if got.EnsureGarbageCollectionRequest || !got.UpdateStatus || !got.Requeue {
+				if got.EnsureGarbageCollectionRequest || !got.RemoveFinalizer || got.UpdateStatus || got.Requeue {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
 		},
 		{
-			name: "completed cleanup and garbage collection removes finalizer",
+			name: "completed cleanup and garbage collection still removes finalizer",
 			input: FinalizeDeleteInput{
 				HasFinalizer:           true,
 				HandleFound:            true,
@@ -169,7 +185,7 @@ func TestFinalizeDelete(t *testing.T) {
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if !got.RemoveFinalizer || !got.DeleteGarbageCollectionRequest || got.UpdateStatus {
+				if !got.RemoveFinalizer || got.DeleteGarbageCollectionRequest || got.UpdateStatus {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
@@ -184,7 +200,7 @@ func TestFinalizeDelete(t *testing.T) {
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonCleanupFailed || !got.Requeue {
+				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonFailed || !got.Requeue {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
@@ -249,7 +265,7 @@ func TestFinalizeDeleteUploadStagingLifecycle(t *testing.T) {
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonCleanupFailed || !got.Requeue {
+				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonFailed || !got.Requeue {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
@@ -279,7 +295,7 @@ func TestFinalizeDeleteUploadStagingLifecycle(t *testing.T) {
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonCleanupFailed || !got.Requeue {
+				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonFailed || !got.Requeue {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},

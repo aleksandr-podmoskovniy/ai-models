@@ -19,10 +19,14 @@ The same image also carries the repo-owned `dmcr-cleaner` helper. It is used
 only for controller-driven garbage-collection flow:
 
 - `dmcr` serves the internal registry over HTTPS;
-- `dmcr-cleaner` waits idle in the same Pod during normal operation;
-- when the controller requests physical blob reclamation, hooks switch DMCR
-  into maintenance/read-only mode and the cleaner runs registry
-  `garbage-collect`, then marks the request as completed.
+- `dmcr-cleaner` runs as an always-on loop in the same Pod during normal
+  operation;
+- controller delete flow only enqueues internal GC requests after registry
+  artifact removal and does not wait for physical GC to finish before removing
+  the model finalizer;
+- `dmcr-cleaner` coalesces queued requests, arms one maintenance/read-only
+  cycle after the internal debounce window, runs registry `garbage-collect`,
+  and removes processed requests.
 - `dmcr-cleaner` writes repo-owned structured JSON lifecycle logs under the
   `dmcr-garbage-collection` logger; the main `dmcr` process stays on upstream
   logging behavior.

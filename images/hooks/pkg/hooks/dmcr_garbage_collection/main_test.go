@@ -117,3 +117,58 @@ func TestHandleDMCRGarbageCollectionEnablesModeWhenSwitchSecretExists(t *testing
 		t.Fatalf("unexpected patch value: %s", got)
 	}
 }
+
+func TestHandleDMCRGarbageCollectionKeepsModeDisabledForQueuedRequest(t *testing.T) {
+	t.Parallel()
+
+	values, err := patchablevalues.NewPatchableValues(map[string]any{
+		"aiModels": map[string]any{
+			"internal": map[string]any{},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new patchable values: %v", err)
+	}
+
+	snapshot := sdktest.NewSnapshotMock(t)
+	snapshot.UnmarshalToMock.Set(func(v any) error {
+		secret, ok := v.(*partialSecret)
+		if !ok {
+			t.Fatalf("unexpected snapshot target type %T", v)
+		}
+
+		*secret = partialSecret{
+			Metadata: partialSecretMetadata{
+				Labels: map[string]string{
+					requestLabelKey: requestLabelValue,
+				},
+				Annotations: map[string]string{
+					"ai-models.deckhouse.io/dmcr-gc-requested-at": "2026-04-16T12:00:00Z",
+				},
+			},
+		}
+		return nil
+	})
+	snapshot.StringMock.Optional().Return("")
+
+	snapshots := sdktest.NewSnapshotsMock(t)
+	snapshots.GetMock.Expect(secretSnapshotName).Return([]pkg.Snapshot{snapshot})
+
+	input := &pkg.HookInput{
+		Snapshots: snapshots,
+		Values:    values,
+	}
+
+	if err := handleDMCRGarbageCollection(context.Background(), input); err != nil {
+		t.Fatalf("handleDMCRGarbageCollection: %v", err)
+	}
+
+	patches := values.GetPatches()
+	if len(patches) != 1 {
+		t.Fatalf("expected 1 patch, got %d", len(patches))
+	}
+
+	if got := string(patches[0].Value); got != `{"garbageCollectionModeEnabled":false}` {
+		t.Fatalf("unexpected patch value: %s", got)
+	}
+}

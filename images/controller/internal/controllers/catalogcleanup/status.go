@@ -32,7 +32,7 @@ func (r *baseReconciler) failDeleteStatus(
 	object client.Object,
 	cause error,
 ) (ctrl.Result, bool, error) {
-	if err := r.updateDeleteStatus(ctx, object, modelsv1alpha1.ModelConditionReasonCleanupFailed, cause.Error()); err != nil {
+	if err := r.updateDeleteStatus(ctx, object, modelsv1alpha1.ModelConditionReasonFailed, cause.Error()); err != nil {
 		return ctrl.Result{}, true, err
 	}
 	return ctrl.Result{RequeueAfter: r.options.RequeueAfter}, true, nil
@@ -50,8 +50,9 @@ func (r *baseReconciler) updateDeleteStatus(
 	}
 	status.Phase = modelsv1alpha1.ModelPhaseDeleting
 	status.ObservedGeneration = object.GetGeneration()
+	status.Conditions = dropDeleteOnlyConditions(status.Conditions)
 	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
-		Type:               string(modelsv1alpha1.ModelConditionCleanupCompleted),
+		Type:               string(modelsv1alpha1.ModelConditionReady),
 		Status:             metav1.ConditionFalse,
 		Reason:             string(reason),
 		Message:            message,
@@ -62,4 +63,15 @@ func (r *baseReconciler) updateDeleteStatus(
 		return err
 	}
 	return r.client.Status().Update(ctx, object)
+}
+
+func dropDeleteOnlyConditions(conditions []metav1.Condition) []metav1.Condition {
+	result := make([]metav1.Condition, 0, len(conditions))
+	for _, condition := range conditions {
+		if modelsv1alpha1.ModelConditionType(condition.Type) == "CleanupCompleted" {
+			continue
+		}
+		result = append(result, condition)
+	}
+	return result
 }

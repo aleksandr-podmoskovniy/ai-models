@@ -173,9 +173,14 @@ On top of the source contract, `spec` now also carries a live policy layer:
   supported endpoint types;
 - `spec.launchPolicy`:
   a live whitelist for runtime, accelerator vendor, and precision.
+  Runtime names now follow inference-runtime brands (`VLLM`, `Ollama`, `TGI`,
+  `Custom`) rather than deployment topology terms such as `KubeRay`.
   `preferredRuntime` must be included in `allowedRuntimes` when both are set,
   and the controller no longer marks the object as validated when the
-  calculated profile has no intersection with the declared launch policy;
+  calculated profile has no intersection with the declared launch policy.
+  Runtime compatibility is validated only when the resolved profile exposes
+  `compatibleRuntimes`; the controller no longer invents them from
+  publication-time hints;
 - `spec.optimization.speculativeDecoding.draftModelRefs`:
   this is not consumer runtime magic yet, but it is now a live
   publication-time contract.
@@ -215,12 +220,14 @@ After validation, the controller also enriches the metamodel:
   - calculates `parameterCount` first from explicit config fields, then from
     the real sizes of `.safetensors` shard files
   - derives `quantization` and `compatiblePrecisions`
-  - builds `supportedEndpointTypes` from `task`
+  - builds semantic `supportedEndpointTypes` from `task`
+    (`Chat`, `TextGeneration`, `Embeddings`, `Rerank`, `SpeechToText`,
+    `Translation`)
   - builds `minimumLaunch` as a GPU baseline from the real weight footprint
 - for `GGUF`
   - reads the `.gguf` file name and size
   - derives family, quantization, and an approximate `parameterCount`
-  - builds `supportedEndpointTypes` from `task`
+  - builds semantic `supportedEndpointTypes` from `task`
   - builds `minimumLaunch` as a GPU baseline from the real file size and
     quantization
 
@@ -228,7 +235,7 @@ After validation, the controller also enriches the metamodel:
 "publication succeeded" marker. After publication, the controller separately
 matches the public policy from `spec` against the calculated profile. If the
 profile is available but the policy contradicts it, the published artifact
-still stays in `status.artifact`, `MetadataReady=True`, and the object moves to
+still stays in `status.artifact`, `MetadataResolved=True`, and the object moves to
 `Failed` with `Validated=False` and a concrete reason such as
 `ModelTypeMismatch`, `EndpointTypeNotSupported`, `RuntimeNotSupported`,
 `AcceleratorPolicyConflict`, or `OptimizationNotSupported`.
@@ -240,10 +247,11 @@ controller-owned one-shot Jobs through the dedicated runtime-image
 internal module-owned DMCR-style registry service with the same
 controller-owned trust and credential wiring, removes the remote artifact by
 its saved reference, then creates an internal DMCR garbage-collection request.
-The module-owned `dmcr-cleaner` sidecar switches the registry into
-maintenance/read-only mode, runs physical blob garbage collection, and only
-then lets the controller remove the finalizer, while keeping backend internals
-out of public status.
+The controller now removes the model finalizer right after that internal
+request is queued. The module-owned `dmcr-cleaner` sidecar later coalesces
+queued requests into a deferred maintenance/read-only cycle, runs physical blob
+garbage collection, and removes processed internal requests, while keeping
+backend internals out of public status.
 
 Runtime delivery no longer stops at a standalone materializer binary. The
 controller runtime now also carries a reusable K8s-side delivery adapter over

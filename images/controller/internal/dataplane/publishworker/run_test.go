@@ -57,7 +57,6 @@ func TestPublishFromUploadBuildsBackendResult(t *testing.T) {
 		UploadPath:         archivePath,
 		InputFormat:        modelsv1alpha1.ModelInputFormatSafetensors,
 		Task:               "text-generation",
-		RuntimeEngines:     []string{"KServe"},
 		ModelPackPublisher: fakePublisher{},
 	})
 	if err != nil {
@@ -90,7 +89,6 @@ func TestPublishFromUploadInfersSafetensorsTaskFromCheckpoint(t *testing.T) {
 		ArtifactURI:        "registry.example.com/ai-models/catalog/model:published",
 		UploadPath:         archivePath,
 		InputFormat:        modelsv1alpha1.ModelInputFormatSafetensors,
-		RuntimeEngines:     []string{"KServe"},
 		ModelPackPublisher: fakePublisher{},
 	})
 	if err != nil {
@@ -119,7 +117,6 @@ func TestPublishFromUploadDropsHelperScript(t *testing.T) {
 		UploadPath:         archivePath,
 		InputFormat:        modelsv1alpha1.ModelInputFormatSafetensors,
 		Task:               "text-generation",
-		RuntimeEngines:     []string{"KServe"},
 		ModelPackPublisher: fakePublisher{},
 	})
 	if err != nil {
@@ -148,7 +145,6 @@ func TestPublishFromUploadRejectsCompiledPayload(t *testing.T) {
 		UploadPath:         archivePath,
 		InputFormat:        modelsv1alpha1.ModelInputFormatSafetensors,
 		Task:               "text-generation",
-		RuntimeEngines:     []string{"KServe"},
 		ModelPackPublisher: fakePublisher{},
 	})
 	if err == nil {
@@ -169,7 +165,6 @@ func TestPublishFromUploadAcceptsDirectGGUFFile(t *testing.T) {
 		ArtifactURI:        "registry.example.com/ai-models/catalog/model:published",
 		UploadPath:         modelPath,
 		Task:               "text-generation",
-		RuntimeEngines:     []string{"KubeRay"},
 		ModelPackPublisher: fakePublisher{},
 	})
 	if err != nil {

@@ -139,7 +139,7 @@ func TestObserveFinalizeDeleteFlowBuildsRuntimeOnce(t *testing.T) {
 	if flow.decision != (deletionapp.FinalizeDeleteDecision{
 		CreateJob:     true,
 		UpdateStatus:  true,
-		StatusReason:  "CleanupPending",
+		StatusReason:  "Pending",
 		StatusMessage: "cleanup job created and waiting for completion",
 		Requeue:       true,
 	}) {

@@ -16,7 +16,11 @@ limitations under the License.
 
 package common
 
-import "testing"
+import (
+	"testing"
+
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+)
 
 func TestEndpointTypes(t *testing.T) {
 	t.Parallel()
@@ -24,8 +28,11 @@ func TestEndpointTypes(t *testing.T) {
 	if got := EndpointTypes("text-generation"); len(got) != 2 {
 		t.Fatalf("unexpected generative endpoint types %#v", got)
 	}
-	if got := EndpointTypes("embeddings"); len(got) != 1 || got[0] != "OpenAIEmbeddings" {
+	if got := EndpointTypes("embeddings"); len(got) != 1 || got[0] != string(modelsv1alpha1.ModelEndpointTypeEmbeddings) {
 		t.Fatalf("unexpected embedding endpoint types %#v", got)
+	}
+	if got := EndpointTypes("translation"); len(got) != 1 || got[0] != string(modelsv1alpha1.ModelEndpointTypeTranslation) {
+		t.Fatalf("unexpected translation endpoint types %#v", got)
 	}
 	if got := EndpointTypes("unknown"); len(got) != 0 {
 		t.Fatalf("unexpected endpoint types %#v", got)

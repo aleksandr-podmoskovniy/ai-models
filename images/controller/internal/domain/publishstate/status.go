@@ -40,7 +40,7 @@ type Projection struct {
 	CleanupHandle *cleanuphandle.Handle
 }
 
-func AcceptedStatus(
+func InitialStatus(
 	current modelsv1alpha1.ModelStatus,
 	generation int64,
 	sourceType modelsv1alpha1.ModelSourceType,

@@ -166,9 +166,15 @@ func requestedGCSecret(namespace string, ownerUID types.UID) *corev1.Secret {
 	return secret
 }
 
-func completedGCSecret(namespace string, ownerUID types.UID) *corev1.Secret {
+func activeGCSecret(namespace string, ownerUID types.UID) *corev1.Secret {
 	secret := requestedGCSecret(namespace, ownerUID)
-	delete(secret.Annotations, dmcrGCSwitchAnnotationKey)
+	delete(secret.Annotations, dmcrGCRequestedAnnotationKey)
+	secret.Annotations[dmcrGCSwitchAnnotationKey] = time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
+	return secret
+}
+
+func completedGCSecret(namespace string, ownerUID types.UID) *corev1.Secret {
+	secret := activeGCSecret(namespace, ownerUID)
 	secret.Annotations[dmcrGCDoneAnnotationKey] = time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
 	return secret
 }

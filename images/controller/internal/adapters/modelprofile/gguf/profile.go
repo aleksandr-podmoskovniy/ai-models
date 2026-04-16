@@ -30,9 +30,8 @@ import (
 )
 
 type Input struct {
-	ModelDir       string
-	Task           string
-	RuntimeEngines []string
+	ModelDir string
+	Task     string
 }
 
 var (
@@ -71,7 +70,6 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 		SupportedEndpointTypes: profilecommon.EndpointTypes(
 			input.Task,
 		),
-		CompatibleRuntimes:   compatibleRuntimes(input.RuntimeEngines),
 		CompatiblePrecisions: compatiblePrecisions(precision),
 		MinimumLaunch: profilecommon.MinimumGPULaunch(
 			profilecommon.GPUWorkingSetGiB(modelSizeBytes, parameterCount, precision, quantization),
@@ -187,13 +185,6 @@ func normalizeFamily(name string) string {
 		return strings.TrimSpace(name)
 	}
 	return normalized
-}
-
-func compatibleRuntimes(runtimeEngines []string) []string {
-	if len(runtimeEngines) > 0 {
-		return profilecommon.UniqueStrings(runtimeEngines)
-	}
-	return []string{"KubeRay"}
 }
 
 func compatiblePrecisions(precision string) []string {

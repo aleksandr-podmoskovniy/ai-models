@@ -39,7 +39,20 @@ func publishingStatus(
 		Conditions: keepNonPublishConditions(current.Conditions),
 	}
 
-	setAcceptedCondition(&status.Conditions, generation)
+	setArtifactResolvedCondition(
+		&status.Conditions,
+		generation,
+		metav1.ConditionFalse,
+		modelsv1alpha1.ModelConditionReasonPending,
+		"controller is publishing the model artifact",
+	)
+	setReadyCondition(
+		&status.Conditions,
+		generation,
+		metav1.ConditionFalse,
+		modelsv1alpha1.ModelConditionReasonPending,
+		"model publication is in progress",
+	)
 	return status
 }
 
@@ -57,7 +70,20 @@ func pendingUploadStatus(
 		Conditions: keepNonPublishConditions(current.Conditions),
 	}
 
-	setAcceptedCondition(&status.Conditions, generation)
+	setArtifactResolvedCondition(
+		&status.Conditions,
+		generation,
+		metav1.ConditionFalse,
+		modelsv1alpha1.ModelConditionReasonPending,
+		"controller is preparing the upload publication flow",
+	)
+	setReadyCondition(
+		&status.Conditions,
+		generation,
+		metav1.ConditionFalse,
+		modelsv1alpha1.ModelConditionReasonPending,
+		"model is not ready until the upload publication flow starts",
+	)
 	return status
 }
 
@@ -77,23 +103,20 @@ func waitForUploadStatus(
 		Conditions: keepNonPublishConditions(current.Conditions),
 	}
 
-	setAcceptedCondition(&status.Conditions, generation)
-	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
-		Type:               string(modelsv1alpha1.ModelConditionUploadReady),
-		Status:             metav1.ConditionTrue,
-		Reason:             string(modelsv1alpha1.ModelConditionReasonWaitingForUserUpload),
-		Message:            "controller prepared an upload session and is waiting for the user upload",
-		ObservedGeneration: generation,
-		LastTransitionTime: metav1.Now(),
-	})
-	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
-		Type:               string(modelsv1alpha1.ModelConditionReady),
-		Status:             metav1.ConditionFalse,
-		Reason:             string(modelsv1alpha1.ModelConditionReasonWaitingForUserUpload),
-		Message:            "model is waiting for a user upload before publication can continue",
-		ObservedGeneration: generation,
-		LastTransitionTime: metav1.Now(),
-	})
+	setArtifactResolvedCondition(
+		&status.Conditions,
+		generation,
+		metav1.ConditionFalse,
+		modelsv1alpha1.ModelConditionReasonWaitingForUserUpload,
+		"controller prepared an upload session and is waiting for the user upload",
+	)
+	setReadyCondition(
+		&status.Conditions,
+		generation,
+		metav1.ConditionFalse,
+		modelsv1alpha1.ModelConditionReasonPending,
+		"model is waiting for a user upload before publication can continue",
+	)
 
 	return status
 }
@@ -119,23 +142,14 @@ func failedStatus(
 		reason = modelsv1alpha1.ModelConditionReasonPublicationFailed
 	}
 
-	setAcceptedCondition(&status.Conditions, generation)
-	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
-		Type:               string(modelsv1alpha1.ModelConditionArtifactPublished),
-		Status:             metav1.ConditionFalse,
-		Reason:             string(reason),
-		Message:            message,
-		ObservedGeneration: generation,
-		LastTransitionTime: metav1.Now(),
-	})
-	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
-		Type:               string(modelsv1alpha1.ModelConditionReady),
-		Status:             metav1.ConditionFalse,
-		Reason:             string(reason),
-		Message:            message,
-		ObservedGeneration: generation,
-		LastTransitionTime: metav1.Now(),
-	})
+	setArtifactResolvedCondition(&status.Conditions, generation, metav1.ConditionFalse, reason, message)
+	setReadyCondition(
+		&status.Conditions,
+		generation,
+		metav1.ConditionFalse,
+		modelsv1alpha1.ModelConditionReasonFailed,
+		message,
+	)
 
 	return status
 }
@@ -212,23 +226,20 @@ func readyStatus(
 		status.Resolved.MinimumLaunch = minimumLaunch
 	}
 
-	setAcceptedCondition(&status.Conditions, generation)
-	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
-		Type:               string(modelsv1alpha1.ModelConditionArtifactPublished),
-		Status:             metav1.ConditionTrue,
-		Reason:             string(modelsv1alpha1.ModelConditionReasonPublicationSucceeded),
-		Message:            "controller published the model artifact successfully",
-		ObservedGeneration: generation,
-		LastTransitionTime: metav1.Now(),
-	})
-	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
-		Type:               string(modelsv1alpha1.ModelConditionMetadataReady),
-		Status:             metav1.ConditionTrue,
-		Reason:             string(modelsv1alpha1.ModelConditionReasonMetadataInspectionSucceeded),
-		Message:            "controller resolved the model technical profile successfully",
-		ObservedGeneration: generation,
-		LastTransitionTime: metav1.Now(),
-	})
+	setArtifactResolvedCondition(
+		&status.Conditions,
+		generation,
+		metav1.ConditionTrue,
+		modelsv1alpha1.ModelConditionReasonArtifactPublished,
+		"controller published the model artifact successfully",
+	)
+	setMetadataResolvedCondition(
+		&status.Conditions,
+		generation,
+		metav1.ConditionTrue,
+		modelsv1alpha1.ModelConditionReasonModelMetadataCalculated,
+		"controller resolved the model technical profile successfully",
+	)
 	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
 		Type:               string(modelsv1alpha1.ModelConditionValidated),
 		Status:             conditionStatus(validation.Valid),
@@ -237,14 +248,13 @@ func readyStatus(
 		ObservedGeneration: generation,
 		LastTransitionTime: metav1.Now(),
 	})
-	apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
-		Type:               string(modelsv1alpha1.ModelConditionReady),
-		Status:             conditionStatus(validation.Valid),
-		Reason:             string(validation.Reason),
-		Message:            readyMessage(validation),
-		ObservedGeneration: generation,
-		LastTransitionTime: metav1.Now(),
-	})
+	setReadyCondition(
+		&status.Conditions,
+		generation,
+		conditionStatus(validation.Valid),
+		readyReason(validation.Valid),
+		readyMessage(validation),
+	)
 
 	return status
 }
@@ -267,10 +277,8 @@ func keepNonPublishConditions(conditions []metav1.Condition) []metav1.Condition 
 	result := make([]metav1.Condition, 0, len(conditions))
 	for _, condition := range conditions {
 		switch modelsv1alpha1.ModelConditionType(condition.Type) {
-		case modelsv1alpha1.ModelConditionAccepted,
-			modelsv1alpha1.ModelConditionUploadReady,
-			modelsv1alpha1.ModelConditionArtifactPublished,
-			modelsv1alpha1.ModelConditionMetadataReady,
+		case modelsv1alpha1.ModelConditionArtifactResolved,
+			modelsv1alpha1.ModelConditionMetadataResolved,
 			modelsv1alpha1.ModelConditionValidated,
 			modelsv1alpha1.ModelConditionReady:
 			continue
@@ -282,13 +290,60 @@ func keepNonPublishConditions(conditions []metav1.Condition) []metav1.Condition 
 	return result
 }
 
-func setAcceptedCondition(conditions *[]metav1.Condition, generation int64) {
+func setArtifactResolvedCondition(
+	conditions *[]metav1.Condition,
+	generation int64,
+	status metav1.ConditionStatus,
+	reason modelsv1alpha1.ModelConditionReason,
+	message string,
+) {
 	apimeta.SetStatusCondition(conditions, metav1.Condition{
-		Type:               string(modelsv1alpha1.ModelConditionAccepted),
-		Status:             metav1.ConditionTrue,
-		Reason:             string(modelsv1alpha1.ModelConditionReasonSpecAccepted),
-		Message:            "model spec was accepted by the controller",
+		Type:               string(modelsv1alpha1.ModelConditionArtifactResolved),
+		Status:             status,
+		Reason:             string(reason),
+		Message:            message,
 		ObservedGeneration: generation,
 		LastTransitionTime: metav1.Now(),
 	})
+}
+
+func setMetadataResolvedCondition(
+	conditions *[]metav1.Condition,
+	generation int64,
+	status metav1.ConditionStatus,
+	reason modelsv1alpha1.ModelConditionReason,
+	message string,
+) {
+	apimeta.SetStatusCondition(conditions, metav1.Condition{
+		Type:               string(modelsv1alpha1.ModelConditionMetadataResolved),
+		Status:             status,
+		Reason:             string(reason),
+		Message:            message,
+		ObservedGeneration: generation,
+		LastTransitionTime: metav1.Now(),
+	})
+}
+
+func setReadyCondition(
+	conditions *[]metav1.Condition,
+	generation int64,
+	status metav1.ConditionStatus,
+	reason modelsv1alpha1.ModelConditionReason,
+	message string,
+) {
+	apimeta.SetStatusCondition(conditions, metav1.Condition{
+		Type:               string(modelsv1alpha1.ModelConditionReady),
+		Status:             status,
+		Reason:             string(reason),
+		Message:            message,
+		ObservedGeneration: generation,
+		LastTransitionTime: metav1.Now(),
+	})
+}
+
+func readyReason(ok bool) modelsv1alpha1.ModelConditionReason {
+	if ok {
+		return modelsv1alpha1.ModelConditionReasonReady
+	}
+	return modelsv1alpha1.ModelConditionReasonFailed
 }

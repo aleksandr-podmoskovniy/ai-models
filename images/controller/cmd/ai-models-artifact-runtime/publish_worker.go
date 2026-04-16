@@ -60,7 +60,6 @@ func runPublishWorker(args []string) int {
 	var revision string
 	var task string
 	var snapshotDir string
-	var runtimeEngines cmdsupport.RepeatedStringFlag
 
 	flags.StringVar(&sourceType, "source-type", cmdsupport.EnvOr(publishSourceTypeEnv, string(modelsv1alpha1.ModelSourceTypeHuggingFace)), "Source type: HuggingFace or Upload.")
 	flags.StringVar(&artifactURI, "artifact-uri", "", "Controller-owned destination OCI reference.")
@@ -75,7 +74,6 @@ func runPublishWorker(args []string) int {
 	flags.StringVar(&revision, "revision", cmdsupport.EnvOr(publishRevisionEnv, ""), "Resolved source revision.")
 	flags.StringVar(&task, "task", cmdsupport.EnvOr(publishTaskEnv, ""), "Runtime task.")
 	flags.StringVar(&snapshotDir, "snapshot-dir", cmdsupport.EnvOr(publishSnapshotDirEnv, ""), "Optional work directory.")
-	flags.Var(&runtimeEngines, "runtime-engine", "Compatible runtime engine. Repeat the flag for multiple engines.")
 
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -113,7 +111,6 @@ func runPublishWorker(args []string) int {
 	cmdsupport.SetDefaultLogger(logger)
 	logger.Info(
 		"publication worker started",
-		slog.Int("runtimeEngineCount", len(runtimeEngines)),
 		slog.Bool("uploadStageEnabled", uploadStage != nil),
 		slog.Bool("rawStageEnabled", uploadStagingClient != nil && strings.TrimSpace(rawStageBucket) != "" && strings.TrimSpace(rawStageKeyPrefix) != ""),
 	)
@@ -129,7 +126,6 @@ func runPublishWorker(args []string) int {
 		RawStageKeyPrefix:  rawStageKeyPrefix,
 		InputFormat:        modelsv1alpha1.ModelInputFormat(inputFormat),
 		Task:               task,
-		RuntimeEngines:     []string(runtimeEngines),
 		SnapshotDir:        snapshotDir,
 		HFToken:            cmdsupport.EnvOr("HF_TOKEN", cmdsupport.EnvOr("HUGGING_FACE_HUB_TOKEN", "")),
 		UploadStaging:      uploadStagingClient,

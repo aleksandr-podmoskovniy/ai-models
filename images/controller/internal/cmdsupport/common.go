@@ -19,23 +19,7 @@ package cmdsupport
 import (
 	"flag"
 	"os"
-	"strings"
 )
-
-type RepeatedStringFlag []string
-
-func (f *RepeatedStringFlag) String() string {
-	return strings.Join(*f, ",")
-}
-
-func (f *RepeatedStringFlag) Set(value string) error {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil
-	}
-	*f = append(*f, value)
-	return nil
-}
 
 func NewFlagSet(name string) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)

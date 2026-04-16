@@ -109,7 +109,7 @@ func TestModelReconcilerMarksDeletingStatusOnInvalidCleanupHandle(t *testing.T) 
 		t.Fatalf("unexpected result %#v", result)
 	}
 
-	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonCleanupFailed)
+	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonFailed)
 }
 
 func TestModelReconcilerCreatesCleanupJobOnDelete(t *testing.T) {
@@ -132,7 +132,7 @@ func TestModelReconcilerCreatesCleanupJobOnDelete(t *testing.T) {
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: registrySecretName, Namespace: "d8-ai-models"}, &corev1.Secret{}); err != nil {
 		t.Fatalf("expected projected OCI auth secret, got err=%v", err)
 	}
-	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonCleanupPending)
+	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonPending)
 }
 
 func TestModelReconcilerKeepsPendingStatusWhileCleanupJobRuns(t *testing.T) {
@@ -151,7 +151,7 @@ func TestModelReconcilerKeepsPendingStatusWhileCleanupJobRuns(t *testing.T) {
 		t.Fatalf("unexpected result %#v", result)
 	}
 
-	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonCleanupPending)
+	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonPending)
 }
 
 func TestModelReconcilerFailsClosedWhenCleanupJobFails(t *testing.T) {
@@ -170,10 +170,10 @@ func TestModelReconcilerFailsClosedWhenCleanupJobFails(t *testing.T) {
 		t.Fatalf("unexpected result %#v", result)
 	}
 
-	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonCleanupFailed)
+	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonFailed)
 }
 
-func TestModelReconcilerCreatesGarbageCollectionRequestAfterCompletedJob(t *testing.T) {
+func TestModelReconcilerEnqueuesGarbageCollectionRequestAndRemovesFinalizerAfterCompletedJob(t *testing.T) {
 	t.Parallel()
 
 	model := newDeletingModel()
@@ -185,16 +185,17 @@ func TestModelReconcilerCreatesGarbageCollectionRequestAfterCompletedJob(t *test
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
-	if result.RequeueAfter != time.Second {
-		t.Fatalf("unexpected requeue %#v", result)
+	if result != (ctrl.Result{}) {
+		t.Fatalf("unexpected result %#v", result)
 	}
 
 	var updated modelsv1alpha1.Model
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &updated); err != nil {
-		t.Fatalf("Get(model) error = %v", err)
-	}
-	if !controllerutil.ContainsFinalizer(&updated, Finalizer) {
-		t.Fatal("expected finalizer to stay until dmcr garbage collection completes")
+		if !apierrors.IsNotFound(err) {
+			t.Fatalf("Get(model) error = %v", err)
+		}
+	} else if controllerutil.ContainsFinalizer(&updated, Finalizer) {
+		t.Fatal("expected finalizer to be removed once garbage collection is enqueued")
 	}
 
 	var requestSecret corev1.Secret
@@ -202,12 +203,15 @@ func TestModelReconcilerCreatesGarbageCollectionRequestAfterCompletedJob(t *test
 	if err := kubeClient.Get(context.Background(), key, &requestSecret); err != nil {
 		t.Fatalf("Get(secret) error = %v", err)
 	}
-	if requestSecret.Annotations[dmcrGCSwitchAnnotationKey] == "" {
-		t.Fatalf("expected switch annotation on garbage-collection request secret, got %#v", requestSecret.Annotations)
+	if requestSecret.Annotations[dmcrGCRequestedAnnotationKey] == "" {
+		t.Fatalf("expected queued request annotation on garbage-collection request secret, got %#v", requestSecret.Annotations)
+	}
+	if requestSecret.Annotations[dmcrGCSwitchAnnotationKey] != "" {
+		t.Fatalf("expected active switch to stay empty on queued request secret, got %#v", requestSecret.Annotations)
 	}
 }
 
-func TestModelReconcilerKeepsPendingStatusWhileGarbageCollectionRuns(t *testing.T) {
+func TestModelReconcilerRemovesFinalizerWhenQueuedGarbageCollectionRequestAlreadyExists(t *testing.T) {
 	t.Parallel()
 
 	model := newDeletingModel()
@@ -220,14 +224,21 @@ func TestModelReconcilerKeepsPendingStatusWhileGarbageCollectionRuns(t *testing.
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
-	if result.RequeueAfter != time.Second {
+	if result != (ctrl.Result{}) {
 		t.Fatalf("unexpected result %#v", result)
 	}
 
-	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonCleanupPending)
+	var updated modelsv1alpha1.Model
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &updated); err != nil {
+		if !apierrors.IsNotFound(err) {
+			t.Fatalf("Get(model) error = %v", err)
+		}
+	} else if controllerutil.ContainsFinalizer(&updated, Finalizer) {
+		t.Fatal("expected finalizer to be removed when queued garbage-collection request already exists")
+	}
 }
 
-func TestModelReconcilerRemovesFinalizerAfterCompletedGarbageCollection(t *testing.T) {
+func TestModelReconcilerRemovesFinalizerWhenCompletedGarbageCollectionSecretAlreadyExists(t *testing.T) {
 	t.Parallel()
 
 	model := newDeletingModel()
@@ -246,13 +257,13 @@ func TestModelReconcilerRemovesFinalizerAfterCompletedGarbageCollection(t *testi
 			t.Fatalf("Get(model) error = %v", err)
 		}
 	} else if controllerutil.ContainsFinalizer(&updated, Finalizer) {
-		t.Fatal("expected finalizer to be removed after completed cleanup and garbage collection")
+		t.Fatal("expected finalizer to be removed after completed cleanup when legacy completed garbage-collection secret already exists")
 	}
 
 	var requestSecret corev1.Secret
 	key := client.ObjectKey{Namespace: "d8-ai-models", Name: dmcrGCRequestSecretName(model.GetUID())}
-	if err := kubeClient.Get(context.Background(), key, &requestSecret); !apierrors.IsNotFound(err) {
-		t.Fatalf("expected garbage-collection request secret to be deleted, got err=%v", err)
+	if err := kubeClient.Get(context.Background(), key, &requestSecret); err != nil {
+		t.Fatalf("expected legacy garbage-collection request secret to remain untouched, got err=%v", err)
 	}
 	registrySecretName, err := resourcenames.OCIRegistryAuthSecretName(model.GetUID())
 	if err != nil {
@@ -278,7 +289,7 @@ func TestModelReconcilerMarksInvalidCleanupHandleAsFailedOnDelete(t *testing.T) 
 		t.Fatalf("unexpected requeue %#v", result)
 	}
 
-	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonCleanupFailed)
+	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonFailed)
 }
 
 func assertCleanupJobExists(t *testing.T, kubeClient client.Client, jobName string) {
@@ -310,7 +321,7 @@ func assertCleanupCondition(
 		t.Fatalf("unexpected phase %q", updated.Status.Phase)
 	}
 
-	condition := apimeta.FindStatusCondition(updated.Status.Conditions, string(modelsv1alpha1.ModelConditionCleanupCompleted))
+	condition := apimeta.FindStatusCondition(updated.Status.Conditions, string(modelsv1alpha1.ModelConditionReady))
 	if condition == nil || condition.Reason != string(reason) {
 		t.Fatalf("unexpected cleanup condition %#v", condition)
 	}

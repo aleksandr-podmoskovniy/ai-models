@@ -101,15 +101,19 @@ spec:
                   allowedRuntimes:
                     items:
                       enum:
-                      - KServe
-                      - KubeRay
+                      - VLLM
+                      - Ollama
+                      - TGI
+                      - Custom
                       type: string
                     type: array
                     x-kubernetes-list-type: set
                   preferredRuntime:
                     enum:
-                    - KServe
-                    - KubeRay
+                    - VLLM
+                    - Ollama
+                    - TGI
+                    - Custom
                     type: string
                 type: object
                 x-kubernetes-validations:
@@ -159,14 +163,6 @@ spec:
                 type: object
               runtimeHints:
                 properties:
-                  engines:
-                    items:
-                      enum:
-                      - KServe
-                      - KubeRay
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: set
                   task:
                     type: string
                 type: object

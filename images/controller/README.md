@@ -99,10 +99,14 @@ Current phase-2 slice implemented here:
   `internal/adapters/modelprofile/gguf` for ai-inference-oriented metadata
   extraction from normalized model directories, with current live logic based
   on real weight sizes, task-to-endpoint mapping, quantization/precision
-  inference, and minimum-launch estimation; `Safetensors` task resolution now
-  prefers explicit user intent, then checkpoint config/architecture, and only
-  then source hints such as HF `pipeline_tag`; `family` no longer falls back to
-  source repo IDs and stays byte-derived only; `framework` on the
+  inference, and minimum-launch estimation; endpoint metadata is now projected
+  as platform semantic endpoint types (`Chat`, `TextGeneration`, and peers)
+  rather than transport names, and runtime compatibility is no longer guessed
+  from publication hints or topology terms such as `KubeRay`; `Safetensors`
+  task resolution now prefers explicit user intent, then checkpoint
+  config/architecture, and only then source hints such as HF `pipeline_tag`;
+  `family` no longer falls back to source repo IDs and stays byte-derived only;
+  `framework` on the
   `Safetensors` path is now a normalized format-default label
   (`transformers`), not source-derived metadata; source provenance fields such
   as `license` and `sourceRepoID` are now attached after resolution in

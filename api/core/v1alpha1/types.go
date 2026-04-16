@@ -74,8 +74,6 @@ type UploadModelSource struct {
 
 type ModelRuntimeHints struct {
 	Task string `json:"task,omitempty"`
-	// +listType=set
-	Engines []ModelRuntimeEngine `json:"engines,omitempty"`
 }
 
 // SecretReference identifies a Secret used by a source integration.
@@ -155,12 +153,14 @@ const (
 	ModelInputFormatGGUF        ModelInputFormat = "GGUF"
 )
 
-// +kubebuilder:validation:Enum=KServe;KubeRay
+// +kubebuilder:validation:Enum=VLLM;Ollama;TGI;Custom
 type ModelRuntimeEngine string
 
 const (
-	ModelRuntimeEngineKServe  ModelRuntimeEngine = "KServe"
-	ModelRuntimeEngineKubeRay ModelRuntimeEngine = "KubeRay"
+	ModelRuntimeEngineVLLM   ModelRuntimeEngine = "VLLM"
+	ModelRuntimeEngineOllama ModelRuntimeEngine = "Ollama"
+	ModelRuntimeEngineTGI    ModelRuntimeEngine = "TGI"
+	ModelRuntimeEngineCustom ModelRuntimeEngine = "Custom"
 )
 
 // +kubebuilder:validation:Enum=OCI

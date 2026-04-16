@@ -83,11 +83,11 @@ func TestValidatePreferredRuntime(t *testing.T) {
 	t.Run("preferred runtime must belong to allowed set", func(t *testing.T) {
 		t.Parallel()
 		result := validatePreferredRuntime(&modelsv1alpha1.ModelLaunchPolicy{
-			PreferredRuntime: modelsv1alpha1.ModelRuntimeEngineKServe,
+			PreferredRuntime: modelsv1alpha1.ModelRuntimeEngineVLLM,
 			AllowedRuntimes: []modelsv1alpha1.ModelRuntimeEngine{
-				modelsv1alpha1.ModelRuntimeEngineKubeRay,
+				modelsv1alpha1.ModelRuntimeEngineOllama,
 			},
-		}, []string{"KServe"})
+		}, []string{"VLLM"})
 		if result.Valid || result.Reason != modelsv1alpha1.ModelConditionReasonRuntimeNotSupported {
 			t.Fatalf("unexpected result %#v", result)
 		}
@@ -96,8 +96,8 @@ func TestValidatePreferredRuntime(t *testing.T) {
 	t.Run("preferred runtime must be compatible", func(t *testing.T) {
 		t.Parallel()
 		result := validatePreferredRuntime(&modelsv1alpha1.ModelLaunchPolicy{
-			PreferredRuntime: modelsv1alpha1.ModelRuntimeEngineKServe,
-		}, []string{"vLLM"})
+			PreferredRuntime: modelsv1alpha1.ModelRuntimeEngineVLLM,
+		}, []string{"Ollama"})
 		if result.Valid || result.Reason != modelsv1alpha1.ModelConditionReasonRuntimeNotSupported {
 			t.Fatalf("unexpected result %#v", result)
 		}
@@ -106,11 +106,21 @@ func TestValidatePreferredRuntime(t *testing.T) {
 	t.Run("compatible preferred runtime is accepted", func(t *testing.T) {
 		t.Parallel()
 		result := validatePreferredRuntime(&modelsv1alpha1.ModelLaunchPolicy{
-			PreferredRuntime: modelsv1alpha1.ModelRuntimeEngineKServe,
+			PreferredRuntime: modelsv1alpha1.ModelRuntimeEngineVLLM,
 			AllowedRuntimes: []modelsv1alpha1.ModelRuntimeEngine{
-				modelsv1alpha1.ModelRuntimeEngineKServe,
+				modelsv1alpha1.ModelRuntimeEngineVLLM,
 			},
-		}, []string{"KServe"})
+		}, []string{"VLLM"})
+		if !result.Valid {
+			t.Fatalf("unexpected result %#v", result)
+		}
+	})
+
+	t.Run("preferred runtime is accepted when compatibility is unresolved", func(t *testing.T) {
+		t.Parallel()
+		result := validatePreferredRuntime(&modelsv1alpha1.ModelLaunchPolicy{
+			PreferredRuntime: modelsv1alpha1.ModelRuntimeEngineVLLM,
+		}, nil)
 		if !result.Valid {
 			t.Fatalf("unexpected result %#v", result)
 		}
@@ -123,7 +133,8 @@ func TestValidatePublishedModelPolicyMismatches(t *testing.T) {
 	baseSnapshot := publicationdata.Snapshot{
 		Resolved: publicationdata.ResolvedProfile{
 			Task:                         "text-generation",
-			CompatibleRuntimes:           []string{"KServe"},
+			SupportedEndpointTypes:       []string{"Chat", "TextGeneration"},
+			CompatibleRuntimes:           []string{"VLLM"},
 			CompatibleAcceleratorVendors: []string{"NVIDIA"},
 			CompatiblePrecisions:         []string{"int4"},
 		},
@@ -179,12 +190,12 @@ func TestValidatePublishedModelPolicyMismatches(t *testing.T) {
 				},
 			},
 			LaunchPolicy: &modelsv1alpha1.ModelLaunchPolicy{
-				AllowedRuntimes: []modelsv1alpha1.ModelRuntimeEngine{modelsv1alpha1.ModelRuntimeEngineKServe},
+				AllowedRuntimes: []modelsv1alpha1.ModelRuntimeEngine{modelsv1alpha1.ModelRuntimeEngineVLLM},
 				AllowedAcceleratorVendors: []modelsv1alpha1.ModelAcceleratorVendor{
 					modelsv1alpha1.ModelAcceleratorVendorNVIDIA,
 				},
 				AllowedPrecisions: []modelsv1alpha1.ModelPrecision{modelsv1alpha1.ModelPrecisionINT4},
-				PreferredRuntime:  modelsv1alpha1.ModelRuntimeEngineKServe,
+				PreferredRuntime:  modelsv1alpha1.ModelRuntimeEngineVLLM,
 			},
 			Optimization: &modelsv1alpha1.ModelOptimizationPolicy{
 				SpeculativeDecoding: &modelsv1alpha1.ModelSpeculativeDecodingPolicy{

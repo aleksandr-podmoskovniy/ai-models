@@ -173,9 +173,13 @@ multipart upload в module-owned object-storage staging, подписывает 
   supported endpoint types;
 - `spec.launchPolicy`:
   живой whitelist по runtime, accelerator vendor и precision.
+  Названия runtime теперь означают inference-runtime brands (`VLLM`,
+  `Ollama`, `TGI`, `Custom`), а не deployment topology вроде `KubeRay`.
   `preferredRuntime` должен входить в `allowedRuntimes`, если оба поля заданы,
   и сам controller больше не ставит `Validated=True`, если пересечения с
-  calculated profile нет;
+  calculated profile нет. Проверка runtime-совместимости выполняется только
+  когда resolved profile реально публикует `compatibleRuntimes`; controller
+  больше не выдумывает их из publication-time hints;
 - `spec.optimization.speculativeDecoding.draftModelRefs`:
   пока это не consumer runtime magic, а publication-time contract.
   Сейчас controller разрешает этот блок только для generative `LLM`-профилей и
@@ -214,12 +218,14 @@ packaging. Текущие live правила такие:
   - считает `parameterCount` сначала по явным полям, затем по размерам
     `.safetensors` shards
   - определяет `quantization` и `compatiblePrecisions`
-  - строит `supportedEndpointTypes` из `task`
+  - строит semantic `supportedEndpointTypes` из `task`
+    (`Chat`, `TextGeneration`, `Embeddings`, `Rerank`, `SpeechToText`,
+    `Translation`)
   - строит `minimumLaunch` как GPU baseline по реальному размеру весов
 - для `GGUF`
   - читает имя и размер `.gguf` файла
   - выделяет family, quantization и приблизительный `parameterCount`
-  - строит `supportedEndpointTypes` из `task`
+  - строит semantic `supportedEndpointTypes` из `task`
   - строит `minimumLaunch` как GPU baseline по реальному размеру файла и
     quantization
 
@@ -227,7 +233,7 @@ packaging. Текущие live правила такие:
 "publication succeeded" маркером. После публикации controller отдельно
 сопоставляет public policy из `spec` с рассчитанным профилем. Если профиль
 рассчитан, но policy ему противоречит, published artifact остаётся в
-`status.artifact`, `MetadataReady=True`, а объект переходит в `Failed` с
+`status.artifact`, `MetadataResolved=True`, а объект переходит в `Failed` с
 `Validated=False` и конкретной причиной вроде `ModelTypeMismatch`,
 `EndpointTypeNotSupported`, `RuntimeNotSupported`,
 `AcceleratorPolicyConflict` или `OptimizationNotSupported`.
@@ -238,10 +244,11 @@ controller-owned one-shot Jobs через subcommand `artifact-cleanup` в
 dedicated runtime image. Текущий live cleanup path логинится во внутренний
 module-owned DMCR-style registry service с тем же controller-owned trust и
 credentials wiring, удаляет remote artifact по сохранённой ссылке, затем
-создаёт internal DMCR garbage-collection request. Дальше module-owned
-`dmcr-cleaner` sidecar переводит registry в maintenance/read-only режим,
-выполняет physical blob garbage collection и только после этого controller
-снимает finalizer, не выводя backend internals в public status.
+создаёт internal DMCR garbage-collection request и сразу завершает delete path.
+Дальше module-owned `dmcr-cleaner` sidecar в отдельном deferred/coalesced
+maintenance cycle переводит registry в maintenance/read-only режим, выполняет
+physical blob garbage collection и удаляет обработанные internal requests, не
+выводя backend internals в public status.
 
 Runtime delivery теперь не заканчивается standalone materializer binary.
 Controller runtime также несёт reusable K8s-side delivery adapter поверх этого

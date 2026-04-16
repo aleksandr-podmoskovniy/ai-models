@@ -26,10 +26,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestAcceptedStatusUploadStartsPending(t *testing.T) {
+func TestInitialStatusUploadStartsPending(t *testing.T) {
 	t.Parallel()
 
-	status := AcceptedStatus(modelsv1alpha1.ModelStatus{}, 5, modelsv1alpha1.ModelSourceTypeUpload)
+	status := InitialStatus(modelsv1alpha1.ModelStatus{}, 5, modelsv1alpha1.ModelSourceTypeUpload)
 	if got, want := status.Phase, modelsv1alpha1.ModelPhasePending; got != want {
 		t.Fatalf("unexpected phase %q", got)
 	}
@@ -102,9 +102,9 @@ func TestProjectStatusRunningUploadWithSession(t *testing.T) {
 	if projection.Status.Upload == nil || projection.Status.Upload.InClusterURL != "http://upload-a.d8-ai-models.svc:8444/upload/token" {
 		t.Fatalf("unexpected upload status %#v", projection.Status.Upload)
 	}
-	uploadReady := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionUploadReady))
-	if uploadReady == nil || uploadReady.Status != metav1.ConditionTrue {
-		t.Fatalf("expected upload-ready condition, got %#v", uploadReady)
+	artifactResolved := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactResolved))
+	if artifactResolved == nil || artifactResolved.Reason != string(modelsv1alpha1.ModelConditionReasonWaitingForUserUpload) {
+		t.Fatalf("expected waiting upload artifact condition, got %#v", artifactResolved)
 	}
 }
 
@@ -210,12 +210,12 @@ func TestProjectStatusUnsupportedSourceFailureOmitsResolvedType(t *testing.T) {
 	if projection.Status.Source != nil {
 		t.Fatalf("unexpected source status %#v", projection.Status.Source)
 	}
-	artifactPublished := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactPublished))
-	if artifactPublished == nil || artifactPublished.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
-		t.Fatalf("unexpected artifact published condition %#v", artifactPublished)
+	artifactResolved := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactResolved))
+	if artifactResolved == nil || artifactResolved.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
+		t.Fatalf("unexpected artifact resolved condition %#v", artifactResolved)
 	}
 	ready := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionReady))
-	if ready == nil || ready.Reason != string(modelsv1alpha1.ModelConditionReasonUnsupportedSource) {
+	if ready == nil || ready.Reason != string(modelsv1alpha1.ModelConditionReasonFailed) {
 		t.Fatalf("unexpected ready condition %#v", ready)
 	}
 }

@@ -577,8 +577,8 @@
   - controller accepted the spec, resolved the source as `HuggingFace`,
     completed publication, inspection and validation, and finished with:
     - `phase=Ready`
-    - `ArtifactPublished=True`
-    - `MetadataReady=True`
+    - `ArtifactResolved=True`
+    - `MetadataResolved=True`
     - `Validated=True`
     - `Ready=True`;
   - published artifact:
@@ -594,7 +594,9 @@
     - `format=Safetensors`
     - `parameterCount=1579352064`
     - `contextWindowTokens=131072`
-    - `compatibleRuntimes=[KServe,KubeRay]`
+    - `supportedEndpointTypes=[Chat,TextGeneration]`
+    - `compatibleRuntimes` was omitted because the controller no longer guesses
+      runtime compatibility from publication hints or topology terms
     - `minimumLaunch.acceleratorMemoryGiB=12`.
 - Root-cause proof:
   - the same live cluster had already proven that current `source.url` parsing,
@@ -682,8 +684,7 @@
   - `ai-model-cleanup-97d13bfc-70b9-43b1-9d35-d77c0b37d7ac` completed;
   - `dmcr-gc-97d13bfc-70b9-43b1-9d35-d77c0b37d7ac` appeared and then
     disappeared;
-  - `Model.status.phase=Deleting` temporarily exposed
-    `CleanupCompleted=False reason=CleanupPending`;
+  - `Model.status.phase=Deleting` temporarily exposed `Ready=False reason=Pending`;
   - the `Model` object was removed after finalizer release;
   - direct registry reads of both:
     - `.../manifests/published`

@@ -31,9 +31,8 @@ func TestResolve(t *testing.T) {
 	}
 
 	profile, err := Resolve(Input{
-		ModelDir:       root,
-		Task:           "text-generation",
-		RuntimeEngines: []string{"KubeRay"},
+		ModelDir: root,
+		Task:     "text-generation",
 	})
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)

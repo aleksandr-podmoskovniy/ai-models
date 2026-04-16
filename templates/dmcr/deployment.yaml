@@ -144,15 +144,11 @@ spec:
           imagePullPolicy: IfNotPresent
           command:
             - /usr/local/bin/dmcr-cleaner
-            {{- if eq (include "ai-models.dmcrGarbageCollectionModeEnabled" . | trim) "true" }}
             - gc
             - run
             - --request-namespace={{ include "ai-models.namespace" . }}
             - --request-label-selector={{ include "ai-models.dmcrGCRequestLabelKey" . }}=true
             - --garbage-collection-timeout=10m
-            {{- else }}
-            - pause
-            {{- end }}
           env:
             - name: LOG_FORMAT
               value: json

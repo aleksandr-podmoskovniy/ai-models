@@ -26,12 +26,11 @@ import (
 )
 
 type SourceWorkerPlan struct {
-	SourceType     modelsv1alpha1.ModelSourceType
-	InputFormat    modelsv1alpha1.ModelInputFormat
-	Task           string
-	RuntimeEngines []string
-	HuggingFace    *HuggingFaceSourcePlan
-	Upload         *UploadSourcePlan
+	SourceType  modelsv1alpha1.ModelSourceType
+	InputFormat modelsv1alpha1.ModelInputFormat
+	Task        string
+	HuggingFace *HuggingFaceSourcePlan
+	Upload      *UploadSourcePlan
 }
 
 type SourceAuthSecretRef struct {
@@ -64,9 +63,6 @@ func PlanSourceWorker(
 	}
 	if spec.RuntimeHints != nil {
 		plan.Task = strings.TrimSpace(spec.RuntimeHints.Task)
-		for _, engine := range spec.RuntimeHints.Engines {
-			plan.RuntimeEngines = append(plan.RuntimeEngines, string(engine))
-		}
 	}
 
 	switch sourceType {

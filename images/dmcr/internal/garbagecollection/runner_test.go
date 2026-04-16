@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	dmcrlogging "github.com/deckhouse/ai-models/dmcr/internal/logging"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -40,6 +39,18 @@ func TestShouldRunGarbageCollection(t *testing.T) {
 		secret corev1.Secret
 		want   bool
 	}{
+		{
+			name: "queued request secret",
+			secret: corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{RequestLabelKey: RequestLabelValue},
+					Annotations: map[string]string{
+						RequestQueuedAtAnnotationKey: "2026-04-10T00:00:00Z",
+					},
+				},
+			},
+			want: false,
+		},
 		{
 			name: "pending request secret",
 			secret: corev1.Secret{
@@ -88,15 +99,127 @@ func TestShouldRunGarbageCollection(t *testing.T) {
 	}
 }
 
-func TestRunPendingRequestCycleMarksDoneAndLogs(t *testing.T) {
+func TestShouldActivateGarbageCollection(t *testing.T) {
 	t.Parallel()
 
-	var buffer bytes.Buffer
-	logger, err := dmcrlogging.NewLogger("json")
-	if err != nil {
-		t.Fatalf("dmcrlogging.NewLogger() error = %v", err)
+	now := time.Date(2026, 4, 13, 14, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name            string
+		secrets         []corev1.Secret
+		activationDelay time.Duration
+		want            bool
+	}{
+		{
+			name: "queued request older than activation delay arms gc",
+			secrets: []corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							RequestQueuedAtAnnotationKey: now.Add(-11 * time.Minute).Format(time.RFC3339Nano),
+						},
+					},
+				},
+			},
+			activationDelay: 10 * time.Minute,
+			want:            true,
+		},
+		{
+			name: "fresh queued request stays pending",
+			secrets: []corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							RequestQueuedAtAnnotationKey: now.Add(-2 * time.Minute).Format(time.RFC3339Nano),
+						},
+					},
+				},
+			},
+			activationDelay: 10 * time.Minute,
+			want:            false,
+		},
+		{
+			name: "invalid queued timestamp arms gc fail-open",
+			secrets: []corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							RequestQueuedAtAnnotationKey: "broken",
+						},
+					},
+				},
+			},
+			activationDelay: 10 * time.Minute,
+			want:            true,
+		},
 	}
-	logger = slog.New(slog.NewJSONHandler(&buffer, &slog.HandlerOptions{ReplaceAttr: replaceAttrForTest}))
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := shouldActivateGarbageCollection(test.secrets, now, test.activationDelay); got != test.want {
+				t.Fatalf("shouldActivateGarbageCollection() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestRunRequestCycleArmsQueuedRequestsAndLogs(t *testing.T) {
+	var buffer bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buffer, &slog.HandlerOptions{ReplaceAttr: replaceAttrForTest}))
+	logger = logger.With(slog.String("logger", "dmcr-garbage-collection"))
+
+	previousLogger := slog.Default()
+	slog.SetDefault(logger)
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+
+	secret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dmcr-gc-request-1",
+			Namespace: "d8-ai-models",
+			Labels:    map[string]string{RequestLabelKey: RequestLabelValue},
+			Annotations: map[string]string{
+				RequestQueuedAtAnnotationKey: "2026-04-13T13:40:00Z",
+			},
+		},
+	}
+	client := fake.NewSimpleClientset(secret.DeepCopy())
+	options := Options{
+		RequestNamespace:     "d8-ai-models",
+		RequestLabelSelector: DefaultRequestLabelSelector(),
+		ConfigPath:           filepath.Join(t.TempDir(), "config.yml"),
+		ActivationDelay:      10 * time.Minute,
+	}
+	armedAt := time.Date(2026, 4, 13, 14, 0, 0, 0, time.UTC)
+
+	handled, err := runRequestCycle(context.Background(), client, options, func() time.Time { return armedAt })
+	if err != nil {
+		t.Fatalf("runRequestCycle() error = %v", err)
+	}
+	if !handled {
+		t.Fatal("runRequestCycle() = false, want true")
+	}
+
+	updated, err := client.CoreV1().Secrets("d8-ai-models").Get(context.Background(), "dmcr-gc-request-1", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get secret error = %v", err)
+	}
+	if got := updated.Annotations[switchAnnotationKey]; got != armedAt.Format(time.RFC3339Nano) {
+		t.Fatalf("switch annotation = %q, want %q", got, armedAt.Format(time.RFC3339Nano))
+	}
+	if got := updated.Annotations[RequestQueuedAtAnnotationKey]; got == "" {
+		t.Fatal("expected queued request timestamp to stay on armed secret")
+	}
+
+	entries := decodeJSONLogLines(t, buffer.Bytes())
+	assertLogMessage(t, entries, "dmcr garbage collection maintenance cycle armed")
+}
+
+func TestRunRequestCycleDeletesActiveRequestsAndLogs(t *testing.T) {
+	var buffer bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buffer, &slog.HandlerOptions{ReplaceAttr: replaceAttrForTest}))
 	logger = logger.With(slog.String("logger", "dmcr-garbage-collection"))
 
 	previousLogger := slog.Default()
@@ -110,13 +233,19 @@ func TestRunPendingRequestCycleMarksDoneAndLogs(t *testing.T) {
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
+	configPath := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(configPath, []byte("storage:\n  maintenance:\n    readonly:\n      enabled: true\n"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile(config.yml) error = %v", err)
+	}
+
 	secret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "dmcr-gc-request-1",
 			Namespace: "d8-ai-models",
 			Labels:    map[string]string{RequestLabelKey: RequestLabelValue},
 			Annotations: map[string]string{
-				switchAnnotationKey: "2026-04-13T00:00:00Z",
+				RequestQueuedAtAnnotationKey: "2026-04-13T13:40:00Z",
+				switchAnnotationKey:          "2026-04-13T00:00:00Z",
 			},
 		},
 	}
@@ -125,34 +254,26 @@ func TestRunPendingRequestCycleMarksDoneAndLogs(t *testing.T) {
 		RequestNamespace:     "d8-ai-models",
 		RequestLabelSelector: DefaultRequestLabelSelector(),
 		RegistryBinary:       registryBinary,
-		ConfigPath:           filepath.Join(t.TempDir(), "config.yml"),
+		ConfigPath:           configPath,
 		GCTimeout:            time.Minute,
 	}
-	finishedAt := time.Date(2026, 4, 13, 14, 0, 0, 0, time.UTC)
 
-	handled, err := runPendingRequestCycle(context.Background(), client, options, func() time.Time { return finishedAt })
+	handled, err := runRequestCycle(context.Background(), client, options, func() time.Time { return time.Date(2026, 4, 13, 14, 0, 0, 0, time.UTC) })
 	if err != nil {
-		t.Fatalf("runPendingRequestCycle() error = %v", err)
+		t.Fatalf("runRequestCycle() error = %v", err)
 	}
 	if !handled {
-		t.Fatal("runPendingRequestCycle() = false, want true")
+		t.Fatal("runRequestCycle() = false, want true")
 	}
 
-	updated, err := client.CoreV1().Secrets("d8-ai-models").Get(context.Background(), "dmcr-gc-request-1", metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("get secret error = %v", err)
-	}
-	if got := updated.Annotations[doneAnnotationKey]; got != finishedAt.Format(time.RFC3339Nano) {
-		t.Fatalf("done annotation = %q, want %q", got, finishedAt.Format(time.RFC3339Nano))
-	}
-	if _, exists := updated.Annotations[switchAnnotationKey]; exists {
-		t.Fatal("expected switch annotation to be removed")
+	if _, err := client.CoreV1().Secrets("d8-ai-models").Get(context.Background(), "dmcr-gc-request-1", metav1.GetOptions{}); err == nil {
+		t.Fatal("expected active request secret to be deleted after successful garbage collection")
 	}
 
 	entries := decodeJSONLogLines(t, buffer.Bytes())
 	assertLogMessage(t, entries, "dmcr garbage collection requested")
 	assertLogMessage(t, entries, "dmcr garbage collection completed")
-	assertLogMessage(t, entries, "dmcr garbage collection requests marked done")
+	assertLogMessage(t, entries, "dmcr garbage collection requests removed")
 
 	if got := entries[1]["registry_output"]; got != "gc-ok" {
 		t.Fatalf("registry_output = %v, want gc-ok", got)

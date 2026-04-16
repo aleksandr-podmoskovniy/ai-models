@@ -36,6 +36,7 @@ type GarbageCollectionState string
 
 const (
 	GarbageCollectionStateMissing   GarbageCollectionState = "Missing"
+	GarbageCollectionStateQueued    GarbageCollectionState = "Queued"
 	GarbageCollectionStateRequested GarbageCollectionState = "Requested"
 	GarbageCollectionStateComplete  GarbageCollectionState = "Complete"
 )
@@ -66,7 +67,7 @@ func FinalizeDelete(input FinalizeDeleteInput) FinalizeDeleteDecision {
 	}
 	if input.HandleErr != nil {
 		return failureDecision(
-			modelsv1alpha1.ModelConditionReasonCleanupFailed,
+			modelsv1alpha1.ModelConditionReasonFailed,
 			fmt.Sprintf("invalid cleanup handle: %v", input.HandleErr),
 		)
 	}
@@ -81,7 +82,7 @@ func FinalizeDelete(input FinalizeDeleteInput) FinalizeDeleteDecision {
 		return finalizeUploadStagingDelete(input.JobState)
 	default:
 		return failureDecision(
-			modelsv1alpha1.ModelConditionReasonCleanupBlocked,
+			modelsv1alpha1.ModelConditionReasonFailed,
 			fmt.Sprintf("cleanup handle kind %q is not supported", input.HandleKind),
 		)
 	}
@@ -130,24 +131,22 @@ func cleanupJobProgressDecision(jobState CleanupJobState, messages cleanupJobMes
 	case CleanupJobStateRunning:
 		return pendingDecision(messages.running), true
 	case CleanupJobStateFailed:
-		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, messages.failed), true
+		return failureDecision(modelsv1alpha1.ModelConditionReasonFailed, messages.failed), true
 	case CleanupJobStateComplete:
 		return FinalizeDeleteDecision{}, false
 	default:
-		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, messages.unsupported), true
+		return failureDecision(modelsv1alpha1.ModelConditionReasonFailed, messages.unsupported), true
 	}
 }
 
 func garbageCollectionProgressDecision(state GarbageCollectionState) FinalizeDeleteDecision {
 	switch state {
 	case GarbageCollectionStateMissing:
-		return ensureGarbageCollectionDecision("registry garbage collection requested")
-	case GarbageCollectionStateRequested:
-		return pendingDecision("registry garbage collection is still running")
-	case GarbageCollectionStateComplete:
-		return deleteGarbageCollectionAndRemoveFinalizerDecision()
+		return enqueueGarbageCollectionAndRemoveFinalizerDecision()
+	case GarbageCollectionStateQueued, GarbageCollectionStateRequested, GarbageCollectionStateComplete:
+		return removeFinalizerDecision()
 	default:
-		return failureDecision(modelsv1alpha1.ModelConditionReasonCleanupFailed, "registry garbage collection entered an unsupported state")
+		return failureDecision(modelsv1alpha1.ModelConditionReasonFailed, "registry garbage collection entered an unsupported state")
 	}
 }
 
@@ -155,26 +154,23 @@ func createJobDecision(message string) FinalizeDeleteDecision {
 	return FinalizeDeleteDecision{
 		CreateJob:     true,
 		UpdateStatus:  true,
-		StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
+		StatusReason:  modelsv1alpha1.ModelConditionReasonPending,
 		StatusMessage: message,
 		Requeue:       true,
 	}
 }
 
-func ensureGarbageCollectionDecision(message string) FinalizeDeleteDecision {
+func enqueueGarbageCollectionAndRemoveFinalizerDecision() FinalizeDeleteDecision {
 	return FinalizeDeleteDecision{
 		EnsureGarbageCollectionRequest: true,
-		UpdateStatus:                   true,
-		StatusReason:                   modelsv1alpha1.ModelConditionReasonCleanupPending,
-		StatusMessage:                  message,
-		Requeue:                        true,
+		RemoveFinalizer:                true,
 	}
 }
 
 func pendingDecision(message string) FinalizeDeleteDecision {
 	return FinalizeDeleteDecision{
 		UpdateStatus:  true,
-		StatusReason:  modelsv1alpha1.ModelConditionReasonCleanupPending,
+		StatusReason:  modelsv1alpha1.ModelConditionReasonPending,
 		StatusMessage: message,
 		Requeue:       true,
 	}
@@ -182,13 +178,6 @@ func pendingDecision(message string) FinalizeDeleteDecision {
 
 func removeFinalizerDecision() FinalizeDeleteDecision {
 	return FinalizeDeleteDecision{RemoveFinalizer: true}
-}
-
-func deleteGarbageCollectionAndRemoveFinalizerDecision() FinalizeDeleteDecision {
-	return FinalizeDeleteDecision{
-		DeleteGarbageCollectionRequest: true,
-		RemoveFinalizer:                true,
-	}
 }
 
 func failureDecision(reason modelsv1alpha1.ModelConditionReason, message string) FinalizeDeleteDecision {

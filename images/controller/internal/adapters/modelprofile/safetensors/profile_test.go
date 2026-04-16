@@ -50,9 +50,8 @@ func TestResolveProfile(t *testing.T) {
 	}
 
 	resolved, err := Resolve(Input{
-		CheckpointDir:  checkpointDir,
-		Task:           "text-generation",
-		RuntimeEngines: []string{"KServe"},
+		CheckpointDir: checkpointDir,
+		Task:          "text-generation",
 	})
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
@@ -66,8 +65,8 @@ func TestResolveProfile(t *testing.T) {
 	if got, want := resolved.ContextWindowTokens, int64(32768); got != want {
 		t.Fatalf("unexpected context window %d", got)
 	}
-	if len(resolved.CompatibleRuntimes) != 1 || resolved.CompatibleRuntimes[0] != "KServe" {
-		t.Fatalf("unexpected compatible runtimes %#v", resolved.CompatibleRuntimes)
+	if len(resolved.CompatibleRuntimes) != 0 {
+		t.Fatalf("expected unresolved compatible runtimes, got %#v", resolved.CompatibleRuntimes)
 	}
 	if len(resolved.SupportedEndpointTypes) == 0 {
 		t.Fatal("expected supported endpoint types")
@@ -139,7 +138,7 @@ func TestResolveProfileUsesTaskHintAsFallback(t *testing.T) {
 	if got, want := resolved.Task, "feature-extraction"; got != want {
 		t.Fatalf("unexpected task %q", got)
 	}
-	if len(resolved.SupportedEndpointTypes) == 0 || resolved.SupportedEndpointTypes[0] != "OpenAIEmbeddings" {
+	if len(resolved.SupportedEndpointTypes) == 0 || resolved.SupportedEndpointTypes[0] != "Embeddings" {
 		t.Fatalf("unexpected endpoint types %#v", resolved.SupportedEndpointTypes)
 	}
 }

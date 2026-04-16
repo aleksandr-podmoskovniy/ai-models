@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
 func normalizeEndpointTypes(values []modelsv1alpha1.ModelEndpointType) []string {
@@ -30,6 +31,13 @@ func normalizeEndpointTypes(values []modelsv1alpha1.ModelEndpointType) []string 
 		}
 	}
 	return result
+}
+
+func resolvedEndpointTypes(resolved publicationdata.ResolvedProfile) []string {
+	if len(resolved.SupportedEndpointTypes) > 0 {
+		return uniqueStrings(resolved.SupportedEndpointTypes)
+	}
+	return inferEndpointTypes(resolved.Task)
 }
 
 func intersectRuntimeEngines(allowed []modelsv1alpha1.ModelRuntimeEngine, resolved []string) []string {
@@ -106,4 +114,21 @@ func containsString(values []string, expected string) bool {
 
 func normalizeValue(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func uniqueStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if _, duplicate := seen[value]; duplicate {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }

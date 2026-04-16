@@ -39,7 +39,6 @@ type Options struct {
 	RawStageKeyPrefix  string
 	InputFormat        modelsv1alpha1.ModelInputFormat
 	Task               string
-	RuntimeEngines     []string
 	SnapshotDir        string
 	HFToken            string
 	UploadStaging      uploadstagingports.Client

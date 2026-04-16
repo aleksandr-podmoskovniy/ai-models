@@ -19,34 +19,27 @@ package v1alpha1
 type ModelConditionType string
 
 const (
-	ModelConditionAccepted          ModelConditionType = "Accepted"
-	ModelConditionUploadReady       ModelConditionType = "UploadReady"
-	ModelConditionArtifactPublished ModelConditionType = "ArtifactPublished"
-	ModelConditionMetadataReady     ModelConditionType = "MetadataReady"
-	ModelConditionValidated         ModelConditionType = "Validated"
-	ModelConditionCleanupCompleted  ModelConditionType = "CleanupCompleted"
-	ModelConditionReady             ModelConditionType = "Ready"
+	ModelConditionArtifactResolved ModelConditionType = "ArtifactResolved"
+	ModelConditionMetadataResolved ModelConditionType = "MetadataResolved"
+	ModelConditionValidated        ModelConditionType = "Validated"
+	ModelConditionReady            ModelConditionType = "Ready"
 )
 
 type ModelConditionReason string
 
 const (
-	ModelConditionReasonSpecAccepted                ModelConditionReason = "SpecAccepted"
-	ModelConditionReasonWaitingForUserUpload        ModelConditionReason = "WaitingForUserUpload"
-	ModelConditionReasonUploadExpired               ModelConditionReason = "UploadExpired"
-	ModelConditionReasonPublicationSucceeded        ModelConditionReason = "PublicationSucceeded"
-	ModelConditionReasonPublicationFailed           ModelConditionReason = "PublicationFailed"
-	ModelConditionReasonUnsupportedSource           ModelConditionReason = "UnsupportedSource"
-	ModelConditionReasonMetadataInspectionSucceeded ModelConditionReason = "MetadataInspectionSucceeded"
-	ModelConditionReasonMetadataInspectionFailed    ModelConditionReason = "MetadataInspectionFailed"
-	ModelConditionReasonValidationSucceeded         ModelConditionReason = "ValidationSucceeded"
-	ModelConditionReasonValidationFailed            ModelConditionReason = "ValidationFailed"
-	ModelConditionReasonModelTypeMismatch           ModelConditionReason = "ModelTypeMismatch"
-	ModelConditionReasonEndpointTypeNotSupported    ModelConditionReason = "EndpointTypeNotSupported"
-	ModelConditionReasonRuntimeNotSupported         ModelConditionReason = "RuntimeNotSupported"
-	ModelConditionReasonAcceleratorPolicyConflict   ModelConditionReason = "AcceleratorPolicyConflict"
-	ModelConditionReasonOptimizationNotSupported    ModelConditionReason = "OptimizationNotSupported"
-	ModelConditionReasonCleanupPending              ModelConditionReason = "CleanupPending"
-	ModelConditionReasonCleanupBlocked              ModelConditionReason = "CleanupBlocked"
-	ModelConditionReasonCleanupFailed               ModelConditionReason = "CleanupFailed"
+	ModelConditionReasonPending                   ModelConditionReason = "Pending"
+	ModelConditionReasonWaitingForUserUpload      ModelConditionReason = "WaitingForUserUpload"
+	ModelConditionReasonArtifactPublished         ModelConditionReason = "ArtifactPublished"
+	ModelConditionReasonPublicationFailed         ModelConditionReason = "PublicationFailed"
+	ModelConditionReasonUnsupportedSource         ModelConditionReason = "UnsupportedSource"
+	ModelConditionReasonModelMetadataCalculated   ModelConditionReason = "ModelMetadataCalculated"
+	ModelConditionReasonValidationSucceeded       ModelConditionReason = "ValidationSucceeded"
+	ModelConditionReasonModelTypeMismatch         ModelConditionReason = "ModelTypeMismatch"
+	ModelConditionReasonEndpointTypeNotSupported  ModelConditionReason = "EndpointTypeNotSupported"
+	ModelConditionReasonRuntimeNotSupported       ModelConditionReason = "RuntimeNotSupported"
+	ModelConditionReasonAcceleratorPolicyConflict ModelConditionReason = "AcceleratorPolicyConflict"
+	ModelConditionReasonOptimizationNotSupported  ModelConditionReason = "OptimizationNotSupported"
+	ModelConditionReasonReady                     ModelConditionReason = "Ready"
+	ModelConditionReasonFailed                    ModelConditionReason = "Failed"
 )

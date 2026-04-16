@@ -20,35 +20,28 @@ import (
 	"math"
 	"strings"
 
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
 func EndpointTypes(task string) []string {
 	switch normalize(strings.TrimSpace(task)) {
-	case "text-generation", "text2text-generation", "summarization", "translation", "conversational":
-		return []string{"OpenAIChatCompletions", "OpenAICompletions"}
+	case "text-generation", "text2text-generation", "summarization", "conversational":
+		return []string{
+			string(modelsv1alpha1.ModelEndpointTypeChat),
+			string(modelsv1alpha1.ModelEndpointTypeTextGeneration),
+		}
 	case "feature-extraction", "embeddings", "text-embeddings-inference", "sentence-similarity":
-		return []string{"OpenAIEmbeddings"}
+		return []string{string(modelsv1alpha1.ModelEndpointTypeEmbeddings)}
+	case "rerank", "reranker", "text-ranking":
+		return []string{string(modelsv1alpha1.ModelEndpointTypeRerank)}
+	case "automatic-speech-recognition", "speech-to-text":
+		return []string{string(modelsv1alpha1.ModelEndpointTypeSpeechToText)}
+	case "translation":
+		return []string{string(modelsv1alpha1.ModelEndpointTypeTranslation)}
 	default:
 		return nil
 	}
-}
-
-func UniqueStrings(values []string) []string {
-	result := make([]string, 0, len(values))
-	seen := map[string]struct{}{}
-	for _, raw := range values {
-		value := strings.TrimSpace(raw)
-		if value == "" {
-			continue
-		}
-		if _, duplicate := seen[value]; duplicate {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	return result
 }
 
 func GPUVendors() []string {

@@ -71,9 +71,8 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 	}
 
 	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, remote.ModelDir, remote.InputFormat, sourceProfileInput{
-		Task:           options.Task,
-		TaskHint:       remote.Fallbacks.TaskHint,
-		RuntimeEngines: options.RuntimeEngines,
+		Task:     options.Task,
+		TaskHint: remote.Fallbacks.TaskHint,
 		Provenance: sourceProfileProvenance{
 			License:      remote.Metadata.License,
 			SourceRepoID: remote.Metadata.SourceRepoID,

@@ -26,10 +26,9 @@ import (
 )
 
 type Input struct {
-	CheckpointDir  string
-	Task           string
-	TaskHint       string
-	RuntimeEngines []string
+	CheckpointDir string
+	Task          string
+	TaskHint      string
 }
 
 func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
@@ -75,7 +74,6 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 		Quantization:           quantization,
 		ContextWindowTokens:    contextWindow,
 		SupportedEndpointTypes: profilecommon.EndpointTypes(task),
-		CompatibleRuntimes:     compatibleRuntimes(input.RuntimeEngines),
 		CompatiblePrecisions:   compatiblePrecisions(precision),
 		MinimumLaunch:          minimumLaunch,
 	}
