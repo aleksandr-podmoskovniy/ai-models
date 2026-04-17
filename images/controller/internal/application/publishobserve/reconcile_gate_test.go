@@ -89,7 +89,6 @@ func TestDecideCatalogStatusReconcile(t *testing.T) {
 				Source: modelsv1alpha1.ModelSourceSpec{
 					URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 				},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
 			},
 			assert: func(t *testing.T, got CatalogStatusReconcileDecision) {
 				t.Helper()
@@ -104,7 +103,6 @@ func TestDecideCatalogStatusReconcile(t *testing.T) {
 				Source: modelsv1alpha1.ModelSourceSpec{
 					Upload: &modelsv1alpha1.UploadModelSource{},
 				},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
 			},
 			assert: func(t *testing.T, got CatalogStatusReconcileDecision) {
 				t.Helper()
@@ -119,7 +117,6 @@ func TestDecideCatalogStatusReconcile(t *testing.T) {
 				Source: modelsv1alpha1.ModelSourceSpec{
 					Upload: &modelsv1alpha1.UploadModelSource{},
 				},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
 				Current: modelsv1alpha1.ModelStatus{
 					ObservedGeneration: 7,
 					Phase:              modelsv1alpha1.ModelPhasePublishing,
@@ -135,13 +132,18 @@ func TestDecideCatalogStatusReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "upload without task fails closed",
+			name: "upload without task still uses upload session",
 			input: CatalogStatusReconcileInput{
 				Source: modelsv1alpha1.ModelSourceSpec{
 					Upload: &modelsv1alpha1.UploadModelSource{},
 				},
 			},
-			wantErr: true,
+			assert: func(t *testing.T, got CatalogStatusReconcileDecision) {
+				t.Helper()
+				if got.Skip || got.Mode != publicationapp.ExecutionModeUpload || got.SourceType != modelsv1alpha1.ModelSourceTypeUpload {
+					t.Fatalf("unexpected decision %#v", got)
+				}
+			},
 		},
 	}
 

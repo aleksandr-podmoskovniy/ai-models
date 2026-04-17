@@ -81,17 +81,11 @@ func (s *Service) ensureSecret(
 	if err != nil {
 		return nil, "", false, err
 	}
-	expectedSizeBytes := int64(0)
-	if plan.ExpectedSizeBytes != nil {
-		expectedSizeBytes = *plan.ExpectedSizeBytes
-	}
 	secret, err := uploadsessionstate.NewSecret(uploadsessionstate.SessionSpec{
 		Name:                name,
 		Namespace:           s.options.Runtime.Namespace,
 		Token:               token,
-		ExpectedSizeBytes:   expectedSizeBytes,
 		StagingKeyPrefix:    stagingPrefix,
-		DeclaredInputFormat: plan.DeclaredInputFormat,
 		OwnerGeneration:     owner.GetGeneration(),
 		ExpiresAt:           time.Now().Add(s.options.TokenTTL).UTC(),
 	})
@@ -177,7 +171,6 @@ func requestPlan(request publicationports.Request) (publicationapp.UploadSession
 		OwnerName:      request.Owner.Name,
 		OwnerNamespace: request.Owner.Namespace,
 		Identity:       request.Identity,
-		InputFormat:    request.Spec.InputFormat,
 		Source:         request.Spec.Source,
 	})
 }

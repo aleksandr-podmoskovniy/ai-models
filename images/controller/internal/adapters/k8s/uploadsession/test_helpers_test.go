@@ -39,12 +39,8 @@ func testUploadRequest() publicationports.Request {
 			Name:      "deepseek-r1-upload",
 		},
 		Spec: modelsv1alpha1.ModelSpec{
-			InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 			Source: modelsv1alpha1.ModelSourceSpec{
 				Upload: &modelsv1alpha1.UploadModelSource{},
-			},
-			RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
-				Task: "text-generation",
 			},
 		},
 	}

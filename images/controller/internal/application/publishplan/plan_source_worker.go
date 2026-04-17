@@ -27,8 +27,6 @@ import (
 
 type SourceWorkerPlan struct {
 	SourceType  modelsv1alpha1.ModelSourceType
-	InputFormat modelsv1alpha1.ModelInputFormat
-	Task        string
 	HuggingFace *HuggingFaceSourcePlan
 	Upload      *UploadSourcePlan
 }
@@ -58,11 +56,7 @@ func PlanSourceWorker(
 		return SourceWorkerPlan{}, err
 	}
 	plan := SourceWorkerPlan{
-		SourceType:  sourceType,
-		InputFormat: spec.InputFormat,
-	}
-	if spec.RuntimeHints != nil {
-		plan.Task = strings.TrimSpace(spec.RuntimeHints.Task)
+		SourceType: sourceType,
 	}
 
 	switch sourceType {
@@ -88,9 +82,6 @@ func PlanSourceWorker(
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		if uploadStage == nil {
 			return SourceWorkerPlan{}, errors.New("source worker upload source requires a staged upload handle")
-		}
-		if plan.Task == "" {
-			return SourceWorkerPlan{}, errors.New("source worker upload source requires spec.runtimeHints.task")
 		}
 		plan.Upload = &UploadSourcePlan{Stage: *uploadStage}
 		return plan, nil

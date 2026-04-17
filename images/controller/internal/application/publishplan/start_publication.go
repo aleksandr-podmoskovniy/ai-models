@@ -18,7 +18,6 @@ package publishplan
 
 import (
 	"fmt"
-	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 )
@@ -32,7 +31,6 @@ const (
 
 type StartPublicationInput struct {
 	Source             modelsv1alpha1.ModelSourceSpec
-	RuntimeHints       *modelsv1alpha1.ModelRuntimeHints
 	UploadStagePresent bool
 }
 
@@ -48,9 +46,6 @@ func StartPublication(input StartPublicationInput) (ExecutionMode, error) {
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		if input.Source.Upload == nil {
 			return "", fmt.Errorf("upload source must not be empty")
-		}
-		if input.RuntimeHints == nil || strings.TrimSpace(input.RuntimeHints.Task) == "" {
-			return "", fmt.Errorf("upload source currently requires spec.runtimeHints.task")
 		}
 		if input.UploadStagePresent {
 			return ExecutionModeSourceWorker, nil

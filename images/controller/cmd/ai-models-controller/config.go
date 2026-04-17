@@ -98,7 +98,7 @@ func defaultManagerConfig() managerConfig {
 		PublicationOCISecretName:             cmdsupport.EnvOr(publicationOCISecretEnv, ""),
 		PublicationOCICASecretName:           cmdsupport.EnvOr(publicationOCICASecretEnv, ""),
 		PublicationMaxConcurrentWorkers:      cmdsupport.EnvOrInt(publicationMaxConcurrentWorkersEnv, defaultPublicationMaxConcurrentWorkers),
-		PublicationWorkVolumeType:            cmdsupport.EnvOr(publicationWorkVolumeTypeEnv, string(workloadpod.WorkVolumeTypeEmptyDir)),
+		PublicationWorkVolumeType:            cmdsupport.EnvOr(publicationWorkVolumeTypeEnv, string(workloadpod.WorkVolumeTypePersistentVolumeClaim)),
 		PublicationWorkVolumeSizeLimit:       cmdsupport.EnvOr(publicationWorkVolumeSizeLimitEnv, defaultPublicationWorkVolumeSizeLimit),
 		PublicationWorkVolumeClaimName:       cmdsupport.EnvOr(publicationWorkVolumeClaimNameEnv, defaultPublicationWorkVolumeClaimName),
 		PublicationWorkerCPURequest:          cmdsupport.EnvOr(publicationWorkerCPURequestEnv, defaultPublicationWorkerCPURequest),

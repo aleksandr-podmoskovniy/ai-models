@@ -2,35 +2,32 @@
 
 `ai-models` is the DKP module for AI/ML model registry and catalog services.
 
-The current module runtime already covers the core registry services inside DKP:
-metadata storage in PostgreSQL, S3-compatible artifact storage for the managed
-backend, an internal DMCR-style publication backend for published model
-artifacts, UI/API access, Deckhouse ingress/https, native MLflow
-auth/workspaces, and reproducible image packaging.
+The current live baseline of the module is a controller-owned
+publication/runtime path:
+
+- DKP-native `Model` / `ClusterModel` catalog API;
+- controller publication into canonical OCI `ModelPack` artifacts;
+- internal `DMCR` as the publication backend;
+- source mirror / upload staging in S3-compatible storage;
+- runtime delivery for consumer workloads.
 
 Current implementation scope:
-1. the internal managed backend of the module;
-2. DKP-native `Model` / `ClusterModel` API on top of the same module;
+1. stabilize the ai-models-owned publication/runtime baseline;
+2. add distribution/runtime topologies such as `DMZ` registry and node-local cache;
 3. hardening, controlled patching, and long-term support improvements.
 
 What is already part of the repository:
 - DKP module metadata and user-facing documentation;
-- stable `config-values` for ai-models logging, PostgreSQL, backend artifacts,
-  and internal publication storage;
-- runtime templates for the internal backend, `Ingress`, native MLflow auth/workspaces, and managed-postgres wiring, while shared behavior comes from platform/global settings;
+- stable `config-values` for the controller/runtime shell and object storage wiring;
+- runtime templates for `DMCR`, controller shell, and module-wide manifests;
 - runtime/internal `values` and image-based Go hooks for module wiring;
-- `werf`, CI/CD, and repo-local workflows for packaging the internal backend engine.
+- `werf`, CI/CD, and repo-local workflows for packaging module-owned runtime images.
 
-Phase-1 operational model import:
-- use `tools/run_hf_import_job.sh` for large Hugging Face models so that data flows
-  inside the cluster instead of through a laptop;
-- use `tools/run_model_cleanup_job.sh` for destructive cleanup of old model
-  versions so that the registry entry, linked logged model, source run, and S3
-  artifacts are deleted together;
-- keep `tools/upload_hf_model.py` as a thin local wrapper for small models and quick checks;
-- treat those scripts as phase-1 backend operations only; the phase-2
-  `Model` / `ClusterModel` publication path is controller-owned and publishes
-  canonical OCI `ModelPack` artifacts into the internal DMCR backend.
+Current import/publication flow:
+- the canonical live path goes through `Model` / `ClusterModel`;
+- remote sources are handled through controller-owned source mirror;
+- upload sources are handled through controller-owned upload sessions;
+- publication produces OCI `ModelPack` artifacts in the internal `DMCR`.
 
 Development entrypoints:
 - `AGENTS.md`

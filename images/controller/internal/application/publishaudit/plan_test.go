@@ -85,8 +85,11 @@ func TestPlanPostStatusRecordsRemoteStarted(t *testing.T) {
 	if got, want := len(records), 1; got != want {
 		t.Fatalf("unexpected record count %d", got)
 	}
-	if got, want := records[0].Reason, ReasonRemoteIngestStarted; got != want {
+	if got, want := records[0].Reason, ReasonRemoteFetchStarted; got != want {
 		t.Fatalf("unexpected reason %q", got)
+	}
+	if !strings.Contains(records[0].Message, "remote source fetch") {
+		t.Fatalf("unexpected message %q", records[0].Message)
 	}
 }
 
@@ -104,7 +107,7 @@ func TestPlanPostStatusRecordsPublicationSucceeded(t *testing.T) {
 				},
 				Source: publicationdata.SourceProvenance{
 					Type:           modelsv1alpha1.ModelSourceTypeHuggingFace,
-					RawURI:         "s3://artifacts/raw/1111-2222/source-url",
+					RawURI:         "s3://artifacts/raw/1111-2222/source-url/.mirror/huggingface/google/gemma-4-e2b-it/deadbeef",
 					RawObjectCount: 4,
 				},
 			},
@@ -116,7 +119,7 @@ func TestPlanPostStatusRecordsPublicationSucceeded(t *testing.T) {
 	if got, want := records[0].Reason, ReasonPublicationSuccess; got != want {
 		t.Fatalf("unexpected reason %q", got)
 	}
-	if !strings.Contains(records[0].Message, "s3://artifacts/raw/1111-2222/source-url") {
+	if !strings.Contains(records[0].Message, "from source mirror s3://artifacts/raw/1111-2222/source-url/.mirror/") {
 		t.Fatalf("unexpected message %q", records[0].Message)
 	}
 }

@@ -2,7 +2,6 @@ global:
   enabledModules:
     - ai-models
     - cert-manager
-    - managed-postgres
     - user-authn
   internal:
     modules:
@@ -23,7 +22,6 @@ global:
       common:
         kubeRbacProxy: sha256:0000000000000000000000000000000000000000000000000000000000000000
       aiModels:
-        backend: sha256:1111111111111111111111111111111111111111111111111111111111111111
         controller: sha256:2222222222222222222222222222222222222222222222222222222222222222
         controllerRuntime: sha256:3333333333333333333333333333333333333333333333333333333333333333
         dmcr: sha256:4444444444444444444444444444444444444444444444444444444444444444
@@ -32,8 +30,6 @@ global:
   clusterConfiguration:
     clusterDomain: cluster.local
 aiModels:
-  postgresql:
-    mode: Managed
   artifacts:
     bucket: ai-models
     endpoint: https://s3.internal.local

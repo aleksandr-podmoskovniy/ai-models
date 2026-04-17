@@ -47,7 +47,6 @@ func resolveAndPublish(
 	checkpointDir string,
 	inputFormat modelsv1alpha1.ModelInputFormat,
 	input sourceProfileInput,
-	description string,
 ) (publicationdata.ResolvedProfile, modelpackports.PublishResult, error) {
 	logger := slog.Default().With(
 		slog.String("checkpointDir", strings.TrimSpace(checkpointDir)),
@@ -76,7 +75,6 @@ func resolveAndPublish(
 	publishResult, err := options.ModelPackPublisher.Publish(ctx, modelpackports.PublishInput{
 		ModelDir:    checkpointDir,
 		ArtifactURI: options.ArtifactURI,
-		Description: description,
 	}, options.RegistryAuth)
 	if err != nil {
 		return publicationdata.ResolvedProfile{}, modelpackports.PublishResult{}, err

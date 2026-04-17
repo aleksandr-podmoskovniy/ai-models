@@ -42,33 +42,7 @@ func TestProjectStatusSucceeded(t *testing.T) {
 	}
 	projection, err := ProjectStatus(
 		modelsv1alpha1.ModelStatus{},
-		modelsv1alpha1.ModelSpec{
-			ModelType: modelsv1alpha1.ModelTypeLLM,
-			UsagePolicy: &modelsv1alpha1.ModelUsagePolicy{
-				AllowedEndpointTypes: []modelsv1alpha1.ModelEndpointType{
-					modelsv1alpha1.ModelEndpointTypeChat,
-				},
-			},
-			LaunchPolicy: &modelsv1alpha1.ModelLaunchPolicy{
-				AllowedRuntimes: []modelsv1alpha1.ModelRuntimeEngine{
-					modelsv1alpha1.ModelRuntimeEngineVLLM,
-				},
-				PreferredRuntime: modelsv1alpha1.ModelRuntimeEngineVLLM,
-				AllowedAcceleratorVendors: []modelsv1alpha1.ModelAcceleratorVendor{
-					modelsv1alpha1.ModelAcceleratorVendorNVIDIA,
-				},
-				AllowedPrecisions: []modelsv1alpha1.ModelPrecision{
-					modelsv1alpha1.ModelPrecisionINT4,
-				},
-			},
-			Optimization: &modelsv1alpha1.ModelOptimizationPolicy{
-				SpeculativeDecoding: &modelsv1alpha1.ModelSpeculativeDecodingPolicy{
-					DraftModelRefs: []modelsv1alpha1.ModelReference{
-						{Kind: modelsv1alpha1.ModelReferenceKindClusterModel, Name: "deepseek-r1-draft"},
-					},
-				},
-			},
-		},
+		modelsv1alpha1.ModelSpec{},
 		5,
 		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		Observation{
@@ -137,9 +111,13 @@ func TestProjectStatusSucceeded(t *testing.T) {
 	if ready == nil || ready.Status != metav1.ConditionTrue {
 		t.Fatalf("expected ready condition, got %#v", ready)
 	}
+	validated := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionValidated))
+	if validated == nil || validated.Status != metav1.ConditionTrue || validated.Reason != string(modelsv1alpha1.ModelConditionReasonValidationSucceeded) {
+		t.Fatalf("unexpected validated condition %#v", validated)
+	}
 }
 
-func TestProjectStatusSucceededValidationFailure(t *testing.T) {
+func TestProjectStatusSucceededAcceptsCalculatedMetadataWithoutSpecPolicy(t *testing.T) {
 	t.Parallel()
 
 	handle := cleanuphandle.Handle{
@@ -151,9 +129,7 @@ func TestProjectStatusSucceededValidationFailure(t *testing.T) {
 
 	projection, err := ProjectStatus(
 		modelsv1alpha1.ModelStatus{},
-		modelsv1alpha1.ModelSpec{
-			ModelType: modelsv1alpha1.ModelTypeEmbeddings,
-		},
+		modelsv1alpha1.ModelSpec{},
 		5,
 		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		Observation{
@@ -180,11 +156,11 @@ func TestProjectStatusSucceededValidationFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProjectStatus() error = %v", err)
 	}
-	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhaseFailed; got != want {
+	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhaseReady; got != want {
 		t.Fatalf("unexpected phase %q", got)
 	}
 	validated := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionValidated))
-	if validated == nil || validated.Status != metav1.ConditionFalse || validated.Reason != string(modelsv1alpha1.ModelConditionReasonModelTypeMismatch) {
+	if validated == nil || validated.Status != metav1.ConditionTrue || validated.Reason != string(modelsv1alpha1.ModelConditionReasonValidationSucceeded) {
 		t.Fatalf("unexpected validated condition %#v", validated)
 	}
 }

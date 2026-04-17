@@ -5,10 +5,11 @@ sync для уже существующих module surfaces.
 ### 2. Orchestration
 `solo`
 
-Задача multi-repo, но решение здесь механическое и основано на already-known
+Задача использует несколько repo как reference, но retained diff остаётся
+только в `ai-models`. Решение механическое и основано на already-known
 source-of-truth surfaces:
 - `deckhouse` для `deckhouse_lib_helm`, `module-sdk` Go dependency и `base_images.yml`;
-- existing live repo surfaces для stale pins/doc wording.
+- `virtualization` только как comparative surface для tool/version drift.
 
 Новый архитектурный выбор не проектируется, поэтому отдельные read-only reviews
 до реализации не нужны.
@@ -35,25 +36,18 @@ source-of-truth surfaces:
 - Артефакт:
   - ai-models больше не держит stale local pins против platform baseline.
 
-#### Slice 2. Синхронизировать virtualization tool/runtime pins
+#### Slice 2. Сверить reference baselines без retained diff в virtualization
 - Цель:
-  - обновить `deckhouse_lib_helm`, `module-sdk` hooks dependency и live linter pins;
-  - убрать stale version wording.
+  - проверить расхождения относительно `virtualization` и `deckhouse`;
+  - не оставить итоговых code changes в `virtualization`.
 - Файлы/каталоги:
-  - `/Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization/Taskfile.yaml`
-  - `/Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization/Chart.yaml`
-  - `/Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization/requirements.lock`
-  - `/Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization/charts/*`
-  - `/Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization/images/hooks/go.mod`
-  - `/Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization/images/hooks/go.sum`
-  - live Taskfiles with explicit `golangci-lint` bootstrap/version logic
-  - stale docs/comments with explicit old versions
+  - read-only surfaces in `/Users/myskat_90/flant/aleksandr-podmoskovniy/deckhouse`
+  - read-only surfaces in `/Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization`
 - Проверки:
-  - `cd /Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization && helm dependency update`
-  - `cd /Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization/images/hooks && go test ./...`
-  - `rg -n "1\\.55\\.1|0\\.3\\.3|1\\.64\\.8|1\\.52\\.1" -S /Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization`
+  - `git -C /Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization status --short`
 - Артефакт:
-  - virtualization lock/task/hook surfaces согласованы с новым baseline.
+  - reference выводы зафиксированы в bundle, а `virtualization` остаётся без
+    retained diff от этого slice.
 
 #### Slice 3. Финальная consistency sweep
 - Цель:
@@ -61,7 +55,7 @@ source-of-truth surfaces:
   - зафиксировать validations и residual risks.
 - Файлы/каталоги:
   - `plans/active/sync-platform-version-baselines/*`
-  - touched files from slices 1-2
+  - touched files from slice 1
 - Проверки:
   - `git diff --stat -- /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models /Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization`
   - `git status --short /Users/myskat_90/flant/aleksandr-podmoskovniy/ai-models /Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization`
@@ -69,11 +63,9 @@ source-of-truth surfaces:
   - компактный, defendable diff без случайных unrelated изменений.
 
 ### 4. Rollback point
-После slice 1. К этому моменту `ai-models` уже согласован сам по себе, а
-cross-repo changes в `virtualization` ещё не начаты.
+После slice 1. К этому моменту `ai-models` уже согласован сам по себе.
 
 ### 5. Final validation
 - `bash build/base-images/sync-from-deckhouse.sh /Users/myskat_90/flant/aleksandr-podmoskovniy/deckhouse`
-- `cd /Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization && helm dependency update`
-- `cd /Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization/images/hooks && go test ./...`
+- `make verify`
 - `review-gate`

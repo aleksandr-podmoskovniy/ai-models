@@ -28,7 +28,7 @@
 - Внутренний backend остаётся внутренним сервисом модуля, а не публичным API.
 - Storage, auth, monitoring и logging подключены через платформенные механизмы.
 - Нет временных решений без пояснения и без rollback story.
-- Если изменение касается MLflow/DMCR/raw-ingest:
+- Если изменение касается publication backend/DMCR/raw-ingest:
   - ясно, что является source of truth для published artifact;
   - ясно, что хранится только для audit/lineage;
   - нет слепой второй полной копии больших raw blobs без явной причины.

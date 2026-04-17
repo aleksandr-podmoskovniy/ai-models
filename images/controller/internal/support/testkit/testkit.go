@@ -73,24 +73,16 @@ func NewFakeClient(
 
 func HuggingFaceSpec() modelsv1alpha1.ModelSpec {
 	return modelsv1alpha1.ModelSpec{
-		InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 		Source: modelsv1alpha1.ModelSourceSpec{
 			URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1?revision=main",
-		},
-		RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
-			Task: "text-generation",
 		},
 	}
 }
 
 func UploadSpec() modelsv1alpha1.ModelSpec {
 	return modelsv1alpha1.ModelSpec{
-		InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 		Source: modelsv1alpha1.ModelSourceSpec{
 			Upload: &modelsv1alpha1.UploadModelSource{},
-		},
-		RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
-			Task: "text-generation",
 		},
 	}
 }

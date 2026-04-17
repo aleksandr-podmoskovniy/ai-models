@@ -11,99 +11,12 @@ properties:
       - "Info"
       - "Warn"
       - "Error"
-  postgresql:
-    type: object
-    description: Stable PostgreSQL settings exposed by the ai-models module.
-    additionalProperties: false
-    properties:
-      mode:
-        type: string
-        enum:
-          - "Managed"
-          - "External"
-        default: "Managed"
-      managed:
-        type: object
-        additionalProperties: false
-        default:
-          name: ai-models
-          database: ai-models
-          postgresClassName: default
-          createPostgresClass: false
-          storageClassName: ""
-          storageSize: 5Gi
-          memorySize: 1Gi
-          cpuCores: 1
-        properties:
-          name:
-            type: string
-            default: ai-models
-          database:
-            type: string
-            default: ai-models
-          postgresClassName:
-            type: string
-            default: default
-          createPostgresClass:
-            type: boolean
-            default: false
-          storageClassName:
-            type: string
-            default: ""
-          storageSize:
-            type: string
-            default: 5Gi
-          memorySize:
-            type: string
-            default: 1Gi
-          cpuCores:
-            type: integer
-            default: 1
-      external:
-        type: object
-        additionalProperties: false
-        default:
-          host: ""
-          port: 5432
-          database: ai-models
-          user: ai-models
-          sslMode: Require
-          existingSecret: ""
-          existingSecretKey: password
-        properties:
-          host:
-            type: string
-            default: ""
-          port:
-            type: integer
-            default: 5432
-          database:
-            type: string
-            default: ai-models
-          user:
-            type: string
-            default: ai-models
-          sslMode:
-            type: string
-            default: Require
-            enum:
-              - Disable
-              - Require
-              - VerifyCA
-              - VerifyFull
-          existingSecret:
-            type: string
-            default: ""
-          existingSecretKey:
-            type: string
-            default: password
   artifacts:
     type: object
     description: Stable S3-compatible artifact storage settings exposed by ai-models.
     additionalProperties: false
     default:
       bucket: ""
-      pathPrefix: ai-models
       endpoint: ""
       region: us-east-1
       credentialsSecretName: ""
@@ -114,9 +27,6 @@ properties:
       bucket:
         type: string
         default: ""
-      pathPrefix:
-        type: string
-        default: ai-models
       endpoint:
         type: string
         default: ""
@@ -135,48 +45,6 @@ properties:
       usePathStyle:
         type: boolean
         default: true
-  auth:
-    type: object
-    description: Stable authentication settings exposed by the ai-models module.
-    additionalProperties: false
-    default:
-      sso:
-        providerDisplayName: Login with DKP SSO
-        automaticLoginRedirect: true
-        allowedGroups:
-          - admins
-        adminGroups:
-          - admins
-    properties:
-      sso:
-        type: object
-        additionalProperties: false
-        default:
-          providerDisplayName: Login with DKP SSO
-          automaticLoginRedirect: true
-          allowedGroups:
-            - admins
-          adminGroups:
-            - admins
-        properties:
-          providerDisplayName:
-            type: string
-            default: Login with DKP SSO
-          automaticLoginRedirect:
-            type: boolean
-            default: true
-          allowedGroups:
-            type: array
-            items:
-              type: string
-            default:
-              - admins
-          adminGroups:
-            type: array
-            items:
-              type: string
-            default:
-              - admins
   registry:
     type: object
     description: Registry credentials injected by Deckhouse runtime.
@@ -206,34 +74,14 @@ properties:
             type: string
       discoveredDexCA:
         type: string
-        description: CA certificate discovered from Deckhouse Dex public ingress and used by MLflow OIDC runtime.
+        description: CA certificate discovered from platform ingress wiring and reused for module trust propagation.
       moduleConfig:
         type: object
         description: Normalized module configuration consumed by runtime components.
         default:
           logLevel: Info
-          postgresql:
-            mode: Managed
-            managed:
-              name: ai-models
-              database: ai-models
-              postgresClassName: default
-              createPostgresClass: false
-              storageClassName: ""
-              storageSize: 5Gi
-              memorySize: 1Gi
-              cpuCores: 1
-            external:
-              host: ""
-              port: 5432
-              database: ai-models
-              user: ai-models
-              sslMode: Require
-              existingSecret: ""
-              existingSecretKey: password
           artifacts:
             bucket: ""
-            pathPrefix: ai-models
             endpoint: ""
             region: us-east-1
             credentialsSecretName: ""
@@ -258,51 +106,11 @@ properties:
             description: Name of the module registry secret rendered into the module namespace.
             default: ai-models-module-registry
         additionalProperties: false
-      backend:
-        type: object
-        description: Runtime-only backend settings composed from platform defaults and module logic.
-        default:
-          replicas: 1
-          servicePort: 5000
-          containerPort: 5000
-          metrics:
-            enabled: true
-            serviceMonitor:
-              enabled: true
-          resources:
-            requests:
-              cpu: 200m
-              memory: 512Mi
-            limits:
-              cpu: "1"
-              memory: 1Gi
-          extraEnv: {}
-        additionalProperties: true
-      postgresql:
-        type: object
-        description: Runtime-only database wiring for ai-models metadata storage.
-        default:
-          mode: Managed
-          database: ai-models
-          user: ai-models
-          port: 5432
-          sslMode: require
-          managed:
-            name: ai-models
-            postgresClassName: default
-            createPostgresClass: false
-            storageClassName: ""
-            storageSize: 5Gi
-            memorySize: 1Gi
-            cpuCores: 1
-            credentialsSecretName: ai-models-postgresql
-        additionalProperties: true
       artifacts:
         type: object
         description: Runtime-only S3 artifact storage wiring for ai-models.
         default:
           bucket: ""
-          pathPrefix: ai-models
           endpoint: ""
           region: us-east-1
           syncedCredentialsSecretName: ai-models-artifacts
@@ -313,9 +121,6 @@ properties:
           bucket:
             type: string
             default: ""
-          pathPrefix:
-            type: string
-            default: ai-models
           endpoint:
             type: string
             default: ""
@@ -351,7 +156,7 @@ properties:
         default:
           maxConcurrentWorkers: 1
           workVolume:
-            type: EmptyDir
+            type: PersistentVolumeClaim
             emptyDir:
               sizeLimit: 50Gi
             persistentVolumeClaim:
@@ -376,23 +181,6 @@ properties:
           path: /
           className: ""
           tlsSecretName: ingress-tls
-        additionalProperties: true
-      auth:
-        type: object
-        description: Runtime-only authentication settings derived from Deckhouse Dex OIDC SSO, native MLflow workspaces and module runtime wiring.
-        default:
-          adminSecretName: ai-models-backend-auth
-          workspacesEnabled: true
-          dexClientName: ai-models
-          dexClientSecretName: dex-client-ai-models
-          sso:
-            enabled: true
-            providerDisplayName: Login with DKP SSO
-            automaticLoginRedirect: true
-            allowedGroups:
-              - admins
-            adminGroups:
-              - admins
         additionalProperties: true
     additionalProperties: true
 additionalProperties: false

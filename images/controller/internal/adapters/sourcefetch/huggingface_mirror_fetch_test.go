@@ -80,9 +80,6 @@ func TestFetchRemoteModelHuggingFaceUsesSourceMirror(t *testing.T) {
 		t.Fatalf("FetchRemoteModel() error = %v", err)
 	}
 
-	if got, want := len(result.StagedObjects), 0; got != want {
-		t.Fatalf("unexpected staged object count %d", got)
-	}
 	if result.SourceMirror == nil {
 		t.Fatal("expected source mirror snapshot")
 	}

@@ -23,20 +23,8 @@ DMT ?= $(BIN_DIR)/dmt
 MODULE_SDK ?= $(BIN_DIR)/module-sdk
 OPERATOR_SDK ?= $(BIN_DIR)/operator-sdk
 WERF ?= $(shell command -v werf 2>/dev/null || { test -x /opt/homebrew/bin/werf && echo /opt/homebrew/bin/werf; } || { test -x /usr/local/bin/werf && echo /usr/local/bin/werf; })
-DOCKER ?= docker
-BACKEND_UPSTREAM_METADATA ?= $(ROOT)/images/backend/upstream.lock
-BACKEND_VERSION ?= $(shell sed -n 's/^version:[[:space:]]*//p' images/backend/upstream.lock | head -n1)
-BACKEND_NODE_IMAGE ?= node:22.19.0-bookworm-slim@sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90
-BACKEND_PYTHON_IMAGE ?= python:3.10-slim-bullseye@sha256:f1fb49e4d5501ac93d0ca519fb7ee6250842245aba8612926a46a0832a1ed089
-BACKEND_IMAGE_TAG ?= ai-models-backend:$(subst +,-,$(BACKEND_VERSION))
-BACKEND_SOURCE_CACHE_DIR ?= $(ROOT)/.cache/backend-upstream
-BACKEND_WORKTREE_DIR ?= $(ROOT)/.cache/backend-worktree
-BACKEND_DIST_DIR ?= $(ROOT)/.cache/backend-dist
-BACKEND_NODE_MODULES_VOLUME ?= ai-models-backend-js-node-modules
-BACKEND_UI_MAX_OLD_SPACE_SIZE ?= 4096
-OIDC_AUTH_UPSTREAM_METADATA ?= $(ROOT)/images/backend/oidc-auth.lock
 
-.PHONY: ensure-bin-dir ensure-golangci-lint ensure-gocyclo ensure-deadcode ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools coverage-dir api-test controller-test hooks-test dmcr-test controller-coverage-artifacts fmt generate test lint-dmt lint-docs lint-shell lint-controller-complexity lint-controller-size lint-controller-test-size lint-codex-governance lint-thin-reconcilers test-controller-coverage deadcode deadcode-controller deadcode-hooks check-controller-test-evidence lint helper-shell-check helm-template kubeconform render-docs verify verify-ci backend-fetch-source backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check backend-shell-check backend-build-ui backend-build-dist backend-build-image backend-smoke-image backend-build-local werf-build werf-build-dev
+.PHONY: ensure-bin-dir ensure-golangci-lint ensure-gocyclo ensure-deadcode ensure-dmt ensure-module-sdk ensure-operator-sdk ensure-tools ensure-ci-tools coverage-dir api-test controller-test hooks-test dmcr-test controller-coverage-artifacts fmt generate test lint-dmt lint-docs lint-shell lint-controller-complexity lint-controller-size lint-controller-test-size lint-codex-governance lint-thin-reconcilers test-controller-coverage deadcode deadcode-controller deadcode-hooks check-controller-test-evidence lint helper-shell-check helm-template kubeconform render-docs verify verify-ci werf-build werf-build-dev
 
 ensure-bin-dir:
 	@mkdir -p $(BIN_DIR)
@@ -155,48 +143,13 @@ check-controller-test-evidence:
 	@ROOT=$(ROOT) ./tools/check-controller-test-evidence.sh
 
 helper-shell-check:
-	@echo "==> operator helper shell syntax"
-	@bash -n \
-		./tools/libai_models_job.sh \
-		./tools/run_hf_import_job.sh \
-		./tools/run_model_cleanup_job.sh
-
-backend-oidc-auth-patches-check:
-	@tmp_dir="$$(mktemp -d)"; \
-	trap 'rm -rf "$$tmp_dir"' EXIT; \
-	echo "==> oidc-auth patch queue"; \
-	bash ./images/backend/scripts/fetch-oidc-auth-source.sh --metadata "$(OIDC_AUTH_UPSTREAM_METADATA)" --dest "$$tmp_dir/src" $(if $(OIDC_AUTH_SOURCE_DIR),--source "$(OIDC_AUTH_SOURCE_DIR)",) >/dev/null; \
-	bash ./images/backend/scripts/apply-patches.sh --check "$$tmp_dir/src" ./images/backend/oidc-auth-patches
-
-backend-oidc-auth-install-layout-check:
-	@tmp_dir="$$(mktemp -d)"; \
-	trap 'rm -rf "$$tmp_dir"' EXIT; \
-	echo "==> oidc-auth install layout"; \
-	mkdir -p "$$tmp_dir/scripts" "$$tmp_dir/oidc-auth-patches" "$$tmp_dir/metadata" "$$tmp_dir/oidc-auth-ui"; \
-	cp ./images/backend/scripts/install-oidc-auth-from-source.sh "$$tmp_dir/scripts/"; \
-	cp ./images/backend/scripts/fetch-oidc-auth-source.sh "$$tmp_dir/scripts/"; \
-	cp ./images/backend/scripts/apply-patches.sh "$$tmp_dir/scripts/"; \
-	cp ./images/backend/scripts/build-oidc-auth-ui.sh "$$tmp_dir/scripts/"; \
-	cp ./images/backend/oidc-auth.lock "$$tmp_dir/metadata/"; \
-	cp ./images/backend/oidc-auth-patches/*.patch "$$tmp_dir/oidc-auth-patches/"; \
-	printf '%s\n' '<!doctype html><html><body>oidc-auth-ui</body></html>' >"$$tmp_dir/oidc-auth-ui/index.html"; \
-	( cd "$$tmp_dir" && OIDC_AUTH_METADATA_FILE="$$tmp_dir/metadata/oidc-auth.lock" OIDC_AUTH_PATCHES_DIR="$$tmp_dir/oidc-auth-patches" OIDC_AUTH_PREBUILT_UI_DIR="$$tmp_dir/oidc-auth-ui" OIDC_AUTH_SKIP_PIP_INSTALL=true bash "$$tmp_dir/scripts/install-oidc-auth-from-source.sh" >/dev/null )
-
-backend-oidc-auth-werf-layout-check:
-	@echo "==> oidc-auth werf layout"; \
-	awk 'BEGIN { in_backend=0; has_image=0; has_to=0 } \
-		/^---$$/ { if (in_backend) exit; next } \
-		/^image: backend$$/ { in_backend=1; next } \
-		in_backend && /image: backend-oidc-auth-ui-build/ { has_image=1 } \
-		in_backend && /to: \/oidc-auth-ui/ { has_to=1 } \
-		END { if (!(has_image && has_to)) { print "final backend image in images/backend/werf.inc.yaml must import backend-oidc-auth-ui-build to /oidc-auth-ui" > "/dev/stderr"; exit 1 } }' \
-		./images/backend/werf.inc.yaml
-
-backend-runtime-entrypoints-check:
-	@echo "==> backend runtime entrypoints"; \
-	grep -Fq 'ai-models-backend-model-cleanup' ./images/backend/werf.inc.yaml; \
-	grep -Fq 'ai-models-backend-model-cleanup' ./images/backend/Dockerfile.local; \
-	grep -Fq 'ai-models-backend-model-cleanup --help' ./images/backend/scripts/smoke-runtime.sh
+	@echo "==> tools shell syntax"
+	@files="$$(find ./tools -type f -name '*.sh' | sort)"; \
+	if [[ -z "$$files" ]]; then \
+		echo "==> no tools shell scripts to check"; \
+	else \
+		bash -n $$files; \
+	fi
 
 lint: lint-dmt lint-docs lint-shell
 
@@ -209,60 +162,9 @@ kubeconform:
 render-docs:
 	@python3 ./tools/render-docs.py
 
-verify: lint lint-controller-complexity lint-controller-size lint-controller-test-size lint-codex-governance lint-thin-reconcilers helper-shell-check test-controller-coverage check-controller-test-evidence deadcode test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check
+verify: lint lint-controller-complexity lint-controller-size lint-controller-test-size lint-codex-governance lint-thin-reconcilers helper-shell-check test-controller-coverage check-controller-test-evidence deadcode test helm-template kubeconform
 
-verify-ci: lint lint-controller-complexity lint-controller-size lint-controller-test-size lint-codex-governance lint-thin-reconcilers helper-shell-check test-controller-coverage check-controller-test-evidence deadcode test helm-template kubeconform backend-oidc-auth-patches-check backend-oidc-auth-install-layout-check backend-oidc-auth-werf-layout-check backend-runtime-entrypoints-check
-
-backend-fetch-source:
-	@bash ./images/backend/scripts/fetch-source.sh --metadata "$(BACKEND_UPSTREAM_METADATA)" --dest "$(BACKEND_SOURCE_CACHE_DIR)" $(if $(BACKEND_SOURCE_DIR),--source "$(BACKEND_SOURCE_DIR)",)
-
-backend-shell-check:
-	@bash -n ./images/backend/scripts/*.sh
-
-backend-build-ui: backend-fetch-source
-	@rm -rf "$(BACKEND_WORKTREE_DIR)"
-	@mkdir -p "$(BACKEND_WORKTREE_DIR)"
-	@tar -C "$(BACKEND_SOURCE_CACHE_DIR)" -cf - . | tar -C "$(BACKEND_WORKTREE_DIR)" -xf -
-	@bash ./images/backend/scripts/apply-patches.sh "$(BACKEND_WORKTREE_DIR)" ./images/backend/patches
-	@$(DOCKER) run --rm \
-		-v "$(ROOT)":/work \
-		-v "$(BACKEND_NODE_MODULES_VOLUME)":/work/.cache/backend-node-modules \
-		-e BACKEND_UI_MAX_OLD_SPACE_SIZE=$(BACKEND_UI_MAX_OLD_SPACE_SIZE) \
-		-e BACKEND_NODE_MODULES_DIR=/work/.cache/backend-node-modules \
-		-w /work \
-		$(BACKEND_NODE_IMAGE) \
-		bash -lc 'set -euo pipefail; \
-			bash images/backend/scripts/apt-install.sh ca-certificates git python3 make g++; \
-			bash images/backend/scripts/build-ui.sh /work/.cache/backend-worktree'
-
-backend-build-dist: backend-build-ui
-	@rm -rf "$(BACKEND_DIST_DIR)"
-	@mkdir -p "$(BACKEND_DIST_DIR)"
-	@$(DOCKER) run --rm \
-		-v "$(ROOT)":/work \
-		-w /work \
-		$(BACKEND_PYTHON_IMAGE) \
-		bash -lc 'set -euo pipefail; \
-			bash images/backend/scripts/apt-install.sh ca-certificates git; \
-			python3 -m pip install --no-cache-dir --upgrade pip >/tmp/pip.log; \
-			python3 -m pip install --no-cache-dir build setuptools wheel >>/tmp/pip.log; \
-			bash images/backend/scripts/build-distributions.sh /work/.cache/backend-worktree /work/.cache/backend-dist; \
-			bash images/backend/scripts/smoke-release-install.sh /work/.cache/backend-dist'
-
-backend-build-image: backend-build-ui
-	@$(DOCKER) build --progress=plain \
-		--build-arg BACKEND_NODE_IMAGE=$(BACKEND_NODE_IMAGE) \
-		--build-arg BACKEND_PYTHON_IMAGE=$(BACKEND_PYTHON_IMAGE) \
-		--target runtime \
-		-t $(BACKEND_IMAGE_TAG) \
-		-f images/backend/Dockerfile.local \
-		.
-
-backend-smoke-image:
-	@$(DOCKER) run --rm $(BACKEND_IMAGE_TAG) --version
-	@$(DOCKER) run --rm $(BACKEND_IMAGE_TAG) server --help >/dev/null
-
-backend-build-local: backend-build-dist backend-build-image backend-smoke-image
+verify-ci: lint lint-controller-complexity lint-controller-size lint-controller-test-size lint-codex-governance lint-thin-reconcilers helper-shell-check test-controller-coverage check-controller-test-evidence deadcode test helm-template kubeconform
 
 werf-build:
 	@$(WERF) build $(if $(WERF_ENV),--env $(WERF_ENV),)

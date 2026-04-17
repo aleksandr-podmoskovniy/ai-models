@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 
@@ -103,52 +102,24 @@ func InspectRemote(ctx context.Context, reference string, auth modelpackports.Re
 }
 
 func RegistryManifestURL(reference string) (string, error) {
-	cleanReference := strings.TrimSpace(reference)
-	registry, repositoryAndTag, found := strings.Cut(cleanReference, "/")
-	if !found || strings.TrimSpace(registry) == "" || strings.TrimSpace(repositoryAndTag) == "" {
-		return "", fmt.Errorf("invalid OCI reference %q", reference)
+	parsed, err := parseOCIReference(reference)
+	if err != nil {
+		return "", err
 	}
 
-	repository := repositoryAndTag
-	ref := "latest"
-	if repositoryAndDigest, digest, hasDigest := strings.Cut(repositoryAndTag, "@"); hasDigest {
-		repository = repositoryAndDigest
-		ref = digest
-	} else if index := strings.LastIndex(repositoryAndTag, ":"); index >= 0 {
-		repository = repositoryAndTag[:index]
-		ref = repositoryAndTag[index+1:]
-	}
-	if strings.TrimSpace(repository) == "" || strings.TrimSpace(ref) == "" {
-		return "", fmt.Errorf("invalid OCI reference %q", reference)
-	}
-
-	return (&url.URL{
-		Scheme: "https",
-		Host:   registry,
-		Path:   "/v2/" + repository + "/manifests/" + url.PathEscape(ref),
-	}).String(), nil
+	return parsed.manifestURL(parsed.Reference), nil
 }
 
 func RegistryBlobURL(reference, digest string) (string, error) {
-	cleanReference := strings.TrimSpace(strings.SplitN(reference, "@", 2)[0])
-	registry, repositoryAndTag, found := strings.Cut(cleanReference, "/")
-	if !found || strings.TrimSpace(registry) == "" || strings.TrimSpace(repositoryAndTag) == "" {
+	parsed, err := parseOCIReference(reference)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(digest) == "" {
 		return "", fmt.Errorf("invalid OCI reference %q", reference)
 	}
 
-	repository := repositoryAndTag
-	if index := strings.LastIndex(repositoryAndTag, ":"); index >= 0 {
-		repository = repositoryAndTag[:index]
-	}
-	if strings.TrimSpace(repository) == "" || strings.TrimSpace(digest) == "" {
-		return "", fmt.Errorf("invalid OCI reference %q", reference)
-	}
-
-	return (&url.URL{
-		Scheme: "https",
-		Host:   registry,
-		Path:   "/v2/" + repository + "/blobs/" + digest,
-	}).String(), nil
+	return parsed.blobURL(digest), nil
 }
 
 func RegistryHTTPClient(auth modelpackports.RegistryAuth) (*http.Client, error) {

@@ -1,48 +1,51 @@
 # Этапы разработки ai-models
 
-## Этап 1. Managed backend inside the module
+## Этап 1. Phase reset to ai-models-owned publication baseline
 
 ### Что делаем
-- поднимаем внутренний backend как компонент модуля;
-- подключаем PostgreSQL и S3-compatible storage;
-- делаем values, OpenAPI, templates и werf в DKP-манере;
-- включаем базовый monitoring и logging;
-- обеспечиваем рабочий UI и базовый путь входа.
+- фиксируем `Model` / `ClusterModel` как platform-facing contract;
+- держим controller-owned publication в OCI `ModelPack` artifacts;
+- используем внутренний `DMCR` как publication backend;
+- вырезаем historical backend shell из live repo;
+- заменяем transitional publisher на ai-models-owned implementation;
+- удерживаем values, OpenAPI, templates и werf в DKP-манере без backend-driven
+  contract drift.
 
 ### Что не делаем
-- не вводим ещё публичный каталог `Model` / `ClusterModel` как обязательную часть релиза;
-- не делаем distroless и глубокий patching как обязательный результат;
-- не смешиваем задачу backend rollout с задачами inference.
+- не проектируем здесь ещё `DMZ` registry tier, node-local cache daemon или
+  lazy/FUSE runtime paths;
+- не оставляем dual-stack fallback на historical backend или `KitOps`;
+- не тащим runtime/distribution knobs в public `Model.spec`.
 
 ### Критерий выхода
 - модуль можно включить;
-- backend запускается и подключается к зависимостям;
-- UI доступен;
-- базовые smoke-проверки проходят;
+- publication path controller-owned и explainable;
+- backend-centric repo surfaces больше не определяют baseline;
+- базовые smoke-проверки publish/runtime проходят;
 - templates и values проходят рендер и валидацию.
 
-## Этап 2. Model / ClusterModel
+## Этап 2. Distribution and runtime topology
 
 ### Что делаем
-- проектируем и реализуем `Model` и `ClusterModel`;
-- вводим контроллер публикации и синхронизации с внутренним backend;
-- формируем status, conditions и validation rules;
-- делаем platform UX поверх backend `ai-models`.
+- добавляем `DMZ` registry tier поверх canonical OCI artifact publication;
+- проектируем node-local cache и mount delivery для runtime workloads;
+- закрываем large-model operator UX, cache topology и distribution observability;
+- при достаточном сигнале исследуем advanced lazy-loading paths.
 
 ### Что не делаем
-- не меняем без нужды базовый deployment shape внутреннего backend;
-- не раздуваем API деталями внутренних implementation choices.
+- не размываем publication contract деталями distribution topology;
+- не обещаем generic `FUSE` / stream-to-VRAM path без defendable runtime proof.
 
 ### Критерий выхода
-- можно опубликовать модель через DKP API;
-- `status` объясняет состояние публикации;
-- каталог интегрирован с внутренним backend и не требует прямой ручной работы в backend для обычного сценария.
+- distribution topology объяснима и наблюдаема;
+- runtime delivery работает не только как per-pod materialization workaround;
+- большие модели обслуживаются предсказуемо по storage/cache contract.
 
 ## Этап 3. Hardening and long-term support
 
 ### Что делаем
-- controlled upstream patching;
-- distroless для собственного кода и затем, если оправдано, для backend packaging;
+- controlled patching;
+- distroless для собственного кода и затем, если оправдано, для remaining runtime packaging;
 - CVE и dependency hygiene;
 - upgrade and rollback discipline;
 - supply-chain и security improvements.

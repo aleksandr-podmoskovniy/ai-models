@@ -27,12 +27,11 @@ Rules:
 - public DKP API types still live in top-level `api/`.
 
 Current phase-2 slice implemented here:
-- `kitops.lock` and `install-kitops.sh` for the pinned `KitOps` binary
-  that now belongs to the dedicated phase-2 runtime image instead of the
-  backend runtime;
-- `KitOps` installation now lives in its own artifact stage instead of being a
-  side effect of the Go build stage, so external tool packaging no longer hides
-  inside controller compilation;
+- `werf.inc.yaml` now builds controller runtime images without an external
+  publisher binary: the publication path is owned by Go code under
+  `internal/adapters/modelpack/oci`, while final images still consume the
+  module-local `distroless` stage instead of pulling `base/distroless`
+  directly;
 - `werf.inc.yaml` now builds final controller images from the module-local
   `distroless` stage so the runtime base follows the same DKP pattern as
   `gpu-control-plane` and `virtualization`;
@@ -53,11 +52,11 @@ Current phase-2 slice implemented here:
   contract;
 - `internal/ports/modelpack` for replaceable `ModelPack`
   publication/removal/materialization contract;
-- `internal/adapters/modelpack/kitops` for the current `KitOps`-based
-  implementation of that contract;
-- `internal/adapters/modelpack/oci` for shared OCI-side published artifact
-  inspection, `ModelPack` semantic validation, and standalone runtime
-  materialization into a local path from immutable `DMCR` artifacts;
+- `internal/adapters/modelpack/oci` for the ai-models-owned native OCI
+  `ModelPack` implementation: controller-side publish/remove over direct
+  registry HTTP plus shared published-artifact inspection, semantic validation,
+  and standalone runtime materialization into a local path from immutable
+  `DMCR` artifacts;
 - `internal/adapters/k8s/modeldelivery` for reusable consumer-side
   `PodTemplateSpec` mutation over `materialize-artifact`, fixed
   `/data/modelcache` cache-root contract over user-provided storage,
@@ -77,10 +76,9 @@ Current phase-2 slice implemented here:
 - `internal/adapters/sourcefetch` for safe `HuggingFace` source
   acquisition and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport and archive preparation instead of split
-  orchestration in the worker; remote `source.url` bytes now land in the
-  controller-owned `raw/` object subtree first and only then materialize into
-  the bounded publish-worker work volume; shared raw-stage upload/download
-  glue now lives in package-local `rawstage.go`; `HuggingFace` acquisition
+  orchestration in the worker; remote `source.url` bytes now persist through the
+  controller-owned source mirror under the shared `raw/` object subtree before
+  materializing into the bounded publish-worker work volume; `HuggingFace` acquisition
   itself now stays in Go: metadata resolves the exact revision and selected
   files, then a package-local HTTP snapshot downloader materializes only those
   files into the canonical `checkpoint/` tree; provider-card noise such as
@@ -94,7 +92,7 @@ Current phase-2 slice implemented here:
   same traversal in both `Safetensors` and `GGUF`;
 - `internal/domain/ingestadmission` and
   `internal/application/sourceadmission` for the bounded fail-fast admission
-  stage before heavy raw ingest starts;
+  stage before heavy remote fetch/materialization starts;
 - `internal/adapters/modelprofile/safetensors` and
   `internal/adapters/modelprofile/gguf` for ai-inference-oriented metadata
   extraction from normalized model directories, with current live logic based
@@ -174,7 +172,7 @@ Current phase-2 slice implemented here:
   path; the runtime now also syncs the server-side multipart part manifest
   from object storage for resumability/state inspection and persists explicit
   `probing` / `expired` edges instead of keeping them only implicit in probe
-  data or expiry timestamps; once controller takes ownership after raw-stage
+  data or expiry timestamps; once controller takes ownership after upload
   handoff, the gateway now also treats `publishing/completed` as closed
   session phases and rejects any late multipart mutation attempts instead of
   letting the preserved manifest imply a still-open upload;
@@ -191,8 +189,8 @@ Current phase-2 slice implemented here:
   planning use cases;
 - `internal/application/publishaudit` for append-only internal audit/event
   planning: one-time lifecycle edge detection and message shaping for upload
-  session issue, raw staging, remote ingest start, and final publication
-  outcome without introducing a second lifecycle engine;
+  session issue, source fetch start, source-mirror-backed publication, and
+  final publication outcome without introducing a second lifecycle engine;
 - `internal/application/deletion` for delete-time finalizer policy and
   package-local step decisions over cleanup-job progress and registry
   garbage-collection progress instead of hand-assembling the same

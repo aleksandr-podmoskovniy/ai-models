@@ -54,7 +54,6 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 
 	clusterModel := testkit.NewClusterModel()
 	clusterModel.Spec.Source.URL = "https://huggingface.co/deepseek-ai/DeepSeek-R1-GGUF"
-	clusterModel.Spec.InputFormat = modelsv1alpha1.ModelInputFormatGGUF
 	clusterModel.Status = modelsv1alpha1.ModelStatus{
 		Phase: modelsv1alpha1.ModelPhaseFailed,
 		Source: &modelsv1alpha1.ResolvedSourceStatus{
@@ -142,7 +141,7 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 	}, 0)
 }
 
-func TestCollectorFallsBackToPublicSpecWhenStatusIsIncomplete(t *testing.T) {
+func TestCollectorLeavesCalculatedFieldsEmptyWhenStatusIsIncomplete(t *testing.T) {
 	model := testkit.NewModel()
 
 	families := gatherMetrics(t, model)
@@ -169,8 +168,8 @@ func TestCollectorFallsBackToPublicSpecWhenStatusIsIncomplete(t *testing.T) {
 		"namespace":            model.Namespace,
 		"uid":                  string(model.UID),
 		"resolved_source_type": string(modelsv1alpha1.ModelSourceTypeHuggingFace),
-		"format":               string(model.Spec.InputFormat),
-		"task":                 model.Spec.RuntimeHints.Task,
+		"format":               "",
+		"task":                 "",
 		"framework":            "",
 		"artifact_kind":        "",
 	}, 1)

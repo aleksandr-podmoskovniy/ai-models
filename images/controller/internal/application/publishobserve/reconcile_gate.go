@@ -24,7 +24,6 @@ import (
 type CatalogStatusReconcileInput struct {
 	Deleting           bool
 	Source             modelsv1alpha1.ModelSourceSpec
-	RuntimeHints       *modelsv1alpha1.ModelRuntimeHints
 	UploadStagePresent bool
 	Current            modelsv1alpha1.ModelStatus
 	Generation         int64
@@ -58,7 +57,6 @@ func DecideCatalogStatusReconcile(
 
 	mode, err := publicationapp.StartPublication(publicationapp.StartPublicationInput{
 		Source:             input.Source,
-		RuntimeHints:       input.RuntimeHints,
 		UploadStagePresent: input.UploadStagePresent,
 	})
 	if err != nil {

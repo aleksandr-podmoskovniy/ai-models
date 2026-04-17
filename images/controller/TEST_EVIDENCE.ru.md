@@ -87,8 +87,8 @@
 - Decision surface:
   - append-only internal audit/event planning without a second lifecycle truth
   - one-time lifecycle edge detection for upload session issue, remote ingest
-    start, raw staging, and final publication outcome
-  - audit message shaping from internal raw provenance and final OCI outcome
+    start, source mirror publication, and final publication outcome
+  - audit message shaping from internal source provenance and final OCI outcome
 - Primary evidence:
   - `plan_test.go`
 - Residual gaps:
@@ -215,7 +215,7 @@
 
 - Decision surface:
   - source-agnostic input-format validation policy
-  - automatic format detection when `spec.inputFormat` is empty
+  - automatic format detection from actual source contents
   - file keep / benign-drop / hard-reject policy
   - benign-extra stripping before `ModelPack` packaging
   - required file and required asset enforcement
@@ -261,7 +261,7 @@
 - Decision surface:
   - explicit publish-worker Pod resources and bounded snapshot-dir wiring
   - shared publish concurrency gate before Pod creation
-  - controller-owned raw-stage args for remote `source.url` publication
+  - controller-owned object-storage args for remote `source.url` publication
   - projected auth/registry supplement lifecycle around the worker Pod
 - Primary evidence:
   - `build_test.go`
@@ -384,14 +384,14 @@
   - bounded workspace allocation under controller-provided snapshot root
   - cleanup semantics for per-run work directories
   - source-mirror raw provenance over durable mirrored files instead of
-    transient raw-stage copies for remote sources
+    transient remote raw-stage copies for remote sources
   - source-mirror prefix handoff into backend cleanup ownership
   - direct upload / direct `GGUF` acceptance and archive validation on the
     publish path
 - Primary evidence:
   - `run_test.go`
 - Residual gaps:
-  - remote raw-first staging still pays an extra object-storage hop inside the
+  - remote source-mirror path still pays an extra object-storage hop inside the
     same bounded publish worker until a future native encoder/runtime cut
 
 ## `internal/dataplane/artifactcleanup`
@@ -475,9 +475,8 @@
 - Scenario:
   - `Model` in namespace `ai-models-smoke`
   - `source.url=https://huggingface.co/hf-internal-testing/tiny-random-PhiForCausalLM`
-  - `inputFormat=Safetensors`
 - Result:
-  - `RemoteIngestStarted` reached the publish worker successfully;
+  - `RemoteFetchStarted` reached the publish worker successfully;
   - publish then failed on `dmcr /v2/` auth with
     `401 unauthorized: authentication required`.
 - Root-cause proof:
@@ -497,23 +496,22 @@
 - Scenario:
   - `Model` in namespace `ai-models-smoke`
   - `source.url=https://huggingface.co/hf-internal-testing/tiny-random-PhiForCausalLM`
-  - `inputFormat=Safetensors`
 - Result:
   - `DMCR` auth now succeeds:
     - projected write/read passwords match server-side `htpasswd`;
     - direct `/v2/` call with live write credentials returns `200`;
   - publish still fails, but now later in the path with
-    `kitops inspect returned an empty payload`.
+    `legacy post-push inspect returned an empty payload`.
 - Root-cause proof:
   - the published manifest already exists in `DMCR` under the expected
     controller-owned repository path;
   - `HEAD /v2/<repo>/manifests/published` returns `200` and
     `Docker-Content-Digest`;
-  - therefore `pack` and `push` succeeded, and the failure is isolated to the
-    post-push `KitOps inspect --remote` step.
+  - therefore `pack` and `push` succeeded, and the failure was isolated to the
+    historical post-push inspect step.
 - Outcome:
   - this smoke validated Slice 71: digest/manifest inspection must use the OCI
-    registry API directly instead of parsing `KitOps` inspect output.
+    registry API directly instead of parsing legacy CLI inspect output.
 
 ## Live `ModelPack` manifest/config inspection
 
@@ -532,7 +530,7 @@
     - non-empty `modelfs.diffIds`.
 - Outcome:
   - this inspection proved that `ModelPack` semantics live in the published
-    manifest+config pair, not only in the digest or in `KitOps` CLI output;
+    manifest+config pair, not only in the digest or in legacy CLI output;
   - Slice 72 therefore hardened post-push success criteria to validate those
     `ModelPack` fields directly from `DMCR`.
 
@@ -541,8 +539,6 @@
 - Scenario:
   - `Model` in namespace `ai-models-smoke`
   - `source.url=https://huggingface.co/hf-internal-testing/tiny-random-LlamaForCausalLM`
-  - `inputFormat=Safetensors`
-  - `runtimeHints.task=text-generation`
 - Result:
   - controller accepted the spec and started remote ingest;
   - publish then failed fast with:
@@ -569,8 +565,6 @@
 - Scenario:
   - `Model` in namespace `ai-models-smoke`
   - `source.url=https://huggingface.co/google/gemma-4-E2B-it`
-  - `inputFormat=Safetensors`
-  - `runtimeHints.task=text-generation`
   - no explicit `revision` or `authSecretRef`
 - Result:
   - current public manifest shape worked unchanged on the live cluster;
@@ -608,7 +602,7 @@
     manifest.
 - Outcome:
   - users can already publish `Gemma 4 E2B IT` with the current runtime
-    contract;
+    contract using only `spec.source.url`;
   - a future API redesign around `repoID + revision` can still improve UX, but
     it is not required to make the live path work today.
 
@@ -631,20 +625,46 @@
   - direct `tar -tvf` on that layer produced no file entries, i.e. the layer
     was an empty tar shell instead of a real model filesystem.
 - Root-cause proof:
-  - publication code in `internal/adapters/modelpack/kitops/adapter.go`
-    prepared a temporary `kitops` context via:
+  - historical publication code prepared a temporary wrapper context via:
     - temp dir
     - `model -> <checkpointDir>` symlink
-    - `Kitfile` with `model.path: model`;
-  - live artifact shape is consistent with `kitops pack` publishing the symlink
-    shell rather than dereferenced checkpoint contents;
+    - manifest rooted at the symlink instead of the real checkpoint directory;
+  - live artifact shape was consistent with the historical pack step
+    publishing the symlink shell rather than dereferenced checkpoint contents;
   - therefore `Ready` was reached with a false-positive published artifact.
 - Outcome:
-  - the defect required a corrective slice: `kit pack` must run directly on the
-    real model directory with `Kitfile model.path: .`, not on a symlink-based
-    wrapper context;
+  - the defect required a corrective slice: native publication must package the
+    real model directory directly, not a symlink-based wrapper context;
   - this path also avoids introducing one more full local copy of the model
-    just to satisfy `kitops`.
+    just to satisfy a historical external publisher.
+
+## Native publisher round-trip proof
+
+- Scenario:
+  - `go test ./internal/adapters/modelpack/oci -run TestAdapterPublishMaterializeAndRemove`
+  - in-memory TLS registry with the same manifest/config/blob contract that the
+    live materializer reads from `DMCR`
+- Result:
+  - ai-models-owned native publisher emitted:
+    - `artifactType=application/vnd.cncf.model.manifest.v1+json`
+    - config blob with `descriptor.name=model`
+    - one weight layer tar annotated with
+      `org.cncf.model.filepath=model`;
+  - the test registry observed a real `PATCH` blob-upload step before final
+    `PUT ?digest=...`, i.e. the layer path now streams instead of writing a
+    full temporary tar file to local disk first;
+  - standalone materializer restored the published payload under contract path
+    `model/` and preserved nested files;
+  - registry-side `DELETE` by immutable manifest digest removed the artifact and
+    made subsequent inspect return `404`.
+- Outcome:
+  - current live publisher no longer depends on `KitOps` or another external
+    binary;
+  - worst-case local full-size copies on the publish-worker path are reduced to
+    the existing `checkpointDir`; the layer bytes themselves now stream into
+    the registry upload protocol;
+  - publish, inspect/materialize and cleanup now share one ai-models-owned OCI
+    contract end-to-end.
 
 ## Live `Gemma 4` smoke after source-mirror transport landing
 
@@ -655,7 +675,7 @@
 - Result:
   - object was accepted, but failed before resolved revision/artifact publish;
   - status and events showed:
-    - `RemoteIngestStarted`
+    - `RemoteFetchStarted`
     - `PublicationFailed`
     - `Put "https://s3.api.apiac.ru/.../UploadPart...": tls: failed to verify certificate: x509: certificate signed by unknown authority`
 - Root-cause proof:

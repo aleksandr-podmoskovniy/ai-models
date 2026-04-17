@@ -73,21 +73,20 @@ func TestPreflight(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid declared format fails closed", func(t *testing.T) {
+	t.Run("unsupported source fails closed", func(t *testing.T) {
 		t.Parallel()
 
 		err := Preflight(t.Context(), PreflightInput{
 			Owner:    owner,
 			Identity: identity,
 			Spec: modelsv1alpha1.ModelSpec{
-				InputFormat: modelsv1alpha1.ModelInputFormat("Broken"),
 				Source: modelsv1alpha1.ModelSourceSpec{
-					URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
+					URL: "http://example.com/model",
 				},
 			},
 		})
 		if err == nil {
-			t.Fatal("expected invalid input format error")
+			t.Fatal("expected source validation error")
 		}
 	})
 

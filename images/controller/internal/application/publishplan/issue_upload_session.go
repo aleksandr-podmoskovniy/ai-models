@@ -31,14 +31,10 @@ type UploadSessionIssueRequest struct {
 	OwnerName      string
 	OwnerNamespace string
 	Identity       publicationdata.Identity
-	InputFormat    modelsv1alpha1.ModelInputFormat
 	Source         modelsv1alpha1.ModelSourceSpec
 }
 
-type UploadSessionPlan struct {
-	ExpectedSizeBytes   *int64
-	DeclaredInputFormat modelsv1alpha1.ModelInputFormat
-}
+type UploadSessionPlan struct{}
 
 func IssueUploadSession(request UploadSessionIssueRequest) (UploadSessionPlan, error) {
 	if err := ingestadmission.ValidateUploadSession(ingestadmission.UploadSession{
@@ -48,9 +44,7 @@ func IssueUploadSession(request UploadSessionIssueRequest) (UploadSessionPlan, e
 			Namespace: request.OwnerNamespace,
 			UID:       request.OwnerUID,
 		},
-		Identity:            request.Identity,
-		DeclaredInputFormat: request.InputFormat,
-		ExpectedSizeBytes:   expectedSizeBytes(request.Source),
+		Identity: request.Identity,
 	}); err != nil {
 		return UploadSessionPlan{}, err
 	}
@@ -62,17 +56,7 @@ func IssueUploadSession(request UploadSessionIssueRequest) (UploadSessionPlan, e
 		return UploadSessionPlan{}, fmt.Errorf("upload session only supports source type %q", modelsv1alpha1.ModelSourceTypeUpload)
 	}
 
-	return UploadSessionPlan{
-		ExpectedSizeBytes:   request.Source.Upload.ExpectedSizeBytes,
-		DeclaredInputFormat: request.InputFormat,
-	}, nil
-}
-
-func expectedSizeBytes(source modelsv1alpha1.ModelSourceSpec) int64 {
-	if source.Upload == nil || source.Upload.ExpectedSizeBytes == nil {
-		return 0
-	}
-	return *source.Upload.ExpectedSizeBytes
+	return UploadSessionPlan{}, nil
 }
 
 func uploadSessionMode(source modelsv1alpha1.ModelSourceSpec) (ExecutionMode, error) {

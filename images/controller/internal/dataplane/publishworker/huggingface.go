@@ -19,7 +19,6 @@ package publishworker
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -28,7 +27,6 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
-	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 func publishFromHuggingFace(ctx context.Context, options Options) (publicationartifact.Result, error) {
@@ -45,7 +43,6 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 	logger.Info(
 		"huggingface source fetch started",
 		slog.String("requestedRevision", strings.TrimSpace(options.Revision)),
-		slog.Bool("rawStageEnabled", remoteRawStage(options) != nil),
 		slog.Bool("sourceMirrorEnabled", remoteSourceMirror(options) != nil),
 	)
 
@@ -63,8 +60,6 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 		slog.Int("selectedFileCount", len(remote.SelectedFiles)),
 		slog.Int64("sourceMirrorObjectCount", sourceMirrorObjectCount(remote.SourceMirror)),
 		slog.Int64("sourceMirrorSizeBytes", sourceMirrorSizeBytes(remote.SourceMirror)),
-		slog.Int("rawStageObjectCount", len(remote.StagedObjects)),
-		slog.Int64("rawStageSizeBytes", stagedObjectsSizeBytes(remote.StagedObjects)),
 	)
 	if len(remote.SelectedFiles) > 0 {
 		logger.Debug("huggingface selected file sample", slog.Any("selectedFilesSample", sampleStrings(remote.SelectedFiles, 8)))
@@ -77,35 +72,12 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 			License:      remote.Metadata.License,
 			SourceRepoID: remote.Metadata.SourceRepoID,
 		},
-	}, fmt.Sprintf("Published from Hugging Face source %s", options.HFModelID))
+	})
 	if err != nil {
-		cleanupErr := cleanupRemoteStagedObjects(ctx, options, remote.StagedObjects)
-		if cleanupErr != nil {
-			return publicationartifact.Result{}, errors.Join(err, cleanupErr)
-		}
 		return publicationartifact.Result{}, err
 	}
 
-	if len(remote.StagedObjects) > 0 {
-		cleanupStarted := time.Now()
-		logger.Info(
-			"huggingface raw staging cleanup started",
-			slog.Int("rawStageObjectCount", len(remote.StagedObjects)),
-			slog.Int64("rawStageSizeBytes", stagedObjectsSizeBytes(remote.StagedObjects)),
-		)
-		if err := cleanupRemoteStagedObjects(ctx, options, remote.StagedObjects); err != nil {
-			return publicationartifact.Result{}, err
-		}
-		logger.Info(
-			"huggingface raw staging cleanup completed",
-			slog.Int64("durationMs", time.Since(cleanupStarted).Milliseconds()),
-		)
-	}
-
-	rawSource := remoteRawProvenance(options, remote.StagedObjects)
-	if remote.SourceMirror != nil {
-		rawSource = sourceMirrorRawProvenance(options, remote.SourceMirror)
-	}
+	rawSource := sourceMirrorRawProvenance(options, remote.SourceMirror)
 
 	result := buildBackendResult(
 		publicationdata.SourceProvenance{
@@ -135,7 +107,6 @@ func fetchRemote(ctx context.Context, options Options, prefix string) (sourcefet
 		Workspace:       workspace,
 		RequestedFormat: options.InputFormat,
 		HFToken:         options.HFToken,
-		RawStage:        remoteRawStage(options),
 		SourceMirror:    remoteSourceMirror(options),
 	})
 	if err != nil {
@@ -177,14 +148,6 @@ func sourceMirrorSizeBytes(snapshot *sourcefetch.SourceMirrorSnapshot) int64 {
 		return 0
 	}
 	return snapshot.SizeBytes
-}
-
-func stagedObjectsSizeBytes(objects []cleanuphandle.UploadStagingHandle) int64 {
-	var total int64
-	for _, object := range objects {
-		total += object.SizeBytes
-	}
-	return total
 }
 
 func sampleStrings(values []string, limit int) []string {

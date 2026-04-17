@@ -25,7 +25,6 @@ import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
 	sourcemirrorports "github.com/deckhouse/ai-models/controller/internal/ports/sourcemirror"
-	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 var (
@@ -95,11 +94,6 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 		return RemoteResult{}, err
 	}
 
-	stagedObjects, err := stageHuggingFaceRawSnapshot(ctx, logger, snapshotDir, selectedFiles, sourceMirrorSnapshot, options.RawStage)
-	if err != nil {
-		return RemoteResult{}, err
-	}
-
 	modelDir := filepath.Join(options.Workspace, "checkpoint")
 	if err := materializeAndValidateHuggingFaceModel(logger, snapshotDir, modelDir, selectedFiles, inputFormat); err != nil {
 		return RemoteResult{}, err
@@ -121,8 +115,7 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 			License:      info.License,
 			SourceRepoID: info.ID,
 		},
-		StagedObjects: stagedObjects,
-		SourceMirror:  sourceMirrorSnapshot,
+		SourceMirror: sourceMirrorSnapshot,
 	}, nil
 }
 
@@ -167,7 +160,6 @@ func resolveHuggingFaceSelection(
 		"huggingface source files selected",
 		slog.String("resolvedInputFormat", string(inputFormat)),
 		slog.Int("selectedFileCount", len(selectedFiles)),
-		slog.Bool("rawStageEnabled", rawStageEnabled(options.RawStage)),
 		slog.Bool("sourceMirrorEnabled", options.SourceMirror != nil),
 	)
 	if len(selectedFiles) > 0 {
@@ -254,33 +246,6 @@ func downloadHuggingFaceSnapshot(
 	return nil
 }
 
-func stageHuggingFaceRawSnapshot(
-	ctx context.Context,
-	logger *slog.Logger,
-	snapshotDir string,
-	selectedFiles []string,
-	sourceMirrorSnapshot *SourceMirrorSnapshot,
-	rawStage *RawStageOptions,
-) ([]cleanuphandle.UploadStagingHandle, error) {
-	if sourceMirrorSnapshot != nil || !rawStageEnabled(rawStage) {
-		return nil, nil
-	}
-
-	started := time.Now()
-	logger.Info("huggingface raw staging started", slog.Int("selectedFileCount", len(selectedFiles)))
-	stagedObjects, err := stageHuggingFaceSnapshotFiles(ctx, snapshotDir, selectedFiles, *rawStage)
-	if err != nil {
-		return nil, err
-	}
-	logger.Info(
-		"huggingface raw staging completed",
-		slog.Int64("durationMs", time.Since(started).Milliseconds()),
-		slog.Int("rawStageObjectCount", len(stagedObjects)),
-		slog.Int64("rawStageSizeBytes", stagedObjectBytes(stagedObjects)),
-	)
-	return stagedObjects, nil
-}
-
 func materializeAndValidateHuggingFaceModel(
 	logger *slog.Logger,
 	snapshotDir string,
@@ -308,14 +273,6 @@ func materializeAndValidateHuggingFaceModel(
 		slog.Int64("durationMs", time.Since(validateStarted).Milliseconds()),
 	)
 	return nil
-}
-
-func stagedObjectBytes(objects []cleanuphandle.UploadStagingHandle) int64 {
-	var total int64
-	for _, object := range objects {
-		total += object.SizeBytes
-	}
-	return total
 }
 
 func sampleRemoteFiles(files []string, limit int) []string {

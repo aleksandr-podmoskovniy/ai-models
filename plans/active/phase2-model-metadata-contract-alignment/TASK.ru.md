@@ -1,158 +1,155 @@
-# Phase 2: align model metadata contract with internal ADR semantics
+## 1. Заголовок
 
-## Контекст
+Свести `Model` / `ClusterModel` public `spec` к source-only contract
 
-Текущий public contract в `ai-models` смешивает разные semantic layers:
+## 2. Контекст
 
-- `spec.launchPolicy.allowedRuntimes` и `status.resolved.compatibleRuntimes`
-  используют значения `KServe` / `KubeRay`, хотя это topology/orchestration
-  choices, а не inference runtime implementations;
-- `status.resolved.supportedEndpointTypes` публикует transport-facing значения
-  вроде `OpenAIChatCompletions`, тогда как platform contract и `ai-inference`
-  ADR живут в semantic endpoint types `Chat`, `TextGeneration`, `Embeddings`,
-  `Rerank`, `SpeechToText`, `Translation`;
-- `spec.runtimeHints.engines` используется как публичный источник
-  `compatibleRuntimes`, хотя это не рассчитанная metadata модели, а ручной
-  hint/override.
-- `status.conditions` и delete-time status сейчас тоже расползлись:
-  API содержит `Accepted`, `UploadReady`, `ArtifactPublished`,
-  `MetadataReady`, `Validated`, `CleanupCompleted`, `Ready`, хотя ADR задаёт
-  только короткий набор базовых platform-facing conditions;
-- `CleanupCompleted` живёт отдельно от основного publish lifecycle и делает
-  delete-path визуально heavier, чем нужно для public contract;
-- `Ready` сейчас местами дублирует failure reason конкретного substage вместо
-  того, чтобы оставаться итоговым usability signal.
+Текущий phase-2 public contract перегружен полями, которые пользователь не
+должен руками рассчитывать:
 
-Внутренние ADR в
-`/Users/myskat_90/flant/aleksandr-podmoskovniy/internal-docs/2026-03-18-ai-models-catalog.md`
-и
-`/Users/myskat_90/flant/aleksandr-podmoskovniy/internal-docs/2026-03-18-ai-inference-service.md`
-задают другую и более устойчивую рамку:
+- `spec.inputFormat`
+- `spec.runtimeHints`
+- `spec.modelType`
+- `spec.usagePolicy`
+- `spec.launchPolicy`
+- `spec.optimization`
+- `spec.displayName`
+- `spec.description`
 
-- `ai-models` публикует platform-facing semantic metadata о модели;
-- `ai-inference` отдельно выбирает и запускает конкретный inference runtime;
-- runtime implementation examples там: `vLLM`, `Triton`, `Ollama`, `SGLang`,
-  `Ray/vLLM`;
-- `KubeRay` относится к distributed launch topology, а не к типу модели.
+Live controller уже умеет сам вычислять значительную часть model metadata из
+реального содержимого checkpoint'а и source-specific hints. При этом текущий
+spec заставляет пользователя разбираться в формате модели, task,
+model-type/policy semantics и launch hints, хотя это уже controller-owned
+metadata path.
 
-Нужно привести текущий repo contract к этой рамке, не вытаскивая внутренние
-backend/runtime детали в public API.
+Пользовательский запрос жёсткий и оправданный: оставить в public `spec` только
+то, что действительно выражает desired source of truth, а всё вычислимое
+перенести в calculated metadata/status.
 
-## Постановка задачи
+## 3. Постановка задачи
 
-Переделать phase-2 metadata/public contract так, чтобы:
+Нужно упростить public API `Model` / `ClusterModel` до source-only contract.
 
-- `supportedEndpointTypes` стали platform semantic endpoint types;
-- runtime compatibility перестала описывать `KServe` / `KubeRay` и была либо
-  inference-runtime facing, либо отсутствовала там, где controller не может
-  честно её определить;
-- `spec.runtimeHints` перестал нести публичный runtime-engine contract и
-  остался только для live publication-time hints, которые реально нужны
-  controller'у сейчас.
-- `status.conditions` и `status.phase` остались короткими, explainable и
-  согласованными с ADR:
-  минимальный набор condition types без decorative controller-internal stages.
-- platform-wide naming surface вокруг AI API был выровнен под единый prefix
-  `ai.deckhouse.io`, а не `ai-models.deckhouse.io`, чтобы `Model`,
-  будущие inference resources и higher-level AI services жили под одной
-  API/annotation namespace и различались по `kind`, а не по отдельным group
-  prefixes.
+Целевой public `spec`:
 
-## Scope
+```yaml
+spec:
+  source:
+    url: https://huggingface.co/... | null
+    authSecretRef:
+      namespace: ""
+      name: ""
+    upload: {}
+```
 
-- обновить `Model` / `ClusterModel` API types вокруг runtime/endpoint metadata;
-- переименовать public API group, generated CRD names и связанные platform
-  prefixes c `ai-models.deckhouse.io` на `ai.deckhouse.io`;
-- обновить controller profile resolution, publication snapshot и status
-  projection;
-- упростить public condition/status contract вокруг publish/delete lifecycle;
-- обновить policy validation и current docs/test evidence;
-- выровнять repo wording с internal ADR semantics по runtime vs topology и
-  unified AI API naming.
+Где:
 
-## Non-goals
+- `source.url` остаётся для remote source;
+- `source.upload: {}` остаётся как явный discriminator upload-session path;
+- `source.authSecretRef` остаётся только для private/gated remote source и не
+  используется для upload path;
+- всё остальное либо вычисляется controller'ом, либо публикуется только в
+  `status.resolved`.
 
-- не проектировать весь `ai-inference` API в этом репозитории;
-- не добавлять сейчас новые runtime engines или реальный inference scheduler;
-- не переписывать весь taxonomy model types beyond the minimum needed for this
-  contract cleanup;
-- не смешивать этот workstream с предыдущим DMCR GC slice.
+При этом нужно:
 
-## Затрагиваемые области
+- убрать spec-driven policy validation;
+- перестать требовать от пользователя `inputFormat` и `task`;
+- выровнять upload path так, чтобы он жил без declared format / expected size
+  contract из public `spec`;
+- сохранить `Model` и `ClusterModel` семантически одинаковыми.
+
+## 4. Scope
+
+- упростить `api/core/v1alpha1` до source-only `spec`;
+- перегенерить CRD/codegen;
+- убрать из controller/runtime зависимость от spec-driven metadata/policy
+  полей;
+- упростить upload-session contract, где declared format и expected size больше
+  не приходят из public `spec`;
+- перенести model metadata intent в calculated `status.resolved`;
+- синхронизировать docs и evidence с новым minimal contract.
+
+## 5. Non-goals
+
+- не проектировать новый inference API;
+- не добавлять новый public metadata block вместо удалённых полей;
+- не расширять source provider tree beyond current `source.url` / `source.upload`;
+- не делать в этом slice full redesign of all status fields, если они уже
+  описывают calculated metadata defendably;
+- не менять publish byte-path, storage или DMCR contract.
+
+## 6. Затрагиваемые области
 
 - `api/core/v1alpha1/*`
 - `api/core/*`
 - `api/scripts/*`
 - `crds/*`
-- `templates/controller/*`
 - `images/controller/internal/application/publishplan/*`
+- `images/controller/internal/application/publishobserve/*`
+- `images/controller/internal/domain/ingestadmission/*`
 - `images/controller/internal/domain/publishstate/*`
-- `images/controller/internal/publishedsnapshot/*`
-- `images/controller/internal/dataplane/publishworker/*`
-- `images/controller/internal/adapters/modelprofile/*`
+- `images/controller/internal/controllers/catalogstatus/*`
 - `images/controller/internal/adapters/k8s/sourceworker/*`
-- `images/controller/internal/controllers/workloaddelivery/*`
-- `images/controller/internal/controllers/catalogcleanup/*`
-- `images/controller/internal/support/*`
-- `api/README.md`
-- `images/controller/README.md`
-- `images/controller/STRUCTURE.ru.md`
-- `images/controller/TEST_EVIDENCE.ru.md`
+- `images/controller/internal/adapters/k8s/uploadsession/*`
+- `images/controller/internal/adapters/k8s/uploadsessionstate/*`
+- `images/controller/internal/dataplane/publishworker/*`
+- `images/controller/internal/dataplane/uploadsession/*`
+- `images/controller/internal/adapters/modelprofile/*`
+- `images/controller/internal/support/testkit/*`
 - `docs/CONFIGURATION.md`
 - `docs/CONFIGURATION.ru.md`
+- `images/controller/README.md`
+- `images/controller/TEST_EVIDENCE.ru.md`
 - `/Users/myskat_90/flant/aleksandr-podmoskovniy/internal-docs/2026-03-18-ai-models-catalog.md`
 
-## Критерии приёмки
+## 7. Критерии приёмки
 
-- `status.resolved.supportedEndpointTypes` использует platform semantic values,
-  согласованные с `ai-inference` ADR и `spec.usagePolicy.allowedEndpointTypes`;
-- `spec.launchPolicy.allowedRuntimes` / `preferredRuntime` больше не используют
-  topology terms `KServe` / `KubeRay`;
-- controller больше не строит `compatibleRuntimes` из
-  `spec.runtimeHints.engines`;
-- `spec.runtimeHints` содержит только hints, реально нужные publication path
-  сейчас;
-- `status.resolved.compatibleRuntimes` не заполняется фиктивными значениями в
-  тех случаях, где controller не может defendably вывести совместимость;
-- public `status.conditions` сведён к минимальному набору базовых
-  platform-facing conditions без `Accepted`, `UploadReady` и
-  `CleanupCompleted`;
-- `Ready` остаётся итоговым usability signal, а не second copy reason для
-  каждого внутреннего шага;
-- delete path не требует отдельного cleanup-only public condition и остаётся
-  объяснимым через `phase=Deleting` плюс итоговую `Ready` semantics;
-- policy validation остаётся согласованной с новым public contract и не ломает
-  `Model` / `ClusterModel` lifecycle;
-- docs и test evidence объясняют новый split:
-  model metadata vs inference runtime vs distributed topology.
-- `Model` / `ClusterModel` CRD group, generated CRD names, controller RBAC and
-  repo docs используют единый platform prefix `ai.deckhouse.io`;
-- controller-owned annotations, labels, finalizers и helper constants больше не
-  держат старый `ai-models.deckhouse.io` prefix там, где они являются частью
-  platform-facing naming surface;
-- generated artifacts (`crds/*`, codegen verify scripts) согласованы с новым
-  API group и не требуют ручного patching после regenerate;
-- ADR и repo docs больше не расходятся с live code по API group, source
-  contract и minimal status model.
+- Public `ModelSpec` / `ClusterModelSpec` больше не содержат:
+  - `displayName`
+  - `description`
+  - `modelType`
+  - `inputFormat`
+  - `runtimeHints`
+  - `usagePolicy`
+  - `launchPolicy`
+  - `optimization`
+- В public `spec` остаётся только `source`:
+  - `source.url`
+  - `source.authSecretRef`
+  - `source.upload`
+- `source.upload` не требует дополнительных public child fields для happy path.
+- `source.authSecretRef` остаётся разрешённым только для remote URL source.
+- Controller больше не блокирует upload source из-за отсутствия
+  `spec.runtimeHints.task`.
+- Upload path больше не зависит от `spec.inputFormat` и
+  `spec.source.upload.expectedSizeBytes`.
+- Remote path больше не зависит от `spec.inputFormat`; input format
+  определяется автоматически по remote files.
+- Calculated metadata о формате, task, family, endpoints, runtimes и launch
+  hints остаётся только в `status.resolved`.
+- `status.conditions` больше не несут spec-policy mismatch reasons, которые
+  опирались на удалённые public knobs.
+- Generated CRD, codegen verify scripts, docs и examples согласованы с новым
+  source-only contract.
 
 ### Architecture acceptance criteria
 
-- inference runtime brands и distributed topology не смешаны в одном enum;
-- public `spec/status` не зависят от backend-private or orchestration-private
-  implementation details;
-- controller adapters остаются разделены по use-case / port / adapter, без
-  wrapper-on-wrapper refactor;
-- changes stay bounded to metadata/public contract and do not spill into DMCR,
-  backend, or workload delivery runtime behavior.
-- API group rename делается как один platform naming decision, а не
-  patchwork-set of local aliases.
+- public desired state описывает только источник модели, а не controller-owned
+  publication metadata;
+- computed model metadata не утекла обратно в новый spec под другими именами;
+- upload-session и publish-worker runtime не получили новый скрытый spec-proxy
+  contract вместо удалённых полей;
+- `Model` и `ClusterModel` остаются одним и тем же semantic contract с разным
+  scope, без divergence between namespaced and cluster behavior.
 
-## Риски
+## 8. Риски
 
-- можно сломать backward compatibility тестов и status projection;
-- можно оставить hybrid cluster/runtime surface, где часть code/docs/rbac/crds
-  уже на `ai.deckhouse.io`, а часть всё ещё на `ai-models.deckhouse.io`;
-- можно оставить полурабочий hybrid contract, где часть кода живёт в старых
-  `KServe/KubeRay`, а часть уже в `VLLM/...`;
-- можно переусложнить runtime compatibility logic без реального source of
-  truth и снова получить guessed metadata вместо defendable metadata.
+- для upload `GGUF` path может не остаться честного task inference, если
+  текущий resolver всё ещё требует explicit task;
+- можно сломать upload-session flow, если удалить declared format / expected
+  size из spec, но не выровнять secret/runtime payloads;
+- можно оставить hybrid docs/CRD/tests, где часть surface уже source-only, а
+  часть всё ещё ждёт старые поля;
+- можно неявно потерять полезную validation semantics, если убрать spec knobs
+  без замены на defendable calculated metadata.

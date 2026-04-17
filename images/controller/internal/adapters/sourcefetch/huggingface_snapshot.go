@@ -17,63 +17,8 @@ limitations under the License.
 package sourcefetch
 
 import (
-	"context"
-	"os"
 	"path/filepath"
-
-	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
-
-func stageHuggingFaceSnapshotFiles(
-	ctx context.Context,
-	snapshotDir string,
-	files []string,
-	rawStage RawStageOptions,
-) ([]cleanuphandle.UploadStagingHandle, error) {
-	if !rawStageEnabled(&rawStage) {
-		return nil, nil
-	}
-
-	stagedObjects := make([]cleanuphandle.UploadStagingHandle, 0, len(files))
-	for _, relativePath := range files {
-		cleanPath, err := cleanRemoteRelativePath(relativePath)
-		if err != nil {
-			return nil, err
-		}
-
-		sourcePath := filepath.Join(snapshotDir, cleanPath)
-		sourceInfo, err := os.Stat(sourcePath)
-		if err != nil {
-			return nil, err
-		}
-
-		stream, err := os.Open(sourcePath)
-		if err != nil {
-			return nil, err
-		}
-
-		handle, stageErr := stageRawObject(
-			ctx,
-			rawStage,
-			cleanPath,
-			filepath.Base(cleanPath),
-			sourceInfo.Size(),
-			"",
-			stream,
-		)
-		closeErr := stream.Close()
-		if stageErr != nil {
-			return nil, stageErr
-		}
-		if closeErr != nil {
-			return nil, closeErr
-		}
-
-		stagedObjects = append(stagedObjects, handle)
-	}
-
-	return stagedObjects, nil
-}
 
 func materializeHuggingFaceSnapshot(snapshotDir, destination string, files []string) error {
 	for _, relativePath := range files {

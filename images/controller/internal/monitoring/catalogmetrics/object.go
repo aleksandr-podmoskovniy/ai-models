@@ -124,22 +124,18 @@ func effectiveSourceType(spec modelsv1alpha1.ModelSpec, status modelsv1alpha1.Mo
 }
 
 func effectiveFormat(spec modelsv1alpha1.ModelSpec, status modelsv1alpha1.ModelStatus) string {
+	_ = spec
 	if status.Resolved != nil && strings.TrimSpace(status.Resolved.Format) != "" {
 		return status.Resolved.Format
-	}
-	if strings.TrimSpace(string(spec.InputFormat)) != "" {
-		return string(spec.InputFormat)
 	}
 
 	return ""
 }
 
 func effectiveTask(spec modelsv1alpha1.ModelSpec, status modelsv1alpha1.ModelStatus) string {
+	_ = spec
 	if status.Resolved != nil && strings.TrimSpace(status.Resolved.Task) != "" {
 		return status.Resolved.Task
-	}
-	if spec.RuntimeHints != nil {
-		return trimString(spec.RuntimeHints.Task)
 	}
 
 	return ""

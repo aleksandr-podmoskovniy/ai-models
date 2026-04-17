@@ -43,7 +43,6 @@ func TestFetchRemoteModelHuggingFaceUsesSnapshotDownloaderWithoutSourceMirror(t 
 		}, nil
 	}
 
-	staging := newFakeUploadStaging()
 	downloader := &fakeHuggingFaceSnapshotDownloader{}
 	newHuggingFaceSnapshotDownloader = func() huggingFaceSnapshotDownloader {
 		return downloader
@@ -53,11 +52,6 @@ func TestFetchRemoteModelHuggingFaceUsesSnapshotDownloaderWithoutSourceMirror(t 
 		URL:       "https://huggingface.co/deepseek-ai/DeepSeek-R1?revision=main",
 		Workspace: t.TempDir(),
 		HFToken:   "hf-token",
-		RawStage: &RawStageOptions{
-			Bucket:    "artifacts",
-			KeyPrefix: "raw/1111-2222/source-url",
-			Client:    staging,
-		},
 	})
 	if err != nil {
 		t.Fatalf("FetchRemoteModel() error = %v", err)
@@ -84,14 +78,8 @@ func TestFetchRemoteModelHuggingFaceUsesSnapshotDownloaderWithoutSourceMirror(t 
 	if got, want := result.Metadata.SourceRepoID, "deepseek-ai/DeepSeek-R1"; got != want {
 		t.Fatalf("unexpected source repo ID %q", got)
 	}
-	if got, want := len(result.StagedObjects), 2; got != want {
-		t.Fatalf("unexpected staged object count %d", got)
-	}
-	if got, want := string(staging.objects["artifacts/raw/1111-2222/source-url/config.json"]), `{"architectures":["LlamaForCausalLM"]}`; got != want {
-		t.Fatalf("unexpected raw config payload %q", got)
-	}
-	if got, want := string(staging.objects["artifacts/raw/1111-2222/source-url/model.safetensors"]), "tensor-payload"; got != want {
-		t.Fatalf("unexpected raw model payload %q", got)
+	if result.SourceMirror != nil {
+		t.Fatalf("unexpected source mirror snapshot %#v", result.SourceMirror)
 	}
 	if payload, err := os.ReadFile(filepath.Join(result.ModelDir, "config.json")); err != nil {
 		t.Fatalf("ReadFile(config.json) error = %v", err)

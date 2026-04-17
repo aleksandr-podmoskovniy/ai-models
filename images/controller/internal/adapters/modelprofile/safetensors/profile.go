@@ -49,9 +49,6 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 	architecture := resolveArchitecture(config)
 	family := resolveFamily(config, architecture)
 	task := resolveTask(config, architecture, input.Task, input.TaskHint)
-	if task == "" {
-		return publicationdata.ResolvedProfile{}, errors.New("resolved task must not be empty")
-	}
 	contextWindow := detectContextWindow(config)
 	quantization := detectQuantization(config)
 	precision := detectPrecision(config, quantization)

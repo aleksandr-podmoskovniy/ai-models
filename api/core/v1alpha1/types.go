@@ -20,24 +20,8 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // ModelSpec is the shared desired state for both Model and ClusterModel.
 // +kubebuilder:validation:XValidation:rule="self.source == oldSelf.source",message="spec.source is immutable"
-// +kubebuilder:validation:XValidation:rule="(!has(self.inputFormat) && !has(oldSelf.inputFormat)) || (has(self.inputFormat) && has(oldSelf.inputFormat) && self.inputFormat == oldSelf.inputFormat)",message="spec.inputFormat is immutable"
-// +kubebuilder:validation:XValidation:rule="(!has(self.runtimeHints) && !has(oldSelf.runtimeHints)) || (has(self.runtimeHints) && has(oldSelf.runtimeHints) && self.runtimeHints == oldSelf.runtimeHints)",message="spec.runtimeHints is immutable"
-// +kubebuilder:validation:XValidation:rule="(!has(self.modelType) && !has(oldSelf.modelType)) || (has(self.modelType) && has(oldSelf.modelType) && self.modelType == oldSelf.modelType)",message="spec.modelType is immutable"
-// +kubebuilder:validation:XValidation:rule="(!has(self.usagePolicy) && !has(oldSelf.usagePolicy)) || (has(self.usagePolicy) && has(oldSelf.usagePolicy) && self.usagePolicy == oldSelf.usagePolicy)",message="spec.usagePolicy is immutable"
-// +kubebuilder:validation:XValidation:rule="(!has(self.launchPolicy) && !has(oldSelf.launchPolicy)) || (has(self.launchPolicy) && has(oldSelf.launchPolicy) && self.launchPolicy == oldSelf.launchPolicy)",message="spec.launchPolicy is immutable"
-// +kubebuilder:validation:XValidation:rule="(!has(self.optimization) && !has(oldSelf.optimization)) || (has(self.optimization) && has(oldSelf.optimization) && self.optimization == oldSelf.optimization)",message="spec.optimization is immutable"
 type ModelSpec struct {
-	DisplayName string          `json:"displayName,omitempty"`
-	Description string          `json:"description,omitempty"`
-	ModelType   ModelType       `json:"modelType,omitempty"`
 	Source      ModelSourceSpec `json:"source"`
-	// InputFormat defines the input model format independently of the source.
-	// If omitted, the controller tries to determine the format automatically.
-	InputFormat  ModelInputFormat         `json:"inputFormat,omitempty"`
-	RuntimeHints *ModelRuntimeHints       `json:"runtimeHints,omitempty"`
-	UsagePolicy  *ModelUsagePolicy        `json:"usagePolicy,omitempty"`
-	LaunchPolicy *ModelLaunchPolicy       `json:"launchPolicy,omitempty"`
-	Optimization *ModelOptimizationPolicy `json:"optimization,omitempty"`
 }
 
 // ModelStatus is the shared observed state for both Model and ClusterModel.
@@ -67,14 +51,7 @@ type ModelSourceSpec struct {
 	Upload        *UploadModelSource `json:"upload,omitempty"`
 }
 
-type UploadModelSource struct {
-	// +kubebuilder:validation:Minimum=1
-	ExpectedSizeBytes *int64 `json:"expectedSizeBytes,omitempty"`
-}
-
-type ModelRuntimeHints struct {
-	Task string `json:"task,omitempty"`
-}
+type UploadModelSource struct{}
 
 // SecretReference identifies a Secret used by a source integration.
 // For namespaced Model, empty Namespace resolves to the object's namespace.

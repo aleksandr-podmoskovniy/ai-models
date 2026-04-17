@@ -26,7 +26,6 @@ import (
 func TestIssueUploadSession(t *testing.T) {
 	t.Parallel()
 
-	size := int64(128)
 	cases := []struct {
 		name    string
 		input   UploadSessionIssueRequest
@@ -34,28 +33,7 @@ func TestIssueUploadSession(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "accepted upload returns expected size plan",
-			input: UploadSessionIssueRequest{
-				OwnerUID:       "1111-2222",
-				OwnerKind:      modelsv1alpha1.ModelKind,
-				OwnerName:      "deepseek-r1",
-				OwnerNamespace: "team-a",
-				Identity:       publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
-				InputFormat:    modelsv1alpha1.ModelInputFormatGGUF,
-				Source:         modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{ExpectedSizeBytes: &size}},
-			},
-			assert: func(t *testing.T, got UploadSessionPlan) {
-				t.Helper()
-				if got.ExpectedSizeBytes == nil || *got.ExpectedSizeBytes != size {
-					t.Fatalf("unexpected size %#v", got)
-				}
-				if got.DeclaredInputFormat != modelsv1alpha1.ModelInputFormatGGUF {
-					t.Fatalf("unexpected input format %#v", got)
-				}
-			},
-		},
-		{
-			name: "accepted upload without expected size returns empty size plan",
+			name: "accepted upload returns empty internal plan",
 			input: UploadSessionIssueRequest{
 				OwnerUID:       "1111-2222",
 				OwnerKind:      modelsv1alpha1.ModelKind,
@@ -66,8 +44,25 @@ func TestIssueUploadSession(t *testing.T) {
 			},
 			assert: func(t *testing.T, got UploadSessionPlan) {
 				t.Helper()
-				if got.ExpectedSizeBytes != nil {
-					t.Fatalf("unexpected size %#v", got)
+				if got != (UploadSessionPlan{}) {
+					t.Fatalf("unexpected plan %#v", got)
+				}
+			},
+		},
+		{
+			name: "accepted upload without extra hints still returns empty plan",
+			input: UploadSessionIssueRequest{
+				OwnerUID:       "1111-2222",
+				OwnerKind:      modelsv1alpha1.ModelKind,
+				OwnerName:      "deepseek-r1",
+				OwnerNamespace: "team-a",
+				Identity:       publicationdata.Identity{Scope: publicationdata.ScopeNamespaced, Namespace: "team-a", Name: "deepseek-r1"},
+				Source:         modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
+			},
+			assert: func(t *testing.T, got UploadSessionPlan) {
+				t.Helper()
+				if got != (UploadSessionPlan{}) {
+					t.Fatalf("unexpected plan %#v", got)
 				}
 			},
 		},

@@ -41,12 +41,8 @@ func testOperationRequest() publicationports.Request {
 			Name:      "deepseek-r1",
 		},
 		Spec: modelsv1alpha1.ModelSpec{
-			InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 			Source: modelsv1alpha1.ModelSourceSpec{
 				URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
-			},
-			RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{
-				Task: "text-generation",
 			},
 		},
 	}

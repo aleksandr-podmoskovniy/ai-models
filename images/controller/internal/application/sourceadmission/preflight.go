@@ -34,9 +34,6 @@ func Preflight(ctx context.Context, input PreflightInput) error {
 	if err := ingestadmission.ValidateOwnerBinding(input.Owner, input.Identity); err != nil {
 		return err
 	}
-	if err := ingestadmission.ValidateDeclaredInputFormat(input.Spec.InputFormat); err != nil {
-		return err
-	}
 
 	sourceType, err := input.Spec.Source.DetectType()
 	if err != nil {

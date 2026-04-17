@@ -26,21 +26,13 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
 	sourcemirrorports "github.com/deckhouse/ai-models/controller/internal/ports/sourcemirror"
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
-	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
-
-type RawStageOptions struct {
-	Bucket    string
-	KeyPrefix string
-	Client    uploadstagingports.Client
-}
 
 type RemoteOptions struct {
 	URL             string
 	Workspace       string
 	RequestedFormat modelsv1alpha1.ModelInputFormat
 	HFToken         string
-	RawStage        *RawStageOptions
 	SourceMirror    *SourceMirrorOptions
 }
 
@@ -60,7 +52,6 @@ type RemoteResult struct {
 	Provenance    RemoteProvenance
 	Fallbacks     RemoteProfileFallbacks
 	Metadata      RemoteMetadata
-	StagedObjects []cleanuphandle.UploadStagingHandle
 	SourceMirror  *SourceMirrorSnapshot
 }
 

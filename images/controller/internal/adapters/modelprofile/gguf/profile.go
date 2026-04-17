@@ -43,9 +43,6 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 	if strings.TrimSpace(input.ModelDir) == "" {
 		return publicationdata.ResolvedProfile{}, errors.New("gguf model directory must not be empty")
 	}
-	if strings.TrimSpace(input.Task) == "" {
-		return publicationdata.ResolvedProfile{}, errors.New("resolved task must not be empty")
-	}
 
 	modelPath, modelSizeBytes, err := firstGGUFFile(input.ModelDir)
 	if err != nil {

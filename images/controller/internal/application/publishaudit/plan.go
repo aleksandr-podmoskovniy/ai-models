@@ -31,7 +31,7 @@ import (
 
 const (
 	ReasonUploadSessionIssued = "UploadSessionIssued"
-	ReasonRemoteIngestStarted = "RemoteIngestStarted"
+	ReasonRemoteFetchStarted  = "RemoteFetchStarted"
 	ReasonRawStaged           = "RawStaged"
 	ReasonPublicationSuccess  = "PublicationSucceeded"
 	ReasonPublicationFailed   = "PublicationFailed"
@@ -71,8 +71,8 @@ func PlanPostStatusRecords(
 	case desired.Phase == modelsv1alpha1.ModelPhasePublishing && current.Phase != desired.Phase && sourceType != modelsv1alpha1.ModelSourceTypeUpload:
 		records = append(records, auditsink.Record{
 			Type:    corev1.EventTypeNormal,
-			Reason:  ReasonRemoteIngestStarted,
-			Message: fmt.Sprintf("controller started remote raw ingest for source type %s", sourceType),
+			Reason:  ReasonRemoteFetchStarted,
+			Message: fmt.Sprintf("controller started remote source fetch for source type %s", sourceType),
 		})
 	}
 
@@ -104,7 +104,12 @@ func uploadSessionIssuedMessage(status *modelsv1alpha1.ModelUploadStatus) string
 func publicationSucceededMessage(snapshot publicationdata.Snapshot) string {
 	message := fmt.Sprintf("controller published artifact %s", strings.TrimSpace(snapshot.Artifact.URI))
 	if rawURI := strings.TrimSpace(snapshot.Source.RawURI); rawURI != "" {
-		message += fmt.Sprintf(" from raw %s", rawURI)
+		switch {
+		case strings.Contains(rawURI, "/.mirror/"):
+			message += fmt.Sprintf(" from source mirror %s", rawURI)
+		default:
+			message += fmt.Sprintf(" from raw %s", rawURI)
+		}
 		if snapshot.Source.RawObjectCount > 0 {
 			message += fmt.Sprintf(" (%d object(s))", snapshot.Source.RawObjectCount)
 		}

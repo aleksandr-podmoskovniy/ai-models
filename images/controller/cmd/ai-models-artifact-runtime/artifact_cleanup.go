@@ -19,7 +19,7 @@ package main
 import (
 	"log/slog"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/kitops"
+	modelpackoci "github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/oci"
 	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/dataplane/artifactcleanup"
@@ -64,7 +64,7 @@ func runArtifactCleanup(args []string) int {
 	if err := artifactcleanup.Run(ctx, artifactcleanup.Options{
 		HandleJSON:          handleJSON,
 		DryRun:              dryRun,
-		Remover:             kitops.New(),
+		Remover:             modelpackoci.New(),
 		StagingRemover:      objectStorageRemover,
 		PrefixRemover:       objectStorageRemover,
 		ObjectStorageBucket: cmdsupport.EnvOr("AI_MODELS_S3_BUCKET", ""),

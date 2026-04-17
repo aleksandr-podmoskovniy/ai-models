@@ -6,7 +6,7 @@
 repo. Поэтому layout должен разделять:
 - module shell и runtime manifests;
 - public API и executable runtime code;
-- internal backend packaging;
+- publication/distribution runtime boundaries;
 - Deckhouse hooks.
 
 ## Chart shell
@@ -38,23 +38,18 @@ Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
 
 Подкаталоги:
 - `templates/module/` — namespace, registry secret и прочая module-wide обвязка;
-- `templates/backend/` — runtime manifests внутреннего backend;
 - `templates/dmcr/` — manifests внутреннего publication backend;
 - `templates/kube-rbac-proxy/` — shared helper templates для защищённого
   metrics scrape path у module-owned runtime components;
-- `templates/controller/` — runtime manifests phase-2 controller shell;
-- `templates/database/` — declarative managed-postgres resources.
-
-Опционально:
-- `templates/auth/` — отдельные auth integration resources, только если module
-  действительно требует самостоятельных auth manifests сверх backend runtime.
+- `templates/controller/` — runtime manifests phase-2 controller shell.
 
 Правила:
 - не складывать всё в корень `templates/`;
 - не размещать controller code или generated API artifacts в `templates/`;
-- runtime manifests backend должны жить вместе, чтобы checksum/include paths были локальны и понятны.
 - manifests phase-2 controller должны жить в отдельном `templates/controller/`,
-  а не смешиваться с backend shell;
+  а не смешиваться с историческим backend shell;
+- если retired template subtree больше не участвует в live render path, его
+  надо удалять целиком, а не оставлять как пустой namespace под будущий шум;
 
 ### `crds/`
 
@@ -94,7 +89,6 @@ Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
 `images/` хранит image definitions и executable runtime code модуля.
 
 Текущее разделение:
-- `images/backend/` — internal backend engine packaging;
 - `images/dmcr/` — module-local internal publication backend image и исходники
   собственного `dmcr` binary;
 - `images/distroless/` — module-local distroless relocation layer для
@@ -103,12 +97,6 @@ Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
 - `images/controller/` — канонический корень для controller executable code.
 
 Правила:
-- image-owned runtime wrappers и helper scripts backend должны жить под
-  `images/backend/`, а не inline в `ConfigMap` или других manifests;
-- controlled patching 3p-зависимостей должно оставаться локальным для своей
-  границы:
-  - `images/backend/patches/` — только для MLflow core engine;
-  - `images/backend/oidc-auth-patches/` — только для `mlflow-oidc-auth`;
 - controller source, module-local `go.mod` и image build files должны жить под
   `images/controller/`, а не в top-level `controllers/`;
 - собственные runtime images модуля должны строиться от module-local
@@ -181,12 +169,6 @@ hooks доставляются через `images/hooks` в `/hooks/go`.
   delivery;
 - не складывать module-local Go hooks source в корень `hooks/`;
 - не держать временные workaround paths вроде `batchhooks` в корне chart.
-
-Правило по database bootstrap:
-- если используется `managed-postgres`, создание database/user должно оставаться
-  declarative через ресурсы в `templates/database/`;
-- imperative hook добавляется только тогда, когда platform-side effect нельзя
-  выразить через declarative module manifests.
 
 ## CI shell
 

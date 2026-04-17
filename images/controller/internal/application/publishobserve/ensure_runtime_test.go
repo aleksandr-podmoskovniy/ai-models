@@ -255,8 +255,5 @@ func uploadRequest() publicationports.Request {
 	request.Spec.Source = modelsv1alpha1.ModelSourceSpec{
 		Upload: &modelsv1alpha1.UploadModelSource{},
 	}
-	request.Spec.RuntimeHints = &modelsv1alpha1.ModelRuntimeHints{
-		Task: "text-generation",
-	}
 	return request
 }

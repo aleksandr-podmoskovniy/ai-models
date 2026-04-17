@@ -6,22 +6,22 @@ weight: 10
 
 `ai-models` — модуль DKP для каталога AI/ML-моделей и publication/runtime
 delivery path.
-На текущем этапе модуль держит hidden managed backend рядом с
-platform-facing `ModelPack` catalog/runtime path и не выводит backend internals
-в платформенный контракт.
+На текущем этапе platform-facing baseline строится вокруг `Model` /
+`ClusterModel`, controller-owned publication и runtime delivery. Историческая
+backend-попытка больше не входит в live baseline репозитория.
 
 Сейчас в репозитории уже есть:
 
-- модульные метаданные DKP и phase-1 runtime templates;
-- короткий стабильный user-facing контракт конфигурации для логирования,
-  PostgreSQL и S3-compatible artifacts; общие runtime-настройки берутся
-  из platform и global defaults Deckhouse;
-- wiring для native MLflow auth/workspaces, ingress/https и managed-postgres;
+- модульные метаданные DKP и runtime templates для module-owned publication
+  surfaces;
+- короткий стабильный user-facing контракт конфигурации для логирования и
+  S3-compatible artifacts; общие runtime-настройки берутся из platform и
+  global defaults Deckhouse;
 - phase-2 `Model` / `ClusterModel` API и controller path для source-first
   publication в OCI-backed `ModelPack` artifacts; standalone runtime
   materializer и reusable consumer-side K8s wiring для `OCI -> local path`
   уже есть, но concrete runtime integration по-прежнему остаётся отдельным
   workstream;
 - `werf` и CI/CD для сборки и поставки модуля;
-- repo-local guidance и skills для следующих шагов по упаковке backend engine
-  и разработке DKP API.
+- repo-local guidance и skills для следующих шагов по publication,
+  distribution и разработке DKP API.

@@ -37,18 +37,9 @@ func TestIsTerminalOperationPhase(t *testing.T) {
 			want:  ExecutionModeSourceWorker,
 		},
 		{
-			name: "safetensors upload uses upload session",
+			name: "upload uses upload session without extra hints",
 			input: StartPublicationInput{
-				Source:       modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
-			},
-			want: ExecutionModeUpload,
-		},
-		{
-			name: "gguf upload uses upload session",
-			input: StartPublicationInput{
-				Source:       modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
+				Source: modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
 			},
 			want: ExecutionModeUpload,
 		},
@@ -56,17 +47,9 @@ func TestIsTerminalOperationPhase(t *testing.T) {
 			name: "staged upload switches to source worker",
 			input: StartPublicationInput{
 				Source:             modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
-				RuntimeHints:       &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
 				UploadStagePresent: true,
 			},
 			want: ExecutionModeSourceWorker,
-		},
-		{
-			name: "upload without task fails",
-			input: StartPublicationInput{
-				Source: modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}},
-			},
-			wantErr: true,
 		},
 		{
 			name: "unsupported source fails",

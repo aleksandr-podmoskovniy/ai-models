@@ -1,6 +1,0 @@
-aiModels:
-  postgresql:
-    mode: External
-    external:
-      host: postgresql.external.local
-      existingSecret: ai-models-external-postgresql

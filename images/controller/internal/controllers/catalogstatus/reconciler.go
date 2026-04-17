@@ -71,7 +71,6 @@ func (r *baseReconciler) reconcileObject(
 	decision, err := publicationapp.DecideCatalogStatusReconcile(publicationapp.CatalogStatusReconcileInput{
 		Deleting:           !object.GetDeletionTimestamp().IsZero(),
 		Source:             spec.Source,
-		RuntimeHints:       spec.RuntimeHints,
 		UploadStagePresent: request.UploadStage != nil,
 		Current:            *status,
 		Generation:         object.GetGeneration(),

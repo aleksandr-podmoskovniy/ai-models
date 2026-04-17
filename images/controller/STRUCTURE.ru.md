@@ -31,8 +31,6 @@ images/controller/
   go.mod
   go.sum
   werf.inc.yaml
-  kitops.lock
-  install-kitops.sh
   cmd/
     ai-models-controller/
     ai-models-artifact-runtime/
@@ -82,7 +80,6 @@ images/controller/
         gguf/
         safetensors/
       modelpack/
-        kitops/
         oci/
       uploadstaging/
         s3/
@@ -252,7 +249,6 @@ Non-K8s adapters остаются отдельно:
 - `sourcemirror/objectstore/`
 - `modelformat/`
 - `modelprofile/*`
-- `modelpack/kitops/`
 - `modelpack/oci/`
 - `uploadstaging/s3/`
 
@@ -268,14 +264,11 @@ Non-K8s adapters остаются отдельно:
   single-writer coordination прямо на shared cache root, а не invents новый
   inference-owned API,
   второй volume contract или отдельный auth shell;
-- `modelpack/kitops/` остаётся только concrete pack/push/remove shell:
-  publish/remove orchestration, command/auth shell, Kitfile context prep и OCI
-  reference helpers не должны снова схлопываться обратно в один oversized
-  `adapter.go`;
-- `modelpack/oci/` остаётся consumer-side inspect/materialize boundary для уже
-  опубликованного OCI ModelPack artifact:
-  registry HTTP, manifest/config validation и layer materialization не должны
-  утекать ни в `publicationartifact/`, ни в `dataplane/publishworker/`;
+- `modelpack/oci/` остаётся controller-owned OCI adapter boundary:
+  native publish/remove over registry HTTP, published-artifact inspect,
+  manifest/config validation и layer materialization не должны снова
+  схлопываться обратно в один oversized `adapter.go` и не должны утекать ни в
+  `publicationartifact/`, ни в `dataplane/publishworker/`;
 - `modelprofile/safetensors/` остаётся concrete profile resolver, но внутри не
   должен снова смешивать top-level `Resolve`, checkpoint config parsing/value
   helpers и model-capability inference в одном oversized `profile.go`;

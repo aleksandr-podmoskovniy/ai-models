@@ -39,53 +39,12 @@
 `fixtures/render/*.yaml`, и каждый сценарий рендерится в отдельный
 `tools/kubeconform/renders/helm-template-*.yaml`.
 
-Local render matrix also forces key custom resources (`Postgres`,
-`PostgresClass`, `Certificate`, `ServiceMonitor`) into the
-render output. `kubeconform` continues to validate built-in Kubernetes objects
-strictly and skips these custom kinds because the repo does not vendor a local
-schema catalog for them.
+Local render matrix still covers module-owned HTTPS and monitoring branches.
+`kubeconform` validates built-in Kubernetes objects strictly and skips only the
+custom kinds whose schemas are not vendored locally.
 
-Because custom resource schemas are not vendored locally, `make helm-template`
-also runs repo-local semantic assertions for critical custom contracts. In
-particular, managed `Postgres` renders must carry `spec.users[].password` or
-`hashedPassword`, so regressions in CR-specific wiring are caught before cluster
-startup.
-
-## Internal Backend Upstream Fetch And Build Shell
-
-Для phase-1 runtime внутренний backend тянется как внешний 3p source и живёт
-только в build-only каталогах.
-
-`images/backend/upstream.lock` должен фиксировать стабильный upstream release,
-а не moving `main` snapshot. Для воспроизводимости в metadata хранится и release
-tag, и resolved commit.
-
-Основные команды:
-
-- `make backend-fetch-source`
-- `BACKEND_SOURCE_DIR=/path/to/upstream make backend-fetch-source`
-- `make backend-shell-check`
-- `make backend-build-ui`
-- `make backend-build-dist`
-- `make backend-build-image`
-- `make backend-smoke-image`
-- `make backend-build-local`
-- `werf build`
-- `make werf-build-dev`
-
-Что делает fetch:
-
-- подтягивает pinned upstream revision из internal build metadata или копирует явный `BACKEND_SOURCE_DIR` в build-only cache;
-- не тащит `.git`, локальные cache/build артефакты и upstream `docs/`;
-- проверяет обязательные upstream paths и locked version.
-
-Для upstream-equivalent build shell используются:
-
-- UI build через upstream frontend tree и локальный Yarn runtime из source tree;
-- release distributions upstream backend;
-- final image baseline, повторяющий upstream full image semantics, с возможным явным DKP overlay.
-
-Локальный Docker loop не требует host `node`, `python` или `werf`: нужные toolchains поднимаются внутри контейнеров с pinned base images.
+`make helm-template` also runs repo-local semantic assertions over rendered
+output, so stale legacy surfaces are caught before cluster startup.
 
 `werf build` требует git checkout с валидным `.git` и committed `werf-giterminism.yaml`.
 Для локальной работы из грязного worktree использовать `make werf-build-dev`, а
@@ -95,27 +54,12 @@ tag, и resolved commit.
 `GOPROXY=https://proxy.golang.org,direct`. Если нужен другой proxy или
 внутренний mirror, его нужно передать через environment variable `GOPROXY`.
 
-Для нестабильных сетей локальные Docker stages ставят apt-пакеты через retry-aware helper из internal build scripts.
-
-Локальный `make backend-build-ui` всегда пересобирает throwaway worktree из build-only upstream cache, накладывает patch queue и только потом собирает frontend. `make backend-build-dist` и `make backend-build-image` используют уже подготовленный worktree.
-
-`make backend-build-ui` держит `node_modules` в отдельном Docker volume, чтобы не раздувать build-only worktree.
-
-Размер heap для frontend build управляется через `BACKEND_UI_MAX_OLD_SPACE_SIZE` и по умолчанию снижен до `4096`, чтобы local build не упирался в стандартные лимиты памяти Docker Desktop.
-
 ## Runtime prerequisites
 
 Phase-1 runtime модуля ожидает платформенные prerequisites:
 
 - `global.modules.publicDomainTemplate`;
 - global HTTPS mode `CertManager` или `CustomCertificate`;
-- модуль `managed-postgres`, если используется `aiModels.postgresql.mode=Managed`.
-
-Для browser SSO дополнительно нужны:
-
-- модуль `user-authn`;
-- API `deckhouse.io/v1/DexClient`;
-- публичный Dex endpoint через стандартный Deckhouse host `dex.<cluster-domain>`.
 
 Во время локального `helm template` custom resources рендерятся только если
 соответствующие API доступны в `.Capabilities` или явно переданы через
@@ -137,9 +81,9 @@ chart path, который игнорирует каталоги `hooks/` и `im
 
 Репозиторий развивается поэтапно.
 
-- Сначала рабочий внутренний managed backend.
-- Затем публичный API `Model` / `ClusterModel`.
-- Затем hardening, distroless и controlled patching.
+- Сначала ai-models-owned publication/runtime baseline.
+- Затем distribution topology и runtime delivery hardening.
+- Затем distroless, controlled patching и long-term support.
 
 Не смешивать эти этапы в одном неуправляемом изменении.
 

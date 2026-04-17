@@ -17,8 +17,8 @@ disable:
     Attention!
 
     Disabling this module will stop ai-models services, including the internal
-    registry backend, the module UI/API entrypoint, and the artifact storage
-    integration used by the AI/ML model registry.
+    DMCR publication backend, controller-owned publication/runtime delivery,
+    and the artifact storage integration used by the AI/ML model catalog.
 accessibility:
   editions:
     _default:

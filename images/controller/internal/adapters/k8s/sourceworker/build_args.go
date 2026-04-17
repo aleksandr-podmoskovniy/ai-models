@@ -37,12 +37,6 @@ func buildArgs(
 		"--source-type", string(plan.SourceType),
 		"--snapshot-dir", workloadpod.WorkVolumeMountPath,
 	}
-	if strings.TrimSpace(string(plan.InputFormat)) != "" {
-		args = append(args, "--input-format", string(plan.InputFormat))
-	}
-	if plan.Task != "" {
-		args = append(args, "--task", plan.Task)
-	}
 	return append(args, sourceArgs(plan, request.Owner.UID, options.ObjectStorage.Bucket)...)
 }
 

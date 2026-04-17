@@ -34,8 +34,6 @@ type RegistryAuth struct {
 type PublishInput struct {
 	ModelDir    string
 	ArtifactURI string
-	Description string
-	PackageName string
 }
 
 type PublishResult struct {

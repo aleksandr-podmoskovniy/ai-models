@@ -1,117 +1,85 @@
-# Plan
+## 1. Current phase
 
-## Current phase
+Этап 2. `Model` / `ClusterModel`: меняется сам public API contract и
+controller-owned metadata projection.
 
-Этап 2: public catalog API (`Model` / `ClusterModel`) и controller-owned
-publication/runtime metadata already landed; нужен contract cleanup, чтобы
-phase-2 metadata semantics соответствовали internal ADR по `ai-models` и
-`ai-inference`.
-
-## Orchestration
+## 2. Orchestration
 
 `solo`
 
-Задача multi-area и архитектурная, но boundary уже явно задана repo-local
-кодом и internal ADR. В текущем рабочем режиме не создаю implicit delegation:
-нужный signal можно получить прямым diff review against ADR and repo tests.
+Задача архитектурная, но request уже конкретный: public `spec` нужно
+схлопнуть до source-only surface. В текущем рабочем режиме делаю это одним
+bounded refactor без параллельных subagents.
 
-## ADR baseline
+## 3. Slices
 
-Выровняться по:
-
-- `internal-docs/2026-03-18-ai-models-catalog.md`
-- `internal-docs/2026-03-18-ai-inference-service.md`
-
-Ключевой semantic split:
-
-- `ai-models` публикует platform-facing model metadata;
-- `ai-inference` выбирает inference runtime implementation;
-- distributed topology (`KubeRay` и подобное) не должна masquerade as
-  `Model` runtime compatibility enum.
-- public conditions должны оставаться минимальным usability contract, а не
-  зеркалом внутренних controller stages.
-- AI platform naming должен быть единым: API group и related platform-facing
-  prefixes целятся в `ai.deckhouse.io`, а не в module-specific
-  `ai-models.deckhouse.io`.
-
-## Slices
-
-### Slice 1. Reframe public API and naming surface
+### Slice 1. Свести API к source-only spec
 
 - Цель:
-  - убрать `KServe` / `KubeRay` из public runtime enum;
-  - сузить `runtimeHints` до реально нужных publication-time hints;
-  - выровнять endpoint/runtime wording в API types;
-  - сузить public condition types до минимального ADR-aligned набора.
-  - переименовать public API group и generated CRD names на `ai.deckhouse.io`;
-  - выровнять scripts/RBAC/docs against the same group.
+  - убрать из public types и CRD все spec-driven metadata/policy поля;
+  - оставить только `source.url`, `source.authSecretRef`, `source.upload`.
 - Файлы:
-  - `api/core/*`
   - `api/core/v1alpha1/*`
+  - `api/core/*`
   - `api/scripts/*`
   - `crds/*`
-  - `templates/controller/*`
-  - `api/README.md`
 - Проверки:
   - `cd api && go test ./...`
+  - `cd api && ./scripts/update-codegen.sh`
   - `cd api && ./scripts/verify-crdgen.sh`
 - Артефакт:
-  - API types and validations reflect ADR semantics.
-  - platform naming surface no longer mixes `ai-models.deckhouse.io` and
-    `ai.deckhouse.io`.
+  - generated API/CRD без старых spec fields.
 
-### Slice 2. Align publication profile and status projection
+### Slice 2. Убрать controller/runtime зависимость от старого spec
 
 - Цель:
-  - строить semantic endpoint metadata;
-  - убрать guessed runtime compatibility from `runtimeHints.engines`;
-  - проецировать в `status.resolved` только defendable metadata;
-  - упростить publish/delete status projection вокруг минимального condition
-    набора и итогового `Ready`.
-  - выровнять controller-owned labels/annotations/finalizers/index fields под
-    новый unified prefix там, где это часть live platform contract.
+  - убрать policy validation и runtime/publication planning, завязанные на
+    удалённые spec fields;
+  - выровнять upload-session contract без declared format / expected size из
+    public spec;
+  - перевести input-format/task resolution на calculated path.
 - Файлы:
-  - `images/controller/internal/adapters/modelprofile/*`
-  - `images/controller/internal/publishedsnapshot/*`
-  - `images/controller/internal/dataplane/publishworker/*`
-  - `images/controller/internal/domain/publishstate/*`
   - `images/controller/internal/application/publishplan/*`
+  - `images/controller/internal/application/publishobserve/*`
+  - `images/controller/internal/domain/ingestadmission/*`
+  - `images/controller/internal/domain/publishstate/*`
+  - `images/controller/internal/controllers/catalogstatus/*`
   - `images/controller/internal/adapters/k8s/sourceworker/*`
-  - `images/controller/internal/controllers/workloaddelivery/*`
-  - `images/controller/internal/controllers/catalogcleanup/*`
-  - `images/controller/internal/support/*`
+  - `images/controller/internal/adapters/k8s/uploadsession/*`
+  - `images/controller/internal/adapters/k8s/uploadsessionstate/*`
+  - `images/controller/internal/dataplane/publishworker/*`
+  - `images/controller/internal/dataplane/uploadsession/*`
+  - `images/controller/internal/adapters/modelprofile/*`
+  - `images/controller/internal/support/testkit/*`
 - Проверки:
-  - `cd images/controller && go test ./internal/application/publishplan ./internal/domain/publishstate ./internal/adapters/modelprofile/... ./internal/dataplane/publishworker ./internal/adapters/k8s/sourceworker ./internal/controllers/workloaddelivery ./internal/controllers/catalogcleanup ./internal/support/...`
+  - `cd images/controller && go test ./internal/application/publishplan ./internal/application/publishobserve ./internal/domain/ingestadmission ./internal/domain/publishstate ./internal/controllers/catalogstatus ./internal/adapters/k8s/sourceworker ./internal/adapters/k8s/uploadsession ./internal/adapters/k8s/uploadsessionstate ./internal/dataplane/publishworker ./internal/dataplane/uploadsession ./internal/adapters/modelprofile/... ./internal/support/testkit`
 - Артефакт:
-  - controller metadata path no longer mixes runtime brands and topology.
-  - status/conditions path no longer exposes decorative internal stages.
-  - controller naming surface no longer keeps stale module-specific prefix.
+  - publish flow больше не ждёт removed public knobs.
 
-### Slice 3. Align docs, evidence, and ADR
+### Slice 3. Синхронизировать docs и evidence
 
 - Цель:
-  - закрепить новый contract в repo-local docs, test evidence и internal ADR.
+  - убрать из docs/examples старый heavy spec;
+  - описать metadata как calculated `status.resolved` contract.
 - Файлы:
   - `docs/CONFIGURATION.md`
   - `docs/CONFIGURATION.ru.md`
   - `images/controller/README.md`
-  - `images/controller/STRUCTURE.ru.md`
   - `images/controller/TEST_EVIDENCE.ru.md`
-  - `/Users/myskat_90/flant/aleksandr-podmoskovniy/internal-docs/2026-03-18-ai-models-catalog.md`
 - Проверки:
-  - `rg -n "ai-models\\.deckhouse\\.io|KServe|KubeRay|OpenAIChatCompletions|OpenAICompletions|runtimeHints.engines" docs images/controller api`
+  - `rg -n "inputFormat|runtimeHints|modelType|usagePolicy|launchPolicy|optimization|expectedSizeBytes|declaredInputFormat" docs images/controller api/core/v1alpha1`
 - Артефакт:
-  - repo docs explain the same semantics as code and ADR.
-  - ADR examples and field descriptions match live API/status semantics.
+  - repo docs and ADR explain the same source-only public contract as live code.
 
-## Rollback point
+## 4. Rollback point
 
-После Slice 1 можно откатиться к текущему contract, не оставив hybrid API +
-controller split. После начала Slice 2 API types and controller projection
-must stay aligned together.
+После Slice 1 можно безопасно остановиться только если controller/runtime ещё
+не начал ссылаться на удалённые поля. После начала Slice 2 API and runtime
+must land together.
 
-## Final validation
+## 5. Final validation
 
 - `cd api && go test ./...`
-- `cd images/controller && go test ./internal/application/publishplan ./internal/domain/publishstate ./internal/adapters/modelprofile/... ./internal/dataplane/publishworker ./internal/adapters/k8s/sourceworker`
+- `cd api && ./scripts/verify-crdgen.sh`
+- `cd images/controller && go test ./...`
 - `make verify`

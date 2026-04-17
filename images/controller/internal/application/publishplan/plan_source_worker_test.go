@@ -36,11 +36,9 @@ func TestPlanSourceWorker(t *testing.T) {
 		{
 			name: "huggingface source is accepted",
 			spec: modelsv1alpha1.ModelSpec{
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 				Source: modelsv1alpha1.ModelSourceSpec{
 					URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1?revision=main",
 				},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
 			},
 			ownerNS: "team-a",
 			assert: func(t *testing.T, got SourceWorkerPlan) {
@@ -51,15 +49,11 @@ func TestPlanSourceWorker(t *testing.T) {
 				if got.HuggingFace == nil || got.HuggingFace.RepoID != "deepseek-ai/DeepSeek-R1" {
 					t.Fatalf("unexpected huggingFace plan %#v", got.HuggingFace)
 				}
-				if got.Task != "text-generation" {
-					t.Fatalf("unexpected task %q", got.Task)
-				}
 			},
 		},
 		{
 			name: "huggingface auth secret resolves owner namespace",
 			spec: modelsv1alpha1.ModelSpec{
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 				Source: modelsv1alpha1.ModelSourceSpec{
 					URL:           "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 					AuthSecretRef: &modelsv1alpha1.SecretReference{Name: "hf-auth"},
@@ -79,7 +73,6 @@ func TestPlanSourceWorker(t *testing.T) {
 		{
 			name: "namespaced source auth secret rejects foreign namespace",
 			spec: modelsv1alpha1.ModelSpec{
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 				Source: modelsv1alpha1.ModelSourceSpec{
 					URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 					AuthSecretRef: &modelsv1alpha1.SecretReference{
@@ -94,7 +87,6 @@ func TestPlanSourceWorker(t *testing.T) {
 		{
 			name: "cluster scoped auth secret requires explicit namespace",
 			spec: modelsv1alpha1.ModelSpec{
-				InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
 				Source: modelsv1alpha1.ModelSourceSpec{
 					URL:           "https://huggingface.co/deepseek-ai/DeepSeek-R1",
 					AuthSecretRef: &modelsv1alpha1.SecretReference{Name: "hf-auth"},
@@ -108,7 +100,6 @@ func TestPlanSourceWorker(t *testing.T) {
 				Source: modelsv1alpha1.ModelSourceSpec{
 					Upload: &modelsv1alpha1.UploadModelSource{},
 				},
-				RuntimeHints: &modelsv1alpha1.ModelRuntimeHints{Task: "text-generation"},
 			},
 			assert: func(t *testing.T, got SourceWorkerPlan) {
 				t.Helper()

@@ -1,5 +1,0 @@
-VERSION=v1.10.0
-LINUX_AMD64_URL=https://github.com/kitops-ml/kitops/releases/download/v1.10.0/kitops-linux-x86_64.tar.gz
-LINUX_AMD64_SHA256=a4a5c75c1b518e3ac11ebeb195f66b17a1878954a0db63a40eaa6c02466e19d7
-LINUX_ARM64_URL=https://github.com/kitops-ml/kitops/releases/download/v1.10.0/kitops-linux-arm64.tar.gz
-LINUX_ARM64_SHA256=9696eed1aa8d4c1b538e204bba3eb15b1189c2375ace813c5ce474c89469652a

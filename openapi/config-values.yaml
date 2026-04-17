@@ -9,10 +9,7 @@ description: |
   in internal values and templates, following the same split used by
   virtualization.
   High availability mode, HTTPS policy, and ingress class are taken from global
-  Deckhouse configuration and internal module wiring. Browser authentication is
-  handled through Deckhouse Dex OIDC SSO inside MLflow while preserving
-  upstream-native MLflow workspaces and an internal machine account for
-  monitoring and in-cluster jobs.
+  Deckhouse configuration and internal module wiring.
 properties:
   logLevel:
     type: string
@@ -23,93 +20,6 @@ properties:
       - "Info"
       - "Warn"
       - "Error"
-  postgresql:
-    type: object
-    description: Settings for the ai-models metadata database.
-    additionalProperties: false
-    properties:
-      mode:
-        type: string
-        description: |
-          Database connection mode for ai-models.
-          `Managed` uses the Deckhouse managed-postgres module.
-          `External` uses an existing PostgreSQL instance.
-        enum:
-          - "Managed"
-          - "External"
-        default: "Managed"
-      managed:
-        type: object
-        description: |
-          Create PostgreSQL for ai-models through the Deckhouse managed-postgres module.
-        additionalProperties: false
-        properties:
-          name:
-            type: string
-            description: Name of the Postgres resource.
-            default: ai-models
-          database:
-            type: string
-            description: Logical database name for ai-models metadata.
-            default: ai-models
-          postgresClassName:
-            type: string
-            description: PostgresClass name used by the managed Postgres resource.
-            default: default
-          createPostgresClass:
-            type: boolean
-            description: Create a dedicated PostgresClass for ai-models when true. Keep false when an existing cluster-wide PostgresClass should be reused.
-            default: false
-          storageClassName:
-            type: string
-            description: StorageClass for PostgreSQL persistent volume. Empty means cluster default.
-            default: ""
-          storageSize:
-            type: string
-            description: Persistent volume size for managed PostgreSQL.
-            default: 5Gi
-          memorySize:
-            type: string
-            description: Requested memory size for managed PostgreSQL instance.
-            default: 1Gi
-          cpuCores:
-            type: integer
-            description: Requested CPU cores for managed PostgreSQL instance.
-            default: 1
-      external:
-        type: object
-        description: Connection settings for an existing PostgreSQL instance.
-        additionalProperties: false
-        properties:
-          host:
-            type: string
-            description: PostgreSQL hostname or address.
-            default: ""
-          port:
-            type: integer
-            default: 5432
-          database:
-            type: string
-            default: ai-models
-          user:
-            type: string
-            default: ai-models
-          sslMode:
-            type: string
-            default: Require
-            enum:
-              - Disable
-              - Require
-              - VerifyCA
-              - VerifyFull
-          existingSecret:
-            type: string
-            description: Secret with the PostgreSQL password for the external connection.
-            default: ""
-          existingSecretKey:
-            type: string
-            description: Key in existingSecret with PostgreSQL password.
-            default: password
   artifacts:
     type: object
     required:
@@ -118,19 +28,15 @@ properties:
       - credentialsSecretName
     description: |
       Shared S3-compatible storage used by ai-models.
-      The MLflow backend keeps its own artifact subtree under `pathPrefix`,
-      controller-owned raw ingest writes fixed `raw/` objects in the same bucket,
-      and the internal DMCR publication plane writes fixed `dmcr/` objects.
+      Controller-owned upload staging and source mirror state use the fixed
+      `raw/` subtree in the same bucket, and the internal DMCR publication
+      plane writes fixed `dmcr/` objects.
     additionalProperties: false
     properties:
       bucket:
         type: string
-        description: Bucket name shared by backend artifacts, raw ingest, and published model bytes.
+        description: Bucket name shared by upload staging, source mirror state, and published model bytes.
         default: ""
-      pathPrefix:
-        type: string
-        description: Prefix inside the bucket used by the internal MLflow backend artifact root.
-        default: ai-models
       endpoint:
         type: string
         description: S3-compatible endpoint URL.
@@ -164,36 +70,4 @@ properties:
         type: boolean
         description: Use path-style S3 requests.
         default: true
-  auth:
-    type: object
-    description: Deckhouse SSO settings for browser access to ai-models.
-    additionalProperties: false
-    properties:
-      sso:
-        type: object
-        description: Deckhouse Dex SSO settings used for browser login to ai-models.
-        additionalProperties: false
-        properties:
-          providerDisplayName:
-            type: string
-            description: Display name shown on the MLflow OIDC login screen.
-            default: Login with DKP SSO
-          automaticLoginRedirect:
-            type: boolean
-            description: Redirect browser users directly to Dex instead of showing the intermediate MLflow auth page.
-            default: true
-          allowedGroups:
-            type: array
-            description: Groups allowed to log in via Deckhouse Dex.
-            items:
-              type: string
-            default:
-              - admins
-          adminGroups:
-            type: array
-            description: Groups that should become MLflow administrators after SSO login.
-            items:
-              type: string
-            default:
-              - admins
 additionalProperties: false

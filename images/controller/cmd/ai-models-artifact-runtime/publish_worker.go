@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/kitops"
+	modelpackoci "github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/oci"
 	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/dataplane/publishworker"
@@ -112,7 +112,7 @@ func runPublishWorker(args []string) int {
 	logger.Info(
 		"publication worker started",
 		slog.Bool("uploadStageEnabled", uploadStage != nil),
-		slog.Bool("rawStageEnabled", uploadStagingClient != nil && strings.TrimSpace(rawStageBucket) != "" && strings.TrimSpace(rawStageKeyPrefix) != ""),
+		slog.Bool("sourceMirrorEnabled", uploadStagingClient != nil && strings.TrimSpace(rawStageBucket) != "" && strings.TrimSpace(rawStageKeyPrefix) != ""),
 	)
 
 	result, err := publishworker.Run(ctx, publishworker.Options{
@@ -129,7 +129,7 @@ func runPublishWorker(args []string) int {
 		SnapshotDir:        snapshotDir,
 		HFToken:            cmdsupport.EnvOr("HF_TOKEN", cmdsupport.EnvOr("HUGGING_FACE_HUB_TOKEN", "")),
 		UploadStaging:      uploadStagingClient,
-		ModelPackPublisher: kitops.New(),
+		ModelPackPublisher: modelpackoci.New(),
 		RegistryAuth:       cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
 	})
 	if err != nil {

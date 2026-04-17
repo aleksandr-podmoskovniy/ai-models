@@ -43,18 +43,6 @@ func uploadRawProvenance(handle *cleanuphandle.UploadStagingHandle) publicationd
 	}
 }
 
-func remoteRawProvenance(options Options, objects []cleanuphandle.UploadStagingHandle) publicationdata.SourceProvenance {
-	provenance := publicationdata.SourceProvenance{}
-	if strings.TrimSpace(options.RawStageBucket) != "" && strings.TrimSpace(options.RawStageKeyPrefix) != "" {
-		provenance.RawURI = rawURI(options.RawStageBucket, options.RawStageKeyPrefix)
-	}
-	provenance.RawObjectCount = int64(len(objects))
-	for _, object := range objects {
-		provenance.RawSizeBytes += nonNegativeSize(object.SizeBytes)
-	}
-	return provenance
-}
-
 func sourceMirrorRawProvenance(options Options, sourceMirror *sourcefetch.SourceMirrorSnapshot) publicationdata.SourceProvenance {
 	if sourceMirror == nil {
 		return publicationdata.SourceProvenance{}
