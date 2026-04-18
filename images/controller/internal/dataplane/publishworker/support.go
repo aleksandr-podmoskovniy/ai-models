@@ -19,7 +19,6 @@ package publishworker
 import (
 	"context"
 	"fmt"
-	"os"
 	"path"
 	"strings"
 
@@ -96,25 +95,6 @@ func run(ctx context.Context, options Options) (publicationartifact.Result, erro
 	default:
 		return publicationartifact.Result{}, fmt.Errorf("unsupported publish worker source type %q", options.SourceType)
 	}
-}
-
-func ensureWorkspace(snapshotDir, prefix string) (string, func(), error) {
-	if strings.TrimSpace(snapshotDir) != "" {
-		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
-			return "", nil, err
-		}
-		dir, err := os.MkdirTemp(snapshotDir, prefix)
-		if err != nil {
-			return "", nil, err
-		}
-		return dir, func() { _ = os.RemoveAll(dir) }, nil
-	}
-
-	dir, err := os.MkdirTemp("", prefix)
-	if err != nil {
-		return "", nil, err
-	}
-	return dir, func() { _ = os.RemoveAll(dir) }, nil
 }
 
 func resolveUploadInputFormat(checkpointDir string, requested modelsv1alpha1.ModelInputFormat) (modelsv1alpha1.ModelInputFormat, error) {

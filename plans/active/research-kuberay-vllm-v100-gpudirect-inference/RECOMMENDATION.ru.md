@@ -1,5 +1,9 @@
 # KubeRay + vLLM на `3x V100 32GB`: рекомендуемый профиль
 
+Для пошаговой раскатки whole app, `Argo`-порядка и live-проверок см.
+`KUBERAY-VLLM-RUNBOOK.ru.md`. Текущий документ остаётся compatibility verdict
+и architectural note.
+
 ## Короткий ответ
 
 Для текущего стенда с тремя `V100 32GB`, уже подготовленным `RDMA` и

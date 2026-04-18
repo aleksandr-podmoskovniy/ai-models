@@ -597,7 +597,9 @@ large corrective rebase bundle was completed and archived.
 
 - historical intermediate slice; later simplified further by Slice 27,
   which removed `modeldelivery`-owned volume policy entirely in favor of
-  user-owned `/data/modelcache`.
+  user-owned `/data/modelcache`; publication-side shared `workloadpod`
+  boundary was retired even later once sourceworker no longer needed a local
+  work-volume contract.
 
 Артефакты:
 

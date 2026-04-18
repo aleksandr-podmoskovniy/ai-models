@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package workloadpod
+package sourceworker
 
 import (
 	"errors"
@@ -23,30 +23,7 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
-
-type WorkVolumeType string
-
-const (
-	WorkVolumeTypeEmptyDir              WorkVolumeType = "EmptyDir"
-	WorkVolumeTypePersistentVolumeClaim WorkVolumeType = "PersistentVolumeClaim"
-)
-
-type WorkVolumeOptions struct {
-	Type                      WorkVolumeType
-	EmptyDirSizeLimit         resource.Quantity
-	PersistentVolumeClaimName string
-}
-
-type VolumeType = WorkVolumeType
-
-const (
-	VolumeTypeEmptyDir              = WorkVolumeTypeEmptyDir
-	VolumeTypePersistentVolumeClaim = WorkVolumeTypePersistentVolumeClaim
-)
-
-type VolumeOptions = WorkVolumeOptions
 
 type RuntimeOptions struct {
 	Namespace               string
@@ -59,7 +36,6 @@ type RuntimeOptions struct {
 	OCIRegistryCASecretName string
 	ObjectStorage           storageprojection.Options
 	ImagePullPolicy         corev1.PullPolicy
-	WorkVolume              WorkVolumeOptions
 	Resources               corev1.ResourceRequirements
 }
 
@@ -67,20 +43,14 @@ func NormalizeRuntimeOptions(options RuntimeOptions) RuntimeOptions {
 	if options.ImagePullPolicy == "" {
 		options.ImagePullPolicy = corev1.PullIfNotPresent
 	}
-	if strings.TrimSpace(string(options.WorkVolume.Type)) == "" {
-		options.WorkVolume.Type = WorkVolumeTypeEmptyDir
-	}
 	return options
 }
 
 func ValidateRuntimeOptions(component string, options RuntimeOptions) error {
 	component = strings.TrimSpace(component)
 	if component == "" {
-		return errors.New("workload pod runtime component name must not be empty")
+		return errors.New("source worker runtime component name must not be empty")
 	}
-
-	workVolumeErr := validateWorkVolumeOptions(component, options.WorkVolume)
-	resourcesErr := validateRuntimeResources(component, options.Resources)
 
 	switch {
 	case strings.TrimSpace(options.Namespace) == "":
@@ -93,33 +63,8 @@ func ValidateRuntimeOptions(component string, options RuntimeOptions) error {
 		return fmt.Errorf("%s OCI repository prefix must not be empty", component)
 	case strings.TrimSpace(options.OCIRegistrySecretName) == "":
 		return fmt.Errorf("%s OCI registry secret name must not be empty", component)
-	case workVolumeErr != nil:
-		return workVolumeErr
-	case resourcesErr != nil:
-		return resourcesErr
 	default:
-		return nil
-	}
-}
-
-func validateWorkVolumeOptions(component string, options WorkVolumeOptions) error {
-	return validateVolumeOptions(component, "work volume", options)
-}
-
-func validateVolumeOptions(component, volumeLabel string, options VolumeOptions) error {
-	switch options.Type {
-	case WorkVolumeTypeEmptyDir:
-		if options.EmptyDirSizeLimit.Sign() <= 0 {
-			return fmt.Errorf("%s %s emptyDir sizeLimit must be greater than zero", component, volumeLabel)
-		}
-		return nil
-	case WorkVolumeTypePersistentVolumeClaim:
-		if strings.TrimSpace(options.PersistentVolumeClaimName) == "" {
-			return fmt.Errorf("%s %s persistentVolumeClaim name must not be empty", component, volumeLabel)
-		}
-		return nil
-	default:
-		return fmt.Errorf("%s %s type %q is unsupported", component, volumeLabel, options.Type)
+		return validateRuntimeResources(component, options.Resources)
 	}
 }
 
@@ -152,4 +97,17 @@ func validatePositiveResourceQuantity(component, listName string, list corev1.Re
 		return fmt.Errorf("%s resource %s.%s must be greater than zero", component, listName, key)
 	}
 	return nil
+}
+
+func terminationMessage(pod *corev1.Pod, containerName string) string {
+	if pod == nil {
+		return ""
+	}
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name != containerName || status.State.Terminated == nil {
+			continue
+		}
+		return strings.TrimSpace(status.State.Terminated.Message)
+	}
+	return ""
 }

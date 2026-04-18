@@ -22,7 +22,6 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -122,7 +121,7 @@ func (s *Service) handleFromPod(pod *corev1.Pod) *publicationports.SourceWorkerH
 	return publicationports.NewSourceWorkerHandle(
 		pod.Name,
 		pod.Status.Phase,
-		workloadpod.TerminationMessage(pod, "publish"),
+		terminationMessage(pod, "publish"),
 		func(ctx context.Context) error {
 			return s.deleteResources(ctx, pod)
 		},

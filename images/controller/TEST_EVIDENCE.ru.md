@@ -360,7 +360,6 @@ paths и test surfaces.
 - `auditevent`: `recorder_test.go`
 - `ociregistry`: `projection_test.go`, `render_test.go`
 - `ownedresource`: `lifecycle_test.go`
-- `workloadpod`: `options_test.go`, `render_test.go`
 
 ## 5. Dataplane and controller evidence
 

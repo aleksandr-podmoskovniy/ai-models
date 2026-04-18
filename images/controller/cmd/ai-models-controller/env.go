@@ -40,9 +40,6 @@ const (
 	publicationOCISecretEnv             = "PUBLICATION_OCI_CREDENTIALS_SECRET_NAME"
 	publicationOCICASecretEnv           = "PUBLICATION_OCI_CA_SECRET_NAME"
 	publicationMaxConcurrentWorkersEnv  = "PUBLICATION_MAX_CONCURRENT_WORKERS"
-	publicationWorkVolumeTypeEnv        = "PUBLICATION_WORK_VOLUME_TYPE"
-	publicationWorkVolumeSizeLimitEnv   = "PUBLICATION_WORK_VOLUME_SIZE_LIMIT"
-	publicationWorkVolumeClaimNameEnv   = "PUBLICATION_WORK_VOLUME_CLAIM_NAME"
 	publicationWorkerCPURequestEnv      = "PUBLICATION_WORKER_CPU_REQUEST"
 	publicationWorkerCPULimitEnv        = "PUBLICATION_WORKER_CPU_LIMIT"
 	publicationWorkerMemoryRequestEnv   = "PUBLICATION_WORKER_MEMORY_REQUEST"
@@ -69,13 +66,12 @@ const defaultCleanupPassThrough = "LOG_FORMAT,LOG_LEVEL,SSL_CERT_FILE,REQUESTS_C
 
 const (
 	defaultPublicationMaxConcurrentWorkers = 1
-	defaultPublicationWorkVolumeSizeLimit  = "50Gi"
-	defaultPublicationWorkVolumeClaimName  = "ai-models-publication-work"
 	defaultPublicationWorkerCPURequest     = "1"
 	defaultPublicationWorkerCPULimit       = "4"
 	defaultPublicationWorkerMemoryRequest  = "8Gi"
 	defaultPublicationWorkerMemoryLimit    = "16Gi"
-	defaultPublicationWorkerEphemeralLimit = "50Gi"
+	defaultPublicationWorkerEphemeralReq   = "1Gi"
+	defaultPublicationWorkerEphemeralLimit = "1Gi"
 )
 
 func cleanupJobEnv(passThrough, logFormat, logLevel string) []corev1.EnvVar {

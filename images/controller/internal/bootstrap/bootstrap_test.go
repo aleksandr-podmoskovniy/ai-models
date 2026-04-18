@@ -22,8 +22,8 @@ import (
 	"testing"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/sourceworker"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
@@ -52,7 +52,7 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 			},
 		},
 		PublicationRuntime: catalogstatus.Options{
-			Runtime: catalogstatus.PublicationRuntimeOptions{
+			Runtime: sourceworker.RuntimeOptions{
 				Namespace:             "d8-ai-models",
 				Image:                 "backend:latest",
 				ServiceAccountName:    "ai-models-controller",
@@ -64,10 +64,6 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 					Region:                "us-east-1",
 					UsePathStyle:          true,
 					CredentialsSecretName: "ai-models-artifacts",
-				},
-				WorkVolume: workloadpod.WorkVolumeOptions{
-					Type:              workloadpod.WorkVolumeTypeEmptyDir,
-					EmptyDirSizeLimit: resource.MustParse("50Gi"),
 				},
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{

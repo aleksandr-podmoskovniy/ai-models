@@ -19,19 +19,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
-
-func parsePublicationWorkVolumeType(value string) (workloadpod.WorkVolumeType, error) {
-	switch workloadpod.WorkVolumeType(value) {
-	case workloadpod.WorkVolumeTypeEmptyDir, workloadpod.WorkVolumeTypePersistentVolumeClaim:
-		return workloadpod.WorkVolumeType(value), nil
-	default:
-		return "", fmt.Errorf("unsupported publication work volume type %q", value)
-	}
-}
 
 func parsePositiveQuantity(flagName, value string) (resource.Quantity, error) {
 	quantity, err := resource.ParseQuantity(value)

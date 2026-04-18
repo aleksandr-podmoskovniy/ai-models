@@ -254,6 +254,46 @@ Research-to-runtime bring-up slice. Работы уже включают не т
   поднять default `memlock` в runtime/containerd и затем убрать `IPC_LOCK`
   обратно.
 
+## Slice 8. Write the whole-app runbook
+
+Цель:
+
+- вынести из `RECOMMENDATION.ru.md`, внешнего `k8s-config` каталога и live
+  cluster state отдельный operator-facing runbook;
+- сделать документ по структуре близким к archived `SKALA` smoke doc, но уже
+  для full application path:
+  - `Argo CD`;
+  - `KubeRay operator`;
+  - `RayService`;
+  - `HF secret`;
+  - storage;
+  - ingress;
+  - live validation;
+  - `RDMA`/`Ray` network evidence;
+- не размазывать текущий rollout verdict по нескольким длинным файлам.
+
+Затрагиваемые области:
+
+- `plans/active/research-kuberay-vllm-v100-gpudirect-inference/*`
+- archived reference:
+  `plans/archive/2026/research-sdn-underlay-rdma-dra-gpu-placement/SKALA-SDN-RDMA-SMOKE.ru.md`
+- `/Users/myskat_90/Обучение/gitlab.ap.com/k8s-config/argo-projects/k8s-dvp.apiac.ru/kuberay/*`
+
+Проверки:
+
+- manual review for:
+  - exact file paths;
+  - exact `Argo` app names;
+  - exact `Ingress` host;
+  - exact `RayService` / `RayCluster` / pod names;
+  - exact live `RDMA` metrics used in the document;
+- `git diff --check`
+
+Артефакт:
+
+- standalone runbook that another operator can follow without reopening the
+  whole chat history or the long `RECOMMENDATION.ru.md`.
+
 ## Rollback point
 
 Если по итогам выяснится, что на `3x V100` жизнеспособен только слишком

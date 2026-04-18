@@ -150,7 +150,6 @@ func (a *App) Run(ctx context.Context) error {
 			slog.String("publicationRuntimeNamespace", a.publicationRuntime.Runtime.Namespace),
 			slog.String("publicationRuntimeImage", a.publicationRuntime.Runtime.Image),
 			slog.Int("publicationMaxConcurrentWorkers", a.publicationRuntime.MaxConcurrentWorkers),
-			slog.String("publicationWorkVolumeType", string(a.publicationRuntime.Runtime.WorkVolume.Type)),
 		)
 	}
 	if a.workloadDelivery.Enabled() {

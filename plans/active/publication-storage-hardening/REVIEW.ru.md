@@ -1,42 +1,39 @@
-## Findings
+## Review
 
-- Логи и live код подтверждают, что remote `HuggingFace` path уже использует
-  source mirror в object storage под `.mirror`, а затем materialize'ит локальный
-  workspace в publish worker. Следовательно, current wording `remote raw ingest`
-  вводит оператора в заблуждение.
-- Default runtime path переведён на
-  `publicationRuntime.workVolume.type=PersistentVolumeClaim`, а generated PVC
-  уже использует default `StorageClass`, если `storageClassName` пустой. Это
-  убирает implicit ставку на node `ephemeral-storage` как platform default для
-  крупных моделей.
-- Publish worker по-прежнему требует local materialization; object storage сам
-  по себе не устраняет потребность в workspace. Значит одной только “записи в
-  S3” недостаточно, нужен явный workspace scenario и guardrail.
-- Старый remote raw-stage copy path для `source.url` удалён как мёртвый код.
-  При этом `raw/` subtree сохранён как общий namespace для upload staging и
-  source mirror prefixes; полный rename этого subtree в данном slice не нужен.
+### Blocking findings
 
-## Missing checks
+Нет blocking findings по landed slice.
 
-- Реализация size-aware guardrail ещё не сделана.
-- Не предпринималась миграция внутренних runtime flag/env имён вроде
-  `raw-stage-bucket` / `raw-stage-key-prefix`; operator-facing wording уже
-  выровнено, но internal shell naming всё ещё историческое.
+### Что подтверждено
 
-## Residual risk
+- live sourceworker runtime больше не монтирует publication work volume и не
+  передаёт `TMPDIR=/var/lib/ai-models/work`;
+- controller config/templates/OpenAPI больше не держат
+  `publicationRuntime.workVolume.*` и не рендерят
+  `PersistentVolumeClaim ai-models-publication-work`;
+- successful publication byte path остаётся streaming/object-source first и не
+  требует local workspace для `HuggingFace`, source mirror и staged upload
+  happy paths;
+- `publication worker` local storage contract теперь сузился до
+  `ephemeral-storage` request/limit writable layer и логов.
 
-- Large model всё ещё может упереться в недостаточный локальный workspace уже в
-  PVC-backed scenario, просто failure mode теперь меньше зависит от node
-  `ephemeral-storage`. Без size-aware guardrail оператор по-прежнему узнаёт об
-  exact capacity mismatch слишком поздно.
-- Runtime byte-path всё ещё требует локальной materialization копии поверх
-  source mirror в object storage; zero-local-copy pipeline в этот slice не
-  входит.
+### Residual risks
 
-## Validation
+- runtime shell больше не резервирует legacy `50Gi` workspace budget, поэтому
+  если какой-то future branch снова попытается писать full-size temp artifacts
+  в локальный filesystem, это быстро всплывёт как explicit regression, а не
+  будет молча поглощено PVC;
+- `phase2-runtime-followups` bundle теперь фиксирует, что shared
+  `workloadpod` boundary был только historical intermediate state и уже retired;
+  если будущая работа снова захочет вернуть shared volume helper, это нужно
+  будет защищать заново, а не ссылаться на устаревший active wording.
 
-- `go test ./internal/adapters/sourcefetch ./internal/dataplane/publishworker`
-  в `images/controller`
+### Validation
+
+- `cd images/controller && go test ./internal/adapters/k8s/sourceworker ./cmd/ai-models-controller ./internal/controllers/catalogstatus ./internal/bootstrap ./internal/dataplane/publishworker`
+- `cd images/controller && go test ./...`
 - `make helm-template`
+- `python3 tools/helm-tests/validate-renders.py tools/kubeconform/renders`
 - `make kubeconform`
 - `make verify`
+- `git diff --check`

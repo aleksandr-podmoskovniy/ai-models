@@ -20,9 +20,7 @@ import (
 	"testing"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
@@ -42,11 +40,7 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 		ArtifactsCredentialsSecretName: "artifacts-credentials",
 	}
 
-	options := config.bootstrapOptions(
-		workloadpod.WorkVolumeTypeEmptyDir,
-		resource.MustParse("50Gi"),
-		corev1.ResourceRequirements{},
-	)
+	options := config.bootstrapOptions(corev1.ResourceRequirements{})
 
 	if got, want := options.WorkloadDelivery.Service.Render.RuntimeImage, config.CleanupJobImage; got != want {
 		t.Fatalf("delivery runtime image = %q, want %q", got, want)

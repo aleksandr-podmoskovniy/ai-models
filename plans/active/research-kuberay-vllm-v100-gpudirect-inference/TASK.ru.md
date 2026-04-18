@@ -82,6 +82,19 @@ distributed inference scenario:
   - вспомогательные `Secret`/`PVC`/`ServiceAccount`/`ResourceClaimTemplate`
     example-файлы;
   - `Argo CD Application`, указывающий на новый каталог;
+- оформить отдельный operator-facing runbook по запуску whole app на
+  `k8s-dvp`, по структуре близкий к
+  `SKALA-SDN-RDMA-SMOKE.ru.md`, но уже не про низкоуровневый smoke, а про:
+  - `Argo`-раскатку;
+  - `KubeRay operator`;
+  - `RayService`;
+  - `HF secret`;
+  - storage;
+  - ingress;
+  - live-проверки `Ray`, `Serve`, API и `RDMA`;
+- использовать archived `SKALA` document как reference style и source для
+  низкоуровневых сетевых проверок, но не превращать его обратно в основной
+  source of truth для прикладного deployment path;
 - довести live `RayService` bring-up в `k8s-dvp.apiac.ru` до состояния, где:
   - worker pod поднимаются без `NET_ADMIN` и других лишних capability;
   - `sdn/DRA` автоматически довозит underlay device в pod;
@@ -146,6 +159,14 @@ distributed inference scenario:
   - `init-underlay-ip`;
   - `NET_ADMIN`;
   - `placement_group_config` внутри `deployment_config`;
+- в active bundle есть отдельный standalone runbook, из которого без чтения
+  всего `RECOMMENDATION.ru.md` понятно:
+  - какие `Argo` apps включать и в каком порядке;
+  - какие манифесты редактировать;
+  - какой `HF secret` нужен;
+  - какой `Ingress` host используется;
+  - какие live-команды показывают исправное состояние `RayService`;
+  - какие текущие `RDMA` throughput/latency подтверждены на live `Ray` worker;
 - зафиксирован честный runtime verdict по текущему live blocker, если rollout
   всё ещё срывается не из-за pod security / `sdn`, а из-за внешнего applier
   или самого `ray-llm` runtime;

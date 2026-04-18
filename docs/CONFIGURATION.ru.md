@@ -50,11 +50,11 @@ Custom trust для S3-compatible endpoint задаётся через `artifact
 - `spec.source.upload` использует controller-owned upload-session path;
 - оба пути публикуют OCI `ModelPack` артефакты во внутренний `DMCR`.
 
-Publication workspace по умолчанию теперь `PersistentVolumeClaim`, а не
-`EmptyDir`. Если `storageClassName` не задан, сгенерированный PVC использует
-default `StorageClass` кластера. Значит публикация больших моделей теперь
-требует достаточной persistent storage capacity, а не опоры на node ephemeral
-storage.
+Успешный publication worker path больше не использует локальный workspace/PVC.
+`HuggingFace`, source mirror и staged upload публикуются через
+object-source/archive-source streaming semantics. Локальный bounded storage
+contract для publish-worker теперь только один: `ephemeral-storage` requests и
+limits контейнера для writable layer и логов.
 
 Публичный model API тоже намеренно минимален. Пользователь задаёт только
 `spec.source`; формат, task и остальная model metadata вычисляются controller'ом

@@ -196,9 +196,9 @@ Blocking findings нет.
 - `k8s/modeldelivery` больше не держит второй local contract для
   `EmptyDir`/`PersistentVolumeClaim` поверх уже существующего
   `k8s/workloadpod`;
-- `workloadpod` теперь даёт shared bounded-volume validation и
-  `VolumeSource(...)`, которые используются и publication runtime, и
-  consumer-side runtime delivery wiring;
+- это был исторический intermediate шаг; publication-side shared
+  `workloadpod` boundary позже retired, когда sourceworker перестал
+  требовать local work-volume contract;
 - runtime delivery error messages больше не тащат publication-specific
   `work volume` wording.
 

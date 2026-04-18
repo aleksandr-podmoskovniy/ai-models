@@ -14,8 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
+import hashlib
+import json
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+import yaml
 
 LEGACY_RENDER_MARKERS = (
     "name: ai-models-backend-auth",
@@ -28,6 +37,215 @@ DISALLOWED_RENDER_MARKERS = (
     "kind: Postgres\n",
     "kind: PostgresClass\n",
 )
+
+
+def _find_secret(
+    documents: list[dict[object, object]], name: str
+) -> dict[object, object] | None:
+    for document in documents:
+        if not isinstance(document, dict):
+            continue
+        metadata = document.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        if document.get("kind") == "Secret" and metadata.get("name") == name:
+            return document
+    return None
+
+
+def _expect_string_data(
+    path: Path, secret: dict[object, object], key: str
+) -> str | None:
+    string_data = secret.get("stringData")
+    if not isinstance(string_data, dict):
+        return None
+    value = string_data.get(key)
+    if not isinstance(value, str):
+        return None
+    return value
+
+
+def _validate_dmcr_auth_consistency(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    documents = list(yaml.safe_load_all(content))
+
+    auth_secret = _find_secret(documents, "ai-models-dmcr-auth")
+    write_secret = _find_secret(documents, "ai-models-dmcr-auth-write")
+    read_secret = _find_secret(documents, "ai-models-dmcr-auth-read")
+    if not auth_secret or not write_secret or not read_secret:
+        return errors
+
+    auth_write_password = _expect_string_data(path, auth_secret, "write.password")
+    auth_read_password = _expect_string_data(path, auth_secret, "read.password")
+    write_password = _expect_string_data(path, write_secret, "password")
+    read_password = _expect_string_data(path, read_secret, "password")
+    write_username = _expect_string_data(path, write_secret, "username")
+    read_username = _expect_string_data(path, read_secret, "username")
+    write_config = _expect_string_data(path, write_secret, ".dockerconfigjson")
+    read_config = _expect_string_data(path, read_secret, ".dockerconfigjson")
+
+    if auth_write_password != write_password:
+        errors.append(
+            f"{path.name}: DMCR write auth password drift between ai-models-dmcr-auth and ai-models-dmcr-auth-write"
+        )
+
+    if auth_read_password != read_password:
+        errors.append(
+            f"{path.name}: DMCR read auth password drift between ai-models-dmcr-auth and ai-models-dmcr-auth-read"
+        )
+
+    write_htpasswd = _expect_string_data(path, auth_secret, "write.htpasswd")
+    read_htpasswd = _expect_string_data(path, auth_secret, "read.htpasswd")
+    write_checksum = _expect_string_data(path, auth_secret, "write.htpasswd.checksum")
+    read_checksum = _expect_string_data(path, auth_secret, "read.htpasswd.checksum")
+
+    if auth_write_password and write_checksum:
+        expected_write_checksum = hashlib.sha256(
+            auth_write_password.encode("utf-8")
+        ).hexdigest()
+        if write_checksum != expected_write_checksum:
+            errors.append(
+                f"{path.name}: ai-models-dmcr-auth write.htpasswd.checksum does not match write.password"
+            )
+    elif auth_write_password and not write_checksum:
+        errors.append(
+            f"{path.name}: ai-models-dmcr-auth is missing write.htpasswd.checksum"
+        )
+
+    if auth_read_password and read_checksum:
+        expected_read_checksum = hashlib.sha256(
+            auth_read_password.encode("utf-8")
+        ).hexdigest()
+        if read_checksum != expected_read_checksum:
+            errors.append(
+                f"{path.name}: ai-models-dmcr-auth read.htpasswd.checksum does not match read.password"
+            )
+    elif auth_read_password and not read_checksum:
+        errors.append(
+            f"{path.name}: ai-models-dmcr-auth is missing read.htpasswd.checksum"
+        )
+
+    if auth_write_password and write_htpasswd:
+        errors.extend(
+            _validate_htpasswd_entry(
+                path,
+                secret_name="ai-models-dmcr-auth",
+                username="ai-models",
+                password=auth_write_password,
+                htpasswd_entry=write_htpasswd,
+            )
+        )
+    if auth_read_password and read_htpasswd:
+        errors.extend(
+            _validate_htpasswd_entry(
+                path,
+                secret_name="ai-models-dmcr-auth",
+                username="ai-models-reader",
+                password=auth_read_password,
+                htpasswd_entry=read_htpasswd,
+            )
+        )
+
+    if write_config and write_username and write_password:
+        errors.extend(
+            _validate_registry_dockerconfig(
+                path,
+                secret_name="ai-models-dmcr-auth-write",
+                dockerconfig_json=write_config,
+                expected_username=write_username,
+                expected_password=write_password,
+            )
+        )
+
+    if read_config and read_username and read_password:
+        errors.extend(
+            _validate_registry_dockerconfig(
+                path,
+                secret_name="ai-models-dmcr-auth-read",
+                dockerconfig_json=read_config,
+                expected_username=read_username,
+                expected_password=read_password,
+            )
+        )
+
+    return errors
+
+
+def _validate_htpasswd_entry(
+    path: Path,
+    *,
+    secret_name: str,
+    username: str,
+    password: str,
+    htpasswd_entry: str,
+) -> list[str]:
+    htpasswd_bin = shutil.which("htpasswd")
+    if not htpasswd_bin:
+        return []
+
+    with tempfile.NamedTemporaryFile("w", delete=False) as handle:
+        handle.write(htpasswd_entry)
+        temp_path = handle.name
+    try:
+        result = subprocess.run(
+            [htpasswd_bin, "-vb", temp_path, username, password],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        os.unlink(temp_path)
+
+    if result.returncode == 0:
+        return []
+
+    detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+    return [
+        f"{path.name}: {secret_name} htpasswd entry for {username} does not match projected password ({detail})"
+    ]
+
+
+def _validate_registry_dockerconfig(
+    path: Path,
+    *,
+    secret_name: str,
+    dockerconfig_json: str,
+    expected_username: str,
+    expected_password: str,
+) -> list[str]:
+    errors: list[str] = []
+    try:
+        payload = json.loads(dockerconfig_json)
+    except json.JSONDecodeError as err:
+        return [f"{path.name}: {secret_name} has invalid .dockerconfigjson: {err}"]
+
+    auths = payload.get("auths")
+    if not isinstance(auths, dict) or len(auths) != 1:
+        return [
+            f"{path.name}: {secret_name} must contain exactly one registry auth entry"
+        ]
+
+    registry_entry = next(iter(auths.values()))
+    if not isinstance(registry_entry, dict):
+        return [f"{path.name}: {secret_name} auth entry must be an object"]
+
+    username = registry_entry.get("username")
+    password = registry_entry.get("password")
+    auth = registry_entry.get("auth")
+    if username != expected_username or password != expected_password:
+        errors.append(
+            f"{path.name}: {secret_name} .dockerconfigjson does not match projected username/password"
+        )
+
+    expected_auth = base64.b64encode(
+        f"{expected_username}:{expected_password}".encode("utf-8")
+    ).decode("utf-8")
+    if auth != expected_auth:
+        errors.append(
+            f"{path.name}: {secret_name} .dockerconfigjson auth field does not match projected username/password"
+        )
+
+    return errors
 
 
 def validate_render(path: Path) -> list[str]:
@@ -45,6 +263,8 @@ def validate_render(path: Path) -> list[str]:
             errors.append(
                 f"{path.name}: rendered output must not contain retired PostgreSQL shell marker {marker.strip()!r}"
             )
+
+    errors.extend(_validate_dmcr_auth_consistency(path, content))
 
     return errors
 

@@ -21,7 +21,6 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
@@ -86,7 +85,6 @@ func buildEnv(
 ) []corev1.EnvVar {
 	env := ociregistry.Env(options.OCIInsecure, options.OCIRegistrySecretName, options.OCIRegistryCASecretName)
 	env = append(env,
-		corev1.EnvVar{Name: "TMPDIR", Value: workloadpod.WorkVolumeMountPath},
 		corev1.EnvVar{Name: "LOG_FORMAT", Value: options.LogFormat},
 		corev1.EnvVar{Name: "LOG_LEVEL", Value: options.LogLevel},
 	)
@@ -108,7 +106,7 @@ func buildEnv(
 func buildVolumeMounts(options Options, _ publicationapp.SourceWorkerPlan) []corev1.VolumeMount {
 	var extra []corev1.VolumeMount
 	extra = storageprojection.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
-	return workloadpod.VolumeMounts(options.RuntimeOptions, extra...)
+	return append(ociregistry.VolumeMounts(options.OCIRegistryCASecretName), extra...)
 }
 
 func buildVolumes(
@@ -118,5 +116,5 @@ func buildVolumes(
 ) []corev1.Volume {
 	var extra []corev1.Volume
 	extra = storageprojection.Volumes(options.ObjectStorage.CASecretName, extra...)
-	return workloadpod.Volumes(options.RuntimeOptions, extra...)
+	return append(ociregistry.Volumes(options.OCIRegistryCASecretName), extra...)
 }

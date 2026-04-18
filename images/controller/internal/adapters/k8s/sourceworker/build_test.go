@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 )
 
 func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
@@ -54,15 +53,11 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	if got, want := pod.Spec.Containers[0].Resources.Requests.Cpu().String(), "1"; got != want {
 		t.Fatalf("unexpected cpu request %q", got)
 	}
-	foundTMPDIR := false
 	foundLogFormat := false
 	foundLogLevel := false
 	for _, item := range pod.Spec.Containers[0].Env {
 		if item.Name == "TMPDIR" {
-			if got, want := item.Value, workloadpod.WorkVolumeMountPath; got != want {
-				t.Fatalf("unexpected TMPDIR %q", got)
-			}
-			foundTMPDIR = true
+			t.Fatal("did not expect TMPDIR env in streaming publish worker pod")
 		}
 		if item.Name == "LOG_FORMAT" {
 			if got, want := item.Value, "json"; got != want {
@@ -77,14 +72,16 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 			foundLogLevel = true
 		}
 	}
-	if !foundTMPDIR {
-		t.Fatal("expected TMPDIR env")
-	}
 	if !foundLogFormat {
 		t.Fatal("expected LOG_FORMAT env")
 	}
 	if !foundLogLevel {
 		t.Fatal("expected LOG_LEVEL env")
+	}
+	for _, volume := range pod.Spec.Volumes {
+		if volume.Name == "work" {
+			t.Fatalf("did not expect legacy work volume in sourceworker pod: %#v", volume)
+		}
 	}
 }
 
@@ -150,31 +147,19 @@ func TestBuildTruncatesOwnerLabelsToKubernetesLimit(t *testing.T) {
 	}
 }
 
-func TestBuildSupportsPersistentVolumeClaimWorkVolume(t *testing.T) {
+func TestBuildDoesNotMountLegacyWorkVolume(t *testing.T) {
 	t.Parallel()
 
-	options := testOptions()
-	options.WorkVolume.Type = workloadpod.WorkVolumeTypePersistentVolumeClaim
-	options.WorkVolume.PersistentVolumeClaimName = "ai-models-publication-work"
-
-	pod, err := Build(testOperationRequest(), options, "")
+	pod, err := Build(testOperationRequest(), testOptions(), "")
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
 
 	for _, volume := range pod.Spec.Volumes {
-		if volume.Name != workloadpod.WorkVolumeName {
-			continue
+		if volume.Name == "work" {
+			t.Fatalf("did not expect legacy work volume in sourceworker pod: %#v", volume)
 		}
-		if volume.PersistentVolumeClaim == nil {
-			t.Fatalf("expected pvc-backed work volume, got %#v", volume)
-		}
-		if got, want := volume.PersistentVolumeClaim.ClaimName, "ai-models-publication-work"; got != want {
-			t.Fatalf("unexpected pvc claim name %q", got)
-		}
-		return
 	}
-	t.Fatal("expected work volume")
 }
 
 func assertContains(t *testing.T, values []string, want string) {

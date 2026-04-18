@@ -21,20 +21,19 @@ import (
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 )
 
 type Options struct {
-	workloadpod.RuntimeOptions
+	RuntimeOptions
 	LogFormat            string
 	LogLevel             string
 	MaxConcurrentWorkers int
 }
 
 func normalizeOptions(options Options) Options {
-	options.RuntimeOptions = workloadpod.NormalizeRuntimeOptions(options.RuntimeOptions)
+	options.RuntimeOptions = NormalizeRuntimeOptions(options.RuntimeOptions)
 	options.LogFormat = strings.TrimSpace(options.LogFormat)
 	if options.LogFormat == "" {
 		options.LogFormat = "json"
@@ -60,7 +59,7 @@ func validateOptions(plan publicationapp.SourceWorkerPlan, options Options) erro
 }
 
 func validateServiceOptions(options Options) error {
-	if err := workloadpod.ValidateRuntimeOptions("source worker", options.RuntimeOptions); err != nil {
+	if err := ValidateRuntimeOptions("source worker", options.RuntimeOptions); err != nil {
 		return err
 	}
 	if options.MaxConcurrentWorkers <= 0 {

@@ -59,9 +59,6 @@ spec:
             - --publication-worker-namespace=$(POD_NAMESPACE)
             - --publication-worker-service-account={{ include "ai-models.controllerServiceAccountName" . }}
             - --publication-max-concurrent-workers={{ include "ai-models.publicationMaxConcurrentWorkers" . }}
-            - --publication-work-volume-type={{ include "ai-models.publicationWorkVolumeType" . }}
-            - --publication-work-volume-size-limit={{ include "ai-models.publicationWorkVolumeEmptyDirSizeLimit" . }}
-            - --publication-work-volume-claim-name={{ include "ai-models.publicationWorkVolumePVCName" . }}
             - --publication-worker-cpu-request={{ include "ai-models.publicationWorkerCPURequest" . }}
             - --publication-worker-cpu-limit={{ include "ai-models.publicationWorkerCPULimit" . }}
             - --publication-worker-memory-request={{ include "ai-models.publicationWorkerMemoryRequest" . }}

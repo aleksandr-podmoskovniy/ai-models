@@ -120,8 +120,8 @@ Current phase-2 slice implemented here:
   path before the same create/reuse flow, and projected auth supplements now go
   through one direct `CreateOrUpdate` path instead of adapter-local CRUD;
   active publish-worker concurrency is now capped explicitly before Pod
-  creation, and the worker Pod always carries explicit CPU, memory and
-  ephemeral-storage requests/limits together with a bounded work volume;
+  creation, and the worker Pod now carries only explicit CPU, memory and
+  ephemeral-storage requests/limits without a local publication workspace;
 - `internal/adapters/k8s/uploadsession` for controller-owned upload session
   supplements:
   one short-lived session `Secret` per upload plus user-facing upload URL
@@ -151,10 +151,10 @@ Current phase-2 slice implemented here:
   second lifecycle truth; the concrete sink now mirrors the same lifecycle
   edges into structured controller logs so operator audit trail no longer
   lives only in Event resources;
-- `internal/adapters/k8s/workloadpod` for the single canonical bounded
-  work-volume contract reused by worker/upload pod adapters:
-  either sized `EmptyDir` scratch or an explicit work PVC, plus registry-CA
-  volume/mount rendering and the fixed publish-worker work mount path;
+- `internal/adapters/k8s/sourceworker` for the concrete publication Pod shell:
+  publish-worker arg/env shaping, projected HuggingFace auth, OCI registry CA
+  mounts, object-storage CA mounts, and concurrency-safe source-worker pod
+  lifecycle without a local publication workspace contract;
 - `internal/dataplane/publishworker` for the controller-owned publication
   runtime that fetches sources, computes resolved metadata, publishes a
   `ModelPack`, and writes the final result into the worker Pod termination

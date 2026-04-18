@@ -255,7 +255,7 @@
   `internal/adapters/modelpack/oci/materialize.go` и не должен снова уводить
   `STRUCTURE.ru.md` от реального package tree.
 - reusable `modeldelivery` seam не должен тащить второй bounded-volume
-  contract рядом с уже существующим `workloadpod` runtime surface.
+  contract рядом с already-live runtime delivery/publication storage semantics;
 - reusable `modeldelivery` seam не должен автоматически invent storage:
   workload сам предоставляет mount на `/data/modelcache`, а delivery wiring
   inject'ит только `materialize-artifact`, projected OCI auth/CA и digest

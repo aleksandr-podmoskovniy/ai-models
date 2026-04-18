@@ -39,50 +39,6 @@ memory: 128Mi
 {{- default 1 (index $runtime "maxConcurrentWorkers") -}}
 {{- end -}}
 
-{{- define "ai-models.publicationWorkVolumeType" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $internal := (index $moduleValues "internal") | default dict -}}
-{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
-{{- $workVolume := (index $runtime "workVolume") | default dict -}}
-{{- default "PersistentVolumeClaim" (index $workVolume "type") -}}
-{{- end -}}
-
-{{- define "ai-models.publicationWorkVolumeEmptyDirSizeLimit" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $internal := (index $moduleValues "internal") | default dict -}}
-{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
-{{- $workVolume := (index $runtime "workVolume") | default dict -}}
-{{- $emptyDir := (index $workVolume "emptyDir") | default dict -}}
-{{- default "50Gi" (index $emptyDir "sizeLimit") -}}
-{{- end -}}
-
-{{- define "ai-models.publicationWorkVolumePVCName" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $internal := (index $moduleValues "internal") | default dict -}}
-{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
-{{- $workVolume := (index $runtime "workVolume") | default dict -}}
-{{- $pvc := (index $workVolume "persistentVolumeClaim") | default dict -}}
-{{- default "ai-models-publication-work" (index $pvc "name") -}}
-{{- end -}}
-
-{{- define "ai-models.publicationWorkVolumePVCStorageClassName" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $internal := (index $moduleValues "internal") | default dict -}}
-{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
-{{- $workVolume := (index $runtime "workVolume") | default dict -}}
-{{- $pvc := (index $workVolume "persistentVolumeClaim") | default dict -}}
-{{- default "" (index $pvc "storageClassName") -}}
-{{- end -}}
-
-{{- define "ai-models.publicationWorkVolumePVCStorageSize" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $internal := (index $moduleValues "internal") | default dict -}}
-{{- $runtime := (index $internal "publicationRuntime") | default dict -}}
-{{- $workVolume := (index $runtime "workVolume") | default dict -}}
-{{- $pvc := (index $workVolume "persistentVolumeClaim") | default dict -}}
-{{- default "50Gi" (index $pvc "storageSize") -}}
-{{- end -}}
-
 {{- define "ai-models.publicationWorkerCPURequest" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $internal := (index $moduleValues "internal") | default dict -}}
@@ -107,7 +63,7 @@ memory: 128Mi
 {{- $runtime := (index $internal "publicationRuntime") | default dict -}}
 {{- $resources := (index $runtime "resources") | default dict -}}
 {{- $requests := (index $resources "requests") | default dict -}}
-{{- default "50Gi" (index $requests "ephemeral-storage") -}}
+{{- default "1Gi" (index $requests "ephemeral-storage") -}}
 {{- end -}}
 
 {{- define "ai-models.publicationWorkerCPULimit" -}}
@@ -134,7 +90,7 @@ memory: 128Mi
 {{- $runtime := (index $internal "publicationRuntime") | default dict -}}
 {{- $resources := (index $runtime "resources") | default dict -}}
 {{- $limits := (index $resources "limits") | default dict -}}
-{{- default "50Gi" (index $limits "ephemeral-storage") -}}
+{{- default "1Gi" (index $limits "ephemeral-storage") -}}
 {{- end -}}
 
 {{- define "ai-models.dmcrResources" -}}
@@ -536,44 +492,42 @@ ai-models-reader
 {{- dict "auths" (dict $host (dict "username" $username "password" $password "auth" $auth)) | toJson -}}
 {{- end -}}
 
-{{- define "ai-models.dmcrWriteDockerConfigJSON" -}}
-{{- include "ai-models.dmcrDockerConfigJSON" (list . (include "ai-models.dmcrWriteAuthUsername" . | trim) (include "ai-models.dmcrWriteAuthPassword" . | trim)) -}}
-{{- end -}}
-
-{{- define "ai-models.dmcrReadDockerConfigJSON" -}}
-{{- include "ai-models.dmcrDockerConfigJSON" (list . (include "ai-models.dmcrReadAuthUsername" . | trim) (include "ai-models.dmcrReadAuthPassword" . | trim)) -}}
+{{- define "ai-models.dmcrPasswordChecksum" -}}
+{{- sha256sum (trim (toString .)) -}}
 {{- end -}}
 
 {{- define "ai-models.dmcrWriteHTPasswdEntry" -}}
-{{- $secretName := include "ai-models.dmcrAuthSecretName" . -}}
-{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $root := index . 0 -}}
+{{- $desiredPassword := index . 1 | trim -}}
+{{- $desiredChecksum := include "ai-models.dmcrPasswordChecksum" $desiredPassword | trim -}}
+{{- $secretName := include "ai-models.dmcrAuthSecretName" $root -}}
+{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" $root) $secretName -}}
 {{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
 {{- $existingEntry := (get $existingData "write.htpasswd" | default "" | b64dec) -}}
 {{- $storedPassword := (get $existingData "write.password" | default "" | b64dec) -}}
-{{- $desiredPassword := include "ai-models.dmcrWriteAuthPassword" . | trim -}}
-{{- if and $existingEntry $storedPassword (eq ($storedPassword | trim) $desiredPassword) -}}
+{{- $storedChecksum := (get $existingData "write.htpasswd.checksum" | default "" | b64dec) -}}
+{{- if and $existingEntry $storedPassword $storedChecksum (eq ($storedPassword | trim) $desiredPassword) (eq ($storedChecksum | trim) $desiredChecksum) -}}
 {{- $existingEntry -}}
 {{- else -}}
-{{- htpasswd (include "ai-models.dmcrWriteAuthUsername" . | trim) $desiredPassword -}}
+{{- htpasswd (include "ai-models.dmcrWriteAuthUsername" $root | trim) $desiredPassword -}}
 {{- end -}}
 {{- end -}}
 
 {{- define "ai-models.dmcrReadHTPasswdEntry" -}}
-{{- $secretName := include "ai-models.dmcrAuthSecretName" . -}}
-{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
+{{- $root := index . 0 -}}
+{{- $desiredPassword := index . 1 | trim -}}
+{{- $desiredChecksum := include "ai-models.dmcrPasswordChecksum" $desiredPassword | trim -}}
+{{- $secretName := include "ai-models.dmcrAuthSecretName" $root -}}
+{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" $root) $secretName -}}
 {{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
 {{- $existingEntry := (get $existingData "read.htpasswd" | default "" | b64dec) -}}
 {{- $storedPassword := (get $existingData "read.password" | default "" | b64dec) -}}
-{{- $desiredPassword := include "ai-models.dmcrReadAuthPassword" . | trim -}}
-{{- if and $existingEntry $storedPassword (eq ($storedPassword | trim) $desiredPassword) -}}
+{{- $storedChecksum := (get $existingData "read.htpasswd.checksum" | default "" | b64dec) -}}
+{{- if and $existingEntry $storedPassword $storedChecksum (eq ($storedPassword | trim) $desiredPassword) (eq ($storedChecksum | trim) $desiredChecksum) -}}
 {{- $existingEntry -}}
 {{- else -}}
-{{- htpasswd (include "ai-models.dmcrReadAuthUsername" . | trim) $desiredPassword -}}
+{{- htpasswd (include "ai-models.dmcrReadAuthUsername" $root | trim) $desiredPassword -}}
 {{- end -}}
-{{- end -}}
-
-{{- define "ai-models.dmcrHTPasswd" -}}
-{{- printf "%s\n%s" (include "ai-models.dmcrWriteHTPasswdEntry" . | trim) (include "ai-models.dmcrReadHTPasswdEntry" . | trim) -}}
 {{- end -}}
 
 {{- define "ai-models.dmcrHTTPSalt" -}}
@@ -617,13 +571,6 @@ true
   {{- end -}}
   {{- if not (include "ai-models.artifactsCredentialsSecretName" . | trim) -}}
     {{- fail "ai-models.artifacts.credentialsSecretName is required" -}}
-  {{- end -}}
-  {{- $publicationWorkVolumeType := include "ai-models.publicationWorkVolumeType" . | trim -}}
-  {{- if not (or (eq $publicationWorkVolumeType "EmptyDir") (eq $publicationWorkVolumeType "PersistentVolumeClaim")) -}}
-    {{- fail "ai-models.internal.publicationRuntime.workVolume.type must be either EmptyDir or PersistentVolumeClaim" -}}
-  {{- end -}}
-  {{- if and (eq $publicationWorkVolumeType "PersistentVolumeClaim") (gt (include "ai-models.publicationMaxConcurrentWorkers" . | int) 1) -}}
-    {{- fail "ai-models.internal.publicationRuntime.maxConcurrentWorkers must be 1 when workVolume.type=PersistentVolumeClaim" -}}
   {{- end -}}
 {{- end -}}
 {{- end -}}

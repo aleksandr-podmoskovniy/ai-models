@@ -20,15 +20,14 @@ import (
 	"time"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/sourceworker"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	"github.com/deckhouse/ai-models/controller/internal/bootstrap"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const defaultDMCRReadAuthSecretName = "ai-models-dmcr-auth-read"
@@ -52,9 +51,6 @@ type managerConfig struct {
 	PublicationOCISecretName             string
 	PublicationOCICASecretName           string
 	PublicationMaxConcurrentWorkers      int
-	PublicationWorkVolumeType            string
-	PublicationWorkVolumeSizeLimit       string
-	PublicationWorkVolumeClaimName       string
 	PublicationWorkerCPURequest          string
 	PublicationWorkerCPULimit            string
 	PublicationWorkerMemoryRequest       string
@@ -98,14 +94,11 @@ func defaultManagerConfig() managerConfig {
 		PublicationOCISecretName:             cmdsupport.EnvOr(publicationOCISecretEnv, ""),
 		PublicationOCICASecretName:           cmdsupport.EnvOr(publicationOCICASecretEnv, ""),
 		PublicationMaxConcurrentWorkers:      cmdsupport.EnvOrInt(publicationMaxConcurrentWorkersEnv, defaultPublicationMaxConcurrentWorkers),
-		PublicationWorkVolumeType:            cmdsupport.EnvOr(publicationWorkVolumeTypeEnv, string(workloadpod.WorkVolumeTypePersistentVolumeClaim)),
-		PublicationWorkVolumeSizeLimit:       cmdsupport.EnvOr(publicationWorkVolumeSizeLimitEnv, defaultPublicationWorkVolumeSizeLimit),
-		PublicationWorkVolumeClaimName:       cmdsupport.EnvOr(publicationWorkVolumeClaimNameEnv, defaultPublicationWorkVolumeClaimName),
 		PublicationWorkerCPURequest:          cmdsupport.EnvOr(publicationWorkerCPURequestEnv, defaultPublicationWorkerCPURequest),
 		PublicationWorkerCPULimit:            cmdsupport.EnvOr(publicationWorkerCPULimitEnv, defaultPublicationWorkerCPULimit),
 		PublicationWorkerMemoryRequest:       cmdsupport.EnvOr(publicationWorkerMemoryRequestEnv, defaultPublicationWorkerMemoryRequest),
 		PublicationWorkerMemoryLimit:         cmdsupport.EnvOr(publicationWorkerMemoryLimitEnv, defaultPublicationWorkerMemoryLimit),
-		PublicationWorkerEphemeralRequest:    cmdsupport.EnvOr(publicationWorkerEphemeralReqEnv, defaultPublicationWorkerEphemeralLimit),
+		PublicationWorkerEphemeralRequest:    cmdsupport.EnvOr(publicationWorkerEphemeralReqEnv, defaultPublicationWorkerEphemeralReq),
 		PublicationWorkerEphemeralLimit:      cmdsupport.EnvOr(publicationWorkerEphemeralLimitEnv, defaultPublicationWorkerEphemeralLimit),
 		ArtifactsBucket:                      cmdsupport.EnvOr(artifactsBucketEnv, ""),
 		ArtifactsS3Endpoint:                  cmdsupport.EnvOr(artifactsS3EndpointEnv, ""),
@@ -144,9 +137,6 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.StringVar(&config.PublicationOCISecretName, "publication-oci-credentials-secret-name", config.PublicationOCISecretName, "Secret with OCI registry username/password for publication workers.")
 	flags.StringVar(&config.PublicationOCICASecretName, "publication-oci-ca-secret-name", config.PublicationOCICASecretName, "Optional Secret with ca.crt for publication worker OCI registry trust.")
 	flags.IntVar(&config.PublicationMaxConcurrentWorkers, "publication-max-concurrent-workers", config.PublicationMaxConcurrentWorkers, "Maximum number of active publication worker Pods.")
-	flags.StringVar(&config.PublicationWorkVolumeType, "publication-work-volume-type", config.PublicationWorkVolumeType, "Publication work volume type: EmptyDir or PersistentVolumeClaim.")
-	flags.StringVar(&config.PublicationWorkVolumeSizeLimit, "publication-work-volume-size-limit", config.PublicationWorkVolumeSizeLimit, "Bounded EmptyDir size limit for publication work volume.")
-	flags.StringVar(&config.PublicationWorkVolumeClaimName, "publication-work-volume-claim-name", config.PublicationWorkVolumeClaimName, "PersistentVolumeClaim name used as publication work volume when PVC mode is enabled.")
 	flags.StringVar(&config.PublicationWorkerCPURequest, "publication-worker-cpu-request", config.PublicationWorkerCPURequest, "CPU request for publication worker Pods.")
 	flags.StringVar(&config.PublicationWorkerCPULimit, "publication-worker-cpu-limit", config.PublicationWorkerCPULimit, "CPU limit for publication worker Pods.")
 	flags.StringVar(&config.PublicationWorkerMemoryRequest, "publication-worker-memory-request", config.PublicationWorkerMemoryRequest, "Memory request for publication worker Pods.")
@@ -186,7 +176,7 @@ func (c managerConfig) objectStorageOptions() storageprojection.Options {
 	}
 }
 
-func (c managerConfig) bootstrapOptions(workVolumeType workloadpod.WorkVolumeType, workVolumeSizeLimit resource.Quantity, resources corev1.ResourceRequirements) bootstrap.Options {
+func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) bootstrap.Options {
 	artifactsObjectStorage := c.objectStorageOptions()
 
 	return bootstrap.Options{
@@ -207,7 +197,7 @@ func (c managerConfig) bootstrapOptions(workVolumeType workloadpod.WorkVolumeTyp
 		PublicationRuntime: catalogstatus.Options{
 			RuntimeLogFormat: c.LogFormat,
 			RuntimeLogLevel:  c.LogLevel,
-			Runtime: catalogstatus.PublicationRuntimeOptions{
+			Runtime: sourceworker.RuntimeOptions{
 				Namespace:               c.PublicationWorkerNamespace,
 				Image:                   cmdsupport.FallbackString(c.PublicationWorkerImage, c.CleanupJobImage),
 				ImagePullSecretName:     cmdsupport.FallbackString(c.PublicationWorkerImagePullSecretName, c.CleanupJobImagePullSecretName),
@@ -217,12 +207,7 @@ func (c managerConfig) bootstrapOptions(workVolumeType workloadpod.WorkVolumeTyp
 				OCIRegistrySecretName:   c.PublicationOCISecretName,
 				OCIRegistryCASecretName: c.PublicationOCICASecretName,
 				ObjectStorage:           artifactsObjectStorage,
-				WorkVolume: workloadpod.WorkVolumeOptions{
-					Type:                      workVolumeType,
-					EmptyDirSizeLimit:         workVolumeSizeLimit,
-					PersistentVolumeClaimName: c.PublicationWorkVolumeClaimName,
-				},
-				Resources: resources,
+				Resources:               resources,
 			},
 			MaxConcurrentWorkers: c.PublicationMaxConcurrentWorkers,
 			UploadGateway: catalogstatus.UploadGatewayOptions{

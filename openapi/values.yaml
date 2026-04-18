@@ -152,26 +152,18 @@ properties:
         additionalProperties: false
       publicationRuntime:
         type: object
-        description: Runtime-only publish worker scheduling and bounded work-volume settings.
+        description: Runtime-only publish worker scheduling and bounded writable-layer settings.
         default:
           maxConcurrentWorkers: 1
-          workVolume:
-            type: PersistentVolumeClaim
-            emptyDir:
-              sizeLimit: 50Gi
-            persistentVolumeClaim:
-              name: ai-models-publication-work
-              storageClassName: ""
-              storageSize: 50Gi
           resources:
             requests:
               cpu: "1"
               memory: 8Gi
-              ephemeral-storage: 50Gi
+              ephemeral-storage: 1Gi
             limits:
               cpu: "4"
               memory: 16Gi
-              ephemeral-storage: 50Gi
+              ephemeral-storage: 1Gi
         additionalProperties: true
       ingress:
         type: object

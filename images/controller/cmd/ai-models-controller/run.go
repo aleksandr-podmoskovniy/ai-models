@@ -23,11 +23,9 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	"github.com/deckhouse/ai-models/controller/internal/bootstrap"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func runManager(args []string) int {
@@ -50,13 +48,13 @@ func runManager(args []string) int {
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
 
-	workVolumeType, workVolumeSizeLimit, resources, resourceErr := runtimeResources(config)
+	resources, resourceErr := runtimeResources(config)
 	if resourceErr != nil {
 		logger.Error(resourceErr.message, slog.Any("error", resourceErr.cause))
 		return 1
 	}
 
-	application, err := bootstrap.New(logger, config.bootstrapOptions(workVolumeType, workVolumeSizeLimit, resources))
+	application, err := bootstrap.New(logger, config.bootstrapOptions(resources))
 	if err != nil {
 		logger.Error("unable to initialize controller app", slog.Any("error", err))
 		return 1
@@ -75,23 +73,7 @@ type runtimeResourcesError struct {
 	cause   error
 }
 
-func runtimeResources(config managerConfig) (workVolumeType workloadpod.WorkVolumeType, workVolumeSizeLimit resource.Quantity, resources corev1.ResourceRequirements, err *runtimeResourcesError) {
-	parsedWorkVolumeType, parseErr := parsePublicationWorkVolumeType(config.PublicationWorkVolumeType)
-	if parseErr != nil {
-		return "", resource.Quantity{}, corev1.ResourceRequirements{}, &runtimeResourcesError{
-			message: "invalid publication work volume type",
-			cause:   parseErr,
-		}
-	}
-
-	parsedWorkVolumeSizeLimit, quantityErr := parsePositiveQuantity("publication-work-volume-size-limit", config.PublicationWorkVolumeSizeLimit)
-	if quantityErr != nil {
-		return "", resource.Quantity{}, corev1.ResourceRequirements{}, &runtimeResourcesError{
-			message: "invalid publication work volume size limit",
-			cause:   quantityErr,
-		}
-	}
-
+func runtimeResources(config managerConfig) (resources corev1.ResourceRequirements, err *runtimeResourcesError) {
 	parsedResources, resourceErr := buildPublicationWorkerResources(
 		config.PublicationWorkerCPURequest,
 		config.PublicationWorkerCPULimit,
@@ -101,11 +83,11 @@ func runtimeResources(config managerConfig) (workVolumeType workloadpod.WorkVolu
 		config.PublicationWorkerEphemeralLimit,
 	)
 	if resourceErr != nil {
-		return "", resource.Quantity{}, corev1.ResourceRequirements{}, &runtimeResourcesError{
+		return corev1.ResourceRequirements{}, &runtimeResourcesError{
 			message: "invalid publication worker resources",
 			cause:   resourceErr,
 		}
 	}
 
-	return parsedWorkVolumeType, parsedWorkVolumeSizeLimit, parsedResources, nil
+	return parsedResources, nil
 }

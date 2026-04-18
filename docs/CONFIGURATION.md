@@ -49,10 +49,11 @@ The public runtime path for models is now controller-owned:
 - `spec.source.upload` uses the controller-owned upload-session path;
 - both paths publish OCI `ModelPack` artifacts into the internal `DMCR`.
 
-The publication workspace default is `PersistentVolumeClaim`, not `EmptyDir`.
-If `storageClassName` is left empty, the generated PVC uses the cluster default
-`StorageClass`. Large-model publication therefore requires enough persistent
-storage capacity rather than relying on node ephemeral storage.
+The successful publication worker path no longer uses a local workspace/PVC.
+`HuggingFace`, source mirror, and staged upload publish through
+object-source/archive-source streaming semantics. The only local bounded
+storage contract left for the publish worker is the container
+`ephemeral-storage` request/limit for logs and writable layer usage.
 
 The public model API is also intentionally minimal. Users specify only
 `spec.source`; format, task, and other model metadata are calculated by the

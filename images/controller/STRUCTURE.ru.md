@@ -72,7 +72,6 @@ images/controller/
         storageprojection/
         uploadsession/
         uploadsessionstate/
-        workloadpod/
       sourcefetch/
       sourcemirror/
         objectstore/
@@ -184,7 +183,6 @@ package без нового owner — patchwork.
 - `ociregistry/`
 - `storageprojection/`
 - `ownedresource/`
-- `workloadpod/`
 - `auditevent/`
 
 Non-K8s adapters:
@@ -266,7 +264,7 @@ runtime semantics или status logic, это уже не support.
 - `application/deletion` split на finalizer ownership, delete progress
   decision tables и backend-artifact vs upload-staging lifecycle proofs;
 - `publishworker` split на HF fetch/streaming, remote profile, upload probe,
-  upload streaming, result shaping and workspace helpers;
+  upload streaming и result shaping;
 - `uploadsession` split на session info, probe/init, multipart completion,
   handoff rejection and thin helper seams instead of one API test monolith;
 - `k8s/uploadsession` tests split на get-or-create, projected persisted phase,

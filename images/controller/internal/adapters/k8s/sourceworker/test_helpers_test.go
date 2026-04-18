@@ -19,7 +19,6 @@ package sourceworker
 import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	corev1 "k8s.io/api/core/v1"
@@ -50,7 +49,7 @@ func testOperationRequest() publicationports.Request {
 
 func testOptions() Options {
 	return Options{
-		RuntimeOptions: workloadpod.RuntimeOptions{
+		RuntimeOptions: RuntimeOptions{
 			Namespace:             "d8-ai-models",
 			Image:                 "backend:latest",
 			ImagePullSecretName:   "ai-models-module-registry",
@@ -63,10 +62,6 @@ func testOptions() Options {
 				Region:                "us-east-1",
 				UsePathStyle:          true,
 				CredentialsSecretName: "ai-models-artifacts",
-			},
-			WorkVolume: workloadpod.WorkVolumeOptions{
-				Type:              workloadpod.WorkVolumeTypeEmptyDir,
-				EmptyDirSizeLimit: resource.MustParse("2Ti"),
 			},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{

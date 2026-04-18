@@ -26,7 +26,6 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/sourceworker"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsession"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	"github.com/deckhouse/ai-models/controller/internal/ports/auditsink"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
@@ -43,7 +42,7 @@ type Options struct {
 	UploadGateway        UploadGatewayOptions
 }
 
-type PublicationRuntimeOptions = workloadpod.RuntimeOptions
+type PublicationRuntimeOptions = sourceworker.RuntimeOptions
 type UploadGatewayOptions = uploadsession.GatewayOptions
 
 const (
@@ -129,7 +128,7 @@ func (o Options) Validate() error {
 	if !o.Enabled() {
 		return nil
 	}
-	if err := workloadpod.ValidateRuntimeOptions("publication runtime", o.Runtime); err != nil {
+	if err := sourceworker.ValidateRuntimeOptions("publication runtime", o.Runtime); err != nil {
 		return err
 	}
 	if o.MaxConcurrentWorkers <= 0 {
