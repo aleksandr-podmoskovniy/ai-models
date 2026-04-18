@@ -16,6 +16,9 @@ Research-to-runtime bring-up slice. Работы уже включают не т
 - текущий следующий slice: сохранить baseline на
   `DeepSeek-R1-Distill-Qwen-14B` и добить exact runtime blocker без замены
   модели.
+- выбранный pragmatic fix для следующего rollout:
+  внедрить runtime hotfix через `sitecustomize.py` ConfigMap в
+  `ray-head/ray-worker`, не вводя custom image и не меняя exact модель.
 
 ## Orchestration
 

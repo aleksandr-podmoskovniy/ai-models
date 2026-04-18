@@ -45,6 +45,7 @@ shell:
     - export CGO_ENABLED=0
     - go build -ldflags="-s -w" -a -o /out/ai-models-controller ./cmd/ai-models-controller
     - go build -ldflags="-s -w" -a -o /out/ai-models-artifact-runtime ./cmd/ai-models-artifact-runtime
+---
 image: controller
 final: true
 fromImage: distroless
