@@ -21,7 +21,9 @@ What is already part of the repository:
 - stable `config-values` for the controller/runtime shell and object storage wiring;
 - runtime templates for `DMCR`, controller shell, and module-wide manifests;
 - runtime/internal `values` and image-based Go hooks for module wiring;
-- `werf`, CI/CD, and repo-local workflows for packaging module-owned runtime images.
+- `werf`, CI/CD, and repo-local workflows for packaging module-owned controller
+  / artifact runtime images; the consumer serving image stays an external
+  runtime surface, for example from `Docker Hub`.
 
 Current import/publication flow:
 - the canonical live path goes through `Model` / `ClusterModel`;

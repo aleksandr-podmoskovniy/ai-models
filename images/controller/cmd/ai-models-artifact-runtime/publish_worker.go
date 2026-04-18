@@ -41,7 +41,6 @@ const (
 	publishInputFormatEnv         = "AI_MODELS_IMPORT_INPUT_FORMAT"
 	publishRevisionEnv            = "AI_MODELS_IMPORT_HF_REVISION"
 	publishTaskEnv                = "AI_MODELS_IMPORT_TASK"
-	publishSnapshotDirEnv         = "AI_MODELS_IMPORT_SNAPSHOT_DIR"
 )
 
 func runPublishWorker(args []string) int {
@@ -59,7 +58,6 @@ func runPublishWorker(args []string) int {
 	var inputFormat string
 	var revision string
 	var task string
-	var snapshotDir string
 
 	flags.StringVar(&sourceType, "source-type", cmdsupport.EnvOr(publishSourceTypeEnv, string(modelsv1alpha1.ModelSourceTypeHuggingFace)), "Source type: HuggingFace or Upload.")
 	flags.StringVar(&artifactURI, "artifact-uri", "", "Controller-owned destination OCI reference.")
@@ -73,7 +71,6 @@ func runPublishWorker(args []string) int {
 	flags.StringVar(&inputFormat, "input-format", cmdsupport.EnvOr(publishInputFormatEnv, ""), "Model input format. Leave empty for auto-detection.")
 	flags.StringVar(&revision, "revision", cmdsupport.EnvOr(publishRevisionEnv, ""), "Resolved source revision.")
 	flags.StringVar(&task, "task", cmdsupport.EnvOr(publishTaskEnv, ""), "Runtime task.")
-	flags.StringVar(&snapshotDir, "snapshot-dir", cmdsupport.EnvOr(publishSnapshotDirEnv, ""), "Optional work directory.")
 
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -126,7 +123,6 @@ func runPublishWorker(args []string) int {
 		RawStageKeyPrefix:  rawStageKeyPrefix,
 		InputFormat:        modelsv1alpha1.ModelInputFormat(inputFormat),
 		Task:               task,
-		SnapshotDir:        snapshotDir,
 		HFToken:            cmdsupport.EnvOr("HF_TOKEN", cmdsupport.EnvOr("HUGGING_FACE_HUB_TOKEN", "")),
 		UploadStaging:      uploadStagingClient,
 		ModelPackPublisher: modelpackoci.New(),

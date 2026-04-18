@@ -17,6 +17,7 @@ limitations under the License.
 package objectstore
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -45,12 +46,15 @@ func (f *fakeObjectStore) Upload(_ context.Context, input uploadstagingports.Upl
 	return nil
 }
 
-func (f *fakeObjectStore) Download(_ context.Context, input uploadstagingports.DownloadInput) error {
+func (f *fakeObjectStore) OpenRead(_ context.Context, input uploadstagingports.OpenReadInput) (uploadstagingports.OpenReadOutput, error) {
 	body, ok := f.objects[input.Bucket+"/"+input.Key]
 	if !ok {
-		return os.ErrNotExist
+		return uploadstagingports.OpenReadOutput{}, os.ErrNotExist
 	}
-	return os.WriteFile(input.DestinationPath, body, 0o644)
+	return uploadstagingports.OpenReadOutput{
+		Body:      io.NopCloser(bytes.NewReader(body)),
+		SizeBytes: int64(len(body)),
+	}, nil
 }
 
 func (f *fakeObjectStore) DeletePrefix(_ context.Context, input uploadstagingports.DeletePrefixInput) error {
@@ -69,7 +73,7 @@ func TestAdapterManifestAndStateRoundTrip(t *testing.T) {
 	store := &fakeObjectStore{}
 	adapter := &Adapter{
 		Uploader:      store,
-		Downloader:    store,
+		Reader:        store,
 		PrefixRemover: store,
 		Bucket:        "artifacts",
 		BasePrefix:    "raw/source-mirror",

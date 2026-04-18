@@ -44,20 +44,42 @@ type sourceProfileProvenance struct {
 func resolveAndPublish(
 	ctx context.Context,
 	options Options,
-	checkpointDir string,
+	modelInputPath string,
 	inputFormat modelsv1alpha1.ModelInputFormat,
 	input sourceProfileInput,
+	preResolved *publicationdata.ResolvedProfile,
+) (publicationdata.ResolvedProfile, modelpackports.PublishResult, error) {
+	return resolveAndPublishWithLayers(ctx, options, modelInputPath, inputFormat, input, nil, preResolved)
+}
+
+func resolveAndPublishWithLayers(
+	ctx context.Context,
+	options Options,
+	modelInputPath string,
+	inputFormat modelsv1alpha1.ModelInputFormat,
+	input sourceProfileInput,
+	publishLayers []modelpackports.PublishLayer,
+	preResolved *publicationdata.ResolvedProfile,
 ) (publicationdata.ResolvedProfile, modelpackports.PublishResult, error) {
 	logger := slog.Default().With(
-		slog.String("checkpointDir", strings.TrimSpace(checkpointDir)),
+		slog.String("modelInputPath", strings.TrimSpace(modelInputPath)),
 		slog.String("resolvedInputFormat", strings.TrimSpace(string(inputFormat))),
 	)
 
+	var (
+		resolvedProfile publicationdata.ResolvedProfile
+		err             error
+	)
 	resolveStarted := time.Now()
-	logger.Info("publication profile resolution started")
-	resolvedProfile, err := resolveProfile(checkpointDir, inputFormat, input)
-	if err != nil {
-		return publicationdata.ResolvedProfile{}, modelpackports.PublishResult{}, err
+	if preResolved != nil {
+		logger.Info("publication profile resolution reused precomputed summary")
+		resolvedProfile = *preResolved
+	} else {
+		logger.Info("publication profile resolution started")
+		resolvedProfile, err = resolveProfile(modelInputPath, inputFormat, input)
+		if err != nil {
+			return publicationdata.ResolvedProfile{}, modelpackports.PublishResult{}, err
+		}
 	}
 	resolvedProfile = attachResolvedProfileProvenance(resolvedProfile, input.Provenance)
 	logger.Info(
@@ -72,10 +94,12 @@ func resolveAndPublish(
 
 	publishStarted := time.Now()
 	logger.Info("modelpack publication started", slog.String("artifactURI", strings.TrimSpace(options.ArtifactURI)))
-	publishResult, err := options.ModelPackPublisher.Publish(ctx, modelpackports.PublishInput{
-		ModelDir:    checkpointDir,
+	publishInput := modelpackports.PublishInput{
+		ModelDir:    modelInputPath,
+		Layers:      publishLayers,
 		ArtifactURI: options.ArtifactURI,
-	}, options.RegistryAuth)
+	}
+	publishResult, err := options.ModelPackPublisher.Publish(ctx, publishInput, options.RegistryAuth)
 	if err != nil {
 		return publicationdata.ResolvedProfile{}, modelpackports.PublishResult{}, err
 	}

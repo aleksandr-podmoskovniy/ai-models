@@ -19,6 +19,7 @@ package oci
 import (
 	"archive/tar"
 	"bytes"
+	"encoding/json"
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
@@ -30,40 +31,54 @@ import (
 )
 
 type modelPackServerOptions struct {
-	layerTar  []byte
-	layerHook func()
+	layerTar     []byte
+	layerHook    func()
+	manifestBody []byte
+	configBody   []byte
+	blobBodies   map[string][]byte
+	blobHooks    map[string]func()
 }
 
 func newModelPackTestServer(t *testing.T, options modelPackServerOptions) (*httptest.Server, modelpackports.RegistryAuth, string) {
 	t.Helper()
 
+	manifestBody, configBody, blobBodies := defaultModelPackServerPayload(t, options)
+
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/v2/ai-models/catalog/model/manifests/published", "/v2/ai-models/catalog/model/manifests/sha256:deadbeef":
+		switch {
+		case r.URL.Path == "/v2/ai-models/catalog/model/manifests/published", r.URL.Path == "/v2/ai-models/catalog/model/manifests/sha256:deadbeef":
 			user, pass, ok := r.BasicAuth()
 			if !ok || user != "writer" || pass != "secret" {
 				t.Fatalf("unexpected auth %q/%q", user, pass)
 			}
 			w.Header().Set("Docker-Content-Digest", "sha256:deadbeef")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"schemaVersion":2,"artifactType":"application/vnd.cncf.model.manifest.v1+json","config":{"mediaType":"application/vnd.cncf.model.config.v1+json","digest":"sha256:config","size":10},"layers":[{"mediaType":"application/vnd.cncf.model.weight.v1.tar","digest":"sha256:layer","size":103,"annotations":{"org.cncf.model.filepath":"model"}}]}`))
-		case "/v2/ai-models/catalog/model/blobs/sha256:config":
+			_, _ = w.Write(manifestBody)
+		case r.URL.Path == "/v2/ai-models/catalog/model/blobs/sha256:config":
 			user, pass, ok := r.BasicAuth()
 			if !ok || user != "writer" || pass != "secret" {
 				t.Fatalf("unexpected auth %q/%q", user, pass)
 			}
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"descriptor":{"name":"model"},"modelfs":{"type":"layers","diffIds":["sha256:layer-diff"]},"config":{}}`))
-		case "/v2/ai-models/catalog/model/blobs/sha256:layer":
-			if options.layerHook != nil {
+			_, _ = w.Write(configBody)
+		case strings.HasPrefix(r.URL.Path, "/v2/ai-models/catalog/model/blobs/"):
+			digest := strings.TrimPrefix(r.URL.Path, "/v2/ai-models/catalog/model/blobs/")
+			if hook := options.blobHooks[digest]; hook != nil {
+				hook()
+			}
+			if digest == "sha256:layer" && options.layerHook != nil {
 				options.layerHook()
 			}
+			payload, ok := blobBodies[digest]
+			if !ok {
+				t.Fatalf("unexpected blob digest %q", digest)
+			}
 			user, pass, ok := r.BasicAuth()
 			if !ok || user != "writer" || pass != "secret" {
 				t.Fatalf("unexpected auth %q/%q", user, pass)
 			}
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(options.layerTar)
+			_, _ = w.Write(payload)
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -76,6 +91,56 @@ func newModelPackTestServer(t *testing.T, options modelPackServerOptions) (*http
 		Password: "secret",
 		CAFile:   caFile,
 	}, caFile
+}
+
+func defaultModelPackServerPayload(
+	t *testing.T,
+	options modelPackServerOptions,
+) ([]byte, []byte, map[string][]byte) {
+	t.Helper()
+
+	if len(options.manifestBody) > 0 && len(options.configBody) > 0 && len(options.blobBodies) > 0 {
+		return options.manifestBody, options.configBody, options.blobBodies
+	}
+
+	manifestBody, err := json.Marshal(map[string]any{
+		"schemaVersion": 2,
+		"artifactType":  ModelPackArtifactType,
+		"config": map[string]any{
+			"mediaType": ModelPackConfigMediaType,
+			"digest":    "sha256:config",
+			"size":      10,
+		},
+		"layers": []map[string]any{
+			{
+				"mediaType": ModelPackWeightLayerType,
+				"digest":    "sha256:layer",
+				"size":      103,
+				"annotations": map[string]string{
+					ModelPackFilepathAnnotation: "model",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal(manifest) error = %v", err)
+	}
+
+	configBody, err := json.Marshal(map[string]any{
+		"descriptor": map[string]any{"name": "model"},
+		"modelfs": map[string]any{
+			"type":    "layers",
+			"diffIds": []string{"sha256:layer-diff"},
+		},
+		"config": map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal(config) error = %v", err)
+	}
+
+	return manifestBody, configBody, map[string][]byte{
+		"sha256:layer": options.layerTar,
+	}
 }
 
 func serverReference(server *httptest.Server, tag string) string {

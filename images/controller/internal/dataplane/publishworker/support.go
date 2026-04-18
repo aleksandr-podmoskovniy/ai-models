@@ -121,5 +121,5 @@ func resolveUploadInputFormat(checkpointDir string, requested modelsv1alpha1.Mod
 	if strings.TrimSpace(string(requested)) != "" {
 		return requested, nil
 	}
-	return modelformat.DetectDirFormat(checkpointDir)
+	return modelformat.DetectPathFormat(checkpointDir)
 }

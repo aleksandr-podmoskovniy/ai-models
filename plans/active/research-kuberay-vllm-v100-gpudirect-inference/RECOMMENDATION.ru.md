@@ -8,29 +8,20 @@
 - основной профиль:
   - `KubeRay` c тремя worker group по одной `GPU`;
   - pod-level `sdn` / `DRA`, без `hostNetwork`;
-  - `vLLM 0.10.2`;
-  - `VLLM_USE_V1=0`;
-  - модель `Qwen/Qwen3-32B`;
+  - публичный образ `rayproject/ray-llm:2.54.0-py311-cu128`;
+  - `Ray 2.54.0`;
+  - `vLLM 0.15.0` внутри этого образа;
+  - `V1-only`;
+  - модель `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`;
   - `dtype=half`;
   - `tensor_parallel_size=1`;
   - `pipeline_parallel_size=3`;
-- второй этап на том же железе:
-  - тот же `vLLM 0.10.2`;
-  - та же модель `Qwen/Qwen3-32B`;
-  - `VLLM_USE_V1=1`;
-  - тот же `PP=3`, `TP=1`;
-- reasoning-альтернатива:
-  - `deepseek-ai/DeepSeek-R1-Distill-Qwen-32B`;
-  - тот же `vLLM 0.10.2`;
-  - `VLLM_USE_V1=0`;
+- `max_model_len=32768`
+- `max_num_seqs=5`
+- запасной плотный профиль на том же runtime:
+  - `Qwen/Qwen2.5-14B-Instruct`;
   - `dtype=half`;
   - `PP=3`, `TP=1`;
-- отдельный тяжёлый лабораторный профиль для класса около `80 GB FP16`:
-  - `tiiuae/falcon-40b`;
-  - `VLLM_USE_V1=0`;
-  - тот же `PP=3`, `TP=1`;
-  - `dtype=half`;
-  - короткий контекст и низкая конкуренция.
 
 Важный вывод для этого железа:
 
@@ -39,7 +30,21 @@
 - не надо начинать с публичных `Qwen3.5`- и больших `DeepSeek MoE`-профилей;
 - не надо уходить в node-level `RDMA` workaround;
 - не надо выдавать pod лишние Linux capabilities “на всякий случай”;
-- не надо сразу брать `vLLM >= 0.11`, если важен безопасный откат на `V0`.
+- не надо рассчитывать на `V0` как на deployment path: текущий внешний bundle
+  уже сознательно зафиксирован на `V1-only` через public `ray-llm`.
+
+Практический runtime verdict по текущему стенду:
+
+- `Qwen/Qwen3-14B` на этом exact stack (`ray-llm 2.54.0` / `vLLM 0.15.0 V1` /
+  `PP=3` / `3x V100`) доходит до рабочего `RDMA/NCCL`, но падает уже внутри
+  `vLLM` на `initialize_attn_backend` с `KeyError` по
+  `model.layers.<0|13|27>.self_attn.attn`;
+- `DeepSeek-R1-Distill-Qwen-14B` на том же stack падает в том же классе
+  ошибки, но уже на `model.layers.<0|16>.self_attn.attn`;
+- текущий целевой baseline для `dvp` пока остаётся
+  `DeepSeek-R1-Distill-Qwen-14B`: модель уже доведена до живого rollout, и
+  дальше нужно чинить именно этот exact профиль, а не подменять модель без
+  отдельного решения.
 
 ## Ограничения текущего стенда
 
@@ -305,22 +310,26 @@
   `wget`:
   <https://docs.ray.io/en/latest/cluster/kubernetes/user-guides/config.html>
 
-Практический pin для этой задачи:
+Практический pin для внешнего `k8s-config` deployment bundle:
 
 - `KubeRay operator`: `1.5.1`
-- `spec.rayVersion`: `2.54.1`
-- `vLLM`: `0.10.2`
+- `spec.rayVersion`: `2.54.0`
+- образ: `rayproject/ray-llm:2.54.0-py311-cu128`
+- фактический `vLLM` внутри этого образа: `0.15.0`
 
-По образу рекомендация такая:
+Для `k8s-dvp` действует дополнительное эксплуатационное ограничение: custom
+image не используется, а baseline берётся напрямую с Docker Hub. Поэтому сами
+Argo-манифесты сознательно выровнены под публичный `ray-llm` образ, а значит,
+для этого конкретного deployment bundle мы уже живём на `V1-only` пути.
+
+По образу практическая рекомендация теперь такая:
 
 - не брать “голый” `vllm/vllm-openai` как есть;
-- собрать один собственный образ на базе официального `Ray` GPU-образа той же
-  версии, что указана в `spec.rayVersion`;
-- внутрь этого образа установить:
-  - `vllm==0.10.2`
-  - всё, что нужно для модели и `serve`-приложения;
-  - `wget`, если его нет;
-- для head и всех worker использовать один и тот же образ.
+- использовать один и тот же публичный `rayproject/ray-llm` образ для head и
+  всех worker;
+- следить, чтобы `spec.rayVersion` совпадал с версией `Ray` в образе;
+- custom image с ручным pin на `vllm==0.10.2` оставлять только как отдельный
+  лабораторный fallback, а не как основной операторский путь.
 
 Причина:
 
@@ -921,6 +930,45 @@ Reasoning-альтернатива для того же окна:
 конкретный `NCCL` / `verbs` профиль без него не работает. В этом случае его
 надо добавлять как минимальное точечное послабление, а не как “базовый
 набор для RDMA”.
+
+Текущий live bring-up на `rayproject/ray-llm:2.54.0-py311-cu128` уже показал,
+что такое исключение действительно может понадобиться. После исправления
+`GLOO` bootstrap на `eth0` `vLLM V1` доходит до `NCCL NET/IB`, но на `w1`
+worker падает с:
+
+- `misc/ibvwrap.cc:203 NCCL WARN Call to ibv_create_cq failed with error Cannot allocate memory`
+- `RuntimeError: NCCL error: unhandled system error`
+
+В тех же pod видно очень маленький `RLIMIT_MEMLOCK`:
+
+- `w1-c2`: `Max locked memory 65536 bytes`
+- `w1-80`: `Max locked memory 65536 bytes`
+- `w3-01`: `Max locked memory 8388608 bytes`
+
+При этом baseline-policy в текущем кластере не разрешает `IPC_LOCK`, поэтому
+прямое добавление capability в worker pod сейчас не проходит admission.
+
+Текущий practical workaround для bring-up:
+
+- namespace `kuberay-projects` переводится в
+  `security.deckhouse.io/pod-policy: privileged`;
+- в `ray-worker` добавляется только `IPC_LOCK`;
+- остальные capability не добавляются.
+
+Это уже не “идеальный минимальный” security profile, а осознанное временное
+послабление, чтобы добить live запуск модели на `3x V100`. Более чистый
+долгосрочный вариант остаётся прежним: поднять default `memlock` на
+GPU-нодах/в runtime и потом убрать `IPC_LOCK` обратно.
+
+Для текущего стенда это вынесено в отдельный GitOps-компонент рядом с
+`KubeRay`:
+
+- `argo-projects/k8s-dvp.apiac.ru/kuberay/argo-app/05-helm-kuberay-node-memlock.yaml`
+- `argo-projects/k8s-dvp.apiac.ru/kuberay/charts/kuberay-node-memlock`
+
+Он создаёт `NodeGroupConfiguration`, который вешает systemd drop-in c
+`LimitMEMLOCK=infinity` на `containerd` только для
+`k8s-dvp-w1-gpu.apiac.ru` и `k8s-dvp-w3-gpu.apiac.ru`.
 
 Практический вывод:
 

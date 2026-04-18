@@ -41,8 +41,6 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	if got, want := pod.Spec.Containers[0].Args[0], "publish-worker"; got != want {
 		t.Fatalf("unexpected subcommand %q", got)
 	}
-	assertContains(t, pod.Spec.Containers[0].Args, "--snapshot-dir")
-	assertContains(t, pod.Spec.Containers[0].Args, workloadpod.WorkVolumeMountPath)
 	assertContains(t, pod.Spec.Containers[0].Args, "--raw-stage-bucket")
 	assertContains(t, pod.Spec.Containers[0].Args, "ai-models")
 	assertContains(t, pod.Spec.Containers[0].Args, "--raw-stage-key-prefix")

@@ -62,7 +62,16 @@ func ValidateUploadProbe(session UploadSession, probe UploadProbeInput) (UploadP
 	if err := ValidateUploadSession(session); err != nil {
 		return UploadProbeResult{}, err
 	}
+	return ValidateUploadProbeShape(session.DeclaredInputFormat, probe)
+}
 
+func ValidateUploadProbeShape(
+	declaredInputFormat modelsv1alpha1.ModelInputFormat,
+	probe UploadProbeInput,
+) (UploadProbeResult, error) {
+	if err := ValidateDeclaredInputFormat(declaredInputFormat); err != nil {
+		return UploadProbeResult{}, err
+	}
 	fileName, err := normalizeFileName(probe.FileName)
 	if err != nil {
 		return UploadProbeResult{}, err
@@ -82,14 +91,14 @@ func ValidateUploadProbe(session UploadSession, probe UploadProbeInput) (UploadP
 	result := UploadProbeResult{FileName: fileName}
 	switch inputKind {
 	case uploadedInputArchive:
-		result.ResolvedInputFormat = session.DeclaredInputFormat
+		result.ResolvedInputFormat = declaredInputFormat
 		return result, nil
 	case uploadedInputGGUF:
-		if session.DeclaredInputFormat == modelsv1alpha1.ModelInputFormatSafetensors {
-			return UploadProbeResult{}, fmt.Errorf("upload file %q does not match declared input format %q", fileName, session.DeclaredInputFormat)
+		if declaredInputFormat == modelsv1alpha1.ModelInputFormatSafetensors {
+			return UploadProbeResult{}, fmt.Errorf("upload file %q does not match declared input format %q", fileName, declaredInputFormat)
 		}
-		if session.DeclaredInputFormat != "" {
-			result.ResolvedInputFormat = session.DeclaredInputFormat
+		if declaredInputFormat != "" {
+			result.ResolvedInputFormat = declaredInputFormat
 		} else {
 			result.ResolvedInputFormat = modelsv1alpha1.ModelInputFormatGGUF
 		}
@@ -97,9 +106,9 @@ func ValidateUploadProbe(session UploadSession, probe UploadProbeInput) (UploadP
 	case uploadedInputSafetensors:
 		return UploadProbeResult{}, errors.New("direct safetensors upload requires an archive bundle with config.json and weights")
 	default:
-		switch session.DeclaredInputFormat {
+		switch declaredInputFormat {
 		case modelsv1alpha1.ModelInputFormatGGUF:
-			return UploadProbeResult{}, fmt.Errorf("upload file %q does not match declared input format %q", fileName, session.DeclaredInputFormat)
+			return UploadProbeResult{}, fmt.Errorf("upload file %q does not match declared input format %q", fileName, declaredInputFormat)
 		case modelsv1alpha1.ModelInputFormatSafetensors:
 			return UploadProbeResult{}, errors.New("safetensors upload requires an archive bundle with config.json and weights")
 		default:
@@ -130,6 +139,11 @@ func classifyUploadedFile(fileName string, chunk []byte) (uploadedInputKind, err
 			return uploadedInputUnknown, fmt.Errorf("upload probe chunk does not match gzip archive %q", fileName)
 		}
 		return uploadedInputArchive, nil
+	case strings.HasSuffix(lower, ".tar.zst"), strings.HasSuffix(lower, ".tar.zstd"), strings.HasSuffix(lower, ".tzst"):
+		if !looksLikeZstd(chunk) {
+			return uploadedInputUnknown, fmt.Errorf("upload probe chunk does not match zstd archive %q", fileName)
+		}
+		return uploadedInputArchive, nil
 	case strings.HasSuffix(lower, ".tar"):
 		return uploadedInputArchive, nil
 	case strings.HasSuffix(lower, ".gguf"):
@@ -158,4 +172,8 @@ func looksLikeZIP(chunk []byte) bool {
 
 func looksLikeGzip(chunk []byte) bool {
 	return len(chunk) >= 2 && chunk[0] == 0x1f && chunk[1] == 0x8b
+}
+
+func looksLikeZstd(chunk []byte) bool {
+	return len(chunk) >= 4 && chunk[0] == 0x28 && chunk[1] == 0xB5 && chunk[2] == 0x2F && chunk[3] == 0xFD
 }

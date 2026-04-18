@@ -19,6 +19,7 @@ package modelformat
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -35,6 +36,28 @@ func DetectDirFormat(root string) (modelsv1alpha1.ModelInputFormat, error) {
 			return err
 		}
 		return inspectFormatDir(root, rules, false)
+	})
+}
+
+func DetectPathFormat(root string) (modelsv1alpha1.ModelInputFormat, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", errors.New("model input root must not be empty")
+	}
+
+	info, err := os.Stat(root)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return DetectDirFormat(root)
+	}
+
+	return detectFormat(func(format modelsv1alpha1.ModelInputFormat) error {
+		rules, err := rulesForFormat(format)
+		if err != nil {
+			return err
+		}
+		return inspectFormatFileRoot(root, rules)
 	})
 }
 

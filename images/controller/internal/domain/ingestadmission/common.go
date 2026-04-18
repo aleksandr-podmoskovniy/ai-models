@@ -129,7 +129,10 @@ func isArchiveFileName(fileName string) bool {
 	return strings.HasSuffix(lower, ".zip") ||
 		strings.HasSuffix(lower, ".tar") ||
 		strings.HasSuffix(lower, ".tar.gz") ||
-		strings.HasSuffix(lower, ".tgz")
+		strings.HasSuffix(lower, ".tgz") ||
+		strings.HasSuffix(lower, ".tar.zst") ||
+		strings.HasSuffix(lower, ".tar.zstd") ||
+		strings.HasSuffix(lower, ".tzst")
 }
 
 type directFileKind string

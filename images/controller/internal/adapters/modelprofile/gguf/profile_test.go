@@ -62,3 +62,48 @@ func TestResolve(t *testing.T) {
 		t.Fatal("expected endpoint types")
 	}
 }
+
+func TestResolveDirectFile(t *testing.T) {
+	t.Parallel()
+
+	modelPath := filepath.Join(t.TempDir(), "deepseek-r1-8b-q4_k_m.gguf")
+	if err := os.WriteFile(modelPath, []byte("weights"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	profile, err := Resolve(Input{
+		ModelDir: modelPath,
+		Task:     "text-generation",
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got, want := profile.Format, "GGUF"; got != want {
+		t.Fatalf("unexpected format %q", got)
+	}
+	if got, want := profile.Family, "deepseek-r1"; got != want {
+		t.Fatalf("unexpected family %q", got)
+	}
+}
+
+func TestResolveSummary(t *testing.T) {
+	t.Parallel()
+
+	profile, err := ResolveSummary(SummaryInput{
+		ModelFileName:  "deepseek-r1-8b-q4_k_m.gguf",
+		ModelSizeBytes: int64(len("weights")),
+		Task:           "text-generation",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSummary() error = %v", err)
+	}
+	if got, want := profile.Format, "GGUF"; got != want {
+		t.Fatalf("unexpected format %q", got)
+	}
+	if got, want := profile.Family, "deepseek-r1"; got != want {
+		t.Fatalf("unexpected family %q", got)
+	}
+	if got, want := profile.Quantization, "q4_k_m"; got != want {
+		t.Fatalf("unexpected quantization %q", got)
+	}
+}

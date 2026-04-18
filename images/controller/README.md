@@ -75,17 +75,16 @@ Current phase-2 slice implemented here:
   `Model` / `ClusterModel` objects;
 - `internal/adapters/sourcefetch` for safe `HuggingFace` source
   acquisition and archive hardening, with one canonical remote ingest entrypoint
-  over shared HTTP transport and archive preparation instead of split
-  orchestration in the worker; remote `source.url` bytes now persist through the
-  controller-owned source mirror under the shared `raw/` object subtree before
-  materializing into the bounded publish-worker work volume; `HuggingFace` acquisition
-  itself now stays in Go: metadata resolves the exact revision and selected
-  files, then a package-local HTTP snapshot downloader materializes only those
-  files into the canonical `checkpoint/` tree; provider-card noise such as
-  downloads/likes/tags is not retained in the adapter payload without an
-  explicit consumer, and the remote adapter now hands worker code three
-  explicit seams instead of one flat result:
-  source provenance, profile fallbacks, and source metadata;
+  over shared HTTP transport, source mirror transfer, archive inspection and
+  remote summary extraction instead of split orchestration in the worker;
+  remote `source.url` bytes may persist through the controller-owned source
+  mirror under the shared `raw/` object subtree, while live publish paths now
+  plan direct or mirrored object-source publication instead of materializing a
+  local `workspace/model`; provider-card noise such as downloads/likes/tags is
+  not retained in the adapter payload without an explicit consumer, and the
+  remote adapter now hands worker code explicit seams for source provenance,
+  object-source publish inputs and source metadata rather than a flat local
+  snapshot contract;
 - `internal/adapters/modelformat` for source-agnostic input-format validation
   rules applied before packaging; inspect/validate/select flow now reuses one
   package-local runner over format-specific rule sets, instead of repeating the
@@ -159,11 +158,9 @@ Current phase-2 slice implemented here:
 - `internal/dataplane/publishworker` for the controller-owned publication
   runtime that fetches sources, computes resolved metadata, publishes a
   `ModelPack`, and writes the final result into the worker Pod termination
-  message; when the controller provides a bounded snapshot root, the runtime
-  now allocates a per-run workspace under that root and cleans it up after the
-  run instead of treating the whole mount path as one long-lived directory;
-  direct single-file inputs now avoid a second full local byte copy by
-  materializing into the checkpoint tree via link-first staging when possible;
+  message; canonical `HuggingFace`, direct-upload and streamable archive paths
+  now publish via object-source or archive-source streaming semantics and no
+  longer keep a successful `checkpointDir` fallback in the live worker shell;
 - `internal/dataplane/uploadsession` for the controller-owned upload session
   runtime; it now serves the shared `/v1/upload/<sessionID>` multipart
   session/control API, persists session state in the upload Secret, and marks

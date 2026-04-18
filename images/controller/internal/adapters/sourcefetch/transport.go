@@ -22,8 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -33,7 +31,27 @@ func doGET(
 	rawURL string,
 	headers map[string]string,
 ) (*http.Response, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	return doRequest(ctx, httpClient, http.MethodGet, rawURL, nil, headers)
+}
+
+func doHEAD(
+	ctx context.Context,
+	httpClient *http.Client,
+	rawURL string,
+	headers map[string]string,
+) (*http.Response, error) {
+	return doRequest(ctx, httpClient, http.MethodHead, rawURL, nil, headers)
+}
+
+func doRequest(
+	ctx context.Context,
+	httpClient *http.Client,
+	method string,
+	rawURL string,
+	body io.Reader,
+	headers map[string]string,
+) (*http.Response, error) {
+	request, err := http.NewRequestWithContext(ctx, method, rawURL, body)
 	if err != nil {
 		return nil, err
 	}
@@ -57,21 +75,6 @@ func unexpectedStatusError(response *http.Response, subject string) error {
 		return fmt.Errorf("%s returned status %d", subject, response.StatusCode)
 	}
 	return fmt.Errorf("%s returned status %d: %s", subject, response.StatusCode, message)
-}
-
-func writeResponseBody(target string, body io.Reader) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
-	}
-	stream, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(stream, body); err != nil {
-		stream.Close()
-		return err
-	}
-	return stream.Close()
 }
 
 func bearerAuthHeaders(token string) map[string]string {

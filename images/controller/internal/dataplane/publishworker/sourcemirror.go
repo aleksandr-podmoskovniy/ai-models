@@ -23,7 +23,6 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
 	sourcemirrorobjectstore "github.com/deckhouse/ai-models/controller/internal/adapters/sourcemirror/objectstore"
-	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 )
 
 type uploadHTTPClientProvider interface {
@@ -42,16 +41,17 @@ func remoteSourceMirror(options Options) *sourcefetch.SourceMirrorOptions {
 		Client:           options.UploadStaging,
 		UploadHTTPClient: uploadStagingHTTPClient(options.UploadStaging),
 		Store: &sourcemirrorobjectstore.Adapter{
-			Uploader:   options.UploadStaging,
-			Downloader: options.UploadStaging,
-			Bucket:     options.RawStageBucket,
-			BasePrefix: path.Join(options.RawStageKeyPrefix, ".mirror"),
+			Uploader:      options.UploadStaging,
+			Reader:        options.UploadStaging,
+			PrefixRemover: options.UploadStaging,
+			Bucket:        options.RawStageBucket,
+			BasePrefix:    path.Join(options.RawStageKeyPrefix, ".mirror"),
 		},
 		BasePrefix: path.Join(options.RawStageKeyPrefix, ".mirror"),
 	}
 }
 
-func uploadStagingHTTPClient(client uploadstagingports.Client) *http.Client {
+func uploadStagingHTTPClient(client any) *http.Client {
 	provider, ok := client.(uploadHTTPClientProvider)
 	if !ok {
 		return nil

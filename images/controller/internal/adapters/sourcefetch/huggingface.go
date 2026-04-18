@@ -18,8 +18,9 @@ package sourcefetch
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
-	"path/filepath"
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -28,8 +29,9 @@ import (
 )
 
 var (
-	huggingFaceBaseURL       = "https://huggingface.co"
-	fetchHuggingFaceInfoFunc = FetchHuggingFaceInfo
+	huggingFaceBaseURL                 = "https://huggingface.co"
+	fetchHuggingFaceInfoFunc           = FetchHuggingFaceInfo
+	fetchHuggingFaceProfileSummaryFunc = fetchHuggingFaceProfileSummary
 )
 
 type HuggingFaceInfo struct {
@@ -81,29 +83,37 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 	resolvedRevision := ResolveHuggingFaceRevision(info, revision)
 	logger.Debug("huggingface resolved revision selected", slog.String("resolvedRevision", resolvedRevision))
 
-	sourceMirrorSnapshot, err := persistHuggingFaceMirrorManifest(ctx, options.SourceMirror, repoID, resolvedRevision, selectedFiles)
+	profileSummary, err := resolveHuggingFaceProfileSummary(ctx, logger, options, repoID, resolvedRevision, inputFormat, selectedFiles)
 	if err != nil {
 		return RemoteResult{}, err
 	}
-	if sourceMirrorSnapshot != nil {
-		logger.Info("huggingface source mirror manifest persisted", slog.String("sourceMirrorPrefix", sourceMirrorSnapshot.CleanupPrefix))
-	}
 
-	snapshotDir := filepath.Join(options.Workspace, ".hf-snapshot")
-	if err := acquireHuggingFaceSnapshot(ctx, logger, options, repoID, resolvedRevision, selectedFiles, snapshotDir, sourceMirrorSnapshot); err != nil {
+	sourceMirrorSnapshot, err := prepareHuggingFaceSourceMirror(ctx, logger, options, repoID, resolvedRevision, selectedFiles)
+	if err != nil {
 		return RemoteResult{}, err
 	}
 
-	modelDir := filepath.Join(options.Workspace, "checkpoint")
-	if err := materializeAndValidateHuggingFaceModel(logger, snapshotDir, modelDir, selectedFiles, inputFormat); err != nil {
+	modelDir, objectSource, err := prepareHuggingFacePublishSource(
+		ctx,
+		logger,
+		options,
+		repoID,
+		resolvedRevision,
+		selectedFiles,
+		sourceMirrorSnapshot,
+		profileSummary,
+	)
+	if err != nil {
 		return RemoteResult{}, err
 	}
 
 	return RemoteResult{
-		SourceType:    modelsv1alpha1.ModelSourceTypeHuggingFace,
-		ModelDir:      modelDir,
-		InputFormat:   inputFormat,
-		SelectedFiles: append([]string(nil), selectedFiles...),
+		SourceType:     modelsv1alpha1.ModelSourceTypeHuggingFace,
+		ModelDir:       modelDir,
+		InputFormat:    inputFormat,
+		SelectedFiles:  append([]string(nil), selectedFiles...),
+		ObjectSource:   objectSource,
+		ProfileSummary: profileSummary,
 		Provenance: RemoteProvenance{
 			ExternalReference: firstNonEmpty(info.ID, repoID),
 			ResolvedRevision:  resolvedRevision,
@@ -117,6 +127,34 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 		},
 		SourceMirror: sourceMirrorSnapshot,
 	}, nil
+}
+
+func buildDirectHuggingFaceObjectSource(
+	ctx context.Context,
+	options RemoteOptions,
+	logger *slog.Logger,
+	repoID string,
+	resolvedRevision string,
+	selectedFiles []string,
+	sourceMirrorSnapshot *SourceMirrorSnapshot,
+	profileSummary *RemoteProfileSummary,
+) (*RemoteObjectSource, error) {
+	if sourceMirrorSnapshot != nil {
+		return nil, nil
+	}
+	if !options.SkipLocalMaterialization {
+		return nil, errors.New("huggingface remote publication no longer supports local materialization fallback")
+	}
+	if profileSummary == nil {
+		return nil, errors.New("huggingface direct object-source publish requires remote profile summary")
+	}
+
+	objectSource, err := buildHuggingFaceObjectSource(ctx, options, repoID, resolvedRevision, selectedFiles)
+	if err != nil {
+		return nil, fmt.Errorf("huggingface direct object-source planning failed: %w", err)
+	}
+	logger.Info("huggingface direct object-source publish planned", slog.Int("selectedFileCount", len(objectSource.Files)))
+	return objectSource, nil
 }
 
 func fetchHuggingFaceMetadata(
@@ -168,30 +206,13 @@ func resolveHuggingFaceSelection(
 	return inputFormat, selectedFiles, nil
 }
 
-func acquireHuggingFaceSnapshot(
+func transferHuggingFaceMirrorSnapshot(
 	ctx context.Context,
 	logger *slog.Logger,
 	options RemoteOptions,
 	repoID string,
 	resolvedRevision string,
 	selectedFiles []string,
-	snapshotDir string,
-	sourceMirrorSnapshot *SourceMirrorSnapshot,
-) error {
-	if sourceMirrorSnapshot != nil {
-		return acquireHuggingFaceMirroredSnapshot(ctx, logger, options, repoID, resolvedRevision, selectedFiles, snapshotDir, sourceMirrorSnapshot)
-	}
-	return downloadHuggingFaceSnapshot(ctx, logger, repoID, resolvedRevision, options.HFToken, selectedFiles, snapshotDir)
-}
-
-func acquireHuggingFaceMirroredSnapshot(
-	ctx context.Context,
-	logger *slog.Logger,
-	options RemoteOptions,
-	repoID string,
-	resolvedRevision string,
-	selectedFiles []string,
-	snapshotDir string,
 	sourceMirrorSnapshot *SourceMirrorSnapshot,
 ) error {
 	mirrorStarted := time.Now()
@@ -205,72 +226,6 @@ func acquireHuggingFaceMirroredSnapshot(
 		slog.Int64("durationMs", time.Since(mirrorStarted).Milliseconds()),
 		slog.Int64("sourceMirrorObjectCount", sourceMirrorSnapshot.ObjectCount),
 		slog.Int64("sourceMirrorSizeBytes", sourceMirrorSnapshot.SizeBytes),
-	)
-
-	materializeStarted := time.Now()
-	logger.Info("huggingface mirrored snapshot materialization started", slog.String("snapshotDir", snapshotDir))
-	if err := materializeHuggingFaceMirrorSnapshot(ctx, options.SourceMirror, sourceMirrorSnapshot, snapshotDir, selectedFiles); err != nil {
-		return err
-	}
-	logger.Info(
-		"huggingface mirrored snapshot materialization completed",
-		slog.Int64("durationMs", time.Since(materializeStarted).Milliseconds()),
-	)
-	return nil
-}
-
-func downloadHuggingFaceSnapshot(
-	ctx context.Context,
-	logger *slog.Logger,
-	repoID string,
-	resolvedRevision string,
-	token string,
-	selectedFiles []string,
-	snapshotDir string,
-) error {
-	started := time.Now()
-	logger.Info("huggingface snapshot download started", slog.Int("selectedFileCount", len(selectedFiles)))
-	if err := newHuggingFaceSnapshotDownloader().Download(ctx, huggingFaceSnapshotDownloadInput{
-		RepoID:      repoID,
-		Revision:    resolvedRevision,
-		Token:       token,
-		Files:       selectedFiles,
-		SnapshotDir: snapshotDir,
-	}); err != nil {
-		return err
-	}
-	logger.Info(
-		"huggingface snapshot download completed",
-		slog.Int64("durationMs", time.Since(started).Milliseconds()),
-	)
-	return nil
-}
-
-func materializeAndValidateHuggingFaceModel(
-	logger *slog.Logger,
-	snapshotDir string,
-	modelDir string,
-	selectedFiles []string,
-	inputFormat modelsv1alpha1.ModelInputFormat,
-) error {
-	materializeStarted := time.Now()
-	logger.Info("huggingface checkpoint materialization started", slog.String("modelDir", modelDir))
-	if err := materializeHuggingFaceSnapshot(snapshotDir, modelDir, selectedFiles); err != nil {
-		return err
-	}
-	logger.Info(
-		"huggingface checkpoint materialization completed",
-		slog.Int64("durationMs", time.Since(materializeStarted).Milliseconds()),
-	)
-
-	validateStarted := time.Now()
-	logger.Info("huggingface checkpoint validation started")
-	if err := modelformat.ValidateDir(modelDir, inputFormat); err != nil {
-		return err
-	}
-	logger.Info(
-		"huggingface checkpoint validation completed",
-		slog.Int64("durationMs", time.Since(validateStarted).Milliseconds()),
 	)
 	return nil
 }

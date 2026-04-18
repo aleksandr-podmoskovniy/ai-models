@@ -31,6 +31,13 @@ type Input struct {
 	TaskHint      string
 }
 
+type SummaryInput struct {
+	ConfigPayload []byte
+	WeightBytes   int64
+	Task          string
+	TaskHint      string
+}
+
 func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 	if strings.TrimSpace(input.CheckpointDir) == "" {
 		return publicationdata.ResolvedProfile{}, errors.New("checkpoint directory must not be empty")
@@ -46,9 +53,34 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 		return publicationdata.ResolvedProfile{}, err
 	}
 
+	return resolveSummary(config, weightBytes, input.Task, input.TaskHint)
+}
+
+func ResolveSummary(input SummaryInput) (publicationdata.ResolvedProfile, error) {
+	if len(input.ConfigPayload) == 0 {
+		return publicationdata.ResolvedProfile{}, errors.New("checkpoint config payload must not be empty")
+	}
+	if input.WeightBytes <= 0 {
+		return publicationdata.ResolvedProfile{}, errors.New("safetensors weight bytes must be positive")
+	}
+
+	config, err := decodeConfig(input.ConfigPayload)
+	if err != nil {
+		return publicationdata.ResolvedProfile{}, err
+	}
+
+	return resolveSummary(config, input.WeightBytes, input.Task, input.TaskHint)
+}
+
+func resolveSummary(
+	config map[string]any,
+	weightBytes int64,
+	task string,
+	taskHint string,
+) (publicationdata.ResolvedProfile, error) {
 	architecture := resolveArchitecture(config)
 	family := resolveFamily(config, architecture)
-	task := resolveTask(config, architecture, input.Task, input.TaskHint)
+	task = resolveTask(config, architecture, task, taskHint)
 	contextWindow := detectContextWindow(config)
 	quantization := detectQuantization(config)
 	precision := detectPrecision(config, quantization)

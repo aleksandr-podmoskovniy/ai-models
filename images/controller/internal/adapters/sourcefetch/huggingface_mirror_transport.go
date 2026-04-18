@@ -23,8 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -74,36 +72,6 @@ func mirrorHuggingFaceSnapshotFiles(
 	}
 	snapshot.ObjectCount = int64(len(tracker.state.Files))
 	snapshot.SizeBytes = tracker.totalBytesConfirmed()
-	return nil
-}
-
-func materializeHuggingFaceMirrorSnapshot(
-	ctx context.Context,
-	options *SourceMirrorOptions,
-	snapshot *SourceMirrorSnapshot,
-	snapshotDir string,
-	files []string,
-) error {
-	if options == nil || options.Client == nil || snapshot == nil {
-		return errors.New("huggingface source mirror options must be fully configured")
-	}
-	for _, filePath := range files {
-		cleanPath, err := cleanRemoteRelativePath(filePath)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(strings.TrimSpace(snapshotDir), cleanPath)
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		if err := options.Client.Download(ctx, uploadstagingports.DownloadInput{
-			Bucket:          options.Bucket,
-			Key:             sourcemirrorports.SnapshotFileObjectKey(snapshot.CleanupPrefix, cleanPath),
-			DestinationPath: target,
-		}); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 

@@ -29,7 +29,10 @@ func loadConfig(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read checkpoint config.json: %w", err)
 	}
+	return decodeConfig(payload)
+}
 
+func decodeConfig(payload []byte) (map[string]any, error) {
 	var config map[string]any
 	if err := json.Unmarshal(payload, &config); err != nil {
 		return nil, fmt.Errorf("failed to decode checkpoint config.json: %w", err)

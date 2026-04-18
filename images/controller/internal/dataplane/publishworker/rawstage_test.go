@@ -18,6 +18,7 @@ package publishworker
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -57,6 +58,10 @@ func (*fakeUploadStagingWithHTTPClient) Stat(context.Context, uploadstagingports
 	return uploadstagingports.ObjectStat{}, nil
 }
 
+func (*fakeUploadStagingWithHTTPClient) OpenRead(context.Context, uploadstagingports.OpenReadInput) (uploadstagingports.OpenReadOutput, error) {
+	return uploadstagingports.OpenReadOutput{Body: io.NopCloser(http.NoBody)}, nil
+}
+
 func (*fakeUploadStagingWithHTTPClient) Download(context.Context, uploadstagingports.DownloadInput) error {
 	return nil
 }
@@ -66,6 +71,10 @@ func (*fakeUploadStagingWithHTTPClient) Upload(context.Context, uploadstagingpor
 }
 
 func (*fakeUploadStagingWithHTTPClient) Delete(context.Context, uploadstagingports.DeleteInput) error {
+	return nil
+}
+
+func (*fakeUploadStagingWithHTTPClient) DeletePrefix(context.Context, uploadstagingports.DeletePrefixInput) error {
 	return nil
 }
 

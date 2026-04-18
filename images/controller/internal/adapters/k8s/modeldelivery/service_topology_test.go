@@ -189,35 +189,3 @@ func TestServiceRejectsNegativeReplicaCount(t *testing.T) {
 		t.Fatalf("unexpected error %v", err)
 	}
 }
-
-func podTemplateWithPVCMount(containerName, volumeName, claimName, mountPath string) *corev1.PodTemplateSpec {
-	return &corev1.PodTemplateSpec{
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{{
-				Name:  containerName,
-				Image: "example.com/runtime:latest",
-				VolumeMounts: []corev1.VolumeMount{{
-					Name:      volumeName,
-					MountPath: mountPath,
-				}},
-			}},
-			Volumes: []corev1.Volume{{
-				Name: volumeName,
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: claimName,
-					},
-				},
-			}},
-		},
-	}
-}
-
-func envByName(env []corev1.EnvVar, name string) string {
-	for _, item := range env {
-		if item.Name == name {
-			return item.Value
-		}
-	}
-	return ""
-}

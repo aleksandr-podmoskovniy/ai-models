@@ -17,81 +17,15 @@ limitations under the License.
 package sourcefetch
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strings"
 )
-
-type huggingFaceSnapshotDownloadInput struct {
-	RepoID      string
-	Revision    string
-	Token       string
-	Files       []string
-	SnapshotDir string
-}
-
-type huggingFaceSnapshotDownloader interface {
-	Download(context.Context, huggingFaceSnapshotDownloadInput) error
-}
-
-var newHuggingFaceSnapshotDownloader = func() huggingFaceSnapshotDownloader {
-	return &huggingFaceHTTPSnapshotDownloader{
-		BaseURL:    huggingFaceBaseURL,
-		HTTPClient: http.DefaultClient,
-	}
-}
 
 type huggingFaceHTTPSnapshotDownloader struct {
 	BaseURL    string
 	HTTPClient *http.Client
-}
-
-func (d *huggingFaceHTTPSnapshotDownloader) Download(ctx context.Context, input huggingFaceSnapshotDownloadInput) error {
-	if err := validateHuggingFaceSnapshotDownloadInput(input); err != nil {
-		return err
-	}
-
-	headers := bearerAuthHeaders(input.Token)
-	client := d.HTTPClient
-	if client == nil {
-		client = http.DefaultClient
-	}
-
-	for _, filePath := range input.Files {
-		cleanPath, err := cleanRemoteRelativePath(filePath)
-		if err != nil {
-			return err
-		}
-
-		sourceURL, err := d.resolveURL(input.RepoID, input.Revision, cleanPath)
-		if err != nil {
-			return err
-		}
-		response, err := doGET(ctx, client, sourceURL, headers)
-		if err != nil {
-			return err
-		}
-		if response.StatusCode != http.StatusOK {
-			defer response.Body.Close()
-			return unexpectedStatusError(response, "huggingface snapshot download")
-		}
-
-		target := filepath.Join(strings.TrimSpace(input.SnapshotDir), cleanPath)
-		writeErr := writeResponseBody(target, response.Body)
-		closeErr := response.Body.Close()
-		if writeErr != nil {
-			return writeErr
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-	}
-
-	return nil
 }
 
 func (d *huggingFaceHTTPSnapshotDownloader) resolveURL(repoID, revision, relativePath string) (string, error) {
@@ -116,22 +50,6 @@ func (d *huggingFaceHTTPSnapshotDownloader) resolveURL(repoID, revision, relativ
 		escapePathPreservingSeparators(revision),
 		escapePathPreservingSeparators(cleanPath),
 	), nil
-}
-
-func validateHuggingFaceSnapshotDownloadInput(input huggingFaceSnapshotDownloadInput) error {
-	if strings.TrimSpace(input.RepoID) == "" {
-		return errors.New("huggingface repo ID must not be empty")
-	}
-	if strings.TrimSpace(input.Revision) == "" {
-		return errors.New("huggingface revision must not be empty")
-	}
-	if strings.TrimSpace(input.SnapshotDir) == "" {
-		return errors.New("huggingface snapshot directory must not be empty")
-	}
-	if len(input.Files) == 0 {
-		return errors.New("huggingface file selection must not be empty")
-	}
-	return nil
 }
 
 func escapePathPreservingSeparators(value string) string {

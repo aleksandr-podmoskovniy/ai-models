@@ -76,6 +76,28 @@ func TestValidateDirGGUF(t *testing.T) {
 	}
 }
 
+func TestValidatePathGGUFFile(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "model.gguf")
+	writeTestFile(t, root, "weights")
+
+	if err := ValidatePath(root, modelsv1alpha1.ModelInputFormatGGUF); err != nil {
+		t.Fatalf("ValidatePath() error = %v", err)
+	}
+}
+
+func TestValidatePathSafetensorsFileRequiresConfig(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "model.safetensors")
+	writeTestFile(t, root, "weights")
+
+	if err := ValidatePath(root, modelsv1alpha1.ModelInputFormatSafetensors); err == nil {
+		t.Fatal("expected safetensors file-only validation error")
+	}
+}
+
 func TestValidateDirRejectsHardRejectPayload(t *testing.T) {
 	t.Parallel()
 

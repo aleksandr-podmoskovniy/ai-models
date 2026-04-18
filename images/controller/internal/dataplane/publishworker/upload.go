@@ -20,14 +20,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
+	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
@@ -43,115 +41,135 @@ func publishFromUpload(ctx context.Context, options Options) (publicationartifac
 		slog.Bool("uploadStageEnabled", options.UploadStage != nil),
 	)
 
-	workspace, cleanupDir, err := ensureWorkspace(options.SnapshotDir, "ai-model-upload-publish-")
+	publishResult, handled, err := tryPublishUploadFastPaths(ctx, options, logger)
 	if err != nil {
 		return publicationartifact.Result{}, err
 	}
-	defer cleanupDir()
-	logger.Debug("upload publication workspace prepared", slog.String("workspace", workspace))
-
-	sourcePrepareStarted := time.Now()
-	logger.Info("upload source preparation started")
-	uploadPath, cleanupUpload, err := ensureUploadPath(ctx, options, workspace)
-	if err != nil {
-		return publicationartifact.Result{}, err
+	if handled {
+		return publishResult, nil
 	}
-	defer cleanupUpload()
-	if info, statErr := os.Stat(uploadPath); statErr == nil {
-		logger.Info(
-			"upload source preparation completed",
-			slog.Int64("durationMs", time.Since(sourcePrepareStarted).Milliseconds()),
-			slog.String("uploadPath", uploadPath),
-			slog.Int64("uploadSizeBytes", info.Size()),
-		)
-	}
-
-	checkpointPrepareStarted := time.Now()
-	logger.Info("upload checkpoint materialization started")
-	checkpointDir, err := sourcefetch.PrepareModelInput(uploadPath, filepath.Join(workspace, "checkpoint"))
-	if err != nil {
-		return publicationartifact.Result{}, err
-	}
-	logger.Info(
-		"upload checkpoint materialization completed",
-		slog.Int64("durationMs", time.Since(checkpointPrepareStarted).Milliseconds()),
-		slog.String("checkpointDir", checkpointDir),
-	)
-
-	inputFormat, err := resolveUploadInputFormat(checkpointDir, options.InputFormat)
-	if err != nil {
-		return publicationartifact.Result{}, err
-	}
-	logger.Info("upload input format resolved", slog.String("resolvedInputFormat", strings.TrimSpace(string(inputFormat))))
-
-	validationStarted := time.Now()
-	logger.Info("upload checkpoint validation started")
-	if err := modelformat.ValidateDir(checkpointDir, inputFormat); err != nil {
-		return publicationartifact.Result{}, err
-	}
-	logger.Info(
-		"upload checkpoint validation completed",
-		slog.Int64("durationMs", time.Since(validationStarted).Milliseconds()),
-	)
-
-	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, checkpointDir, inputFormat, sourceProfileInput{
-		Task: options.Task,
-	})
-	if err != nil {
-		return publicationartifact.Result{}, err
-	}
-
 	if options.UploadStage != nil {
-		cleanupStarted := time.Now()
-		logger.Info("upload staging cleanup started")
-		if err := cleanupUploadStage(ctx, options); err != nil {
-			return publicationartifact.Result{}, err
-		}
-		logger.Info(
-			"upload staging cleanup completed",
-			slog.Int64("durationMs", time.Since(cleanupStarted).Milliseconds()),
-		)
+		return publicationartifact.Result{}, errors.New("staged upload path escaped zero-copy publish fast paths after validation")
 	}
-
-	rawSource := uploadRawProvenance(options.UploadStage)
-	return buildBackendResult(
-		publicationdata.SourceProvenance{
-			Type:           modelsv1alpha1.ModelSourceTypeUpload,
-			RawURI:         rawSource.RawURI,
-			RawObjectCount: rawSource.RawObjectCount,
-			RawSizeBytes:   rawSource.RawSizeBytes,
-		},
-		resolvedProfile,
-		publishResult,
-	), nil
+	return publicationartifact.Result{}, errors.New("upload path escaped zero-copy publish fast paths after validation")
 }
 
-func ensureUploadPath(ctx context.Context, options Options, workspace string) (string, func(), error) {
-	if strings.TrimSpace(options.UploadPath) != "" {
-		return options.UploadPath, func() {}, nil
+func tryPublishUploadFastPaths(
+	ctx context.Context,
+	options Options,
+	logger *slog.Logger,
+) (publicationartifact.Result, bool, error) {
+	publishResult, handled, err := tryPublishUploadStageDirectObjectSource(ctx, options, logger)
+	if err != nil {
+		return publicationartifact.Result{}, false, err
 	}
-	if options.UploadStage == nil {
-		return "", nil, errors.New("upload staging handle must not be empty")
-	}
-	if options.UploadStaging == nil {
-		return "", nil, errors.New("upload staging client must not be nil")
+	if handled {
+		return publishResult, true, nil
 	}
 
-	fileName := strings.TrimSpace(options.UploadStage.FileName)
-	if fileName == "" {
-		fileName = "upload.bin"
+	publishResult, handled, err = tryPublishUploadStageStreamingArchive(ctx, options, logger)
+	if err != nil {
+		return publicationartifact.Result{}, false, err
 	}
-	localPath := filepath.Join(workspace, fileName)
-	if err := options.UploadStaging.Download(ctx, uploadstagingports.DownloadInput{
-		Bucket:          options.UploadStage.Bucket,
-		Key:             options.UploadStage.Key,
-		DestinationPath: localPath,
-	}); err != nil {
-		return "", nil, err
+	if handled {
+		return publishResult, true, nil
 	}
-	return localPath, func() {
-		_ = os.Remove(localPath)
-	}, nil
+
+	if err := failFastUploadProbe(ctx, options, logger); err != nil {
+		return publicationartifact.Result{}, false, err
+	}
+
+	publishResult, handled, err = tryPublishLocalZeroCopyUpload(ctx, options, logger)
+	if err != nil {
+		return publicationartifact.Result{}, false, err
+	}
+	if handled {
+		return publishResult, true, nil
+	}
+	if strings.TrimSpace(options.UploadPath) != "" {
+		return publicationartifact.Result{}, false, errors.New("local upload path escaped zero-copy publish fast paths after fail-fast validation")
+	}
+	return publicationartifact.Result{}, false, nil
+}
+
+func tryPublishLocalZeroCopyUpload(
+	ctx context.Context,
+	options Options,
+	logger *slog.Logger,
+) (publicationartifact.Result, bool, error) {
+	uploadPath := strings.TrimSpace(options.UploadPath)
+	if uploadPath == "" {
+		return publicationartifact.Result{}, false, nil
+	}
+
+	publishResult, handled, err := tryPublishDirectUpload(ctx, options, uploadPath, logger)
+	if err != nil {
+		return publicationartifact.Result{}, false, err
+	}
+	if handled {
+		return publishResult, true, nil
+	}
+
+	publishResult, handled, err = tryPublishStreamingUploadArchive(ctx, options, uploadPath, logger)
+	if err != nil {
+		return publicationartifact.Result{}, false, err
+	}
+	if handled {
+		return publishResult, true, nil
+	}
+
+	return publicationartifact.Result{}, false, nil
+}
+
+func tryPublishDirectUpload(
+	ctx context.Context,
+	options Options,
+	uploadPath string,
+	logger *slog.Logger,
+) (publicationartifact.Result, bool, error) {
+	directInputFormat, err := resolveDirectUploadInputFormat(uploadPath, options.InputFormat)
+	if err != nil {
+		return publicationartifact.Result{}, false, err
+	}
+	if directInputFormat != modelsv1alpha1.ModelInputFormatGGUF {
+		return publicationartifact.Result{}, false, nil
+	}
+
+	logger.Info(
+		"upload direct model path selected",
+		slog.String("uploadPath", uploadPath),
+		slog.String("resolvedInputFormat", string(directInputFormat)),
+	)
+	if err := modelformat.ValidatePath(uploadPath, directInputFormat); err != nil {
+		return publicationartifact.Result{}, false, err
+	}
+	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, uploadPath, directInputFormat, sourceProfileInput{
+		Task: options.Task,
+	}, nil)
+	if err != nil {
+		return publicationartifact.Result{}, false, err
+	}
+	if err := cleanupStagedUploadObject(ctx, options, logger); err != nil {
+		return publicationartifact.Result{}, false, err
+	}
+
+	return buildUploadResult(options, resolvedProfile, publishResult), true, nil
+}
+
+func cleanupStagedUploadObject(ctx context.Context, options Options, logger *slog.Logger) error {
+	if options.UploadStage == nil {
+		return nil
+	}
+	cleanupStarted := time.Now()
+	logger.Info("upload staging cleanup started")
+	if err := cleanupUploadStage(ctx, options); err != nil {
+		return err
+	}
+	logger.Info(
+		"upload staging cleanup completed",
+		slog.Int64("durationMs", time.Since(cleanupStarted).Milliseconds()),
+	)
+	return nil
 }
 
 func cleanupUploadStage(ctx context.Context, options Options) error {
@@ -165,4 +183,40 @@ func cleanupUploadStage(ctx context.Context, options Options) error {
 		Bucket: options.UploadStage.Bucket,
 		Key:    options.UploadStage.Key,
 	})
+}
+
+func buildUploadResult(
+	options Options,
+	resolvedProfile publicationdata.ResolvedProfile,
+	publishResult modelpackports.PublishResult,
+) publicationartifact.Result {
+	rawSource := uploadRawProvenance(options.UploadStage)
+	return buildBackendResult(
+		publicationdata.SourceProvenance{
+			Type:           modelsv1alpha1.ModelSourceTypeUpload,
+			RawURI:         rawSource.RawURI,
+			RawObjectCount: rawSource.RawObjectCount,
+			RawSizeBytes:   rawSource.RawSizeBytes,
+		},
+		resolvedProfile,
+		publishResult,
+	)
+}
+
+func resolveDirectUploadInputFormat(uploadPath string, requested modelsv1alpha1.ModelInputFormat) (modelsv1alpha1.ModelInputFormat, error) {
+	if isArchiveUploadPath(uploadPath) {
+		return "", nil
+	}
+	return resolveUploadInputFormat(uploadPath, requested)
+}
+
+func isArchiveUploadPath(uploadPath string) bool {
+	lowerPath := strings.ToLower(strings.TrimSpace(uploadPath))
+	return strings.HasSuffix(lowerPath, ".tar") ||
+		strings.HasSuffix(lowerPath, ".tar.gz") ||
+		strings.HasSuffix(lowerPath, ".tgz") ||
+		strings.HasSuffix(lowerPath, ".tar.zst") ||
+		strings.HasSuffix(lowerPath, ".tar.zstd") ||
+		strings.HasSuffix(lowerPath, ".tzst") ||
+		strings.HasSuffix(lowerPath, ".zip")
 }

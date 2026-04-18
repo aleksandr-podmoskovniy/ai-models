@@ -2,9 +2,20 @@
 
 ## Current phase
 
-Исследовательский pre-implementation slice. Это не phase-1 runtime change и не
-phase-2 API change в `ai-models`, а отдельное R&D по будущему distributed
-inference profile поверх `KubeRay + vLLM`.
+Research-to-runtime bring-up slice. Работы уже включают не только выбор
+профиля, но и materialization внешнего `k8s-config` каталога и живую
+валидацию `RayService` в `k8s-dvp.apiac.ru`.
+
+Текущий runtime verdict по `dvp`:
+
+- `Qwen/Qwen3-14B` на `ray-llm 2.54.0 / vLLM 0.15.0 V1 / PP=3 / 3x V100`
+  доходит до рабочего `RDMA/NCCL`, но падает на
+  `KeyError: model.layers.{0,13,27}.self_attn.attn`;
+- `DeepSeek-R1-Distill-Qwen-14B` на том же профиле падает на
+  `KeyError: model.layers.{0,16}.self_attn.attn`;
+- текущий следующий slice: сохранить baseline на
+  `DeepSeek-R1-Distill-Qwen-14B` и добить exact runtime blocker без замены
+  модели.
 
 ## Orchestration
 
@@ -135,6 +146,111 @@ inference profile поверх `KubeRay + vLLM`.
   - deployment shape;
   - residual risks.
 
+## Slice 6. Materialize the `k8s-config` delivery
+
+Цель:
+
+- собрать рядом с уже существующим `k8s.apiac.ru/kube-ray/charts/ray-service`
+  отдельный `dvp`-каталог с raw manifests для текущего `V100 + RDMA` стенда;
+- оставить этот каталог достаточно близким к соседнему кластеру по layout, но
+  уже с pod-level `sdn` / `DRA` контрактом и реальными `dvp`-специфичными
+  claim-именами.
+
+Затрагиваемые области:
+
+- `/Users/myskat_90/Обучение/gitlab.ap.com/k8s-config/argo-projects/k8s-dvp.apiac.ru/kuberay/*`
+- текущий active bundle docs
+
+Проверки:
+
+- YAML files must parse cleanly
+- references to `ResourceClaimTemplate`, `UnderlayNetwork`, node hostnames and
+  interfaces must match the known `dvp` stand
+- no `hostNetwork`
+- main worker container must not request unnecessary capabilities
+
+Артефакт:
+
+- external folder with:
+  - `argo-app` entry;
+  - `RayService` baseline manifest;
+  - support secrets/PVC/ServiceAccount/examples;
+  - namespaced `ResourceClaimTemplate` copies for `kuberay-projects`;
+  - image build helper/example for the chosen `vLLM` baseline.
+
+## Slice 7. Stabilize the live `RayService` bring-up
+
+Цель:
+
+- подтвердить, что worker pod реально поднимаются на трёх `V100` без
+  `NET_ADMIN` и других лишних capability;
+- подтвердить, что `sdn/DRA` автоматически довозит underlay claim и интерфейс
+  в worker pod;
+- довести `serveConfigV2` до схемы, совместимой именно с
+  `rayproject/ray-llm:2.54.0-py311-cu128`;
+- убедиться, что `Ray` видит `GPU=3` и placement group не остаётся
+  `INFEASIBLE` из-за недооценённого `CPU` budget;
+- отдельно зафиксировать, если live объект переписывается внешним applier и
+  тем самым откатывает локально исправленный chart.
+
+Затрагиваемые области:
+
+- `/Users/myskat_90/Обучение/gitlab.ap.com/k8s-config/argo-projects/k8s-dvp.apiac.ru/kuberay/*`
+- `plans/active/research-kuberay-vllm-v100-gpudirect-inference/*`
+- live cluster `k8s-dvp.apiac.ru`
+
+Проверки:
+
+- `kubectl get/describe rayservice,raycluster,pods -n kuberay-projects`
+- `ray status` / `serve status` inside the live head pod
+- no `NET_ADMIN` in live worker pod spec
+- no `placement_group_config` nested under `deployment_config` in live object
+
+Артефакт:
+
+- honest runtime verdict:
+  - either a working live rollout,
+  - or an exact blocker outside the chart itself.
+
+Текущий live verdict после первичной bring-up отладки:
+
+- первый runtime blocker с `PENDING_NODE_ASSIGNMENT` уже снят:
+  worker подняты до `10 CPU`, и `initialize_remote_node` больше не висит;
+- `Ray` видит все три worker и placement group создаётся;
+- текущий стопор уже глубже, внутри `vLLM V1` engine core:
+  `torch.distributed.new_group(... backend=\"gloo\")` падает с
+  `ProcessGroupGloo ... connect: Network is unreachable`;
+- причина не в самом `NCCL`, а в socket bootstrap:
+  `GLOO_SOCKET_IFNAME` и `NCCL_SOCKET_IFNAME` были прибиты к underlay
+  интерфейсам `enp*`, которые в текущем `sdn/DRA` профиле приезжают в pod
+  без отдельного L3-адреса;
+- практический фикс для current chart: оставить `NCCL_IB_HCA` /
+  `NCCL_IB_GID_INDEX` на `mlx5_*`, но перевести `GLOO_SOCKET_IFNAME` и
+  `NCCL_SOCKET_IFNAME` на `eth0`, чтобы bootstrap шёл по обычному pod IP.
+
+Текущий live verdict после этого фикса:
+
+- `Gloo` bootstrap больше не является blocker;
+- `NCCL` реально поднимается в `NET/IB` режиме:
+  `Bootstrap: Using eth0:<pod-ip>` и `NET/IB : Using mlx5_*:1/RoCE [RO]`;
+- новый blocker находится в `ibverbs` ресурсах:
+  `misc/ibvwrap.cc:203 NCCL WARN Call to ibv_create_cq failed with error Cannot allocate memory`;
+- на `w1` worker внутри pod `RLIMIT_MEMLOCK` равен всего `65536 bytes`, на
+  `w3` — `8388608 bytes`;
+- baseline-policy в namespace `kuberay-projects` не разрешает `IPC_LOCK`, так
+  что прямое добавление capability сейчас не проходит `admission`;
+- для текущего bring-up выбран pragmatic workaround:
+  namespace `kuberay-projects` переводится в
+  `security.deckhouse.io/pod-policy: privileged`, а в `ray-worker`
+  добавляется только `IPC_LOCK`;
+- как следующий более чистый шаг добавлен отдельный GitOps-компонент
+  `kuberay-node-memlock`, который вешает systemd drop-in с
+  `LimitMEMLOCK=infinity` на `containerd` только для
+  `k8s-dvp-w1-gpu.apiac.ru` и `k8s-dvp-w3-gpu.apiac.ru`;
+- долгосрочно целевой путь остаётся прежним:
+  поднять default `memlock` в runtime/containerd и затем убрать `IPC_LOCK`
+  обратно.
+
 ## Rollback point
 
 Если по итогам выяснится, что на `3x V100` жизнеспособен только слишком
@@ -149,3 +265,4 @@ inference profile поверх `KubeRay + vLLM`.
 
 - `git diff --check`
 - manual bundle review against scope and factual consistency
+- YAML parse check for the new external manifests

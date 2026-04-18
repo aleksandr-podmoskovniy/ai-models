@@ -20,7 +20,9 @@
 - стабильные `config-values` для controller/runtime shell и object storage wiring;
 - runtime templates для `DMCR`, controller shell и module-wide manifests;
 - runtime/internal `values` и image-based Go hooks для модульной обвязки;
-- `werf`, CI/CD и repo-local workflow для упаковки module-owned runtime images.
+- `werf`, CI/CD и repo-local workflow для упаковки module-owned controller /
+  artifact runtime images; consumer serving image остаётся внешним
+  runtime surface, например из `Docker Hub`.
 
 Текущий import/publication flow для моделей:
 - канонический live путь идёт через `Model` / `ClusterModel`;

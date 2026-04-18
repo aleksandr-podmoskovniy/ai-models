@@ -1,0 +1,148 @@
+/*
+Copyright 2026 Flant JSC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package sourcefetch
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+)
+
+func buildHuggingFaceObjectSource(
+	ctx context.Context,
+	options RemoteOptions,
+	repoID string,
+	resolvedRevision string,
+	selectedFiles []string,
+) (*RemoteObjectSource, error) {
+	files := make([]RemoteObjectFile, 0, len(selectedFiles))
+	reader := huggingFaceHTTPObjectReader{
+		httpClient: http.DefaultClient,
+		token:      options.HFToken,
+	}
+	for _, filePath := range selectedFiles {
+		cleanPath, err := cleanRemoteRelativePath(filePath)
+		if err != nil {
+			return nil, err
+		}
+		sourceURL, err := (&huggingFaceHTTPSnapshotDownloader{BaseURL: huggingFaceBaseURL}).resolveURL(repoID, resolvedRevision, cleanPath)
+		if err != nil {
+			return nil, err
+		}
+		sizeBytes, etag, err := headHuggingFaceRemoteObject(ctx, sourceURL, options.HFToken)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, RemoteObjectFile{
+			SourcePath: sourceURL,
+			TargetPath: cleanPath,
+			SizeBytes:  sizeBytes,
+			ETag:       etag,
+		})
+	}
+	return &RemoteObjectSource{
+		Reader: reader,
+		Files:  files,
+	}, nil
+}
+
+func headHuggingFaceRemoteObject(ctx context.Context, sourceURL string, token string) (int64, string, error) {
+	response, err := doHEAD(ctx, http.DefaultClient, sourceURL, bearerAuthHeaders(token))
+	if err != nil {
+		return 0, "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return 0, "", unexpectedStatusError(response, "huggingface object-source HEAD request")
+	}
+	sizeBytes, err := responseContentLength(response)
+	if err != nil {
+		return 0, "", err
+	}
+	return sizeBytes, strings.TrimSpace(response.Header.Get("ETag")), nil
+}
+
+func responseContentLength(response *http.Response) (int64, error) {
+	if response == nil {
+		return 0, fmt.Errorf("response must not be nil")
+	}
+	if response.ContentLength >= 0 {
+		return response.ContentLength, nil
+	}
+	rawLength := strings.TrimSpace(response.Header.Get("Content-Length"))
+	if rawLength == "" {
+		return 0, fmt.Errorf("response missing Content-Length")
+	}
+	sizeBytes, err := strconv.ParseInt(rawLength, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("response has invalid Content-Length %q: %w", rawLength, err)
+	}
+	return sizeBytes, nil
+}
+
+type huggingFaceHTTPObjectReader struct {
+	httpClient *http.Client
+	token      string
+}
+
+func (r huggingFaceHTTPObjectReader) OpenRead(ctx context.Context, sourcePath string) (RemoteOpenReadResult, error) {
+	return r.openRead(ctx, strings.TrimSpace(sourcePath), 0, -1)
+}
+
+func (r huggingFaceHTTPObjectReader) OpenReadRange(ctx context.Context, sourcePath string, offset, length int64) (RemoteOpenReadResult, error) {
+	return r.openRead(ctx, strings.TrimSpace(sourcePath), offset, length)
+}
+
+func (r huggingFaceHTTPObjectReader) openRead(ctx context.Context, sourcePath string, offset, length int64) (RemoteOpenReadResult, error) {
+	headers := bearerAuthHeaders(r.token)
+	if rangeHeader, ok := httpByteRangeHeader(offset, length); ok {
+		headers["Range"] = rangeHeader
+	}
+	response, err := doGET(ctx, r.httpClient, sourcePath, headers)
+	if err != nil {
+		return RemoteOpenReadResult{}, err
+	}
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
+		defer response.Body.Close()
+		return RemoteOpenReadResult{}, unexpectedStatusError(response, "huggingface object-source GET request")
+	}
+	sizeBytes, err := responseContentLength(response)
+	if err != nil {
+		_ = response.Body.Close()
+		return RemoteOpenReadResult{}, err
+	}
+	return RemoteOpenReadResult{
+		Body:      response.Body,
+		SizeBytes: sizeBytes,
+		ETag:      strings.TrimSpace(response.Header.Get("ETag")),
+	}, nil
+}
+
+func httpByteRangeHeader(offset, length int64) (string, bool) {
+	if offset < 0 || length == 0 || length < -1 {
+		return "", false
+	}
+	if offset <= 0 && length < 0 {
+		return "", false
+	}
+	if length < 0 {
+		return "bytes=" + strconv.FormatInt(offset, 10) + "-", true
+	}
+	return "bytes=" + strconv.FormatInt(offset, 10) + "-" + strconv.FormatInt(offset+length-1, 10), true
+}

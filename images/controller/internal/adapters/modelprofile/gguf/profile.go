@@ -18,6 +18,7 @@ package gguf
 
 import (
 	"errors"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -32,6 +33,12 @@ import (
 type Input struct {
 	ModelDir string
 	Task     string
+}
+
+type SummaryInput struct {
+	ModelFileName  string
+	ModelSizeBytes int64
+	Task           string
 }
 
 var (
@@ -50,6 +57,23 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 	}
 
 	stem := strings.TrimSuffix(filepath.Base(modelPath), filepath.Ext(modelPath))
+	return resolveFromSummary(stem, modelSizeBytes, input.Task), nil
+}
+
+func ResolveSummary(input SummaryInput) (publicationdata.ResolvedProfile, error) {
+	modelFileName := strings.TrimSpace(input.ModelFileName)
+	if modelFileName == "" {
+		return publicationdata.ResolvedProfile{}, errors.New("gguf model file name must not be empty")
+	}
+	if input.ModelSizeBytes <= 0 {
+		return publicationdata.ResolvedProfile{}, errors.New("gguf model size must be positive")
+	}
+
+	stem := strings.TrimSuffix(filepath.Base(modelFileName), filepath.Ext(modelFileName))
+	return resolveFromSummary(stem, input.ModelSizeBytes, input.Task), nil
+}
+
+func resolveFromSummary(stem string, modelSizeBytes int64, task string) publicationdata.ResolvedProfile {
 	quantization := detectQuantization(stem)
 	precision := detectPrecision(quantization)
 	parameterCount := detectParameterCount(stem)
@@ -58,14 +82,14 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 	}
 
 	resolved := publicationdata.ResolvedProfile{
-		Task:           strings.TrimSpace(input.Task),
+		Task:           strings.TrimSpace(task),
 		Framework:      "gguf",
 		Family:         normalizeFamily(stem),
 		Format:         "GGUF",
 		ParameterCount: parameterCount,
 		Quantization:   quantization,
 		SupportedEndpointTypes: profilecommon.EndpointTypes(
-			input.Task,
+			task,
 		),
 		CompatiblePrecisions: compatiblePrecisions(precision),
 		MinimumLaunch: profilecommon.MinimumGPULaunch(
@@ -76,14 +100,29 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 		resolved.CompatibleAcceleratorVendors = profilecommon.GPUVendors()
 	}
 
-	return resolved, nil
+	return resolved
 }
 
 func firstGGUFFile(root string) (string, int64, error) {
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		return "", 0, err
+	}
+	if !rootInfo.IsDir() {
+		looksLikeGGUF, err := hasGGUFMagic(root)
+		if err != nil {
+			return "", 0, err
+		}
+		if !strings.HasSuffix(strings.ToLower(rootInfo.Name()), ".gguf") && !looksLikeGGUF {
+			return "", 0, errors.New("gguf model file was not found")
+		}
+		return root, rootInfo.Size(), nil
+	}
+
 	var match string
 	var matchSize int64
 
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -108,6 +147,25 @@ func firstGGUFFile(root string) (string, int64, error) {
 		return "", 0, errors.New("gguf model file was not found")
 	}
 	return match, matchSize, nil
+}
+
+func hasGGUFMagic(path string) (bool, error) {
+	stream, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer stream.Close()
+
+	header := make([]byte, 4)
+	n, err := io.ReadFull(stream, header)
+	switch {
+	case err == nil:
+		return n == 4 && string(header) == "GGUF", nil
+	case errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, io.EOF):
+		return false, nil
+	default:
+		return false, err
+	}
 }
 
 func detectQuantization(name string) string {

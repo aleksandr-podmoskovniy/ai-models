@@ -18,12 +18,6 @@ package oci
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/pem"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,148 +98,39 @@ func TestAdapterPublishMaterializeAndRemove(t *testing.T) {
 	}
 }
 
-func assertFileContent(t *testing.T, path, want string) {
-	t.Helper()
+func TestAdapterPublishRecoversFromInterruptedChunkedUpload(t *testing.T) {
+	t.Parallel()
 
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile(%q) error = %v", path, err)
+	previousChunkSize := blobUploadChunkSize
+	t.Cleanup(func() {
+		blobUploadChunkSize = previousChunkSize
+	})
+	blobUploadChunkSize = 32
+
+	server, auth := newWritableRegistryServerWithTransientPatchFailure(t)
+	defer server.Close()
+
+	modelDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(modelDir, "config.json"), []byte(strings.Repeat("a", 128)), 0o644); err != nil {
+		t.Fatalf("WriteFile(config.json) error = %v", err)
 	}
-	if got := string(body); got != want {
-		t.Fatalf("ReadFile(%q) = %q, want %q", path, got, want)
-	}
-}
-
-type writableRegistryServer struct {
-	server        *httptest.Server
-	getPatchCount func() int
-}
-
-func (s *writableRegistryServer) Close() {
-	s.server.Close()
-}
-
-func (s *writableRegistryServer) patchCount() int {
-	return s.getPatchCount()
-}
-
-func newWritableRegistryServer(t *testing.T) (*writableRegistryServer, modelpackports.RegistryAuth) {
-	t.Helper()
-
-	type registryState struct {
-		uploads   map[string][]byte
-		blobs     map[string][]byte
-		manifests map[string][]byte
-		tags      map[string]string
-		patches   int
-	}
-	state := registryState{
-		uploads:   make(map[string][]byte),
-		blobs:     make(map[string][]byte),
-		manifests: make(map[string][]byte),
-		tags:      make(map[string]string),
+	if err := os.WriteFile(filepath.Join(modelDir, "weights.gguf"), []byte("GGUF"+strings.Repeat("b", 256)), 0o644); err != nil {
+		t.Fatalf("WriteFile(weights.gguf) error = %v", err)
 	}
 
-	const repoPrefix = "/v2/ai-models/catalog/model"
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, pass, ok := r.BasicAuth()
-		if !ok || user != "writer" || pass != "secret" {
-			t.Fatalf("unexpected auth %q/%q", user, pass)
-		}
+	adapter := New()
+	reference := serverReference(server.server, "published")
+	if _, err := adapter.Publish(context.Background(), modelpackports.PublishInput{
+		ModelDir:    modelDir,
+		ArtifactURI: reference,
+	}, auth); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
 
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == repoPrefix+"/blobs/uploads/":
-			uploadID := "upload-" + hex.EncodeToString([]byte{byte(len(state.uploads) + 1)})
-			state.uploads[uploadID] = nil
-			w.Header().Set("Location", "/uploads/"+uploadID)
-			w.WriteHeader(http.StatusAccepted)
-		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/uploads/"):
-			uploadID := strings.TrimPrefix(r.URL.Path, "/uploads/")
-			payload, err := io.ReadAll(r.Body)
-			if err != nil {
-				t.Fatalf("ReadAll(patch body) error = %v", err)
-			}
-			state.uploads[uploadID] = append(state.uploads[uploadID], payload...)
-			state.patches++
-			w.Header().Set("Location", "/uploads/"+uploadID)
-			w.WriteHeader(http.StatusAccepted)
-		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/uploads/"):
-			uploadID := strings.TrimPrefix(r.URL.Path, "/uploads/")
-			digest := strings.TrimSpace(r.URL.Query().Get("digest"))
-			payload, err := io.ReadAll(r.Body)
-			if err != nil {
-				t.Fatalf("ReadAll(upload body) error = %v", err)
-			}
-			if uploadID == "" || digest == "" {
-				t.Fatalf("unexpected upload request %q?%q", r.URL.Path, r.URL.RawQuery)
-			}
-			state.blobs[digest] = append(state.uploads[uploadID], payload...)
-			delete(state.uploads, uploadID)
-			w.WriteHeader(http.StatusCreated)
-		case strings.HasPrefix(r.URL.Path, repoPrefix+"/manifests/"):
-			ref := strings.TrimPrefix(r.URL.Path, repoPrefix+"/manifests/")
-			switch r.Method {
-			case http.MethodPut:
-				payload, err := io.ReadAll(r.Body)
-				if err != nil {
-					t.Fatalf("ReadAll(manifest body) error = %v", err)
-				}
-				digestBytes := sha256.Sum256(payload)
-				digest := "sha256:" + hex.EncodeToString(digestBytes[:])
-				state.manifests[digest] = payload
-				if !strings.HasPrefix(ref, "sha256:") {
-					state.tags[ref] = digest
-				}
-				w.Header().Set("Docker-Content-Digest", digest)
-				w.WriteHeader(http.StatusCreated)
-			case http.MethodGet:
-				digest := ref
-				if !strings.HasPrefix(digest, "sha256:") {
-					digest = state.tags[ref]
-				}
-				payload, ok := state.manifests[digest]
-				if !ok {
-					http.NotFound(w, r)
-					return
-				}
-				w.Header().Set("Docker-Content-Digest", digest)
-				w.Header().Set("Content-Type", ManifestMediaType)
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write(payload)
-			case http.MethodDelete:
-				delete(state.manifests, ref)
-				for tag, digest := range state.tags {
-					if digest == ref {
-						delete(state.tags, tag)
-					}
-				}
-				w.WriteHeader(http.StatusAccepted)
-			default:
-				t.Fatalf("unexpected manifest method %s", r.Method)
-			}
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, repoPrefix+"/blobs/"):
-			digest := strings.TrimPrefix(r.URL.Path, repoPrefix+"/blobs/")
-			payload, ok := state.blobs[digest]
-			if !ok {
-				http.NotFound(w, r)
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(payload)
-		default:
-			t.Fatalf("unexpected path %s %q", r.Method, r.URL.Path)
-		}
-	}))
-
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
-	return &writableRegistryServer{
-			server: server,
-			getPatchCount: func() int {
-				return state.patches
-			},
-		}, modelpackports.RegistryAuth{
-			Username: "writer",
-			Password: "secret",
-			CAFile:   writeTempFile(t, certPEM),
-		}
+	if server.patchCount() < 2 {
+		t.Fatalf("expected multiple PATCH requests, got %d", server.patchCount())
+	}
+	if server.statusCount() == 0 {
+		t.Fatal("expected upload status GET after interrupted PATCH")
+	}
 }

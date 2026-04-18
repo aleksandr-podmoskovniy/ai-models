@@ -38,7 +38,7 @@ const (
 
 type Adapter struct {
 	Uploader      uploadstagingports.Uploader
-	Downloader    uploadstagingports.Downloader
+	Reader        uploadstagingports.Reader
 	PrefixRemover uploadstagingports.PrefixRemover
 	Bucket        string
 	BasePrefix    string
@@ -122,33 +122,19 @@ func (a *Adapter) uploadJSON(ctx context.Context, key string, payload any) error
 }
 
 func (a *Adapter) downloadJSON(ctx context.Context, key string, into any) error {
-	tempFile, err := os.CreateTemp("", "ai-model-source-mirror-*.json")
+	output, err := a.Reader.OpenRead(ctx, uploadstagingports.OpenReadInput{
+		Bucket: strings.TrimSpace(a.Bucket),
+		Key:    key,
+	})
 	if err != nil {
-		return err
-	}
-	tempPath := tempFile.Name()
-	if err := tempFile.Close(); err != nil {
-		_ = os.Remove(tempPath)
-		return err
-	}
-	defer os.Remove(tempPath)
-
-	if err := a.Downloader.Download(ctx, uploadstagingports.DownloadInput{
-		Bucket:          strings.TrimSpace(a.Bucket),
-		Key:             key,
-		DestinationPath: tempPath,
-	}); err != nil {
 		if isNotFoundError(err) {
 			return sourcemirrorports.ErrSnapshotNotFound
 		}
 		return err
 	}
+	defer output.Body.Close()
 
-	body, err := os.ReadFile(tempPath)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(body, into); err != nil {
+	if err := json.NewDecoder(output.Body).Decode(into); err != nil {
 		return fmt.Errorf("failed to decode source mirror JSON %q: %w", key, err)
 	}
 	return nil
@@ -160,8 +146,8 @@ func validateAdapter(a *Adapter) error {
 		return errors.New("source mirror adapter must not be nil")
 	case a.Uploader == nil:
 		return errors.New("source mirror uploader must not be nil")
-	case a.Downloader == nil:
-		return errors.New("source mirror downloader must not be nil")
+	case a.Reader == nil:
+		return errors.New("source mirror reader must not be nil")
 	case strings.TrimSpace(a.Bucket) == "":
 		return errors.New("source mirror bucket must not be empty")
 	case strings.Trim(strings.TrimSpace(a.BasePrefix), "/") == "":

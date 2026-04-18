@@ -59,7 +59,7 @@ func UnpackArchive(archivePath, destination string) (string, error) {
 			return "", err
 		}
 	default:
-		return "", errors.New("archive must be .tar, .tar.gz, .tgz, or .zip")
+		return "", errors.New("archive must be .tar, .tar.gz, .tgz, .tar.zst, .tar.zstd, .tzst, or .zip")
 	}
 
 	return normalizeExtractedRoot(destination)

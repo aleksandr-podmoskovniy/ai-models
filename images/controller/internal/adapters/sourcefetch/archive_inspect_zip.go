@@ -1,0 +1,170 @@
+/*
+Copyright 2026 Flant JSC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package sourcefetch
+
+import (
+	"archive/zip"
+	"errors"
+	"io"
+	"path/filepath"
+	"strings"
+
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
+)
+
+func inspectZipModelArchive(path string, requested modelsv1alpha1.ModelInputFormat) (ArchiveInspection, error) {
+	archive, err := zip.OpenReader(path)
+	if err != nil {
+		return ArchiveInspection{}, err
+	}
+	defer archive.Close()
+
+	return inspectZipArchiveFiles(archive.File, requested)
+}
+
+func inspectZipArchiveFiles(files []*zip.File, requested modelsv1alpha1.ModelInputFormat) (ArchiveInspection, error) {
+	archiveFiles := make([]tarArchiveFile, 0, len(files))
+	meaningfulRoots := make(map[string]struct{}, 2)
+	hasArchiveRootFile := false
+	for _, file := range files {
+		relative, keep, err := classifyZipArchiveEntry(file)
+		if err != nil {
+			return ArchiveInspection{}, err
+		}
+		if !keep {
+			continue
+		}
+		archiveFiles = append(archiveFiles, tarArchiveFile{RelativePath: relative, SizeBytes: int64(file.UncompressedSize64)})
+
+		root := archiveTopLevelRoot(relative)
+		if root == "" {
+			hasArchiveRootFile = true
+			continue
+		}
+		meaningfulRoots[root] = struct{}{}
+	}
+
+	rootPrefix := deriveArchiveRootPrefix(meaningfulRoots, hasArchiveRootFile)
+	normalizedFiles := make([]string, 0, len(archiveFiles))
+	for _, file := range archiveFiles {
+		normalized, ok := normalizedArchiveFilePath(file.RelativePath, rootPrefix)
+		if !ok {
+			continue
+		}
+		normalizedFiles = append(normalizedFiles, normalized)
+	}
+
+	inputFormat, err := resolveRemoteFormat(normalizedFiles, requested)
+	if err != nil {
+		return ArchiveInspection{}, err
+	}
+	selectedFiles, err := modelformat.SelectRemoteFiles(inputFormat, normalizedFiles)
+	if err != nil {
+		return ArchiveInspection{}, err
+	}
+
+	inspection := ArchiveInspection{
+		RootPrefix:    rootPrefix,
+		InputFormat:   inputFormat,
+		SelectedFiles: selectedFiles,
+	}
+	switch inputFormat {
+	case modelsv1alpha1.ModelInputFormatSafetensors:
+		configPayload, weightBytes, err := summarizeZipSafetensorsArchive(files, rootPrefix, selectedFiles)
+		if err != nil {
+			return ArchiveInspection{}, err
+		}
+		inspection.ConfigPayload = configPayload
+		inspection.WeightBytes = weightBytes
+		return inspection, nil
+	case modelsv1alpha1.ModelInputFormatGGUF:
+		modelFile, modelFileSize, err := summarizeGGUFArchive(archiveFiles, rootPrefix, selectedFiles)
+		if err != nil {
+			return ArchiveInspection{}, err
+		}
+		inspection.ModelFile = modelFile
+		inspection.ModelFileSize = modelFileSize
+		return inspection, nil
+	default:
+		return inspection, nil
+	}
+}
+
+func classifyZipArchiveEntry(file *zip.File) (string, bool, error) {
+	relative, err := archiveRelativePath(file.Name)
+	if err != nil {
+		return "", false, err
+	}
+	if file.FileInfo().IsDir() {
+		return relative, false, nil
+	}
+	if isZipSymlink(file) {
+		return "", false, errors.New("refusing to inspect symbolic link zip entry")
+	}
+	return relative, true, nil
+}
+
+func summarizeZipSafetensorsArchive(files []*zip.File, rootPrefix string, selectedFiles []string) ([]byte, int64, error) {
+	selected := make(map[string]struct{}, len(selectedFiles))
+	for _, file := range selectedFiles {
+		selected[strings.TrimSpace(filepath.ToSlash(file))] = struct{}{}
+	}
+
+	var (
+		configPayload []byte
+		weightBytes   int64
+	)
+	for _, file := range files {
+		relative, keep, err := classifyZipArchiveEntry(file)
+		if err != nil {
+			return nil, 0, err
+		}
+		if !keep {
+			continue
+		}
+		normalized, ok := normalizedArchiveFilePath(relative, rootPrefix)
+		if !ok {
+			continue
+		}
+		if _, ok := selected[normalized]; !ok {
+			continue
+		}
+		switch {
+		case normalized == "config.json":
+			stream, err := file.Open()
+			if err != nil {
+				return nil, 0, err
+			}
+			configPayload, err = io.ReadAll(stream)
+			_ = stream.Close()
+			if err != nil {
+				return nil, 0, err
+			}
+		case strings.HasSuffix(strings.ToLower(normalized), ".safetensors"):
+			weightBytes += int64(file.UncompressedSize64)
+		}
+	}
+
+	if len(configPayload) == 0 {
+		return nil, 0, errors.New("zip safetensors summary requires config.json in selected files")
+	}
+	if weightBytes <= 0 {
+		return nil, 0, errors.New("zip safetensors summary requires positive safetensors weight bytes")
+	}
+	return configPayload, weightBytes, nil
+}

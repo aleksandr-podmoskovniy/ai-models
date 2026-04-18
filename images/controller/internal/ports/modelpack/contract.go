@@ -18,6 +18,7 @@ package modelpack
 
 import (
 	"context"
+	"io"
 	"path/filepath"
 	"strings"
 )
@@ -31,8 +32,78 @@ type RegistryAuth struct {
 	Insecure bool
 }
 
+type LayerBase string
+
+const (
+	LayerBaseModel       LayerBase = "weight"
+	LayerBaseModelConfig LayerBase = "weight.config"
+	LayerBaseDataset     LayerBase = "dataset"
+	LayerBaseCode        LayerBase = "code"
+	LayerBaseDoc         LayerBase = "doc"
+)
+
+type LayerFormat string
+
+const (
+	LayerFormatTar LayerFormat = "tar"
+	LayerFormatRaw LayerFormat = "raw"
+)
+
+type LayerCompression string
+
+const (
+	LayerCompressionNone        LayerCompression = "none"
+	LayerCompressionGzip        LayerCompression = "gzip"
+	LayerCompressionGzipFastest LayerCompression = "gzip-fastest"
+	LayerCompressionZstd        LayerCompression = "zstd"
+)
+
+type PublishLayer struct {
+	SourcePath   string
+	TargetPath   string
+	Base         LayerBase
+	Format       LayerFormat
+	Compression  LayerCompression
+	Archive      *PublishArchiveSource
+	ObjectSource *PublishObjectSource
+}
+
+type PublishArchiveSource struct {
+	StripPathPrefix string
+	SelectedFiles   []string
+	Reader          PublishObjectReader
+	SizeBytes       int64
+}
+
+type OpenReadResult struct {
+	Body      io.ReadCloser
+	SizeBytes int64
+	ETag      string
+}
+
+type PublishObjectReader interface {
+	OpenRead(ctx context.Context, sourcePath string) (OpenReadResult, error)
+}
+
+type PublishObjectRangeReader interface {
+	OpenReadRange(ctx context.Context, sourcePath string, offset, length int64) (OpenReadResult, error)
+}
+
+type PublishObjectFile struct {
+	SourcePath string
+	TargetPath string
+	SizeBytes  int64
+	ETag       string
+}
+
+type PublishObjectSource struct {
+	Reader PublishObjectReader
+	Files  []PublishObjectFile
+}
+
 type PublishInput struct {
 	ModelDir    string
+	Layers      []PublishLayer
 	ArtifactURI string
 }
 

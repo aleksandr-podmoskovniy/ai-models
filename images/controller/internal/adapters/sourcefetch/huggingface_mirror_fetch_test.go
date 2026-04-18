@@ -18,22 +18,23 @@ package sourcefetch
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	sourcemirrorports "github.com/deckhouse/ai-models/controller/internal/ports/sourcemirror"
 )
 
-func TestFetchRemoteModelHuggingFaceUsesSourceMirror(t *testing.T) {
+func TestFetchRemoteModelHuggingFaceUsesSourceMirrorStreamingPublish(t *testing.T) {
 	previousInfoFetcher := fetchHuggingFaceInfoFunc
 	previousBaseURL := huggingFaceBaseURL
+	previousProfileSummaryFetcher := fetchHuggingFaceProfileSummaryFunc
 	t.Cleanup(func() {
 		fetchHuggingFaceInfoFunc = previousInfoFetcher
 		huggingFaceBaseURL = previousBaseURL
+		fetchHuggingFaceProfileSummaryFunc = previousProfileSummaryFetcher
 	})
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -61,14 +62,19 @@ func TestFetchRemoteModelHuggingFaceUsesSourceMirror(t *testing.T) {
 		}, nil
 	}
 	huggingFaceBaseURL = server.URL
+	fetchHuggingFaceProfileSummaryFunc = func(context.Context, RemoteOptions, string, string, modelsv1alpha1.ModelInputFormat, []string) (*RemoteProfileSummary, error) {
+		return &RemoteProfileSummary{
+			ConfigPayload: []byte(`{"architectures":["LlamaForCausalLM"]}`),
+			WeightBytes:   14,
+		}, nil
+	}
 
 	mirrorStore := &fakeSourceMirrorStore{}
 	mirrorClient := newFakeMirrorUploadStaging(t)
-
 	result, err := FetchRemoteModel(t.Context(), RemoteOptions{
-		URL:       "https://huggingface.co/owner/model?revision=main",
-		Workspace: t.TempDir(),
-		HFToken:   "hf-token",
+		URL:                      "https://huggingface.co/owner/model?revision=main",
+		HFToken:                  "hf-token",
+		SkipLocalMaterialization: true,
 		SourceMirror: &SourceMirrorOptions{
 			Bucket:     "artifacts",
 			Client:     mirrorClient,
@@ -83,6 +89,12 @@ func TestFetchRemoteModelHuggingFaceUsesSourceMirror(t *testing.T) {
 	if result.SourceMirror == nil {
 		t.Fatal("expected source mirror snapshot")
 	}
+	if result.ProfileSummary == nil {
+		t.Fatal("expected remote profile summary")
+	}
+	if got := result.ModelDir; got != "" {
+		t.Fatalf("expected no local model dir, got %q", got)
+	}
 	if got, want := result.SourceMirror.ObjectCount, int64(2); got != want {
 		t.Fatalf("unexpected source mirror object count %d", got)
 	}
@@ -92,12 +104,46 @@ func TestFetchRemoteModelHuggingFaceUsesSourceMirror(t *testing.T) {
 	if got, want := mirrorStore.state.Phase, sourcemirrorports.SnapshotPhaseCompleted; got != want {
 		t.Fatalf("unexpected mirror phase %q", got)
 	}
-	if payload, err := os.ReadFile(filepath.Join(result.ModelDir, "model.safetensors")); err != nil {
-		t.Fatalf("ReadFile(model.safetensors) error = %v", err)
-	} else if got, want := string(payload), "tensor-payload"; got != want {
-		t.Fatalf("unexpected materialized payload %q", got)
+}
+
+func TestFetchRemoteModelHuggingFaceSourceMirrorFailsWhenRemoteProfileSummaryCannotBeResolved(t *testing.T) {
+	previousInfoFetcher := fetchHuggingFaceInfoFunc
+	previousProfileSummaryFetcher := fetchHuggingFaceProfileSummaryFunc
+	t.Cleanup(func() {
+		fetchHuggingFaceInfoFunc = previousInfoFetcher
+		fetchHuggingFaceProfileSummaryFunc = previousProfileSummaryFetcher
+	})
+
+	fetchHuggingFaceInfoFunc = func(context.Context, string, string, string) (HuggingFaceInfo, error) {
+		return HuggingFaceInfo{
+			ID:          "owner/model",
+			SHA:         "deadbeef",
+			PipelineTag: "text-generation",
+			License:     "apache-2.0",
+			Files:       []string{"config.json", "model.safetensors"},
+		}, nil
 	}
-	if got, want := result.InputFormat, modelsv1alpha1.ModelInputFormatSafetensors; got != want {
-		t.Fatalf("unexpected input format %q", got)
+	fetchHuggingFaceProfileSummaryFunc = func(context.Context, RemoteOptions, string, string, modelsv1alpha1.ModelInputFormat, []string) (*RemoteProfileSummary, error) {
+		return nil, errors.New("summary unavailable")
+	}
+
+	mirrorStore := &fakeSourceMirrorStore{}
+	mirrorClient := newFakeMirrorUploadStaging(t)
+	_, err := FetchRemoteModel(t.Context(), RemoteOptions{
+		URL:                      "https://huggingface.co/owner/model?revision=main",
+		HFToken:                  "hf-token",
+		SkipLocalMaterialization: true,
+		SourceMirror: &SourceMirrorOptions{
+			Bucket:     "artifacts",
+			Client:     mirrorClient,
+			Store:      mirrorStore,
+			BasePrefix: "raw/1111-2222/source-url/.mirror",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected missing remote profile summary to fail mirrored publish source planning")
+	}
+	if got := len(mirrorClient.objects); got != 0 {
+		t.Fatalf("expected no mirrored objects on summary failure, got %d", got)
 	}
 }

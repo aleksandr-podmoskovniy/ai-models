@@ -45,7 +45,8 @@ distributed inference scenario:
   - чистый вес модели;
   - служебные накладные расходы;
   - запас под KV cache;
-- что делать с `vLLM V0` на `V100` и как явно зафиксировать этот выбор;
+- как именно выглядит `V1`-путь на `V100` через публичный `rayproject/ray-llm`
+  образ и нужен ли вообще отдельный `V0` fallback;
 - какие версии и параметры `KubeRay`, `Ray`, `vLLM` и `NCCL` стоит
   зафиксировать;
 - какие ограничения `V100 / compute capability 7.0` влияют на выбор модели,
@@ -75,6 +76,17 @@ distributed inference scenario:
 - описать её именно как pod-level `sdn` / `DRA` профиль, а не node-level
   обходной путь;
 - зафиксировать это в новом bundle как operator-facing техническую записку;
+- materialize минимальный внешний deliverable в соседнем `k8s-config` repo:
+  - отдельный каталог под `k8s-dvp.apiac.ru/kuberay`;
+  - raw manifests для `RayService` на `V100 + RDMA`;
+  - вспомогательные `Secret`/`PVC`/`ServiceAccount`/`ResourceClaimTemplate`
+    example-файлы;
+  - `Argo CD Application`, указывающий на новый каталог;
+- довести live `RayService` bring-up в `k8s-dvp.apiac.ru` до состояния, где:
+  - worker pod поднимаются без `NET_ADMIN` и других лишних capability;
+  - `sdn/DRA` автоматически довозит underlay device в pod;
+  - `NCCL/Gloo` pinned на прямой underlay path;
+  - `Serve` больше не ломается на несовместимом `placement_group_config`;
 - при необходимости опереться на archived predecessor только как на фон, но не
   как на новый source of truth.
 
@@ -83,6 +95,8 @@ distributed inference scenario:
 - не выполнять прямо сейчас deployment `KubeRay` в кластере;
 - не писать production-ready Helm/chart/manifests для `KubeRay`;
 - не менять runtime code, CRD или API в репозитории `ai-models`;
+- не пытаться в этом срезе автоматически установить в `dvp` сам `KubeRay`
+  operator/CRD, если их ещё нет в кластере;
 - не делать benchmark actual inference latency/throughput в этом срезе;
 - не проектировать весь inference stack платформы целиком;
 - не смешивать эту задачу с phase-1/phase-2 runtime задачами модуля.
@@ -90,6 +104,7 @@ distributed inference scenario:
 ## Затрагиваемые области
 
 - `plans/active/research-kuberay-vllm-v100-gpudirect-inference/*`
+- `/Users/myskat_90/Обучение/gitlab.ap.com/k8s-config/argo-projects/k8s-dvp.apiac.ru/kuberay/*`
 - при необходимости archived references:
   - `plans/archive/2026/research-sdn-underlay-rdma-dra-gpu-placement/*`
 - при необходимости существующие runtime/API references в repo:
@@ -119,6 +134,21 @@ distributed inference scenario:
   - отсутствие `hostNetwork`;
   - ключевые env vars;
   - базовая строка запуска `vllm serve`;
+- в `k8s-config` создан отдельный каталог для `k8s-dvp.apiac.ru/kuberay`
+  с raw manifests, который:
+  - использует реальные `DeviceClass` / `ResourceClaimTemplate` имена для
+    `w1-c2`, `w3-01` и `w1-80`;
+  - не использует `hostNetwork`;
+  - выражает pod-level `UnderlayNetwork` через annotation и
+    `spec.resourceClaims`;
+  - оставляет основной worker container без лишних capabilities;
+- live `RayService` в `dvp` больше не содержит:
+  - `init-underlay-ip`;
+  - `NET_ADMIN`;
+  - `placement_group_config` внутри `deployment_config`;
+- зафиксирован честный runtime verdict по текущему live blocker, если rollout
+  всё ещё срывается не из-за pod security / `sdn`, а из-за внешнего applier
+  или самого `ray-llm` runtime;
 - отдельно зафиксированы минимальные права pod:
   - какие capabilities не нужны;
   - какие можно не выдавать при штатном IPAM через `sdn`;

@@ -29,6 +29,8 @@ import (
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
+var fetchRemoteModelFunc = sourcefetch.FetchRemoteModel
+
 func publishFromHuggingFace(ctx context.Context, options Options) (publicationartifact.Result, error) {
 	if strings.TrimSpace(options.HFModelID) == "" {
 		return publicationartifact.Result{}, errors.New("hf-model-id is required")
@@ -46,11 +48,10 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 		slog.Bool("sourceMirrorEnabled", remoteSourceMirror(options) != nil),
 	)
 
-	remote, cleanupDir, err := fetchRemote(ctx, options, "ai-model-hf-publish-")
+	remote, err := fetchRemote(ctx, options)
 	if err != nil {
 		return publicationartifact.Result{}, err
 	}
-	defer cleanupDir()
 
 	logger.Info(
 		"huggingface source fetch completed",
@@ -65,14 +66,33 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 		logger.Debug("huggingface selected file sample", slog.Any("selectedFilesSample", sampleStrings(remote.SelectedFiles, 8)))
 	}
 
-	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, remote.ModelDir, remote.InputFormat, sourceProfileInput{
+	preResolved, err := resolveRemoteProfile(options, remote)
+	if err != nil {
+		return publicationartifact.Result{}, err
+	}
+
+	modelInputPath := remote.ModelDir
+	publishLayers, err := buildHuggingFacePublishLayers(ctx, options, remote)
+	if err != nil {
+		return publicationartifact.Result{}, err
+	}
+	if len(publishLayers) > 0 {
+		switch {
+		case remote.SourceMirror != nil:
+			modelInputPath = sourceMirrorArtifactURI(options, remote.SourceMirror)
+		case remote.ObjectSource != nil:
+			modelInputPath = huggingFaceArtifactURI(remote)
+		}
+	}
+
+	resolvedProfile, publishResult, err := resolveAndPublishWithLayers(ctx, options, modelInputPath, remote.InputFormat, sourceProfileInput{
 		Task:     options.Task,
 		TaskHint: remote.Fallbacks.TaskHint,
 		Provenance: sourceProfileProvenance{
 			License:      remote.Metadata.License,
 			SourceRepoID: remote.Metadata.SourceRepoID,
 		},
-	})
+	}, publishLayers, preResolved)
 	if err != nil {
 		return publicationartifact.Result{}, err
 	}
@@ -94,27 +114,25 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 	return attachBackendSourceMirror(result, remote.SourceMirror), nil
 }
 
-func fetchRemote(ctx context.Context, options Options, prefix string) (sourcefetch.RemoteResult, func(), error) {
-	workspace, cleanupDir, err := ensureWorkspace(options.SnapshotDir, prefix)
-	if err != nil {
-		return sourcefetch.RemoteResult{}, nil, err
+func fetchRemote(ctx context.Context, options Options) (sourcefetch.RemoteResult, error) {
+	return fetchRemoteAttempt(ctx, options)
+}
+
+func huggingFaceSupportsStreamingPublish(options Options) bool {
+	if remoteSourceMirror(options) != nil {
+		return sourceMirrorSupportsStreamingPublish(options)
 	}
+	return true
+}
 
-	slog.Default().Debug("huggingface publication workspace prepared", slog.String("workspace", workspace))
-
-	remote, err := sourcefetch.FetchRemoteModel(ctx, sourcefetch.RemoteOptions{
-		URL:             huggingFaceSourceURL(options.HFModelID, options.Revision),
-		Workspace:       workspace,
-		RequestedFormat: options.InputFormat,
-		HFToken:         options.HFToken,
-		SourceMirror:    remoteSourceMirror(options),
+func fetchRemoteAttempt(ctx context.Context, options Options) (sourcefetch.RemoteResult, error) {
+	return fetchRemoteModelFunc(ctx, sourcefetch.RemoteOptions{
+		URL:                      huggingFaceSourceURL(options.HFModelID, options.Revision),
+		RequestedFormat:          options.InputFormat,
+		HFToken:                  options.HFToken,
+		SourceMirror:             remoteSourceMirror(options),
+		SkipLocalMaterialization: huggingFaceSupportsStreamingPublish(options),
 	})
-	if err != nil {
-		cleanupDir()
-		return sourcefetch.RemoteResult{}, nil, err
-	}
-
-	return remote, cleanupDir, nil
 }
 
 func huggingFaceSourceURL(repoID, revision string) string {

@@ -18,6 +18,7 @@ package modelformat
 
 import (
 	"errors"
+	"os"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -35,6 +36,28 @@ func ValidateDir(root string, format modelsv1alpha1.ModelInputFormat) error {
 		return err
 	}
 	return inspectFormatDir(root, rules, true)
+}
+
+func ValidatePath(root string, format modelsv1alpha1.ModelInputFormat) error {
+	if strings.TrimSpace(root) == "" {
+		return errors.New("model input root must not be empty")
+	}
+	if strings.TrimSpace(string(format)) == "" {
+		return errors.New("model input format must not be empty")
+	}
+	rules, err := rulesForFormat(format)
+	if err != nil {
+		return err
+	}
+
+	info, err := os.Stat(root)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return inspectFormatDir(root, rules, true)
+	}
+	return inspectFormatFileRoot(root, rules)
 }
 
 func SelectRemoteFiles(format modelsv1alpha1.ModelInputFormat, files []string) ([]string, error) {

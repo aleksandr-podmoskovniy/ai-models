@@ -167,3 +167,38 @@ func TestResolveProfileDoesNotInferFamilyFromSourceRepoID(t *testing.T) {
 		t.Fatalf("unexpected family %q", got)
 	}
 }
+
+func TestResolveSummary(t *testing.T) {
+	t.Parallel()
+
+	resolved, err := ResolveSummary(SummaryInput{
+		ConfigPayload: []byte(`{
+  "model_type":"qwen3",
+  "architectures":["Qwen3ForCausalLM"],
+  "torch_dtype":"bfloat16",
+  "text_config":{
+    "hidden_size":4096,
+    "intermediate_size":11008,
+    "num_hidden_layers":32,
+    "num_attention_heads":32,
+    "num_key_value_heads":8,
+    "max_position_embeddings":32768,
+    "vocab_size":151936
+  }
+}`),
+		WeightBytes: 24,
+		TaskHint:    "text-generation",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSummary() error = %v", err)
+	}
+	if got, want := resolved.Format, "Safetensors"; got != want {
+		t.Fatalf("unexpected format %q", got)
+	}
+	if got, want := resolved.Family, "qwen3"; got != want {
+		t.Fatalf("unexpected family %q", got)
+	}
+	if got, want := resolved.Task, "text-generation"; got != want {
+		t.Fatalf("unexpected task %q", got)
+	}
+}

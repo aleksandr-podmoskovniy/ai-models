@@ -106,6 +106,7 @@ func TestValidateRemoteFileName(t *testing.T) {
 		wantErr        bool
 	}{
 		{name: "archive accepted", fileName: "model.tar.gz"},
+		{name: "zstd tar archive accepted", fileName: "model.tar.zst"},
 		{name: "path is normalized", fileName: "/tmp/model.gguf"},
 		{name: "gguf accepted", fileName: "model.gguf"},
 		{name: "empty rejected", fileName: "", wantErr: true},

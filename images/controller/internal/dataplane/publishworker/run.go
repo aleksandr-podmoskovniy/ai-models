@@ -23,7 +23,6 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
-	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
@@ -39,9 +38,8 @@ type Options struct {
 	RawStageKeyPrefix  string
 	InputFormat        modelsv1alpha1.ModelInputFormat
 	Task               string
-	SnapshotDir        string
 	HFToken            string
-	UploadStaging      uploadstagingports.Client
+	UploadStaging      uploadStagingClient
 	ModelPackPublisher modelpackports.Publisher
 	RegistryAuth       modelpackports.RegistryAuth
 }

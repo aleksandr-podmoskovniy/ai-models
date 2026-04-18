@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -44,6 +45,52 @@ func (a *Adapter) Stat(
 		return uploadstagingports.ObjectStat{}, err
 	}
 	return uploadstagingports.ObjectStat{
+		SizeBytes: aws.ToInt64(output.ContentLength),
+		ETag:      strings.TrimSpace(aws.ToString(output.ETag)),
+	}, nil
+}
+
+func (a *Adapter) OpenRead(
+	ctx context.Context,
+	input uploadstagingports.OpenReadInput,
+) (uploadstagingports.OpenReadOutput, error) {
+	if err := validateOpenReadInput(input); err != nil {
+		return uploadstagingports.OpenReadOutput{}, err
+	}
+	output, err := a.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(strings.TrimSpace(input.Bucket)),
+		Key:    aws.String(strings.TrimSpace(input.Key)),
+	})
+	if err != nil {
+		return uploadstagingports.OpenReadOutput{}, err
+	}
+	return uploadstagingports.OpenReadOutput{
+		Body:      output.Body,
+		SizeBytes: aws.ToInt64(output.ContentLength),
+		ETag:      strings.TrimSpace(aws.ToString(output.ETag)),
+	}, nil
+}
+
+func (a *Adapter) OpenReadRange(
+	ctx context.Context,
+	input uploadstagingports.OpenReadRangeInput,
+) (uploadstagingports.OpenReadOutput, error) {
+	if err := validateOpenReadRangeInput(input); err != nil {
+		return uploadstagingports.OpenReadOutput{}, err
+	}
+	getInput := &s3.GetObjectInput{
+		Bucket: aws.String(strings.TrimSpace(input.Bucket)),
+		Key:    aws.String(strings.TrimSpace(input.Key)),
+	}
+	if rangeHeader, ok := objectRangeHeader(input.Offset, input.Length); ok {
+		getInput.Range = aws.String(rangeHeader)
+	}
+	output, err := a.client.GetObject(ctx, getInput)
+	if err != nil {
+		return uploadstagingports.OpenReadOutput{}, err
+	}
+	return uploadstagingports.OpenReadOutput{
+		Body:      output.Body,
 		SizeBytes: aws.ToInt64(output.ContentLength),
 		ETag:      strings.TrimSpace(aws.ToString(output.ETag)),
 	}, nil
@@ -174,6 +221,44 @@ func validateDownloadInput(input uploadstagingports.DownloadInput) error {
 	default:
 		return nil
 	}
+}
+
+func validateOpenReadInput(input uploadstagingports.OpenReadInput) error {
+	switch {
+	case strings.TrimSpace(input.Bucket) == "":
+		return errors.New("upload staging bucket must not be empty")
+	case strings.TrimSpace(input.Key) == "":
+		return errors.New("upload staging key must not be empty")
+	default:
+		return nil
+	}
+}
+
+func validateOpenReadRangeInput(input uploadstagingports.OpenReadRangeInput) error {
+	switch {
+	case strings.TrimSpace(input.Bucket) == "":
+		return errors.New("upload staging bucket must not be empty")
+	case strings.TrimSpace(input.Key) == "":
+		return errors.New("upload staging key must not be empty")
+	case input.Offset < 0:
+		return errors.New("upload staging read offset must not be negative")
+	case input.Length == 0:
+		return errors.New("upload staging read length must not be zero")
+	case input.Length < -1:
+		return errors.New("upload staging read length must be positive or -1")
+	default:
+		return nil
+	}
+}
+
+func objectRangeHeader(offset, length int64) (string, bool) {
+	if offset <= 0 && length < 0 {
+		return "", false
+	}
+	if length < 0 {
+		return "bytes=" + strconv.FormatInt(offset, 10) + "-", true
+	}
+	return "bytes=" + strconv.FormatInt(offset, 10) + "-" + strconv.FormatInt(offset+length-1, 10), true
 }
 
 func validateUploadInput(input uploadstagingports.UploadInput) error {

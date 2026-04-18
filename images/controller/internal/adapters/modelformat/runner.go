@@ -18,6 +18,7 @@ package modelformat
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,6 +97,55 @@ func selectFormatRemoteFiles(files []string, rules formatRules) ([]string, error
 		return nil, err
 	}
 	return selected, nil
+}
+
+func inspectFormatFileRoot(root string, rules formatRules) error {
+	relative := filepath.ToSlash(filepath.Base(strings.TrimSpace(root)))
+	if strings.TrimSpace(relative) == "" || relative == "." || relative == "/" {
+		return fmt.Errorf("input format %q rejects empty file root", rules.format)
+	}
+
+	state := validationState{}
+	action, isConfig, isAsset := rules.classify(relative)
+	if action != fileActionKeep && rules.format == modelsv1alpha1.ModelInputFormatGGUF {
+		looksLikeGGUF, err := hasGGUFMagic(root)
+		if err != nil {
+			return err
+		}
+		if looksLikeGGUF {
+			action = fileActionKeep
+			isAsset = true
+		}
+	}
+	switch action {
+	case fileActionKeep:
+		state.hasConfig = isConfig
+		state.hasAsset = isAsset
+		return rules.validateState(state)
+	case fileActionDrop:
+		return rules.validateState(state)
+	default:
+		return fmt.Errorf("input format %q rejects file %q", rules.format, relative)
+	}
+}
+
+func hasGGUFMagic(path string) (bool, error) {
+	stream, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer stream.Close()
+
+	header := make([]byte, 4)
+	n, err := io.ReadFull(stream, header)
+	switch {
+	case err == nil:
+		return n == 4 && string(header) == "GGUF", nil
+	case err == io.EOF, err == io.ErrUnexpectedEOF:
+		return false, nil
+	default:
+		return false, err
+	}
 }
 
 func handleFormatDir(path, relative string, rules formatRules, mutate bool) error {

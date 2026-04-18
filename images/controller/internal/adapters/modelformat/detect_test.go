@@ -70,3 +70,33 @@ func TestDetectRemoteFormatGGUF(t *testing.T) {
 		t.Fatalf("unexpected format %q", got)
 	}
 }
+
+func TestDetectPathFormatDirectGGUFFile(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "model.gguf")
+	writeTestFile(t, root, "weights")
+
+	format, err := DetectPathFormat(root)
+	if err != nil {
+		t.Fatalf("DetectPathFormat() error = %v", err)
+	}
+	if got, want := format, modelsv1alpha1.ModelInputFormatGGUF; got != want {
+		t.Fatalf("unexpected format %q", got)
+	}
+}
+
+func TestDetectPathFormatDirectGGUFMagicWithoutExtension(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "model")
+	writeTestFile(t, root, "GGUFweights")
+
+	format, err := DetectPathFormat(root)
+	if err != nil {
+		t.Fatalf("DetectPathFormat() error = %v", err)
+	}
+	if got, want := format, modelsv1alpha1.ModelInputFormatGGUF; got != want {
+		t.Fatalf("unexpected format %q", got)
+	}
+}

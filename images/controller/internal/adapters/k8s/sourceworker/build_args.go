@@ -19,7 +19,6 @@ package sourceworker
 import (
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/workloadpod"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
@@ -35,7 +34,6 @@ func buildArgs(
 	args := []string{
 		"--artifact-uri", artifactURI,
 		"--source-type", string(plan.SourceType),
-		"--snapshot-dir", workloadpod.WorkVolumeMountPath,
 	}
 	return append(args, sourceArgs(plan, request.Owner.UID, options.ObjectStorage.Bucket)...)
 }

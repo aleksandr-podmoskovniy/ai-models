@@ -19,6 +19,7 @@ package sourcefetch
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -29,30 +30,69 @@ import (
 )
 
 type RemoteOptions struct {
-	URL             string
-	Workspace       string
-	RequestedFormat modelsv1alpha1.ModelInputFormat
-	HFToken         string
-	SourceMirror    *SourceMirrorOptions
+	URL                      string
+	RequestedFormat          modelsv1alpha1.ModelInputFormat
+	HFToken                  string
+	SourceMirror             *SourceMirrorOptions
+	SkipLocalMaterialization bool
+}
+
+type SourceMirrorTransportClient interface {
+	uploadstagingports.MultipartStager
 }
 
 type SourceMirrorOptions struct {
 	Bucket           string
-	Client           uploadstagingports.Client
+	Client           SourceMirrorTransportClient
 	UploadHTTPClient *http.Client
 	Store            sourcemirrorports.Store
 	BasePrefix       string
 }
 
 type RemoteResult struct {
-	SourceType    modelsv1alpha1.ModelSourceType
-	ModelDir      string
-	InputFormat   modelsv1alpha1.ModelInputFormat
-	SelectedFiles []string
-	Provenance    RemoteProvenance
-	Fallbacks     RemoteProfileFallbacks
-	Metadata      RemoteMetadata
-	SourceMirror  *SourceMirrorSnapshot
+	SourceType     modelsv1alpha1.ModelSourceType
+	ModelDir       string
+	InputFormat    modelsv1alpha1.ModelInputFormat
+	SelectedFiles  []string
+	ObjectSource   *RemoteObjectSource
+	ProfileSummary *RemoteProfileSummary
+	Provenance     RemoteProvenance
+	Fallbacks      RemoteProfileFallbacks
+	Metadata       RemoteMetadata
+	SourceMirror   *SourceMirrorSnapshot
+}
+
+type RemoteProfileSummary struct {
+	ConfigPayload  []byte
+	WeightBytes    int64
+	ModelFileName  string
+	ModelSizeBytes int64
+}
+
+type RemoteOpenReadResult struct {
+	Body      io.ReadCloser
+	SizeBytes int64
+	ETag      string
+}
+
+type RemoteObjectReader interface {
+	OpenRead(ctx context.Context, sourcePath string) (RemoteOpenReadResult, error)
+}
+
+type RemoteObjectRangeReader interface {
+	OpenReadRange(ctx context.Context, sourcePath string, offset, length int64) (RemoteOpenReadResult, error)
+}
+
+type RemoteObjectFile struct {
+	SourcePath string
+	TargetPath string
+	SizeBytes  int64
+	ETag       string
+}
+
+type RemoteObjectSource struct {
+	Reader RemoteObjectReader
+	Files  []RemoteObjectFile
 }
 
 type SourceMirrorSnapshot struct {
@@ -79,9 +119,6 @@ type RemoteMetadata struct {
 func FetchRemoteModel(ctx context.Context, options RemoteOptions) (RemoteResult, error) {
 	if strings.TrimSpace(options.URL) == "" {
 		return RemoteResult{}, errors.New("remote source URL must not be empty")
-	}
-	if strings.TrimSpace(options.Workspace) == "" {
-		return RemoteResult{}, errors.New("remote source workspace must not be empty")
 	}
 
 	sourceType, err := modelsv1alpha1.DetectRemoteSourceType(options.URL)

@@ -18,95 +18,15 @@ package oci
 
 import (
 	"archive/tar"
-	"bufio"
-	"compress/gzip"
-	"context"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
-
-func extractLayers(
-	ctx context.Context,
-	client *http.Client,
-	reference string,
-	auth modelpackports.RegistryAuth,
-	payload InspectPayload,
-	destination string,
-) error {
-	manifest, _ := payload["manifest"].(map[string]any)
-	layers, _ := manifest["layers"].([]any)
-	for index, layer := range layers {
-		layerMap, _ := layer.(map[string]any)
-		if layerMap == nil {
-			return fmt.Errorf("registry manifest layer %d is invalid", index)
-		}
-		digest := strings.TrimSpace(stringValue(layerMap["digest"]))
-		if digest == "" {
-			return fmt.Errorf("registry manifest layer %d is missing digest", index)
-		}
-
-		resp, err := GetBlobResponse(ctx, client, reference, digest, auth)
-		if err != nil {
-			return err
-		}
-		if err := extractTarLayer(resp.Body, destination); err != nil {
-			resp.Body.Close()
-			return fmt.Errorf("failed to extract ModelPack layer %d: %w", index, err)
-		}
-		if err := resp.Body.Close(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func extractTarLayer(stream io.Reader, destination string) error {
-	tarReader, err := newTarReader(stream)
-	if err != nil {
-		return err
-	}
-
-	for {
-		header, err := tarReader.Next()
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		target, err := archiveTargetPath(destination, header.Name)
-		if err != nil {
-			return err
-		}
-		if err := extractTarEntry(tarReader, header, target); err != nil {
-			return err
-		}
-	}
-}
-
-func newTarReader(stream io.Reader) (*tar.Reader, error) {
-	buffered := bufio.NewReader(stream)
-	header, err := buffered.Peek(2)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
-	}
-	if len(header) == 2 && header[0] == 0x1f && header[1] == 0x8b {
-		gzipReader, err := gzip.NewReader(buffered)
-		if err != nil {
-			return nil, err
-		}
-		return tar.NewReader(gzipReader), nil
-	}
-	return tar.NewReader(buffered), nil
-}
 
 func extractTarEntry(reader *tar.Reader, header *tar.Header, target string) error {
 	switch header.Typeflag {
@@ -188,28 +108,25 @@ func resolveModelPath(destination string, payload InspectPayload) (string, error
 }
 
 func manifestModelPath(destination string, manifest map[string]any) string {
-	layers, _ := manifest["layers"].([]any)
-	var candidate string
-	for _, layer := range layers {
-		layerMap, _ := layer.(map[string]any)
-		annotations, _ := layerMap["annotations"].(map[string]any)
-		filePath := strings.TrimSpace(stringValue(annotations[ModelPackFilepathAnnotation]))
-		if filePath == "" {
-			continue
-		}
-		target := filepath.Join(destination, filePath)
-		if _, err := os.Stat(target); err != nil {
-			return ""
-		}
-		if candidate == "" {
-			candidate = target
-			continue
-		}
-		if candidate != target {
-			return ""
-		}
+	layers, err := decodeManifestLayers(manifest)
+	if err != nil {
+		return ""
 	}
-	return candidate
+	candidates := make([]string, 0, len(layers))
+	for _, layer := range layers {
+		if !isModelLayerBase(layer.Base) {
+			continue
+		}
+		target, resolveErr := resolvedModelLayerPath(destination, layer)
+		if resolveErr != nil {
+			return ""
+		}
+		if _, statErr := os.Stat(target); statErr != nil {
+			return ""
+		}
+		candidates = append(candidates, target)
+	}
+	return commonModelRoot(candidates)
 }
 
 func descriptorModelPath(destination string, configBlob map[string]any) string {
@@ -242,6 +159,50 @@ func normalizeExtractedRoot(destination string) (string, error) {
 		return filepath.Join(destination, meaningful[0].Name()), nil
 	}
 	return destination, nil
+}
+
+func resolvedModelLayerPath(destination string, layer publishLayerDescriptor) (string, error) {
+	switch layer.Format {
+	case modelpackports.LayerFormatRaw:
+		target, err := materializeTargetPath(destination, layer.TargetPath)
+		if err != nil {
+			return "", err
+		}
+		parent := filepath.Dir(target)
+		if parent == "." || parent == string(filepath.Separator) {
+			return destination, nil
+		}
+		return parent, nil
+	case modelpackports.LayerFormatTar:
+		return materializeTargetPath(destination, layer.TargetPath)
+	default:
+		return "", fmt.Errorf("unsupported model layer format %q", layer.Format)
+	}
+}
+
+func commonModelRoot(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	candidate := filepath.Clean(paths[0])
+	for _, current := range paths[1:] {
+		cleanCurrent := filepath.Clean(current)
+		if cleanCurrent == candidate {
+			continue
+		}
+		for {
+			relative, err := filepath.Rel(candidate, cleanCurrent)
+			if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				break
+			}
+			next := filepath.Dir(candidate)
+			if next == candidate || next == "." {
+				return ""
+			}
+			candidate = next
+		}
+	}
+	return candidate
 }
 
 func digestFromOCIReference(reference string) string {

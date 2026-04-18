@@ -71,8 +71,9 @@ func validateModelPackLayers(layers []any) error {
 		if layerMap == nil {
 			return fmt.Errorf("registry manifest layer %d is invalid", index)
 		}
-		if got := strings.TrimSpace(stringValue(layerMap["mediaType"])); got != ModelPackWeightLayerType {
-			return fmt.Errorf("registry manifest layer %d mediaType must be %q, got %q", index, ModelPackWeightLayerType, got)
+		mediaType := strings.TrimSpace(stringValue(layerMap["mediaType"]))
+		if _, err := parseLayerMediaType(mediaType); err != nil {
+			return fmt.Errorf("registry manifest layer %d mediaType is invalid: %w", index, err)
 		}
 		annotations, _ := layerMap["annotations"].(map[string]any)
 		if strings.TrimSpace(stringValue(annotations[ModelPackFilepathAnnotation])) == "" {

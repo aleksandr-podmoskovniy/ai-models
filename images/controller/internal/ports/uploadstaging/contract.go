@@ -89,6 +89,24 @@ type DownloadInput struct {
 	DestinationPath string
 }
 
+type OpenReadInput struct {
+	Bucket string
+	Key    string
+}
+
+type OpenReadRangeInput struct {
+	Bucket string
+	Key    string
+	Offset int64
+	Length int64
+}
+
+type OpenReadOutput struct {
+	Body      io.ReadCloser
+	SizeBytes int64
+	ETag      string
+}
+
 type UploadInput struct {
 	Bucket      string
 	Key         string
@@ -119,6 +137,14 @@ type Downloader interface {
 	Download(ctx context.Context, input DownloadInput) error
 }
 
+type Reader interface {
+	OpenRead(ctx context.Context, input OpenReadInput) (OpenReadOutput, error)
+}
+
+type RangeReader interface {
+	OpenReadRange(ctx context.Context, input OpenReadRangeInput) (OpenReadOutput, error)
+}
+
 type Uploader interface {
 	Upload(ctx context.Context, input UploadInput) error
 }
@@ -129,6 +155,14 @@ type Remover interface {
 
 type PrefixRemover interface {
 	DeletePrefix(ctx context.Context, input DeletePrefixInput) error
+}
+
+type StreamingClient interface {
+	MultipartStager
+	Reader
+	Uploader
+	Remover
+	PrefixRemover
 }
 
 type Client interface {
