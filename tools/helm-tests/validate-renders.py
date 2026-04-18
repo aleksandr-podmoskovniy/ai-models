@@ -18,13 +18,12 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-
-import yaml
 
 LEGACY_RENDER_MARKERS = (
     "name: ai-models-backend-auth",
@@ -53,6 +52,136 @@ def _find_secret(
     return None
 
 
+def _split_yaml_documents(content: str) -> list[str]:
+    documents: list[str] = []
+    current: list[str] = []
+    for line in content.splitlines():
+        if line.strip() == "---":
+            if current:
+                documents.append("\n".join(current))
+                current = []
+            continue
+        current.append(line)
+    if current:
+        documents.append("\n".join(current))
+    return documents
+
+
+def _leading_spaces(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _parse_inline_scalar(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        if value[0] == '"':
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                return value[1:-1]
+        return value[1:-1].replace("''", "'")
+    return value
+
+
+def _skip_nested_block(lines: list[str], index: int, parent_indent: int) -> int:
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip():
+            index += 1
+            continue
+        if _leading_spaces(line) <= parent_indent:
+            break
+        index += 1
+    return index
+
+
+def _parse_yaml_block_map(
+    lines: list[str], index: int, parent_indent: int
+) -> tuple[dict[str, str], int]:
+    data: dict[str, str] = {}
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip():
+            index += 1
+            continue
+        indent = _leading_spaces(line)
+        if indent <= parent_indent:
+            break
+        if indent != parent_indent + 2:
+            index += 1
+            continue
+
+        key, separator, rest = line.strip().partition(":")
+        if separator == "":
+            index += 1
+            continue
+
+        rest = rest.lstrip()
+        if rest == "|":
+            block_indent = indent + 2
+            index += 1
+            block_lines: list[str] = []
+            while index < len(lines):
+                block_line = lines[index]
+                if not block_line.strip():
+                    block_lines.append("")
+                    index += 1
+                    continue
+                block_line_indent = _leading_spaces(block_line)
+                if block_line_indent < block_indent:
+                    break
+                block_lines.append(block_line[block_indent:])
+                index += 1
+            data[key] = "\n".join(block_lines).rstrip("\n")
+            continue
+
+        if rest == "":
+            index = _skip_nested_block(lines, index + 1, indent)
+            continue
+
+        data[key] = _parse_inline_scalar(rest)
+        index += 1
+
+    return data, index
+
+
+def _parse_secret_documents(content: str) -> list[dict[object, object]]:
+    documents: list[dict[object, object]] = []
+    for raw_document in _split_yaml_documents(content):
+        lines = raw_document.splitlines()
+        kind = ""
+        metadata: dict[str, str] = {}
+        string_data: dict[str, str] = {}
+        index = 0
+        while index < len(lines):
+            line = lines[index]
+            if not line.strip():
+                index += 1
+                continue
+            if _leading_spaces(line) != 0:
+                index += 1
+                continue
+
+            stripped = line.strip()
+            if stripped.startswith("kind:"):
+                kind = _parse_inline_scalar(stripped.split(":", 1)[1])
+                index += 1
+                continue
+            if stripped == "metadata:":
+                metadata, index = _parse_yaml_block_map(lines, index + 1, 0)
+                continue
+            if stripped == "stringData:":
+                string_data, index = _parse_yaml_block_map(lines, index + 1, 0)
+                continue
+            index += 1
+
+        if kind == "Secret" and metadata.get("name"):
+            documents.append(
+                {"kind": "Secret", "metadata": metadata, "stringData": string_data}
+            )
+    return documents
+
+
 def _expect_string_data(
     path: Path, secret: dict[object, object], key: str
 ) -> str | None:
@@ -67,7 +196,7 @@ def _expect_string_data(
 
 def _validate_dmcr_auth_consistency(path: Path, content: str) -> list[str]:
     errors: list[str] = []
-    documents = list(yaml.safe_load_all(content))
+    documents = _parse_secret_documents(content)
 
     auth_secret = _find_secret(documents, "ai-models-dmcr-auth")
     write_secret = _find_secret(documents, "ai-models-dmcr-auth-write")

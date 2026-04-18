@@ -69,7 +69,21 @@ generation и render/runtime validation. Отдельные read-only subagents 
   - server auth secret с явным alignment marker, по которому Helm helper
     понимает, можно ли reuse'ить старый bcrypt entry.
 
-### Slice 5. Повторить live smoke для `HuggingFace Gemma 4`
+### Slice 5. Сделать render guardrail CI-portable
+
+- Цель:
+  - чтобы `make verify` и render validation проходили на clean runner без
+    внешней Python-зависимости `PyYAML`, а focused test подтверждал checksum и
+    `htpasswd` path, а не placeholder surface.
+- Файлы:
+  - `tools/helm-tests/validate-renders.py`
+  - `tools/helm-tests/validate_renders_test.py`
+- Проверки:
+  - `python3 ./tools/helm-tests/validate_renders_test.py`
+  - `make verify`
+- Артефакт:
+  - stdlib-only render validator с рабочим focused test в repo verify-path.
+### Slice 6. Повторить live smoke для `HuggingFace Gemma 4`
 
 - Цель:
   - после rollout модуля убедиться, что upgraded cluster self-heal'ит server

@@ -22,6 +22,7 @@
 
 ### Validation record
 
+- `python3 tools/helm-tests/validate_renders_test.py`
 - `make helm-template`
 - `python3 tools/helm-tests/validate-renders.py tools/kubeconform/renders`
 - `make kubeconform`
@@ -30,3 +31,10 @@
   - `kubectl -n d8-ai-models get secret ai-models-dmcr-auth ai-models-dmcr-auth-write ai-models-dmcr-auth-read -o json`
   - `kubectl -n d8-ai-models describe pod ai-model-publish-1d961707-e5e6-45b9-9598-499f22821665`
   - `htpasswd -vb <tempfile> ai-models <write.password>`
+
+### Notes
+
+- CI failure с `ModuleNotFoundError: No module named 'yaml'` относился к
+  pre-fix state verify-path. Текущий repo state уже использует stdlib-only
+  parser в `validate-renders.py`, а focused test теперь тоже не требует
+  `PyYAML` и проверяет реальный checksum/`htpasswd` path.
