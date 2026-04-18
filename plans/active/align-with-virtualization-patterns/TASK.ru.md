@@ -32,6 +32,11 @@
   `../virtualization`, а не ограничиваться module-shell audit;
 - если обнаружится не только doc drift, но и реальный implementation drift,
   выровнять код до production-grade pattern, а не оставлять cosmetic mismatch.
+- отдельно добить startup-safe sync для artifacts source secrets:
+  current hook не должен падать на `Create Secret ... namespaces "d8-ai-models"
+  not found` при первом включении модуля, а secret sync contract должен
+  оставаться hook-owned и не утаскивать credentials material в values только
+  ради удобства рендера.
 
 ## Постановка задачи
 
@@ -48,11 +53,16 @@ discipline.
   - `build/base-images`, bundle assembly и release payload discipline;
   - `Chart.yaml`, `charts/`, `.helmignore`, `templates/`, `crds/`, `openapi/`;
   - `images/*` layout и placement executable/runtime code;
-  - workflow / `make` / verify entrypoints;
-  - controller/runtime ownership seams, где в `ai-models` уже заявлен
-    virtualization-style contract;
+- workflow / `make` / verify entrypoints;
+- controller/runtime ownership seams, где в `ai-models` уже заявлен
+  virtualization-style contract;
+- hook-owned secret sync and namespace lifecycle safety там, где reference
+  comparison с `virtualization` может подсказать pattern, но не должен
+  ухудшить secret-handling contract.
 - зафиксировать audit result в active bundle;
 - внести bounded changes в code/docs/build layout, если найден production drift;
+- внести bounded changes в hook/runtime shell, если найден production drift в
+  namespace lifecycle safety или secret sync ownership;
 - обновить durable docs/evidence, если изменились engineering rules или
   reference alignment.
 
@@ -96,6 +106,9 @@ discipline.
   `virtualization` являются production pattern, а какие отличия intentional;
 - все затронутые runtime/controller changes остаются defendable по ownership и
   replaceable-boundary логике;
+- sync hook для artifacts secrets больше не падает при OperatorStartup до
+  появления `d8-ai-models`, но и не переносит credentials bytes в values только
+  ради обхода namespace ordering;
 - пройдены узкие проверки по slices и repo-level `make verify`.
 
 ## Риски
@@ -106,3 +119,6 @@ discipline.
   одного механического diff;
 - прямое выравнивание некоторых surfaces может конфликтовать с текущим phase-2
   shape `ai-models`, если не отделять shell discipline от domain behavior.
+- слишком буквальное копирование virtualization-style secret rendering может
+  ухудшить security boundary, если для этого придётся хранить credentials
+  material в values вместо Secret-owned path.

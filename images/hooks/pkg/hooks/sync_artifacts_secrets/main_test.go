@@ -43,17 +43,16 @@ func TestReconcileCopiesCredentialsSecretAndUsesEmbeddedCA(t *testing.T) {
 		},
 	})
 
-	snapshots := sdktest.NewSnapshotsMock(t)
-	snapshots.GetMock.Expect(secretsSnapshotName).Return([]pkg.Snapshot{
-		newSecretSnapshot(t, sourceSecretSnapshot{
+	snapshots := newSnapshotsMock(t, true,
+		sourceSecretSnapshot{
 			Name: "s3-credentials",
 			Data: map[string][]byte{
 				"accessKey": []byte("AKIA"),
 				"secretKey": []byte("SECRET"),
 				"ca.crt":    []byte("CA"),
 			},
-		}),
-	})
+		},
+	)
 
 	var created []*corev1.Secret
 	patchCollector := sdktest.NewPatchCollectorMock(t)
@@ -113,22 +112,21 @@ func TestReconcileCopiesSeparateCASecret(t *testing.T) {
 		},
 	})
 
-	snapshots := sdktest.NewSnapshotsMock(t)
-	snapshots.GetMock.Expect(secretsSnapshotName).Return([]pkg.Snapshot{
-		newSecretSnapshot(t, sourceSecretSnapshot{
+	snapshots := newSnapshotsMock(t, true,
+		sourceSecretSnapshot{
 			Name: "s3-credentials",
 			Data: map[string][]byte{
 				"accessKey": []byte("AKIA"),
 				"secretKey": []byte("SECRET"),
 			},
-		}),
-		newSecretSnapshot(t, sourceSecretSnapshot{
+		},
+		sourceSecretSnapshot{
 			Name: "s3-ca",
 			Data: map[string][]byte{
 				"ca.crt": []byte("CUSTOM-CA"),
 			},
-		}),
-	})
+		},
+	)
 
 	var created []*corev1.Secret
 	patchCollector := sdktest.NewPatchCollectorMock(t)
@@ -182,8 +180,7 @@ func TestReconcileFailsWhenCredentialsSecretIsMissing(t *testing.T) {
 		},
 	})
 
-	snapshots := sdktest.NewSnapshotsMock(t)
-	snapshots.GetMock.Expect(secretsSnapshotName).Return(nil)
+	snapshots := newSnapshotsMock(t, true)
 
 	patchCollector := sdktest.NewPatchCollectorMock(t)
 	patchCollector.CreateOrUpdateMock.Optional()
@@ -202,6 +199,99 @@ func TestReconcileFailsWhenCredentialsSecretIsMissing(t *testing.T) {
 	if got := err.Error(); got != "artifacts credentials secret d8-system/missing not found" {
 		t.Fatalf("unexpected error %q", got)
 	}
+}
+
+func TestReconcileDefersSecretSyncUntilModuleNamespaceExists(t *testing.T) {
+	t.Parallel()
+
+	values := newValues(t, map[string]any{
+		"aiModels": map[string]any{
+			"artifacts": map[string]any{
+				"credentialsSecretName": "s3-credentials",
+				"caSecretName":          "s3-ca",
+			},
+			"internal": map[string]any{
+				"artifacts": map[string]any{},
+			},
+		},
+	})
+
+	snapshots := newSnapshotsMock(t, false,
+		sourceSecretSnapshot{
+			Name: "s3-credentials",
+			Data: map[string][]byte{
+				"accessKey": []byte("AKIA"),
+				"secretKey": []byte("SECRET"),
+			},
+		},
+		sourceSecretSnapshot{
+			Name: "s3-ca",
+			Data: map[string][]byte{
+				"ca.crt": []byte("CUSTOM-CA"),
+			},
+		},
+	)
+
+	patchCollector := sdktest.NewPatchCollectorMock(t)
+	patchCollector.CreateOrUpdateMock.Optional().Set(func(object any) {
+		t.Fatalf("unexpected CreateOrUpdate for %T", object)
+	})
+	patchCollector.DeleteInBackgroundMock.Optional().Set(func(apiVersion, kind, namespace, name string) {
+		t.Fatalf("unexpected DeleteInBackground for %s/%s", namespace, name)
+	})
+
+	input := &pkg.HookInput{
+		Snapshots:      snapshots,
+		Values:         values,
+		PatchCollector: patchCollector,
+	}
+
+	if err := Reconcile(context.Background(), input); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	assertValuePatchExists(t, values, internalSyncedCredentialsSecretNamePath, `"`+syncedCredentialsSecretName+`"`)
+	assertValuePatchExists(t, values, internalMountedCASecretNamePath, `"`+syncedCASecretName+`"`)
+}
+
+func TestReconcileSkipsDeleteUntilModuleNamespaceExists(t *testing.T) {
+	t.Parallel()
+
+	values := newValues(t, map[string]any{
+		"aiModels": map[string]any{
+			"artifacts": map[string]any{
+				"credentialsSecretName": "",
+			},
+			"internal": map[string]any{
+				"artifacts": map[string]any{
+					"mountedCASecretName": syncedCASecretName,
+				},
+			},
+		},
+	})
+
+	snapshots := newSnapshotsMock(t, false)
+
+	patchCollector := sdktest.NewPatchCollectorMock(t)
+	patchCollector.CreateOrUpdateMock.Optional().Set(func(object any) {
+		t.Fatalf("unexpected CreateOrUpdate for %T", object)
+	})
+	patchCollector.DeleteInBackgroundMock.Optional().Set(func(apiVersion, kind, namespace, name string) {
+		t.Fatalf("unexpected DeleteInBackground for %s/%s", namespace, name)
+	})
+
+	input := &pkg.HookInput{
+		Snapshots:      snapshots,
+		Values:         values,
+		PatchCollector: patchCollector,
+	}
+
+	if err := Reconcile(context.Background(), input); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	assertValuePatchExists(t, values, internalSyncedCredentialsSecretNamePath, `"`+syncedCredentialsSecretName+`"`)
+	assertValueRemovePatchExists(t, values, internalMountedCASecretNamePath)
 }
 
 func newValues(t *testing.T, raw map[string]any) *patchablevalues.PatchableValues {
@@ -231,12 +321,49 @@ func newSecretSnapshot(t *testing.T, secret sourceSecretSnapshot) pkg.Snapshot {
 	return snapshot
 }
 
+func newNamespaceSnapshot(t *testing.T) pkg.Snapshot {
+	t.Helper()
+
+	snapshot := sdktest.NewSnapshotMock(t)
+	snapshot.StringMock.Optional().Return("")
+	return snapshot
+}
+
+func newSnapshotsMock(t *testing.T, moduleNamespacePresent bool, secrets ...sourceSecretSnapshot) *sdktest.SnapshotsMock {
+	t.Helper()
+
+	snapshots := sdktest.NewSnapshotsMock(t)
+	snapshots.GetMock.Set(func(key string) []pkg.Snapshot {
+		switch key {
+		case moduleNamespaceSnapshotName:
+			if !moduleNamespacePresent {
+				return nil
+			}
+			return []pkg.Snapshot{newNamespaceSnapshot(t)}
+		case secretsSnapshotName:
+			result := make([]pkg.Snapshot, 0, len(secrets))
+			for _, secret := range secrets {
+				result = append(result, newSecretSnapshot(t, secret))
+			}
+			return result
+		default:
+			t.Fatalf("unexpected snapshot key %q", key)
+			return nil
+		}
+	})
+
+	return snapshots
+}
+
 func assertValuePatchExists(t *testing.T, values *patchablevalues.PatchableValues, path, expectedValue string) {
 	t.Helper()
 
 	for _, patch := range values.GetPatches() {
 		if patch.Path != "/"+pathToJSONPointer(path) {
 			continue
+		}
+		if patch.Op != "add" {
+			t.Fatalf("unexpected patch operation for %s: %s", path, patch.Op)
 		}
 		if string(patch.Value) != expectedValue {
 			t.Fatalf("unexpected patch value for %s: %s", path, patch.Value)
@@ -245,6 +372,22 @@ func assertValuePatchExists(t *testing.T, values *patchablevalues.PatchableValue
 	}
 
 	t.Fatalf("expected patch for %s", path)
+}
+
+func assertValueRemovePatchExists(t *testing.T, values *patchablevalues.PatchableValues, path string) {
+	t.Helper()
+
+	for _, patch := range values.GetPatches() {
+		if patch.Path != "/"+pathToJSONPointer(path) {
+			continue
+		}
+		if patch.Op != "remove" {
+			t.Fatalf("unexpected patch operation for %s: %s", path, patch.Op)
+		}
+		return
+	}
+
+	t.Fatalf("expected remove patch for %s", path)
 }
 
 func pathToJSONPointer(path string) string {

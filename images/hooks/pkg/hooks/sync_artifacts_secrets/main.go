@@ -32,19 +32,20 @@ import (
 )
 
 const (
-	secretsSnapshotName = "artifacts-source-secrets"
+	secretsSnapshotName         = "artifacts-source-secrets"
+	moduleNamespaceSnapshotName = "artifacts-module-namespace"
 
 	credentialsSecretNamePath = "aiModels.artifacts.credentialsSecretName"
 	caSecretNamePath          = "aiModels.artifacts.caSecretName"
 
-	internalArtifactsPath                    = "aiModels.internal.artifacts"
-	internalSyncedCredentialsSecretNamePath  = internalArtifactsPath + ".syncedCredentialsSecretName"
-	internalMountedCASecretNamePath          = internalArtifactsPath + ".mountedCASecretName"
-	syncedCredentialsSecretName              = "ai-models-artifacts"
-	syncedCASecretName                       = "ai-models-artifacts-ca"
-	sourceSecretSnapshotFilter               = `{"name": .metadata.name, "data": {"accessKey": .data.accessKey, "secretKey": .data.secretKey, "ca.crt": .data."ca.crt"}}`
-	sourceSecretAnnotationNamespace          = "ai.deckhouse.io/source-secret-namespace"
-	sourceSecretAnnotationName               = "ai.deckhouse.io/source-secret-name"
+	internalArtifactsPath                   = "aiModels.internal.artifacts"
+	internalSyncedCredentialsSecretNamePath = internalArtifactsPath + ".syncedCredentialsSecretName"
+	internalMountedCASecretNamePath         = internalArtifactsPath + ".mountedCASecretName"
+	syncedCredentialsSecretName             = "ai-models-artifacts"
+	syncedCASecretName                      = "ai-models-artifacts-ca"
+	sourceSecretSnapshotFilter              = `{"name": .metadata.name, "data": {"accessKey": .data.accessKey, "secretKey": .data.secretKey, "ca.crt": .data."ca.crt"}}`
+	sourceSecretAnnotationNamespace         = "ai.deckhouse.io/source-secret-namespace"
+	sourceSecretAnnotationName              = "ai.deckhouse.io/source-secret-name"
 )
 
 var _ = registry.RegisterFunc(config, Reconcile)
@@ -63,6 +64,15 @@ var config = &pkg.HookConfig{
 				},
 			},
 		},
+		{
+			Name:       moduleNamespaceSnapshotName,
+			APIVersion: "v1",
+			Kind:       "Namespace",
+			JqFilter:   `{}`,
+			NameSelector: &pkg.NameSelector{
+				MatchNames: []string{settings.ModuleNamespace},
+			},
+		},
 	},
 }
 
@@ -73,14 +83,17 @@ type sourceSecretSnapshot struct {
 
 func Reconcile(_ context.Context, input *pkg.HookInput) error {
 	input.Values.Set(internalSyncedCredentialsSecretNamePath, syncedCredentialsSecretName)
+	moduleNamespaceReady := moduleNamespaceExists(input)
 
 	credentialsSourceName := strings.TrimSpace(input.Values.Get(credentialsSecretNamePath).String())
 	caSourceName := strings.TrimSpace(input.Values.Get(caSecretNamePath).String())
 
 	if credentialsSourceName == "" {
 		input.Values.Remove(internalMountedCASecretNamePath)
-		input.PatchCollector.DeleteInBackground("v1", "Secret", settings.ModuleNamespace, syncedCredentialsSecretName)
-		input.PatchCollector.DeleteInBackground("v1", "Secret", settings.ModuleNamespace, syncedCASecretName)
+		if moduleNamespaceReady {
+			input.PatchCollector.DeleteInBackground("v1", "Secret", settings.ModuleNamespace, syncedCredentialsSecretName)
+			input.PatchCollector.DeleteInBackground("v1", "Secret", settings.ModuleNamespace, syncedCASecretName)
+		}
 		return nil
 	}
 
@@ -111,11 +124,13 @@ func Reconcile(_ context.Context, input *pkg.HookInput) error {
 		credentialsData["ca.crt"] = ca
 	}
 
-	input.PatchCollector.CreateOrUpdate(moduleOwnedSecret(
-		syncedCredentialsSecretName,
-		credentialsSourceName,
-		credentialsData,
-	))
+	if moduleNamespaceReady {
+		input.PatchCollector.CreateOrUpdate(moduleOwnedSecret(
+			syncedCredentialsSecretName,
+			credentialsSourceName,
+			credentialsData,
+		))
+	}
 
 	mountedCASecretName := ""
 
@@ -124,13 +139,17 @@ func Reconcile(_ context.Context, input *pkg.HookInput) error {
 		if len(optionalSecretData(credentialsSource, "ca.crt")) > 0 {
 			mountedCASecretName = syncedCredentialsSecretName
 		}
-		input.PatchCollector.DeleteInBackground("v1", "Secret", settings.ModuleNamespace, syncedCASecretName)
+		if moduleNamespaceReady {
+			input.PatchCollector.DeleteInBackground("v1", "Secret", settings.ModuleNamespace, syncedCASecretName)
+		}
 	case caSourceName == credentialsSourceName:
 		if len(optionalSecretData(credentialsSource, "ca.crt")) == 0 {
 			return fmt.Errorf("artifacts CA secret %s/%s must contain ca.crt", settings.DeckhouseNamespace, caSourceName)
 		}
 		mountedCASecretName = syncedCredentialsSecretName
-		input.PatchCollector.DeleteInBackground("v1", "Secret", settings.ModuleNamespace, syncedCASecretName)
+		if moduleNamespaceReady {
+			input.PatchCollector.DeleteInBackground("v1", "Secret", settings.ModuleNamespace, syncedCASecretName)
+		}
 	default:
 		caSource, ok := secretsByName[caSourceName]
 		if !ok {
@@ -142,11 +161,13 @@ func Reconcile(_ context.Context, input *pkg.HookInput) error {
 			return fmt.Errorf("artifacts CA secret %s/%s: %w", settings.DeckhouseNamespace, caSourceName, err)
 		}
 
-		input.PatchCollector.CreateOrUpdate(moduleOwnedSecret(
-			syncedCASecretName,
-			caSourceName,
-			map[string][]byte{"ca.crt": caData},
-		))
+		if moduleNamespaceReady {
+			input.PatchCollector.CreateOrUpdate(moduleOwnedSecret(
+				syncedCASecretName,
+				caSourceName,
+				map[string][]byte{"ca.crt": caData},
+			))
+		}
 		mountedCASecretName = syncedCASecretName
 	}
 
@@ -157,6 +178,10 @@ func Reconcile(_ context.Context, input *pkg.HookInput) error {
 	}
 
 	return nil
+}
+
+func moduleNamespaceExists(input *pkg.HookInput) bool {
+	return len(input.Snapshots.Get(moduleNamespaceSnapshotName)) > 0
 }
 
 func sourceSecretsByName(input *pkg.HookInput) (map[string]sourceSecretSnapshot, error) {

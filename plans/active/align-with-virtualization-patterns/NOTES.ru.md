@@ -114,3 +114,46 @@
   realignment;
 - cosmetic source reshaping toward `virtualization` without local justification
   is still rejected.
+
+## Continuation: artifacts secret sync startup safety
+
+Дата: `2026-04-18`
+
+### Problem
+
+- `images/hooks/pkg/hooks/sync_artifacts_secrets/main.go` tried to
+  `CreateOrUpdate` Secrets in `d8-ai-models` during `OnBeforeHelm`.
+- At first module enable this could run before Helm created the module
+  namespace, causing `Secret ... namespaces "d8-ai-models" not found` and
+  aborting `OperatorStartup`.
+
+### Reference comparison
+
+- `virtualization` often renders module-owned Secrets from values or from hook
+  populated internal values, so namespace ordering does not show up there in the
+  same form.
+- Copying that pattern literally for `ai-models` would be the wrong fix here:
+  it would require moving S3 credentials bytes into values only to avoid
+  namespace ordering.
+- The defendable DKP-style pattern for this repo is:
+  - keep source-secret copy hook-owned;
+  - make the hook namespace-aware;
+  - trigger reconciliation again when the module namespace appears.
+
+### Align now
+
+- `sync_artifacts_secrets` now watches `Namespace/d8-ai-models` explicitly and
+  uses its presence as the guard for `CreateOrUpdate` and delete operations.
+- Source Secret validation remains strict even when the target namespace is not
+  present yet; the hook defers only target patch operations, not config
+  validation.
+- Internal values for resolved synced secret names still get populated on the
+  first pass, and the hook reruns on namespace appearance to create the actual
+  target Secrets.
+
+### Intentional difference
+
+- `ai-models` still does not store object-storage credentials in values merely
+  to render Secrets through templates.
+- This remains an intentional security/ownership difference from
+  virtualization-style template-rendered secret paths.

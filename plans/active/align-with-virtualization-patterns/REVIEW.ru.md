@@ -18,6 +18,9 @@
     implicit controller-runtime defaults;
   - `catalogstatus` переведён на metadata-only pod watch там, где mapping path
     использует только owner metadata;
+- continuation по hook-owned secret sync тоже исправлен bounded change:
+  `sync_artifacts_secrets` теперь namespace-aware и больше не пытается создать
+  Secret в `d8-ai-models` до появления самого namespace;
 - `images/controller/STRUCTURE.ru.md` теперь синхронизирован с live tree и
   явно разделяет:
   - production patterns, которые совпадают с `virtualization`;
@@ -29,6 +32,7 @@
 - `git diff --check`
 - `werf config render --dev`
 - `make verify`
+- `cd images/hooks && go test ./pkg/hooks/sync_artifacts_secrets`
 
 ## Findings
 
@@ -39,6 +43,9 @@ Non-blocking findings:
 - forced controller/runtime rewiring под `virtualization` не потребовался.
   Текущее `ai-models` tree уже удерживает production-grade boundaries и в ряде
   мест строже reference repo режет shell/config/bootstrap concerns.
+- прямое копирование virtualization-style template-side secret rendering тоже
+  не потребовалось: current fix оставляет credentials bytes в Secret-owned path
+  и чинит именно namespace lifecycle safety.
 - remaining differences from `virtualization` остаются defendable:
   они объясняются module-local ownership и отсутствием достаточного cross-owner
   reuse, а не недоделанным runtime shell.

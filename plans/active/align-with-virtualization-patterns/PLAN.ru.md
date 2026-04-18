@@ -106,6 +106,31 @@ Continuation requirement for this slice:
 
 - final review notes in bundle and verified repo state.
 
+### Slice 4. Make artifacts secret sync startup-safe
+
+Цель:
+
+- убрать startup failure в `sync_artifacts_secrets`, когда hook пытается
+  создать Secret в `d8-ai-models` до появления namespace;
+- выровнять lifecycle pattern с DKP-style namespace-aware hooks, не перенося
+  credentials material в values ради template-side render.
+
+Файлы/каталоги:
+
+- `plans/active/align-with-virtualization-patterns/*`
+- `images/hooks/pkg/hooks/sync_artifacts_secrets/*`
+
+Проверки:
+
+- `cd images/hooks && go test ./pkg/hooks/sync_artifacts_secrets`
+- `git diff --check`
+
+Артефакт:
+
+- hook получает explicit module namespace snapshot, не падает при
+  `OperatorStartup`, валидирует source secrets по-прежнему строго и
+  синхронизирует target secrets после появления namespace.
+
 ## Rollback point
 
 После Slice 1:
