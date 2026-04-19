@@ -26,9 +26,9 @@ import (
 )
 
 type writableRegistryServer struct {
-	server         *httptest.Server
-	getPatchCount  func() int
-	getStatusCount func() int
+	server        *httptest.Server
+	state         *writableRegistryState
+	getPatchCount func() int
 }
 
 func (s *writableRegistryServer) Close() {
@@ -39,16 +39,8 @@ func (s *writableRegistryServer) patchCount() int {
 	return s.getPatchCount()
 }
 
-func (s *writableRegistryServer) statusCount() int {
-	return s.getStatusCount()
-}
-
 func newWritableRegistryServer(t *testing.T) (*writableRegistryServer, modelpackports.RegistryAuth) {
 	return newWritableRegistryServerWithOptions(t, false)
-}
-
-func newWritableRegistryServerWithTransientPatchFailure(t *testing.T) (*writableRegistryServer, modelpackports.RegistryAuth) {
-	return newWritableRegistryServerWithOptions(t, true)
 }
 
 func newWritableRegistryServerWithOptions(t *testing.T, interruptFirstPatch bool) (*writableRegistryServer, modelpackports.RegistryAuth) {
@@ -60,11 +52,9 @@ func newWritableRegistryServerWithOptions(t *testing.T, interruptFirstPatch bool
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
 	return &writableRegistryServer{
 			server: server,
+			state:  state,
 			getPatchCount: func() int {
 				return state.patches
-			},
-			getStatusCount: func() int {
-				return state.statuses
 			},
 		}, modelpackports.RegistryAuth{
 			Username: "writer",

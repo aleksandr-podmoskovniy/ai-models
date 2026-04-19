@@ -54,9 +54,11 @@ Current phase-2 slice implemented here:
   publication/removal/materialization contract;
 - `internal/adapters/modelpack/oci` for the ai-models-owned native OCI
   `ModelPack` implementation: controller-side publish/remove over direct
-  registry HTTP plus shared published-artifact inspection, semantic validation,
-  and standalone runtime materialization into a local path from immutable
-  `DMCR` artifacts;
+  heavy-layer upload into `DMCR` backing storage plus shared published-artifact
+  inspection, semantic validation, standalone runtime materialization into a
+  local path from immutable `DMCR` artifacts, and one canonical internal
+  helper-owned transport for heavy layer blobs through the `DMCR` direct-upload
+  helper;
 - `internal/adapters/k8s/modeldelivery` for reusable consumer-side
   `PodTemplateSpec` mutation over `materialize-artifact`, fixed
   `/data/modelcache` cache-root contract over user-provided storage,
@@ -77,12 +79,12 @@ Current phase-2 slice implemented here:
   acquisition and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport, source mirror transfer, archive inspection and
   remote summary extraction instead of split orchestration in the worker;
-  remote `source.url` bytes may persist through the controller-owned source
-  mirror under the shared `raw/` object subtree, while live publish paths now
-  plan direct or mirrored object-source publication instead of materializing a
-  local `workspace/model`; provider-card noise such as downloads/likes/tags is
-  not retained in the adapter payload without an explicit consumer, and the
-  remote adapter now hands worker code explicit seams for source provenance,
+  remote `source.url` bytes now support two explicit runtime modes:
+  direct remote object-source publication and controller-owned temporary source
+  mirror under the shared `raw/` object subtree; both paths avoid a local
+  `workspace/model`, provider-card noise such as downloads/likes/tags is not
+  retained in the adapter payload without an explicit consumer, and the remote
+  adapter now hands worker code explicit seams for source provenance,
   object-source publish inputs and source metadata rather than a flat local
   snapshot contract;
 - `internal/adapters/modelformat` for source-agnostic input-format validation
@@ -186,8 +188,9 @@ Current phase-2 slice implemented here:
   planning use cases;
 - `internal/application/publishaudit` for append-only internal audit/event
   planning: one-time lifecycle edge detection and message shaping for upload
-  session issue, source fetch start, source-mirror-backed publication, and
-  final publication outcome without introducing a second lifecycle engine;
+  session issue, source fetch start, direct-or-mirrored `HuggingFace`
+  publication, and final publication outcome without introducing a second
+  lifecycle engine;
 - `internal/application/deletion` for delete-time finalizer policy and
   package-local step decisions over cleanup-job progress and registry
   garbage-collection progress instead of hand-assembling the same

@@ -102,9 +102,12 @@ type PublishObjectSource struct {
 }
 
 type PublishInput struct {
-	ModelDir    string
-	Layers      []PublishLayer
-	ArtifactURI string
+	ModelDir             string
+	Layers               []PublishLayer
+	ArtifactURI          string
+	DirectUploadEndpoint string
+	DirectUploadCAFile   string
+	DirectUploadInsecure bool
 }
 
 type PublishResult struct {

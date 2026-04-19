@@ -27,6 +27,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -50,6 +51,8 @@ type managerConfig struct {
 	PublicationOCIInsecure               bool
 	PublicationOCISecretName             string
 	PublicationOCICASecretName           string
+	PublicationOCIDirectUploadEndpoint   string
+	PublicationHFAcquisitionMode         publicationports.HuggingFaceAcquisitionMode
 	PublicationMaxConcurrentWorkers      int
 	PublicationWorkerCPURequest          string
 	PublicationWorkerCPULimit            string
@@ -93,6 +96,8 @@ func defaultManagerConfig() managerConfig {
 		PublicationOCIInsecure:               cmdsupport.EnvOrBool(publicationOCIInsecureEnv, false),
 		PublicationOCISecretName:             cmdsupport.EnvOr(publicationOCISecretEnv, ""),
 		PublicationOCICASecretName:           cmdsupport.EnvOr(publicationOCICASecretEnv, ""),
+		PublicationOCIDirectUploadEndpoint:   cmdsupport.EnvOr(publicationOCIDirectUploadEndpointEnv, ""),
+		PublicationHFAcquisitionMode:         publicationports.NormalizeHuggingFaceAcquisitionMode(publicationports.HuggingFaceAcquisitionMode(cmdsupport.EnvOr(publicationHFAcquisitionModeEnv, ""))),
 		PublicationMaxConcurrentWorkers:      cmdsupport.EnvOrInt(publicationMaxConcurrentWorkersEnv, defaultPublicationMaxConcurrentWorkers),
 		PublicationWorkerCPURequest:          cmdsupport.EnvOr(publicationWorkerCPURequestEnv, defaultPublicationWorkerCPURequest),
 		PublicationWorkerCPULimit:            cmdsupport.EnvOr(publicationWorkerCPULimitEnv, defaultPublicationWorkerCPULimit),
@@ -136,6 +141,8 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.BoolVar(&config.PublicationOCIInsecure, "publication-oci-insecure", config.PublicationOCIInsecure, "Disable TLS verification for publication worker OCI registry access.")
 	flags.StringVar(&config.PublicationOCISecretName, "publication-oci-credentials-secret-name", config.PublicationOCISecretName, "Secret with OCI registry username/password for publication workers.")
 	flags.StringVar(&config.PublicationOCICASecretName, "publication-oci-ca-secret-name", config.PublicationOCICASecretName, "Optional Secret with ca.crt for publication worker OCI registry trust.")
+	flags.StringVar(&config.PublicationOCIDirectUploadEndpoint, "publication-oci-direct-upload-endpoint", config.PublicationOCIDirectUploadEndpoint, "Internal DMCR direct-upload HTTPS endpoint used for heavy layer blob uploads.")
+	flags.StringVar((*string)(&config.PublicationHFAcquisitionMode), "publication-huggingface-acquisition-mode", string(config.PublicationHFAcquisitionMode), "HuggingFace acquisition mode for publication workers: mirror or direct.")
 	flags.IntVar(&config.PublicationMaxConcurrentWorkers, "publication-max-concurrent-workers", config.PublicationMaxConcurrentWorkers, "Maximum number of active publication worker Pods.")
 	flags.StringVar(&config.PublicationWorkerCPURequest, "publication-worker-cpu-request", config.PublicationWorkerCPURequest, "CPU request for publication worker Pods.")
 	flags.StringVar(&config.PublicationWorkerCPULimit, "publication-worker-cpu-limit", config.PublicationWorkerCPULimit, "CPU limit for publication worker Pods.")
@@ -206,7 +213,9 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 				OCIInsecure:             c.PublicationOCIInsecure,
 				OCIRegistrySecretName:   c.PublicationOCISecretName,
 				OCIRegistryCASecretName: c.PublicationOCICASecretName,
+				OCIDirectUploadEndpoint: c.PublicationOCIDirectUploadEndpoint,
 				ObjectStorage:           artifactsObjectStorage,
+				HuggingFaceAcquisition:  c.PublicationHFAcquisitionMode,
 				Resources:               resources,
 			},
 			MaxConcurrentWorkers: c.PublicationMaxConcurrentWorkers,

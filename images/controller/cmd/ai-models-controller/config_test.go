@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -27,17 +28,19 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	t.Parallel()
 
 	config := managerConfig{
-		LogFormat:                      "json",
-		LogLevel:                       "debug",
-		CleanupJobImage:                "example.com/controller-runtime:dev",
-		CleanupJobNamespace:            "d8-ai-models",
-		PublicationWorkerNamespace:     "d8-ai-models",
-		PublicationOCICASecretName:     "ai-models-dmcr-ca",
-		PublicationOCIInsecure:         false,
-		ArtifactsBucket:                "models",
-		ArtifactsS3Endpoint:            "https://s3.example.test",
-		ArtifactsS3Region:              "test",
-		ArtifactsCredentialsSecretName: "artifacts-credentials",
+		LogFormat:                          "json",
+		LogLevel:                           "debug",
+		CleanupJobImage:                    "example.com/controller-runtime:dev",
+		CleanupJobNamespace:                "d8-ai-models",
+		PublicationWorkerNamespace:         "d8-ai-models",
+		PublicationOCICASecretName:         "ai-models-dmcr-ca",
+		PublicationOCIInsecure:             false,
+		PublicationOCIDirectUploadEndpoint: "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443",
+		PublicationHFAcquisitionMode:       publicationports.HuggingFaceAcquisitionModeDirect,
+		ArtifactsBucket:                    "models",
+		ArtifactsS3Endpoint:                "https://s3.example.test",
+		ArtifactsS3Region:                  "test",
+		ArtifactsCredentialsSecretName:     "artifacts-credentials",
 	}
 
 	options := config.bootstrapOptions(corev1.ResourceRequirements{})
@@ -62,5 +65,11 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	}
 	if got, want := options.PublicationRuntime.RuntimeLogLevel, config.LogLevel; got != want {
 		t.Fatalf("publication runtime log level = %q, want %q", got, want)
+	}
+	if got, want := options.PublicationRuntime.Runtime.HuggingFaceAcquisition, config.PublicationHFAcquisitionMode; got != want {
+		t.Fatalf("publication runtime huggingface acquisition mode = %q, want %q", got, want)
+	}
+	if got, want := options.PublicationRuntime.Runtime.OCIDirectUploadEndpoint, config.PublicationOCIDirectUploadEndpoint; got != want {
+		t.Fatalf("publication runtime OCI direct upload endpoint = %q, want %q", got, want)
 	}
 }

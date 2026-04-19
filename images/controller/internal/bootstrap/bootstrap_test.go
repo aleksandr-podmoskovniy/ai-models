@@ -53,11 +53,12 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 		},
 		PublicationRuntime: catalogstatus.Options{
 			Runtime: sourceworker.RuntimeOptions{
-				Namespace:             "d8-ai-models",
-				Image:                 "backend:latest",
-				ServiceAccountName:    "ai-models-controller",
-				OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-				OCIRegistrySecretName: "ai-models-dmcr-auth-write",
+				Namespace:               "d8-ai-models",
+				Image:                   "backend:latest",
+				ServiceAccountName:      "ai-models-controller",
+				OCIRepositoryPrefix:     "registry.internal.local/ai-models",
+				OCIRegistrySecretName:   "ai-models-dmcr-auth-write",
+				OCIDirectUploadEndpoint: "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443",
 				ObjectStorage: storageprojection.Options{
 					Bucket:                "ai-models",
 					EndpointURL:           "https://s3.example.com",
@@ -69,12 +70,12 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:              resource.MustParse("1"),
 						corev1.ResourceMemory:           resource.MustParse("8Gi"),
-						corev1.ResourceEphemeralStorage: resource.MustParse("50Gi"),
+						corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
 					},
 					Limits: corev1.ResourceList{
 						corev1.ResourceCPU:              resource.MustParse("4"),
 						corev1.ResourceMemory:           resource.MustParse("16Gi"),
-						corev1.ResourceEphemeralStorage: resource.MustParse("50Gi"),
+						corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
 					},
 				},
 			},

@@ -22,6 +22,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 )
 
 func TestFetchRemotePerformsSingleStreamingOnlyAttempt(t *testing.T) {
@@ -48,5 +49,51 @@ func TestFetchRemotePerformsSingleStreamingOnlyAttempt(t *testing.T) {
 	}
 	if got, want := calls, 1; got != want {
 		t.Fatalf("unexpected fetch attempt count %d", got)
+	}
+}
+
+func TestFetchRemoteDirectModeDoesNotPassSourceMirror(t *testing.T) {
+	t.Parallel()
+
+	previousFetchRemoteModelFunc := fetchRemoteModelFunc
+	t.Cleanup(func() {
+		fetchRemoteModelFunc = previousFetchRemoteModelFunc
+	})
+
+	fetchRemoteModelFunc = func(_ context.Context, options sourcefetch.RemoteOptions) (sourcefetch.RemoteResult, error) {
+		if options.SourceMirror != nil {
+			t.Fatal("did not expect source mirror options in direct mode")
+		}
+		if !options.SkipLocalMaterialization {
+			t.Fatal("expected direct mode to stay on streaming-only path")
+		}
+		return sourcefetch.RemoteResult{
+			InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
+		}, nil
+	}
+
+	_, err := fetchRemote(context.Background(), Options{
+		SourceType:                 modelsv1alpha1.ModelSourceTypeHuggingFace,
+		HFModelID:                  "owner/model",
+		HuggingFaceAcquisitionMode: publicationports.HuggingFaceAcquisitionModeDirect,
+		Revision:                   "main",
+	})
+	if err != nil {
+		t.Fatalf("fetchRemote() error = %v", err)
+	}
+}
+
+func TestRunRejectsMirrorModeWithoutRawStageBoundary(t *testing.T) {
+	t.Parallel()
+
+	_, err := Run(context.Background(), Options{
+		SourceType:                 modelsv1alpha1.ModelSourceTypeHuggingFace,
+		ArtifactURI:                "registry.internal.local/ai-models/test@sha256:deadbeef",
+		HFModelID:                  "owner/model",
+		HuggingFaceAcquisitionMode: publicationports.HuggingFaceAcquisitionModeMirror,
+		ModelPackPublisher:         fakePublisher{},
+	})
+	if err == nil {
+		t.Fatal("expected mirror mode validation error")
 	}
 }

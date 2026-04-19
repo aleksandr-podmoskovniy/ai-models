@@ -28,8 +28,7 @@ import (
 func TestAdapterPublishAndMaterializeZstdArchiveSourceLayer(t *testing.T) {
 	t.Parallel()
 
-	server, auth := newWritableRegistryServer(t)
-	defer server.Close()
+	server, directUpload, auth := newDirectPublishHarness(t, directUploadTestOptions{})
 
 	archivePath := filepath.Join(t.TempDir(), "checkpoint.tar.zst")
 	if err := writeTestZstdTar(
@@ -45,7 +44,7 @@ func TestAdapterPublishAndMaterializeZstdArchiveSourceLayer(t *testing.T) {
 
 	adapter := New()
 	reference := serverReference(server.server, "zstd-archive-source")
-	publishResult, err := adapter.Publish(context.Background(), modelpackports.PublishInput{
+	publishResult, err := adapter.Publish(context.Background(), withDirectUploadInput(modelpackports.PublishInput{
 		ArtifactURI: reference,
 		Layers: []modelpackports.PublishLayer{
 			{
@@ -60,7 +59,7 @@ func TestAdapterPublishAndMaterializeZstdArchiveSourceLayer(t *testing.T) {
 				},
 			},
 		},
-	}, auth)
+	}, directUpload), auth)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
@@ -84,8 +83,7 @@ func TestAdapterPublishAndMaterializeZstdArchiveSourceLayer(t *testing.T) {
 func TestAdapterPublishAndMaterializeZstdArchiveSourceReaderLayer(t *testing.T) {
 	t.Parallel()
 
-	server, auth := newWritableRegistryServer(t)
-	defer server.Close()
+	server, directUpload, auth := newDirectPublishHarness(t, directUploadTestOptions{})
 
 	archivePath := filepath.Join(t.TempDir(), "checkpoint.tar.zst")
 	if err := writeTestZstdTar(
@@ -105,7 +103,7 @@ func TestAdapterPublishAndMaterializeZstdArchiveSourceReaderLayer(t *testing.T) 
 
 	adapter := New()
 	reference := serverReference(server.server, "zstd-archive-source-reader")
-	publishResult, err := adapter.Publish(context.Background(), modelpackports.PublishInput{
+	publishResult, err := adapter.Publish(context.Background(), withDirectUploadInput(modelpackports.PublishInput{
 		ArtifactURI: reference,
 		Layers: []modelpackports.PublishLayer{
 			{
@@ -121,7 +119,7 @@ func TestAdapterPublishAndMaterializeZstdArchiveSourceReaderLayer(t *testing.T) 
 				},
 			},
 		},
-	}, auth)
+	}, directUpload), auth)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}

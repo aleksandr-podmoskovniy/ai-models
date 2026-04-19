@@ -26,6 +26,8 @@ paths и test surfaces.
 
 - Byte path:
   - `resolved HF objects -> native OCI publish`
+- Runtime selection:
+  - `artifacts.huggingFaceAcquisitionMode=Direct`
 - Full-size local copies during successful publish:
   - `0`
 - Primary evidence:
@@ -33,28 +35,51 @@ paths и test surfaces.
   - `internal/adapters/sourcefetch/huggingface_fetch_failure_test.go`
   - `internal/dataplane/publishworker/huggingface_fetch_test.go`
   - `internal/dataplane/publishworker/huggingface_streaming_test.go`
+  - `internal/adapters/k8s/sourceworker/build_test.go`
   - `internal/adapters/modelpack/oci/layer_matrix_object_source_test.go`
 - Proved properties:
   - worker no longer allocates local `workspace/model`;
   - remote profile summary/object-source planning is mandatory;
-  - planning failure is explicit and no longer degrades to local materialization.
+  - planning failure is explicit and no longer degrades to local materialization;
+  - controller/sourceworker wiring can disable raw-stage mirror args entirely.
 
 ### Mirrored `HuggingFace`
 
 - Byte path:
   - `HF objects -> source mirror objects -> native OCI publish`
+- Runtime selection:
+  - `artifacts.huggingFaceAcquisitionMode=Mirror`
 - Full-size local copies during successful publish:
   - `0`
 - Primary evidence:
   - `internal/adapters/sourcefetch/huggingface_mirror_fetch_test.go`
   - `internal/adapters/sourcefetch/huggingface_mirror_resume_test.go`
   - `internal/dataplane/publishworker/huggingface_streaming_test.go`
+  - `internal/dataplane/publishworker/rawstage_test.go`
+  - `internal/adapters/k8s/sourceworker/build_test.go`
   - `internal/adapters/modelpack/oci/layer_matrix_object_source_test.go`
 - Proved properties:
   - publish continues from mirrored objects, not from local rematerialization;
   - mirror resume/TLS edges stay covered on the acquisition boundary;
   - mirror state/manifest JSON now decodes through `OpenRead`, not temp-file
     download.
+
+### `DMCR` upload transport
+
+- Primary evidence:
+  - `internal/adapters/modelpack/oci/publish_test.go`
+  - `internal/adapters/modelpack/oci/direct_upload_test.go`
+  - `internal/adapters/modelpack/oci/direct_upload_test_helpers_test.go`
+  - `internal/adapters/k8s/sourceworker/build_test.go`
+  - `internal/adapters/k8s/sourceworker/validation_test.go`
+  - `cmd/ai-models-controller/config_test.go`
+- Proved properties:
+  - heavy layer blobs no longer have a runtime transport toggle and always
+    upload through the `DMCR`-owned direct-upload helper into backing storage;
+  - direct transport still preserves final remote inspect and consumer-side
+    materialization correctness;
+  - interrupted direct part upload recovers through helper `listParts()` instead
+    of degrading to local rematerialization or restarting the whole publish.
 
 ### Local direct upload
 

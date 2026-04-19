@@ -50,6 +50,9 @@ func (a *Adapter) Publish(ctx context.Context, input modelpackports.PublishInput
 	if strings.TrimSpace(input.ArtifactURI) == "" {
 		return modelpackports.PublishResult{}, errors.New("artifact URI must not be empty")
 	}
+	if strings.TrimSpace(input.DirectUploadEndpoint) == "" {
+		return modelpackports.PublishResult{}, errors.New("direct upload endpoint must not be empty")
+	}
 	layers, err := defaultPublishLayers(input)
 	if err != nil {
 		return modelpackports.PublishResult{}, err
@@ -76,7 +79,7 @@ func (a *Adapter) Publish(ctx context.Context, input modelpackports.PublishInput
 		slog.Int64("durationMs", time.Since(layerDescribeStarted).Milliseconds()),
 		slog.Int("layerCount", len(layerDescriptors)),
 	)
-	if err := uploadPublishLayers(ctx, client, input.ArtifactURI, auth, layers, layerDescriptors, logger); err != nil {
+	if err := uploadPublishLayers(ctx, client, input, auth, layers, layerDescriptors, logger); err != nil {
 		return modelpackports.PublishResult{}, err
 	}
 

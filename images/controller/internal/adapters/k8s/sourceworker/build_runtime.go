@@ -88,7 +88,11 @@ func buildEnv(
 		corev1.EnvVar{Name: "LOG_FORMAT", Value: options.LogFormat},
 		corev1.EnvVar{Name: "LOG_LEVEL", Value: options.LogLevel},
 	)
-	env = append(env, storageprojection.Env(options.ObjectStorage)...)
+	if sourceUsesObjectStorage(plan, options) {
+		env = append(env, storageprojection.Env(options.ObjectStorage)...)
+	} else if publishUsesObjectStorageTrust(options) {
+		env = append(env, storageprojection.CAEnv(options.ObjectStorage)...)
+	}
 	if plan.HuggingFace != nil && plan.HuggingFace.AuthSecretRef != nil {
 		env = append(env, corev1.EnvVar{
 			Name: "HF_TOKEN",
@@ -103,18 +107,34 @@ func buildEnv(
 	return env
 }
 
-func buildVolumeMounts(options Options, _ publicationapp.SourceWorkerPlan) []corev1.VolumeMount {
+func buildVolumeMounts(options Options, plan publicationapp.SourceWorkerPlan) []corev1.VolumeMount {
 	var extra []corev1.VolumeMount
-	extra = storageprojection.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
+	if sourceUsesObjectStorage(plan, options) || publishUsesObjectStorageTrust(options) {
+		extra = storageprojection.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
+	}
 	return append(ociregistry.VolumeMounts(options.OCIRegistryCASecretName), extra...)
 }
 
 func buildVolumes(
 	options Options,
-	_ publicationapp.SourceWorkerPlan,
+	plan publicationapp.SourceWorkerPlan,
 	_ string,
 ) []corev1.Volume {
 	var extra []corev1.Volume
-	extra = storageprojection.Volumes(options.ObjectStorage.CASecretName, extra...)
+	if sourceUsesObjectStorage(plan, options) || publishUsesObjectStorageTrust(options) {
+		extra = storageprojection.Volumes(options.ObjectStorage.CASecretName, extra...)
+	}
 	return append(ociregistry.Volumes(options.OCIRegistryCASecretName), extra...)
+}
+
+func sourceUsesObjectStorage(plan publicationapp.SourceWorkerPlan, options Options) bool {
+	if plan.Upload != nil {
+		return true
+	}
+	return plan.HuggingFace != nil &&
+		publicationports.NormalizeHuggingFaceAcquisitionMode(options.HuggingFaceAcquisition) == publicationports.HuggingFaceAcquisitionModeMirror
+}
+
+func publishUsesObjectStorageTrust(options Options) bool {
+	return strings.TrimSpace(options.OCIDirectUploadEndpoint) != ""
 }

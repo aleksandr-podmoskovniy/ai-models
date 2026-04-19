@@ -31,6 +31,11 @@
   - `kubectl -n d8-ai-models get secret ai-models-dmcr-auth ai-models-dmcr-auth-write ai-models-dmcr-auth-read -o json`
   - `kubectl -n d8-ai-models describe pod ai-model-publish-1d961707-e5e6-45b9-9598-499f22821665`
   - `htpasswd -vb <tempfile> ai-models <write.password>`
+  - `kubectl -n ai-models-smoke apply -f -` with `Model/gemma-4-e2b-it-retry-160322`
+  - `kubectl -n d8-ai-models logs pod/ai-model-publish-eb109838-3a6e-48b6-85c1-27195ed6aecd`
+  - `kubectl -n d8-ai-models logs deploy/dmcr --since=15m`
+  - `kubectl -n ai-models-smoke get models.ai.deckhouse.io gemma-4-e2b-it-retry-160322 -o yaml`
+  - `kubectl -n d8-ai-models describe pod ai-model-publish-eb109838-3a6e-48b6-85c1-27195ed6aecd`
 
 ### Notes
 
@@ -38,3 +43,13 @@
   pre-fix state verify-path. Текущий repo state уже использует stdlib-only
   parser в `validate-renders.py`, а focused test теперь тоже не требует
   `PyYAML` и проверяет реальный checksum/`htpasswd` path.
+- Повторный live `Gemma 4` smoke на `Model/gemma-4-e2b-it-retry-160322`
+  подтвердил, что old `DMCR 401` больше не воспроизводится:
+  `publish-worker` дошёл до `source mirror transfer completed`,
+  `modelpack publication started`, а `dmcr` пишет непрерывные
+  `authorized request` / `PATCH ... blobs/uploads` от пользователя
+  `ai-models`.
+- На том же retry подтверждён current publication storage contract:
+  `ai-model-publish-eb109838-3a6e-48b6-85c1-27195ed6aecd` не имеет `PVC`
+  или legacy work volume; у него только secret mounts и
+  `ephemeral-storage request/limit = 1Gi`.

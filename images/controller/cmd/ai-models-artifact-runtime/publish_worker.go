@@ -25,6 +25,7 @@ import (
 	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/dataplane/publishworker"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
@@ -38,6 +39,8 @@ const (
 	publishUploadStageFileNameEnv = "AI_MODELS_IMPORT_UPLOAD_STAGE_FILE_NAME"
 	publishRawStageBucketEnv      = "AI_MODELS_IMPORT_RAW_STAGE_BUCKET"
 	publishRawStageKeyPrefixEnv   = "AI_MODELS_IMPORT_RAW_STAGE_KEY_PREFIX"
+	publishOCIDirectUploadEnv     = "AI_MODELS_IMPORT_OCI_DIRECT_UPLOAD_ENDPOINT"
+	publishHFAcquisitionModeEnv   = "AI_MODELS_IMPORT_HF_ACQUISITION_MODE"
 	publishInputFormatEnv         = "AI_MODELS_IMPORT_INPUT_FORMAT"
 	publishRevisionEnv            = "AI_MODELS_IMPORT_HF_REVISION"
 	publishTaskEnv                = "AI_MODELS_IMPORT_TASK"
@@ -55,6 +58,8 @@ func runPublishWorker(args []string) int {
 	var uploadStageFileName string
 	var rawStageBucket string
 	var rawStageKeyPrefix string
+	var ociDirectUploadEndpoint string
+	var hfAcquisitionMode string
 	var inputFormat string
 	var revision string
 	var task string
@@ -68,6 +73,8 @@ func runPublishWorker(args []string) int {
 	flags.StringVar(&uploadStageFileName, "upload-stage-file-name", cmdsupport.EnvOr(publishUploadStageFileNameEnv, ""), "Original staged upload file name.")
 	flags.StringVar(&rawStageBucket, "raw-stage-bucket", cmdsupport.EnvOr(publishRawStageBucketEnv, ""), "Bucket used for controller-owned raw staging of remote sources.")
 	flags.StringVar(&rawStageKeyPrefix, "raw-stage-key-prefix", cmdsupport.EnvOr(publishRawStageKeyPrefixEnv, ""), "Object key prefix used for controller-owned raw staging of remote sources.")
+	flags.StringVar(&ociDirectUploadEndpoint, "oci-direct-upload-endpoint", cmdsupport.EnvOr(publishOCIDirectUploadEnv, ""), "Internal DMCR direct-upload HTTPS endpoint for heavy layer blob uploads.")
+	flags.StringVar(&hfAcquisitionMode, "hf-acquisition-mode", cmdsupport.EnvOr(publishHFAcquisitionModeEnv, string(publicationports.HuggingFaceAcquisitionModeMirror)), "HuggingFace acquisition mode: mirror or direct.")
 	flags.StringVar(&inputFormat, "input-format", cmdsupport.EnvOr(publishInputFormatEnv, ""), "Model input format. Leave empty for auto-detection.")
 	flags.StringVar(&revision, "revision", cmdsupport.EnvOr(publishRevisionEnv, ""), "Resolved source revision.")
 	flags.StringVar(&task, "task", cmdsupport.EnvOr(publishTaskEnv, ""), "Runtime task.")
@@ -109,24 +116,29 @@ func runPublishWorker(args []string) int {
 	logger.Info(
 		"publication worker started",
 		slog.Bool("uploadStageEnabled", uploadStage != nil),
+		slog.String("hfAcquisitionMode", strings.TrimSpace(hfAcquisitionMode)),
 		slog.Bool("sourceMirrorEnabled", uploadStagingClient != nil && strings.TrimSpace(rawStageBucket) != "" && strings.TrimSpace(rawStageKeyPrefix) != ""),
 	)
 
 	result, err := publishworker.Run(ctx, publishworker.Options{
-		SourceType:         modelsv1alpha1.ModelSourceType(sourceType),
-		ArtifactURI:        artifactURI,
-		HFModelID:          hfModelID,
-		Revision:           revision,
-		UploadPath:         uploadPath,
-		UploadStage:        uploadStage,
-		RawStageBucket:     rawStageBucket,
-		RawStageKeyPrefix:  rawStageKeyPrefix,
-		InputFormat:        modelsv1alpha1.ModelInputFormat(inputFormat),
-		Task:               task,
-		HFToken:            cmdsupport.EnvOr("HF_TOKEN", cmdsupport.EnvOr("HUGGING_FACE_HUB_TOKEN", "")),
-		UploadStaging:      uploadStagingClient,
-		ModelPackPublisher: modelpackoci.New(),
-		RegistryAuth:       cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
+		SourceType:                 modelsv1alpha1.ModelSourceType(sourceType),
+		ArtifactURI:                artifactURI,
+		HFModelID:                  hfModelID,
+		OCIDirectUploadEndpoint:    ociDirectUploadEndpoint,
+		DirectUploadCAFile:         cmdsupport.EnvOr("AI_MODELS_S3_CA_FILE", ""),
+		DirectUploadInsecure:       cmdsupport.EnvOrBool("AI_MODELS_S3_IGNORE_TLS", false),
+		HuggingFaceAcquisitionMode: publicationports.HuggingFaceAcquisitionMode(hfAcquisitionMode),
+		Revision:                   revision,
+		UploadPath:                 uploadPath,
+		UploadStage:                uploadStage,
+		RawStageBucket:             rawStageBucket,
+		RawStageKeyPrefix:          rawStageKeyPrefix,
+		InputFormat:                modelsv1alpha1.ModelInputFormat(inputFormat),
+		Task:                       task,
+		HFToken:                    cmdsupport.EnvOr("HF_TOKEN", cmdsupport.EnvOr("HUGGING_FACE_HUB_TOKEN", "")),
+		UploadStaging:              uploadStagingClient,
+		ModelPackPublisher:         modelpackoci.New(),
+		RegistryAuth:               cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
 	})
 	if err != nil {
 		cmdsupport.WriteTerminationFailure(err.Error())

@@ -25,7 +25,8 @@ settings и internal module values. В user-facing contract больше нет:
 `artifacts` задаёт общий S3-compatible storage для byte-path внутри ai-models.
 Разделение внутри bucket фиксировано самим runtime:
 
-- `raw/` для controller-owned upload staging и source mirror;
+- `raw/` для controller-owned upload staging и, если включён режим
+  `artifacts.huggingFaceAcquisitionMode=Mirror`, для временного source mirror;
 - `dmcr/` для опубликованных OCI-артефактов во внутреннем `DMCR`;
 - отдельные будущие append-only данные модуля могут жить только под
   отдельными фиксированными префиксами.
@@ -45,13 +46,38 @@ Custom trust для S3-compatible endpoint задаётся через `artifact
 
 Публичный runtime path для моделей теперь controller-owned:
 
-- `Model` / `ClusterModel` с `spec.source.url` забирают remote bytes через
-  controller-owned source mirror path;
+- `Model` / `ClusterModel` с `spec.source.url` используют один из двух
+  cluster-level acquisition modes:
+  - `artifacts.huggingFaceAcquisitionMode=Mirror`:
+    `HuggingFace -> controller-owned source mirror -> native OCI publish`;
+  - `artifacts.huggingFaceAcquisitionMode=Direct`:
+    `HuggingFace -> direct remote object source -> native OCI publish`;
 - `spec.source.upload` использует controller-owned upload-session path;
 - оба пути публикуют OCI `ModelPack` артефакты во внутренний `DMCR`.
 
+Trade-off между режимами такой:
+
+- `Mirror` сохраняет durable промежуточную копию в object storage, упрощает
+  повторные публикации и resume на границе ingest;
+- `Direct` убирает эту лишнюю копию и ускоряет первую загрузку, но каждая
+  публикация зависит напрямую от доступности и скорости `HuggingFace`.
+
+Для публикации тяжёлых layer blobs внутрь `DMCR` отдельного выбора больше нет.
+Канонический byte path теперь один:
+
+- `publish-worker -> DMCR direct-upload helper -> backing storage DMCR`.
+
+`DMCR` остаётся владельцем аутентификации, финализации blob/link и итогового
+артефактного контракта, но толстый поток байтов больше не идёт через registry
+`PATCH` path. Это убирает сам `DMCR` из роли сетевого узкого места на
+тяжёлом upload path.
+
+Текущий bounded scope прямого транспорта касается тяжёлых layer blobs. `config`
+blob, `manifest` publish и финальный remote inspect остаются на обычном
+registry path, чтобы контракт менялся по одному слою ответственности за раз.
+
 Успешный publication worker path больше не использует локальный workspace/PVC.
-`HuggingFace`, source mirror и staged upload публикуются через
+`HuggingFace` в обоих режимах и staged upload публикуются через
 object-source/archive-source streaming semantics. Локальный bounded storage
 contract для publish-worker теперь только один: `ephemeral-storage` requests и
 limits контейнера для writable layer и логов.

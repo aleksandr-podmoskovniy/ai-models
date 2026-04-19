@@ -37,6 +37,10 @@ shell:
         -ldflags "-s -w" \
         -o /out/dmcr-cleaner \
         ./cmd/dmcr-cleaner
+      go build -trimpath \
+        -ldflags "-s -w" \
+        -o /out/dmcr-direct-upload \
+        ./cmd/dmcr-direct-upload
 ---
 image: dmcr
 final: true
@@ -49,6 +53,10 @@ import:
   - image: dmcr-build-artifact
     add: /out/dmcr-cleaner
     to: /usr/local/bin/dmcr-cleaner
+    after: install
+  - image: dmcr-build-artifact
+    add: /out/dmcr-direct-upload
+    to: /usr/local/bin/dmcr-direct-upload
     after: install
 imageSpec:
   config:

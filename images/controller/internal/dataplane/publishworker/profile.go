@@ -95,9 +95,12 @@ func resolveAndPublishWithLayers(
 	publishStarted := time.Now()
 	logger.Info("modelpack publication started", slog.String("artifactURI", strings.TrimSpace(options.ArtifactURI)))
 	publishInput := modelpackports.PublishInput{
-		ModelDir:    modelInputPath,
-		Layers:      publishLayers,
-		ArtifactURI: options.ArtifactURI,
+		ModelDir:             modelInputPath,
+		Layers:               publishLayers,
+		ArtifactURI:          options.ArtifactURI,
+		DirectUploadEndpoint: options.OCIDirectUploadEndpoint,
+		DirectUploadCAFile:   options.DirectUploadCAFile,
+		DirectUploadInsecure: options.DirectUploadInsecure,
 	}
 	publishResult, err := options.ModelPackPublisher.Publish(ctx, publishInput, options.RegistryAuth)
 	if err != nil {

@@ -23,25 +23,30 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 type Options struct {
-	SourceType         modelsv1alpha1.ModelSourceType
-	ArtifactURI        string
-	HFModelID          string
-	Revision           string
-	UploadPath         string
-	UploadStage        *cleanuphandle.UploadStagingHandle
-	RawStageBucket     string
-	RawStageKeyPrefix  string
-	InputFormat        modelsv1alpha1.ModelInputFormat
-	Task               string
-	HFToken            string
-	UploadStaging      uploadStagingClient
-	ModelPackPublisher modelpackports.Publisher
-	RegistryAuth       modelpackports.RegistryAuth
+	SourceType                 modelsv1alpha1.ModelSourceType
+	ArtifactURI                string
+	HFModelID                  string
+	OCIDirectUploadEndpoint    string
+	DirectUploadCAFile         string
+	DirectUploadInsecure       bool
+	HuggingFaceAcquisitionMode publicationports.HuggingFaceAcquisitionMode
+	Revision                   string
+	UploadPath                 string
+	UploadStage                *cleanuphandle.UploadStagingHandle
+	RawStageBucket             string
+	RawStageKeyPrefix          string
+	InputFormat                modelsv1alpha1.ModelInputFormat
+	Task                       string
+	HFToken                    string
+	UploadStaging              uploadStagingClient
+	ModelPackPublisher         modelpackports.Publisher
+	RegistryAuth               modelpackports.RegistryAuth
 }
 
 func Run(ctx context.Context, options Options) (publicationartifact.Result, error) {
@@ -50,6 +55,29 @@ func Run(ctx context.Context, options Options) (publicationartifact.Result, erro
 	}
 	if options.ModelPackPublisher == nil {
 		return publicationartifact.Result{}, errors.New("ModelPack publisher must not be nil")
+	}
+	if strings.TrimSpace(options.OCIDirectUploadEndpoint) == "" {
+		return publicationartifact.Result{}, errors.New("OCI direct upload endpoint must not be empty")
+	}
+	options.HuggingFaceAcquisitionMode = publicationports.NormalizeHuggingFaceAcquisitionMode(options.HuggingFaceAcquisitionMode)
+	if err := publicationports.ValidateHuggingFaceAcquisitionMode(options.HuggingFaceAcquisitionMode); err != nil {
+		return publicationartifact.Result{}, err
+	}
+	if options.SourceType == modelsv1alpha1.ModelSourceTypeHuggingFace {
+		if options.HuggingFaceAcquisitionMode == publicationports.HuggingFaceAcquisitionModeMirror {
+			switch {
+			case strings.TrimSpace(options.RawStageBucket) == "":
+				return publicationartifact.Result{}, errors.New("huggingface mirror acquisition requires raw stage bucket")
+			case strings.TrimSpace(options.RawStageKeyPrefix) == "":
+				return publicationartifact.Result{}, errors.New("huggingface mirror acquisition requires raw stage key prefix")
+			case options.UploadStaging == nil:
+				return publicationartifact.Result{}, errors.New("huggingface mirror acquisition requires upload staging client")
+			}
+		}
+		if options.HuggingFaceAcquisitionMode == publicationports.HuggingFaceAcquisitionModeDirect {
+			options.RawStageBucket = ""
+			options.RawStageKeyPrefix = ""
+		}
 	}
 
 	result, err := run(ctx, options)

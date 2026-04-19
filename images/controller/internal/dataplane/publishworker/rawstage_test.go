@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 )
 
@@ -94,5 +95,22 @@ func TestRemoteSourceMirrorPropagatesUploadHTTPClient(t *testing.T) {
 	}
 	if got, want := options.UploadHTTPClient, httpClient; got != want {
 		t.Fatalf("unexpected upload HTTP client %p", got)
+	}
+}
+
+func TestRemoteSourceMirrorDisabledForDirectMode(t *testing.T) {
+	t.Parallel()
+
+	httpClient := &http.Client{Timeout: time.Second}
+	staging := &fakeUploadStagingWithHTTPClient{httpClient: httpClient}
+
+	options := remoteSourceMirror(Options{
+		HuggingFaceAcquisitionMode: publicationports.HuggingFaceAcquisitionModeDirect,
+		RawStageBucket:             "artifacts",
+		RawStageKeyPrefix:          "raw/1111-2222/source-url",
+		UploadStaging:              staging,
+	})
+	if options != nil {
+		t.Fatalf("expected no source mirror options in direct mode, got %#v", options)
 	}
 }

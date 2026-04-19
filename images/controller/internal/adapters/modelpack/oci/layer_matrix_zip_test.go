@@ -28,8 +28,7 @@ import (
 func TestAdapterPublishAndMaterializeZipArchiveSourceLayer(t *testing.T) {
 	t.Parallel()
 
-	server, auth := newWritableRegistryServer(t)
-	defer server.Close()
+	server, directUpload, auth := newDirectPublishHarness(t, directUploadTestOptions{})
 
 	archivePath := filepath.Join(t.TempDir(), "checkpoint.zip")
 	if err := writeTestZip(
@@ -45,7 +44,7 @@ func TestAdapterPublishAndMaterializeZipArchiveSourceLayer(t *testing.T) {
 
 	adapter := New()
 	reference := serverReference(server.server, "zip-archive-source")
-	publishResult, err := adapter.Publish(context.Background(), modelpackports.PublishInput{
+	publishResult, err := adapter.Publish(context.Background(), withDirectUploadInput(modelpackports.PublishInput{
 		ArtifactURI: reference,
 		Layers: []modelpackports.PublishLayer{
 			{
@@ -60,7 +59,7 @@ func TestAdapterPublishAndMaterializeZipArchiveSourceLayer(t *testing.T) {
 				},
 			},
 		},
-	}, auth)
+	}, directUpload), auth)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
@@ -84,8 +83,7 @@ func TestAdapterPublishAndMaterializeZipArchiveSourceLayer(t *testing.T) {
 func TestAdapterPublishAndMaterializeZipArchiveSourceReaderLayer(t *testing.T) {
 	t.Parallel()
 
-	server, auth := newWritableRegistryServer(t)
-	defer server.Close()
+	server, directUpload, auth := newDirectPublishHarness(t, directUploadTestOptions{})
 
 	archivePath := filepath.Join(t.TempDir(), "checkpoint.zip")
 	if err := writeTestZip(
@@ -105,7 +103,7 @@ func TestAdapterPublishAndMaterializeZipArchiveSourceReaderLayer(t *testing.T) {
 
 	adapter := New()
 	reference := serverReference(server.server, "zip-archive-source-reader")
-	publishResult, err := adapter.Publish(context.Background(), modelpackports.PublishInput{
+	publishResult, err := adapter.Publish(context.Background(), withDirectUploadInput(modelpackports.PublishInput{
 		ArtifactURI: reference,
 		Layers: []modelpackports.PublishLayer{
 			{
@@ -122,7 +120,7 @@ func TestAdapterPublishAndMaterializeZipArchiveSourceReaderLayer(t *testing.T) {
 				},
 			},
 		},
-	}, auth)
+	}, directUpload), auth)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}

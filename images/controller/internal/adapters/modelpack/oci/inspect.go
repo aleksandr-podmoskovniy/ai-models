@@ -18,14 +18,11 @@ package oci
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
@@ -120,27 +117,6 @@ func RegistryBlobURL(reference, digest string) (string, error) {
 	}
 
 	return parsed.blobURL(digest), nil
-}
-
-func RegistryHTTPClient(auth modelpackports.RegistryAuth) (*http.Client, error) {
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: auth.Insecure} //nolint:gosec
-	if strings.TrimSpace(auth.CAFile) != "" {
-		caPEM, err := os.ReadFile(auth.CAFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read OCI CA file: %w", err)
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(caPEM) {
-			return nil, errors.New("failed to append OCI CA bundle")
-		}
-		tlsConfig.RootCAs = pool
-	}
-
-	return &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
-	}, nil
 }
 
 func FetchConfigBlob(

@@ -99,6 +99,19 @@ func Env(options Options) []corev1.EnvVar {
 	return env
 }
 
+func CAEnv(options Options) []corev1.EnvVar {
+	env := []corev1.EnvVar{
+		{Name: "AI_MODELS_S3_IGNORE_TLS", Value: resourcenames.BoolString(options.Insecure)},
+	}
+	if strings.TrimSpace(options.CASecretName) != "" {
+		env = append(env, corev1.EnvVar{
+			Name:  "AI_MODELS_S3_CA_FILE",
+			Value: caFilePath,
+		})
+	}
+	return env
+}
+
 func VolumeMounts(caSecretName string, extra ...corev1.VolumeMount) []corev1.VolumeMount {
 	mounts := make([]corev1.VolumeMount, 0, len(extra)+1)
 	if strings.TrimSpace(caSecretName) != "" {

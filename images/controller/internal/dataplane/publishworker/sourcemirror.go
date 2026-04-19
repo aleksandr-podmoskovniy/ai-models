@@ -23,6 +23,7 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
 	sourcemirrorobjectstore "github.com/deckhouse/ai-models/controller/internal/adapters/sourcemirror/objectstore"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 )
 
 type uploadHTTPClientProvider interface {
@@ -30,6 +31,9 @@ type uploadHTTPClientProvider interface {
 }
 
 func remoteSourceMirror(options Options) *sourcefetch.SourceMirrorOptions {
+	if publicationports.NormalizeHuggingFaceAcquisitionMode(options.HuggingFaceAcquisitionMode) != publicationports.HuggingFaceAcquisitionModeMirror {
+		return nil
+	}
 	if strings.TrimSpace(options.RawStageBucket) == "" || strings.TrimSpace(options.RawStageKeyPrefix) == "" {
 		return nil
 	}

@@ -370,6 +370,12 @@ true
 {{- default "us-east-1" (index $artifacts "region") -}}
 {{- end -}}
 
+{{- define "ai-models.huggingFaceAcquisitionMode" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
+{{- lower (default "Mirror" (index $artifacts "huggingFaceAcquisitionMode")) -}}
+{{- end -}}
+
 {{- define "ai-models.artifactsCredentialsSecretName" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
@@ -441,6 +447,14 @@ false
 
 {{- define "ai-models.dmcrServiceHost" -}}
 {{- printf "%s.%s.svc.%s" (include "ai-models.dmcrName" .) (include "ai-models.namespace" .) (include "ai-models.clusterDomain" .) -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrDirectUploadPort" -}}
+5443
+{{- end -}}
+
+{{- define "ai-models.dmcrDirectUploadEndpoint" -}}
+{{- printf "https://%s:%s" (include "ai-models.dmcrServiceHost" .) (include "ai-models.dmcrDirectUploadPort" .) -}}
 {{- end -}}
 
 {{- define "ai-models.dmcrRepositoryPrefix" -}}

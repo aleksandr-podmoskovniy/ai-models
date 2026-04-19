@@ -52,7 +52,7 @@ func validateOptions(plan publicationapp.SourceWorkerPlan, options Options) erro
 	if err := validateServiceOptions(options); err != nil {
 		return err
 	}
-	if plan.Upload != nil {
+	if sourceUsesObjectStorage(plan, options) {
 		return storageprojection.ValidateOptions("source worker", options.ObjectStorage)
 	}
 	return nil

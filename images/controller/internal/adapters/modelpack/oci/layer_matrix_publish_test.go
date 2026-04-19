@@ -28,8 +28,7 @@ import (
 func TestAdapterPublishAndMaterializeFullLayerMatrix(t *testing.T) {
 	t.Parallel()
 
-	server, auth := newWritableRegistryServer(t)
-	defer server.Close()
+	server, directUpload, auth := newDirectPublishHarness(t, directUploadTestOptions{})
 
 	modelDir := filepath.Join(t.TempDir(), "model")
 	codeDir := filepath.Join(t.TempDir(), "code")
@@ -59,7 +58,7 @@ func TestAdapterPublishAndMaterializeFullLayerMatrix(t *testing.T) {
 
 	adapter := New()
 	reference := serverReference(server.server, "published")
-	publishResult, err := adapter.Publish(context.Background(), modelpackports.PublishInput{
+	publishResult, err := adapter.Publish(context.Background(), withDirectUploadInput(modelpackports.PublishInput{
 		ArtifactURI: reference,
 		Layers: []modelpackports.PublishLayer{
 			{
@@ -96,7 +95,7 @@ func TestAdapterPublishAndMaterializeFullLayerMatrix(t *testing.T) {
 				Format:     modelpackports.LayerFormatRaw,
 			},
 		},
-	}, auth)
+	}, directUpload), auth)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
@@ -123,8 +122,7 @@ func TestAdapterPublishAndMaterializeFullLayerMatrix(t *testing.T) {
 func TestAdapterPublishAndMaterializeArchiveSourceLayer(t *testing.T) {
 	t.Parallel()
 
-	server, auth := newWritableRegistryServer(t)
-	defer server.Close()
+	server, directUpload, auth := newDirectPublishHarness(t, directUploadTestOptions{})
 
 	archivePath := filepath.Join(t.TempDir(), "checkpoint.tgz")
 	if err := writeTestGzipTar(
@@ -140,7 +138,7 @@ func TestAdapterPublishAndMaterializeArchiveSourceLayer(t *testing.T) {
 
 	adapter := New()
 	reference := serverReference(server.server, "archive-source")
-	publishResult, err := adapter.Publish(context.Background(), modelpackports.PublishInput{
+	publishResult, err := adapter.Publish(context.Background(), withDirectUploadInput(modelpackports.PublishInput{
 		ArtifactURI: reference,
 		Layers: []modelpackports.PublishLayer{
 			{
@@ -155,7 +153,7 @@ func TestAdapterPublishAndMaterializeArchiveSourceLayer(t *testing.T) {
 				},
 			},
 		},
-	}, auth)
+	}, directUpload), auth)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}

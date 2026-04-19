@@ -29,8 +29,7 @@ import (
 func TestAdapterPublishMaterializeAndRemove(t *testing.T) {
 	t.Parallel()
 
-	server, auth := newWritableRegistryServer(t)
-	defer server.Close()
+	server, directUpload, auth := newDirectPublishHarness(t, directUploadTestOptions{})
 
 	modelDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(modelDir, "nested"), 0o755); err != nil {
@@ -45,10 +44,10 @@ func TestAdapterPublishMaterializeAndRemove(t *testing.T) {
 
 	adapter := New()
 	reference := serverReference(server.server, "published")
-	publishResult, err := adapter.Publish(context.Background(), modelpackports.PublishInput{
+	publishResult, err := adapter.Publish(context.Background(), withDirectUploadInput(modelpackports.PublishInput{
 		ModelDir:    modelDir,
 		ArtifactURI: reference,
-	}, auth)
+	}, directUpload), auth)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
@@ -62,8 +61,11 @@ func TestAdapterPublishMaterializeAndRemove(t *testing.T) {
 	if publishResult.SizeBytes <= 0 {
 		t.Fatalf("Publish().SizeBytes = %d, want positive size", publishResult.SizeBytes)
 	}
-	if server.patchCount() == 0 {
-		t.Fatalf("Publish() must stream the layer via PATCH upload")
+	if got := server.patchCount(); got != 0 {
+		t.Fatalf("Publish() patchCount() = %d, want 0 on direct upload path", got)
+	}
+	if got := directUpload.uploadCalls; got == 0 {
+		t.Fatal("expected direct upload PUT calls for heavy layer")
 	}
 
 	payload, err := InspectRemote(context.Background(), reference, auth)
@@ -101,14 +103,10 @@ func TestAdapterPublishMaterializeAndRemove(t *testing.T) {
 func TestAdapterPublishRecoversFromInterruptedChunkedUpload(t *testing.T) {
 	t.Parallel()
 
-	previousChunkSize := blobUploadChunkSize
-	t.Cleanup(func() {
-		blobUploadChunkSize = previousChunkSize
+	server, directUpload, auth := newDirectPublishHarness(t, directUploadTestOptions{
+		partSizeBytes: 64,
+		failFirstPart: 2,
 	})
-	blobUploadChunkSize = 32
-
-	server, auth := newWritableRegistryServerWithTransientPatchFailure(t)
-	defer server.Close()
 
 	modelDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(modelDir, "config.json"), []byte(strings.Repeat("a", 128)), 0o644); err != nil {
@@ -120,17 +118,20 @@ func TestAdapterPublishRecoversFromInterruptedChunkedUpload(t *testing.T) {
 
 	adapter := New()
 	reference := serverReference(server.server, "published")
-	if _, err := adapter.Publish(context.Background(), modelpackports.PublishInput{
+	if _, err := adapter.Publish(context.Background(), withDirectUploadInput(modelpackports.PublishInput{
 		ModelDir:    modelDir,
 		ArtifactURI: reference,
-	}, auth); err != nil {
+	}, directUpload), auth); err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
 
-	if server.patchCount() < 2 {
-		t.Fatalf("expected multiple PATCH requests, got %d", server.patchCount())
+	if got := server.patchCount(); got != 0 {
+		t.Fatalf("Publish() patchCount() = %d, want 0 on direct upload path", got)
 	}
-	if server.statusCount() == 0 {
-		t.Fatal("expected upload status GET after interrupted PATCH")
+	if got := directUpload.listPartsCalls; got == 0 {
+		t.Fatal("expected direct upload recovery via listParts()")
+	}
+	if got := directUpload.partAttemptCount(2); got < 2 {
+		t.Fatalf("part 2 attempt count = %d, want retry after interrupted direct upload", got)
 	}
 }

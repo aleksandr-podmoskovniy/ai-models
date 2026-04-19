@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
@@ -171,6 +172,13 @@ func TestOptionsValidateRejectsMissingRequiredFields(t *testing.T) {
 			},
 			wantErr: "max concurrent workers",
 		},
+		{
+			name: "unsupported huggingface acquisition mode",
+			mutate: func(options *Options) {
+				options.HuggingFaceAcquisition = "broken"
+			},
+			wantErr: "huggingface acquisition mode",
+		},
 	}
 
 	for _, tc := range cases {
@@ -189,5 +197,73 @@ func TestOptionsValidateRejectsMissingRequiredFields(t *testing.T) {
 				t.Fatalf("Validate() error = %q, want substring %q", got, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestOptionsValidateDirectHuggingFaceDoesNotRequireObjectStorage(t *testing.T) {
+	t.Parallel()
+
+	options := testOptions()
+	options.HuggingFaceAcquisition = publicationports.HuggingFaceAcquisitionModeDirect
+	options.ObjectStorage = storageprojection.Options{}
+
+	plan := publicationapp.SourceWorkerPlan{
+		SourceType: modelsv1alpha1.ModelSourceTypeHuggingFace,
+		HuggingFace: &publicationapp.HuggingFaceSourcePlan{
+			RepoID: "owner/model",
+		},
+	}
+
+	if err := validateOptions(plan, options); err != nil {
+		t.Fatalf("validateOptions() error = %v", err)
+	}
+}
+
+func TestOptionsValidateMirrorHuggingFaceRequiresObjectStorage(t *testing.T) {
+	t.Parallel()
+
+	options := testOptions()
+	options.HuggingFaceAcquisition = publicationports.HuggingFaceAcquisitionModeMirror
+	options.ObjectStorage = storageprojection.Options{}
+
+	plan := publicationapp.SourceWorkerPlan{
+		SourceType: modelsv1alpha1.ModelSourceTypeHuggingFace,
+		HuggingFace: &publicationapp.HuggingFaceSourcePlan{
+			RepoID: "owner/model",
+		},
+	}
+
+	err := validateOptions(plan, options)
+	if err == nil {
+		t.Fatal("expected object storage validation error")
+	}
+	if got, want := err.Error(), "object storage"; !strings.Contains(got, want) {
+		t.Fatalf("validateOptions() error = %q, want substring %q", got, want)
+	}
+}
+
+func TestOptionsValidateRequiresUploadEndpoint(t *testing.T) {
+	t.Parallel()
+
+	options := testOptions()
+	options.HuggingFaceAcquisition = publicationports.HuggingFaceAcquisitionModeDirect
+	options.OCIDirectUploadEndpoint = ""
+	options.ObjectStorage = storageprojection.Options{
+		CASecretName: "ai-models-artifacts-ca",
+	}
+
+	plan := publicationapp.SourceWorkerPlan{
+		SourceType: modelsv1alpha1.ModelSourceTypeHuggingFace,
+		HuggingFace: &publicationapp.HuggingFaceSourcePlan{
+			RepoID: "owner/model",
+		},
+	}
+
+	err := validateOptions(plan, options)
+	if err == nil {
+		t.Fatal("expected OCI direct upload endpoint validation error")
+	}
+	if got, want := err.Error(), "OCI direct upload endpoint"; !strings.Contains(got, want) {
+		t.Fatalf("validateOptions() error = %q, want substring %q", got, want)
 	}
 }

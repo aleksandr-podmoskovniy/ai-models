@@ -13,12 +13,15 @@ Research-to-runtime bring-up slice. Работы уже включают не т
   `KeyError: model.layers.{0,13,27}.self_attn.attn`;
 - `DeepSeek-R1-Distill-Qwen-14B` на том же профиле падает на
   `KeyError: model.layers.{0,16}.self_attn.attn`;
+- локальный hotfix на `vLLM 0.15.0` уже дал сигнал о классе проблемы, но не
+  должен оставаться baseline решением;
 - текущий следующий slice: сохранить baseline на
-  `DeepSeek-R1-Distill-Qwen-14B` и добить exact runtime blocker без замены
-  модели.
-- выбранный pragmatic fix для следующего rollout:
-  внедрить runtime hotfix через `sitecustomize.py` ConfigMap в
-  `ray-head/ray-worker`, не вводя custom image и не меняя exact модель.
+  `DeepSeek-R1-Distill-Qwen-14B`, убрать локальный hotfix и перейти на pinned
+  nightly `rayproject/ray-llm:nightly.260418.64385a-py311-cu128`
+  (`vLLM >= 0.19.0`) для повторной проверки exact `PP=3` runtime path;
+- `KubeRay operator` в `dvp` не требует отдельного refactor: chart уже
+  приведён к upstream `kuberay-operator 1.6.0`, а `ap-values.yaml`
+  провалидирован на этом baseline через `helm template`.
 
 ## Orchestration
 

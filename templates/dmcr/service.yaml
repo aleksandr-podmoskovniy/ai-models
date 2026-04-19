@@ -13,6 +13,10 @@ spec:
       port: 443
       protocol: TCP
       targetPort: https
+    - name: https-direct-upload
+      port: {{ include "ai-models.dmcrDirectUploadPort" . | int }}
+      protocol: TCP
+      targetPort: https-direct-upload
     - name: https-metrics
       port: 8002
       protocol: TCP

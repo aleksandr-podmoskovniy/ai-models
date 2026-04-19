@@ -30,12 +30,11 @@ import (
 func TestAdapterPublishAndMaterializeObjectSourceLayer(t *testing.T) {
 	t.Parallel()
 
-	server, auth := newWritableRegistryServer(t)
-	defer server.Close()
+	server, directUpload, auth := newDirectPublishHarness(t, directUploadTestOptions{})
 
 	adapter := New()
 	reference := serverReference(server.server, "object-source")
-	publishResult, err := adapter.Publish(context.Background(), modelpackports.PublishInput{
+	publishResult, err := adapter.Publish(context.Background(), withDirectUploadInput(modelpackports.PublishInput{
 		ArtifactURI: reference,
 		Layers: []modelpackports.PublishLayer{
 			{
@@ -64,7 +63,7 @@ func TestAdapterPublishAndMaterializeObjectSourceLayer(t *testing.T) {
 				},
 			},
 		},
-	}, auth)
+	}, directUpload), auth)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
@@ -127,14 +126,10 @@ type fakeObjectFile struct {
 func TestAdapterPublishObjectSourceUsesRangeReadsOnInterruptedUpload(t *testing.T) {
 	t.Parallel()
 
-	previousChunkSize := blobUploadChunkSize
-	t.Cleanup(func() {
-		blobUploadChunkSize = previousChunkSize
+	server, directUpload, auth := newDirectPublishHarness(t, directUploadTestOptions{
+		partSizeBytes: 64,
+		failFirstPart: 2,
 	})
-	blobUploadChunkSize = 32
-
-	server, auth := newWritableRegistryServerWithTransientPatchFailure(t)
-	defer server.Close()
 
 	reader := &fakeObjectReader{
 		files: map[string]fakeObjectFile{
@@ -151,7 +146,7 @@ func TestAdapterPublishObjectSourceUsesRangeReadsOnInterruptedUpload(t *testing.
 
 	adapter := New()
 	reference := serverReference(server.server, "object-source-ranged")
-	if _, err := adapter.Publish(context.Background(), modelpackports.PublishInput{
+	if _, err := adapter.Publish(context.Background(), withDirectUploadInput(modelpackports.PublishInput{
 		ArtifactURI: reference,
 		Layers: []modelpackports.PublishLayer{
 			{
@@ -169,7 +164,7 @@ func TestAdapterPublishObjectSourceUsesRangeReadsOnInterruptedUpload(t *testing.
 				},
 			},
 		},
-	}, auth); err != nil {
+	}, directUpload), auth); err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
 

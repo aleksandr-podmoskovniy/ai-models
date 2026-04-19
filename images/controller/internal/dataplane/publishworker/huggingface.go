@@ -25,6 +25,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
@@ -39,6 +40,7 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 	logger := slog.Default().With(
 		slog.String("sourceType", string(modelsv1alpha1.ModelSourceTypeHuggingFace)),
 		slog.String("sourceRepoID", strings.TrimSpace(options.HFModelID)),
+		slog.String("hfAcquisitionMode", string(publicationports.NormalizeHuggingFaceAcquisitionMode(options.HuggingFaceAcquisitionMode))),
 	)
 
 	fetchStarted := time.Now()

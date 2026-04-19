@@ -50,12 +50,14 @@ func testOperationRequest() publicationports.Request {
 func testOptions() Options {
 	return Options{
 		RuntimeOptions: RuntimeOptions{
-			Namespace:             "d8-ai-models",
-			Image:                 "backend:latest",
-			ImagePullSecretName:   "ai-models-module-registry",
-			ServiceAccountName:    "ai-models-controller",
-			OCIRepositoryPrefix:   "registry.internal.local/ai-models",
-			OCIRegistrySecretName: "ai-models-dmcr-auth-write",
+			Namespace:               "d8-ai-models",
+			Image:                   "backend:latest",
+			ImagePullSecretName:     "ai-models-module-registry",
+			ServiceAccountName:      "ai-models-controller",
+			OCIRepositoryPrefix:     "registry.internal.local/ai-models",
+			OCIRegistrySecretName:   "ai-models-dmcr-auth-write",
+			OCIDirectUploadEndpoint: "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443",
+			HuggingFaceAcquisition:  publicationports.HuggingFaceAcquisitionModeMirror,
 			ObjectStorage: storageprojection.Options{
 				Bucket:                "ai-models",
 				EndpointURL:           "https://s3.example.com",

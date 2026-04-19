@@ -31,7 +31,7 @@ import (
 func uploadPublishLayers(
 	ctx context.Context,
 	client *http.Client,
-	artifactURI string,
+	input modelpackports.PublishInput,
 	auth modelpackports.RegistryAuth,
 	layers []modelpackports.PublishLayer,
 	descriptors []publishLayerDescriptor,
@@ -45,7 +45,7 @@ func uploadPublishLayers(
 			slog.String("layerTargetPath", descriptors[index].TargetPath),
 			slog.String("layerMediaType", descriptors[index].MediaType),
 		)
-		if err := pushLayerResumable(ctx, client, artifactURI, auth, layer, descriptors[index]); err != nil {
+		if err := uploadPublishLayer(ctx, client, input, auth, layer, descriptors[index]); err != nil {
 			return err
 		}
 		logger.Info(
@@ -57,6 +57,17 @@ func uploadPublishLayers(
 		)
 	}
 	return nil
+}
+
+func uploadPublishLayer(
+	ctx context.Context,
+	client *http.Client,
+	input modelpackports.PublishInput,
+	auth modelpackports.RegistryAuth,
+	layer modelpackports.PublishLayer,
+	descriptor publishLayerDescriptor,
+) error {
+	return pushLayerDirectToBackingStorage(ctx, client, input, auth, layer, descriptor)
 }
 
 func uploadPublishConfig(

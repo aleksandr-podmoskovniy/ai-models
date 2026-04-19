@@ -27,15 +27,15 @@
 - namespace для сервиса: `kuberay-projects`
 - namespace для оператора: `kuberay-operator`
 - `KubeRay` operator через `Argo CD`
-- образ: `rayproject/ray-llm:2.54.0-py311-cu128`
-- `Ray 2.54.0`
-- `vLLM 0.15.0`
+- образ: `rayproject/ray-llm:nightly.260418.64385a-py311-cu128`
+- `Ray 2.55.x` lineage
+- `vLLM >= 0.19.0`
 - модель: `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`
 - `dtype=half`
 - `tensor_parallel_size=1`
 - `pipeline_parallel_size=3`
-- `max_model_len=32768`
-- `max_num_seqs=5`
+- `max_model_len=8192`
+- `max_num_seqs=1`
 - storage class: `ceph-fs-nvme-sc`
 - ingress host: `openai-api.k8s-dvp.apiac.ru`
 
@@ -47,10 +47,10 @@
 | --- | --- |
 | `Argo CD` app для CRD | `kuberay-operator-crds` |
 | `Argo CD` app для оператора | `kuberay-operator` |
-| `Argo CD` app для `memlock` | `kuberay-node-memlock` |
+| `memlock` на GPU-нодах | `apply-containerd-memlock.sh` |
 | `Argo CD` app для сервиса | `kuberay-service-v100-rdma` |
-| `RayService` | `llm-v100-rdma-qwen3-14b` |
-| стабильный API service | `llm-v100-rdma-qwen3-14b-serve-svc` |
+| `RayService` | `llm-v100-rdma-deepseek-r1-qwen14b` |
+| стабильный API service | `llm-v100-rdma-deepseek-r1-qwen14b-serve-svc` |
 | внешний API host | `openai-api.k8s-dvp.apiac.ru` |
 
 ### Три worker с `GPU + RDMA`
@@ -87,10 +87,9 @@
 
 - `argo-app/01-helm-kuberay-operator-crds.yaml`
 - `argo-app/02-helm-kuberay-operator.yaml`
-- `argo-app/05-helm-kuberay-node-memlock.yaml`
-- `argo-app/10-helm-kuberay-service-v100-rdma.yaml`
+- `argo-app/10-kuberay-service-v100-rdma.yaml`
+- `apply-containerd-memlock.sh`
 - `charts/ray-service-v100-rdma/20-v100-rdma-deepseek-r1-qwen14b-rayservice.yaml`
-- `charts/ray-service-v100-rdma/11-vllm-runtime-hotfix-configmap.yaml`
 - `charts/ray-service-v100-rdma/12-api-ingress.yaml`
 - `charts/ray-service-v100-rdma/03-hf-secret.yaml.example`
 - `charts/ray-service-v100-rdma/README.ru.md`
@@ -118,12 +117,8 @@
 ### `memlock` на GPU-нодах
 
 Для текущего `NCCL over RDMA` на `V100` нужно, чтобы worker pod поднимались с
-нормальным `RLIMIT_MEMLOCK`. На стенде для этого уже есть отдельный `Argo CD`
-компонент:
-
-- `kuberay-node-memlock`
-
-Альтернативный ручной путь для тех же нод:
+нормальным `RLIMIT_MEMLOCK`. В `dvp` это сейчас intentionally вынесено в
+локальный standalone-скрипт, а не в отдельный `Argo CD` app:
 
 ```text
 /Users/myskat_90/Обучение/gitlab.ap.com/k8s-config/argo-projects/k8s-dvp.apiac.ru/kuberay/apply-containerd-memlock.sh
@@ -141,23 +136,41 @@ cat /proc/self/limits | grep 'Max locked memory'
 - `unlimited`
 - или эквивалентный высокий лимит без `65536 bytes`.
 
-## Что создаёт chart сервиса
+## Что создаёт manifest-каталог сервиса
 
-`charts/ray-service-v100-rdma` materialize-ит:
+`charts/ray-service-v100-rdma` materialize-ит как plain manifests:
 
 - namespace `kuberay-projects`
 - `ServiceAccount kuberay-llm`
 - `PersistentVolumeClaim model-cache-pvc`
 - внешний `Redis` для `Ray` fault tolerance
 - namespaced `ResourceClaimTemplate` под текущие `GPU/RDMA` пары
-- `RayService llm-v100-rdma-qwen3-14b`
+- `RayService llm-v100-rdma-deepseek-r1-qwen14b`
 - `Ingress llm-v100-rdma-api`
 
-Почему имя `RayService` до сих пор содержит `qwen3`:
+Имена активных ресурсов выровнены под текущий baseline:
 
-- это сознательный in-place upgrade path;
-- объект уже использовался в реальном rollout;
-- смена модели делается без rename самого `RayService`.
+- `RayService llm-v100-rdma-deepseek-r1-qwen14b`
+- стабильный сервис `llm-v100-rdma-deepseek-r1-qwen14b-serve-svc`
+
+## Что с operator chart и service manifests
+
+Каталог `charts/kuberay-operator` в `dvp` не является отдельной самодельной
+форкой. Официальный chart уже скопирован в `dvp` и дальше обслуживается как
+локальный source of truth.
+
+Текущий baseline там:
+
+- `KubeRay operator v1.6.0`
+- шаблоны совпадают с официальным каталогом
+- отдельный refactor operator chart здесь не нужен
+
+При этом каталог `charts/ray-service-v100-rdma` теперь тоже не helmized:
+
+- `Chart.yaml`, `values.yaml` и `templates/` там убраны;
+- `Argo CD` читает его как обычный каталог raw manifests;
+- это самостоятельный plain-manifest каталог внутри `dvp`, без внешнего
+  `Argo` source path.
 
 ## Рабочая последовательность запуска
 
@@ -200,19 +213,7 @@ KUBECONFIG=/Users/myskat_90/.kube/k8s-config kubectl -n kuberay-operator get dep
 
 ### Шаг 3. Поднять `memlock` на GPU-нодах
 
-Предпочтительный путь через `Argo CD`:
-
-```bash
-argocd app sync kuberay-node-memlock
-```
-
-Проверка:
-
-```bash
-KUBECONFIG=/Users/myskat_90/.kube/k8s-config kubectl -n d8-system get nodegroupconfigurations.deckhouse.io
-```
-
-Если нужен срочный ручной обход:
+Выполнить локальный скрипт из `dvp` каталога:
 
 ```bash
 /Users/myskat_90/Обучение/gitlab.ap.com/k8s-config/argo-projects/k8s-dvp.apiac.ru/kuberay/apply-containerd-memlock.sh --ssh
@@ -261,11 +262,11 @@ KUBECONFIG=/Users/myskat_90/.kube/k8s-config kubectl -n kuberay-projects get ray
 
 Исправное состояние:
 
-- `RayService llm-v100-rdma-qwen3-14b` в `Running`;
+- `RayService llm-v100-rdma-deepseek-r1-qwen14b` в `Running`;
 - `RayCluster ...` в `ready`;
 - `head` и три `worker` pod в `Running`;
 - `model-cache-pvc` в `Bound`;
-- есть стабильный сервис `llm-v100-rdma-qwen3-14b-serve-svc`;
+- есть стабильный сервис `llm-v100-rdma-deepseek-r1-qwen14b-serve-svc`;
 - ingress `llm-v100-rdma-api` существует.
 
 ## Что делает `RayService`
@@ -278,8 +279,8 @@ KUBECONFIG=/Users/myskat_90/.kube/k8s-config kubectl -n kuberay-projects get ray
 - `pipeline_parallel_size: 3`
 - `dtype: half`
 - `gpu_memory_utilization: 0.90`
-- `max_model_len: 32768`
-- `max_num_seqs: 5`
+- `max_model_len: 8192`
+- `max_num_seqs: 1`
 
 Рабочая разрезка:
 
@@ -287,50 +288,34 @@ KUBECONFIG=/Users/myskat_90/.kube/k8s-config kubectl -n kuberay-projects get ray
 - placement group на три bundle по `CPU:8, GPU:1`;
 - один worker pod на каждую `V100`.
 
-## Почему в chart есть runtime hotfix
+## Почему в manifest-каталоге больше нет runtime hotfix
 
-Файл:
+Раньше в этом каталоге был локальный workaround через `sitecustomize.py`, потому что
+на `rayproject/ray-llm:2.54.0-py311-cu128` профиль
+`DeepSeek-R1-Distill-Qwen-14B + V1 + PP=3` доходил до рабочего `RDMA/NCCL`,
+но падал внутри `initialize_attn_backend`.
 
-```text
-charts/ray-service-v100-rdma/11-vllm-runtime-hotfix-configmap.yaml
-```
+Для текущего эксперимента этот hotfix intentionally убран:
 
-Нужен потому, что на публичном `rayproject/ray-llm:2.54.0-py311-cu128`
-текущий exact профиль `DeepSeek-R1-Distill-Qwen-14B + V1 + PP=3` уже
-доходил до рабочего `RDMA/NCCL`, но падал внутри `vLLM` distributed init.
-
-Hotfix:
-
-- синхронизирует `rpc_rank/global_rank`;
-- делает `get_layers_from_vllm_config` безопасным для отсутствующих слоёв;
-- фильтрует non-local `layer_names` в `initialize_attn_backend`.
-
-Он ставится только в `ray-worker` через `postStart`, чтобы не ломать
-служебный `wait-gcs-ready`.
-
-Признак, что hotfix реально применился:
-
-```bash
-KUBECONFIG=/Users/myskat_90/.kube/k8s-config \
-kubectl -n kuberay-projects exec <worker-pod> -c ray-worker -- \
-  bash -lc 'grep -R -h "apiac.vllm_hotfix" /tmp/ray/session_latest/logs/worker-* | tail -n 20'
-```
-
-В логах должны быть строки вида:
-
-```text
-INFO apiac.vllm_hotfix: applied adjust_rank hotfix to WorkerWrapperBase
-INFO apiac.vllm_hotfix: applied get_layers_from_vllm_config hotfix
-INFO apiac.vllm_hotfix: applied initialize_attn_backend hotfix
-```
+- сервис переведён на pinned nightly
+  `rayproject/ray-llm:nightly.260418.64385a-py311-cu128`;
+- модель оставлена той же;
+- профиль ужат до smoke-нагрузки `8192 x 1`;
+- цель — проверить, закрывает ли новый upstream `vLLM >= 0.19.0`
+  старый `PP=3` runtime fail без локальных monkey-patch.
 
 ## Live-проверки после раскатки
 
 ### 1. Проверить `Ray`
 
 ```bash
+HEAD_POD=$(
+  KUBECONFIG=/Users/myskat_90/.kube/k8s-config \
+  kubectl -n kuberay-projects get pods -l ray.io/node-type=head -o jsonpath='{.items[0].metadata.name}'
+)
+
 KUBECONFIG=/Users/myskat_90/.kube/k8s-config \
-kubectl -n kuberay-projects exec llm-v100-rdma-qwen3-14b-56lq2-head-tfg2s -c ray-head -- \
+kubectl -n kuberay-projects exec "$HEAD_POD" -c ray-head -- \
   bash -lc 'ray status && echo "=====SERVE=====" && serve status'
 ```
 
@@ -402,8 +387,13 @@ kubectl -n kuberay-projects exec <worker-pod> -c ray-worker -- \
 Пример для `w1-c2`:
 
 ```bash
+W1C2_POD=$(
+  KUBECONFIG=/Users/myskat_90/.kube/k8s-config \
+  kubectl -n kuberay-projects get pods -l ray.io/node-type=worker,worker.apiac.ru/name=v100-w1-c2 -o jsonpath='{.items[0].metadata.name}'
+)
+
 KUBECONFIG=/Users/myskat_90/.kube/k8s-config \
-kubectl -n kuberay-projects exec llm-v100-rdma-qwen3-14b-56lq2-v100-w1-c2-worker-5m7z6 -c ray-worker -- \
+kubectl -n kuberay-projects exec "$W1C2_POD" -c ray-worker -- \
   bash -lc 'ibv_devinfo -d mlx5_0 | egrep "state:|active_mtu:|link_layer:" && cat /sys/class/infiniband/mlx5_0/ports/1/gids/3'
 ```
 
@@ -420,9 +410,9 @@ kubectl -n kuberay-projects exec llm-v100-rdma-qwen3-14b-56lq2-v100-w1-c2-worker
 текущей живой межузловой паре `Ray` worker:
 
 - server:
-  `llm-v100-rdma-qwen3-14b-56lq2-v100-w1-c2-worker-5m7z6`
+  worker из группы `v100-w1-c2`
 - client:
-  `llm-v100-rdma-qwen3-14b-56lq2-v100-w3-01-worker-lxsg5`
+  worker из группы `v100-w3-01`
 - device:
   `mlx5_0`
 - direct IP:

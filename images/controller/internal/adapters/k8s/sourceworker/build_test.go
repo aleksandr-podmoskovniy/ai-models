@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
@@ -78,10 +80,70 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	if !foundLogLevel {
 		t.Fatal("expected LOG_LEVEL env")
 	}
+	assertEnvValue(t, pod.Spec.Containers[0].Env, "AI_MODELS_S3_BUCKET", "ai-models")
 	for _, volume := range pod.Spec.Volumes {
 		if volume.Name == "work" {
 			t.Fatalf("did not expect legacy work volume in sourceworker pod: %#v", volume)
 		}
+	}
+}
+
+func TestBuildDirectHuggingFacePublicationOmitsMirrorArgsAndArtifactsProjection(t *testing.T) {
+	t.Parallel()
+
+	request := testOperationRequest()
+	options := testOptions()
+	options.HuggingFaceAcquisition = publicationports.HuggingFaceAcquisitionModeDirect
+
+	pod, err := Build(request, options, "")
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	assertContains(t, pod.Spec.Containers[0].Args, "--hf-acquisition-mode")
+	assertContains(t, pod.Spec.Containers[0].Args, "direct")
+	assertNotContains(t, pod.Spec.Containers[0].Args, "--raw-stage-bucket")
+	assertNotContains(t, pod.Spec.Containers[0].Args, "--raw-stage-key-prefix")
+	assertNoEnv(t, pod.Spec.Containers[0].Env, "AI_MODELS_S3_BUCKET")
+	assertNoEnv(t, pod.Spec.Containers[0].Env, "AWS_ACCESS_KEY_ID")
+	for _, volume := range pod.Spec.Volumes {
+		if volume.Name == "artifacts-ca" {
+			t.Fatalf("did not expect artifacts-ca volume in direct huggingface pod: %#v", volume)
+		}
+	}
+}
+
+func TestBuildProjectsOnlyArtifactsCAForDirectLayerUpload(t *testing.T) {
+	t.Parallel()
+
+	request := testOperationRequest()
+	options := testOptions()
+	options.HuggingFaceAcquisition = publicationports.HuggingFaceAcquisitionModeDirect
+	options.OCIDirectUploadEndpoint = "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443"
+	options.ObjectStorage.CASecretName = "ai-models-artifacts-ca"
+
+	pod, err := Build(request, options, "")
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	assertNotContains(t, pod.Spec.Containers[0].Args, "--oci-upload-mode")
+	assertContains(t, pod.Spec.Containers[0].Args, "--oci-direct-upload-endpoint")
+	assertContains(t, pod.Spec.Containers[0].Args, options.OCIDirectUploadEndpoint)
+	assertNoEnv(t, pod.Spec.Containers[0].Env, "AWS_ACCESS_KEY_ID")
+	assertNoEnv(t, pod.Spec.Containers[0].Env, "AWS_SECRET_ACCESS_KEY")
+	assertNoEnv(t, pod.Spec.Containers[0].Env, "AI_MODELS_S3_BUCKET")
+	assertEnvValue(t, pod.Spec.Containers[0].Env, "AI_MODELS_S3_CA_FILE", "/etc/ai-models/artifacts-ca/ca.crt")
+
+	foundArtifactsCA := false
+	for _, volume := range pod.Spec.Volumes {
+		if volume.Name == "artifacts-ca" {
+			foundArtifactsCA = true
+			break
+		}
+	}
+	if !foundArtifactsCA {
+		t.Fatal("expected artifacts-ca volume for direct layer upload transport")
 	}
 }
 
@@ -172,4 +234,39 @@ func assertContains(t *testing.T, values []string, want string) {
 	}
 
 	t.Fatalf("expected %q in %v", want, values)
+}
+
+func assertNotContains(t *testing.T, values []string, unwanted string) {
+	t.Helper()
+
+	for _, value := range values {
+		if value == unwanted {
+			t.Fatalf("did not expect %q in %v", unwanted, values)
+		}
+	}
+}
+
+func assertNoEnv(t *testing.T, env []corev1.EnvVar, name string) {
+	t.Helper()
+
+	for _, entry := range env {
+		if entry.Name == name {
+			t.Fatalf("did not expect env %q in %#v", name, env)
+		}
+	}
+}
+
+func assertEnvValue(t *testing.T, env []corev1.EnvVar, name, want string) {
+	t.Helper()
+
+	for _, entry := range env {
+		if entry.Name != name {
+			continue
+		}
+		if got := entry.Value; got != want {
+			t.Fatalf("env %q = %q, want %q", name, got, want)
+		}
+		return
+	}
+	t.Fatalf("expected env %q in %#v", name, env)
 }

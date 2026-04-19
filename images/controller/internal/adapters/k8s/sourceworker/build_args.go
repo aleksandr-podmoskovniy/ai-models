@@ -34,13 +34,21 @@ func buildArgs(
 	args := []string{
 		"--artifact-uri", artifactURI,
 		"--source-type", string(plan.SourceType),
+		"--oci-direct-upload-endpoint", strings.TrimSpace(options.OCIDirectUploadEndpoint),
 	}
-	return append(args, sourceArgs(plan, request.Owner.UID, options.ObjectStorage.Bucket)...)
+	if plan.HuggingFace != nil {
+		args = append(args, "--hf-acquisition-mode", string(options.HuggingFaceAcquisition))
+	}
+	return append(args, sourceArgs(plan, request.Owner.UID, options.ObjectStorage.Bucket, options.HuggingFaceAcquisition)...)
 }
 
-func sourceArgs(plan publicationapp.SourceWorkerPlan, ownerUID types.UID, rawBucket string) []string {
+func sourceArgs(plan publicationapp.SourceWorkerPlan, ownerUID types.UID, rawBucket string, modes ...publicationports.HuggingFaceAcquisitionMode) []string {
 	if plan.HuggingFace != nil {
-		return append(huggingFaceArgs(plan.HuggingFace), remoteRawStageArgs(ownerUID, rawBucket)...)
+		mode := publicationports.HuggingFaceAcquisitionModeMirror
+		if len(modes) > 0 {
+			mode = publicationports.NormalizeHuggingFaceAcquisitionMode(modes[0])
+		}
+		return append(huggingFaceArgs(plan.HuggingFace), remoteRawStageArgs(ownerUID, rawBucket, mode)...)
 	}
 	if plan.Upload != nil {
 		return uploadArgs(plan.Upload)
@@ -67,7 +75,10 @@ func uploadArgs(source *publicationapp.UploadSourcePlan) []string {
 	return args
 }
 
-func remoteRawStageArgs(ownerUID types.UID, rawBucket string) []string {
+func remoteRawStageArgs(ownerUID types.UID, rawBucket string, mode publicationports.HuggingFaceAcquisitionMode) []string {
+	if publicationports.NormalizeHuggingFaceAcquisitionMode(mode) != publicationports.HuggingFaceAcquisitionModeMirror {
+		return nil
+	}
 	if strings.TrimSpace(rawBucket) == "" {
 		return nil
 	}

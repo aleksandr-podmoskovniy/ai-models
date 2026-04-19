@@ -26,7 +26,8 @@ module contract for:
 `artifacts` defines the shared S3-compatible storage for ai-models byte paths.
 The split inside the bucket is fixed by runtime code:
 
-- `raw/` for controller-owned upload staging and source mirror;
+- `raw/` for controller-owned upload staging and, when
+  `artifacts.huggingFaceAcquisitionMode=Mirror`, the temporary source mirror;
 - `dmcr/` for published OCI artifacts in the internal `DMCR`;
 - optional future append-only module data under separate fixed prefixes.
 
@@ -44,13 +45,38 @@ module runtime or copied from the global HTTPS `CustomCertificate` path.
 
 The public runtime path for models is now controller-owned:
 
-- `Model` / `ClusterModel` with `spec.source.url` fetch remote bytes through the
-  controller-owned source mirror path;
+- `Model` / `ClusterModel` with `spec.source.url` use one of two cluster-level
+  acquisition modes:
+  - `artifacts.huggingFaceAcquisitionMode=Mirror`:
+    `HuggingFace -> controller-owned source mirror -> native OCI publish`;
+  - `artifacts.huggingFaceAcquisitionMode=Direct`:
+    `HuggingFace -> direct remote object source -> native OCI publish`;
 - `spec.source.upload` uses the controller-owned upload-session path;
 - both paths publish OCI `ModelPack` artifacts into the internal `DMCR`.
 
+The trade-off is explicit:
+
+- `Mirror` keeps a durable intermediate copy in object storage and makes
+  re-publish/resume on the ingest boundary more predictable;
+- `Direct` removes that extra full copy and speeds up the first import, but the
+  publication depends directly on `HuggingFace` availability and throughput.
+
+There is no separate upload-mode choice for heavy layer blobs published into
+`DMCR`. The canonical byte path is now fixed:
+
+- `publish-worker -> DMCR direct-upload helper -> DMCR backing storage`.
+
+`DMCR` still owns authentication, final blob/link materialization, and the
+published artifact contract, but the thick byte stream no longer goes through
+the registry `PATCH` path. This removes `DMCR` itself as the network bottleneck
+on the heavy upload path.
+
+In the current bounded slice direct upload affects only heavy layer blobs. The
+`config` blob, manifest publish, and final remote inspect still use the normal
+registry path so the internal contract changes one responsibility at a time.
+
 The successful publication worker path no longer uses a local workspace/PVC.
-`HuggingFace`, source mirror, and staged upload publish through
+`HuggingFace` in both modes and staged upload publish through
 object-source/archive-source streaming semantics. The only local bounded
 storage contract left for the publish worker is the container
 `ephemeral-storage` request/limit for logs and writable layer usage.

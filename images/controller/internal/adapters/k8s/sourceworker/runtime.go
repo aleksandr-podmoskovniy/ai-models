@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
+	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -34,7 +35,9 @@ type RuntimeOptions struct {
 	OCIInsecure             bool
 	OCIRegistrySecretName   string
 	OCIRegistryCASecretName string
+	OCIDirectUploadEndpoint string
 	ObjectStorage           storageprojection.Options
+	HuggingFaceAcquisition  publicationports.HuggingFaceAcquisitionMode
 	ImagePullPolicy         corev1.PullPolicy
 	Resources               corev1.ResourceRequirements
 }
@@ -43,6 +46,7 @@ func NormalizeRuntimeOptions(options RuntimeOptions) RuntimeOptions {
 	if options.ImagePullPolicy == "" {
 		options.ImagePullPolicy = corev1.PullIfNotPresent
 	}
+	options.HuggingFaceAcquisition = publicationports.NormalizeHuggingFaceAcquisitionMode(options.HuggingFaceAcquisition)
 	return options
 }
 
@@ -50,6 +54,9 @@ func ValidateRuntimeOptions(component string, options RuntimeOptions) error {
 	component = strings.TrimSpace(component)
 	if component == "" {
 		return errors.New("source worker runtime component name must not be empty")
+	}
+	if err := publicationports.ValidateHuggingFaceAcquisitionMode(options.HuggingFaceAcquisition); err != nil {
+		return fmt.Errorf("%s %w", component, err)
 	}
 
 	switch {
@@ -63,6 +70,8 @@ func ValidateRuntimeOptions(component string, options RuntimeOptions) error {
 		return fmt.Errorf("%s OCI repository prefix must not be empty", component)
 	case strings.TrimSpace(options.OCIRegistrySecretName) == "":
 		return fmt.Errorf("%s OCI registry secret name must not be empty", component)
+	case strings.TrimSpace(options.OCIDirectUploadEndpoint) == "":
+		return fmt.Errorf("%s OCI direct upload endpoint must not be empty", component)
 	default:
 		return validateRuntimeResources(component, options.Resources)
 	}

@@ -307,8 +307,9 @@
 
 - `KubeRay` остаётся рекомендуемым способом запускать Ray на Kubernetes:
   <https://docs.ray.io/en/latest/cluster/kubernetes/index.html>
-- текущие примеры в документации используют линейку `KubeRay 1.5.1`:
-  <https://docs.ray.io/en/latest/cluster/kubernetes/user-guides/upgrade-guide.html>
+- текущий upstream helm release для `kuberay-operator`:
+  `1.6.0` от `19 Mar 2026`:
+  <https://github.com/ray-project/kuberay-helm/releases>
 - `RayCluster` и `RayService` должны использовать контейнерные образы с той же
   версией `Ray`, что указана в `spec.rayVersion`, а в образе должен быть
   `wget`:
@@ -316,7 +317,7 @@
 
 Практический pin для внешнего `k8s-config` deployment bundle:
 
-- `KubeRay operator`: `1.5.1`
+- `KubeRay operator`: `1.6.0`
 - `spec.rayVersion`: `2.54.0`
 - образ: `rayproject/ray-llm:2.54.0-py311-cu128`
 - фактический `vLLM` внутри этого образа: `0.15.0`
