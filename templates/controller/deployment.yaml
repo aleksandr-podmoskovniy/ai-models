@@ -70,7 +70,7 @@ spec:
             - --publication-oci-credentials-secret-name={{ include "ai-models.dmcrWriteAuthSecretName" . }}
             - --publication-oci-ca-secret-name={{ include "ai-models.dmcrCASecretName" . }}
             - --publication-oci-direct-upload-endpoint={{ include "ai-models.dmcrDirectUploadEndpoint" . }}
-            - --publication-huggingface-acquisition-mode={{ include "ai-models.huggingFaceAcquisitionMode" . }}
+            - --publication-source-acquisition-mode={{ include "ai-models.sourceAcquisitionMode" . }}
             - --artifacts-bucket={{ include "ai-models.artifactsBucket" . }}
             - --artifacts-s3-endpoint-url={{ include "ai-models.artifactsEndpoint" . }}
             - --artifacts-s3-region={{ include "ai-models.artifactsRegion" . }}

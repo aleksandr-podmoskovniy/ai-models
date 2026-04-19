@@ -86,9 +86,10 @@ func TestRemoteSourceMirrorPropagatesUploadHTTPClient(t *testing.T) {
 	staging := &fakeUploadStagingWithHTTPClient{httpClient: httpClient}
 
 	options := remoteSourceMirror(Options{
-		RawStageBucket:    "artifacts",
-		RawStageKeyPrefix: "raw/1111-2222/source-url",
-		UploadStaging:     staging,
+		SourceAcquisitionMode: publicationports.SourceAcquisitionModeMirror,
+		RawStageBucket:        "artifacts",
+		RawStageKeyPrefix:     "raw/1111-2222/source-url",
+		UploadStaging:         staging,
 	})
 	if options == nil {
 		t.Fatal("expected source mirror options")
@@ -105,10 +106,10 @@ func TestRemoteSourceMirrorDisabledForDirectMode(t *testing.T) {
 	staging := &fakeUploadStagingWithHTTPClient{httpClient: httpClient}
 
 	options := remoteSourceMirror(Options{
-		HuggingFaceAcquisitionMode: publicationports.HuggingFaceAcquisitionModeDirect,
-		RawStageBucket:             "artifacts",
-		RawStageKeyPrefix:          "raw/1111-2222/source-url",
-		UploadStaging:              staging,
+		SourceAcquisitionMode: publicationports.SourceAcquisitionModeDirect,
+		RawStageBucket:        "artifacts",
+		RawStageKeyPrefix:     "raw/1111-2222/source-url",
+		UploadStaging:         staging,
 	})
 	if options != nil {
 		t.Fatalf("expected no source mirror options in direct mode, got %#v", options)

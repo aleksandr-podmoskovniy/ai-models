@@ -29,9 +29,8 @@ properties:
     description: |
       Shared S3-compatible storage used by ai-models.
       Controller-owned upload staging always uses the fixed `raw/` subtree in
-      the same bucket. `HuggingFace` source mirror uses that subtree only in
-      `Mirror` mode. The internal DMCR publication plane writes fixed `dmcr/`
-      objects.
+      the same bucket. Remote source mirror uses that subtree only in `Mirror`
+      mode. The internal DMCR publication plane writes fixed `dmcr/` objects.
     additionalProperties: false
     properties:
       bucket:
@@ -55,18 +54,19 @@ properties:
           directly in `d8-ai-models`. This Secret is required; inline
           credentials are not supported.
         default: ""
-      huggingFaceAcquisitionMode:
+      sourceAcquisitionMode:
         type: string
         enum:
           - Mirror
           - Direct
-        default: Mirror
+        default: Direct
         description: |
-          Cluster-level `HuggingFace` acquisition mode for publication workers.
-          `Mirror` first stores selected remote files in controller-owned object
-          storage under `raw/` and then publishes from that durable temporary
-          copy. `Direct` publishes from remote `HuggingFace` objects directly
-          without the intermediate mirror copy.
+          Cluster-level source acquisition mode for publication workers.
+          `Mirror` first stores selected remote source files in controller-owned
+          object storage under `raw/` and then publishes from that durable
+          temporary copy when the source adapter supports it. `Direct`
+          publishes from the canonical source boundary directly without the
+          intermediate mirror copy.
       caSecretName:
         type: string
         description: |

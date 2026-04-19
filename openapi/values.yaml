@@ -20,7 +20,7 @@ properties:
       endpoint: ""
       region: us-east-1
       credentialsSecretName: ""
-      huggingFaceAcquisitionMode: Mirror
+      sourceAcquisitionMode: Direct
       caSecretName: ""
       insecure: false
       usePathStyle: true
@@ -37,9 +37,9 @@ properties:
       credentialsSecretName:
         type: string
         default: ""
-      huggingFaceAcquisitionMode:
+      sourceAcquisitionMode:
         type: string
-        default: Mirror
+        default: Direct
         enum:
           - Mirror
           - Direct
@@ -92,7 +92,7 @@ properties:
             endpoint: ""
             region: us-east-1
             credentialsSecretName: ""
-            huggingFaceAcquisitionMode: Mirror
+            sourceAcquisitionMode: Direct
             caSecretName: ""
             insecure: false
             usePathStyle: true

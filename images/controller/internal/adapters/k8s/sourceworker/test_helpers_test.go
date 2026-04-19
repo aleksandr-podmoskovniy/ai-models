@@ -57,7 +57,7 @@ func testOptions() Options {
 			OCIRepositoryPrefix:     "registry.internal.local/ai-models",
 			OCIRegistrySecretName:   "ai-models-dmcr-auth-write",
 			OCIDirectUploadEndpoint: "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443",
-			HuggingFaceAcquisition:  publicationports.HuggingFaceAcquisitionModeMirror,
+			SourceAcquisition:       publicationports.SourceAcquisitionModeMirror,
 			ObjectStorage: storageprojection.Options{
 				Bucket:                "ai-models",
 				EndpointURL:           "https://s3.example.com",

@@ -1,5 +1,0 @@
-aiModels:
-  internal:
-    publicationRuntime:
-      workVolume:
-        type: PersistentVolumeClaim

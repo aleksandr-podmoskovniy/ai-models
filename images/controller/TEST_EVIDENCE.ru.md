@@ -27,7 +27,7 @@ paths и test surfaces.
 - Byte path:
   - `resolved HF objects -> native OCI publish`
 - Runtime selection:
-  - `artifacts.huggingFaceAcquisitionMode=Direct`
+  - `artifacts.sourceAcquisitionMode=Direct`
 - Full-size local copies during successful publish:
   - `0`
 - Primary evidence:
@@ -48,7 +48,7 @@ paths и test surfaces.
 - Byte path:
   - `HF objects -> source mirror objects -> native OCI publish`
 - Runtime selection:
-  - `artifacts.huggingFaceAcquisitionMode=Mirror`
+  - `artifacts.sourceAcquisitionMode=Mirror`
 - Full-size local copies during successful publish:
   - `0`
 - Primary evidence:
@@ -69,7 +69,8 @@ paths и test surfaces.
 - Primary evidence:
   - `internal/adapters/modelpack/oci/publish_test.go`
   - `internal/adapters/modelpack/oci/direct_upload_test.go`
-  - `internal/adapters/modelpack/oci/direct_upload_test_helpers_test.go`
+  - `internal/adapters/modelpack/oci/direct_upload_server_test_helpers_test.go`
+  - `internal/adapters/modelpack/oci/direct_upload_protocol_test_helpers_test.go`
   - `internal/adapters/k8s/sourceworker/build_test.go`
   - `internal/adapters/k8s/sourceworker/validation_test.go`
   - `cmd/ai-models-controller/config_test.go`

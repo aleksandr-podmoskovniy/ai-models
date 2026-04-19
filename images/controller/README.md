@@ -81,7 +81,9 @@ Current phase-2 slice implemented here:
   remote summary extraction instead of split orchestration in the worker;
   remote `source.url` bytes now support two explicit runtime modes:
   direct remote object-source publication and controller-owned temporary source
-  mirror under the shared `raw/` object subtree; both paths avoid a local
+  mirror under the shared `raw/` object subtree; the cluster-level default is
+  `Direct`, while `Mirror` stays an explicit opt-in for durable intermediate
+  copy semantics; both paths avoid a local
   `workspace/model`, provider-card noise such as downloads/likes/tags is not
   retained in the adapter payload without an explicit consumer, and the remote
   adapter now hands worker code explicit seams for source provenance,

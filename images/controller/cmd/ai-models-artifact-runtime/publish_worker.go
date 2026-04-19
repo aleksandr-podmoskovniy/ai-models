@@ -40,7 +40,7 @@ const (
 	publishRawStageBucketEnv      = "AI_MODELS_IMPORT_RAW_STAGE_BUCKET"
 	publishRawStageKeyPrefixEnv   = "AI_MODELS_IMPORT_RAW_STAGE_KEY_PREFIX"
 	publishOCIDirectUploadEnv     = "AI_MODELS_IMPORT_OCI_DIRECT_UPLOAD_ENDPOINT"
-	publishHFAcquisitionModeEnv   = "AI_MODELS_IMPORT_HF_ACQUISITION_MODE"
+	publishSourceAcquisitionEnv   = "AI_MODELS_IMPORT_SOURCE_ACQUISITION_MODE"
 	publishInputFormatEnv         = "AI_MODELS_IMPORT_INPUT_FORMAT"
 	publishRevisionEnv            = "AI_MODELS_IMPORT_HF_REVISION"
 	publishTaskEnv                = "AI_MODELS_IMPORT_TASK"
@@ -59,7 +59,7 @@ func runPublishWorker(args []string) int {
 	var rawStageBucket string
 	var rawStageKeyPrefix string
 	var ociDirectUploadEndpoint string
-	var hfAcquisitionMode string
+	var sourceAcquisitionMode string
 	var inputFormat string
 	var revision string
 	var task string
@@ -74,7 +74,7 @@ func runPublishWorker(args []string) int {
 	flags.StringVar(&rawStageBucket, "raw-stage-bucket", cmdsupport.EnvOr(publishRawStageBucketEnv, ""), "Bucket used for controller-owned raw staging of remote sources.")
 	flags.StringVar(&rawStageKeyPrefix, "raw-stage-key-prefix", cmdsupport.EnvOr(publishRawStageKeyPrefixEnv, ""), "Object key prefix used for controller-owned raw staging of remote sources.")
 	flags.StringVar(&ociDirectUploadEndpoint, "oci-direct-upload-endpoint", cmdsupport.EnvOr(publishOCIDirectUploadEnv, ""), "Internal DMCR direct-upload HTTPS endpoint for heavy layer blob uploads.")
-	flags.StringVar(&hfAcquisitionMode, "hf-acquisition-mode", cmdsupport.EnvOr(publishHFAcquisitionModeEnv, string(publicationports.HuggingFaceAcquisitionModeMirror)), "HuggingFace acquisition mode: mirror or direct.")
+	flags.StringVar(&sourceAcquisitionMode, "source-acquisition-mode", cmdsupport.EnvOr(publishSourceAcquisitionEnv, string(publicationports.SourceAcquisitionModeDirect)), "Source acquisition mode: mirror or direct.")
 	flags.StringVar(&inputFormat, "input-format", cmdsupport.EnvOr(publishInputFormatEnv, ""), "Model input format. Leave empty for auto-detection.")
 	flags.StringVar(&revision, "revision", cmdsupport.EnvOr(publishRevisionEnv, ""), "Resolved source revision.")
 	flags.StringVar(&task, "task", cmdsupport.EnvOr(publishTaskEnv, ""), "Runtime task.")
@@ -116,7 +116,7 @@ func runPublishWorker(args []string) int {
 	logger.Info(
 		"publication worker started",
 		slog.Bool("uploadStageEnabled", uploadStage != nil),
-		slog.String("hfAcquisitionMode", strings.TrimSpace(hfAcquisitionMode)),
+		slog.String("sourceAcquisitionMode", strings.TrimSpace(sourceAcquisitionMode)),
 		slog.Bool("sourceMirrorEnabled", uploadStagingClient != nil && strings.TrimSpace(rawStageBucket) != "" && strings.TrimSpace(rawStageKeyPrefix) != ""),
 	)
 
@@ -127,7 +127,7 @@ func runPublishWorker(args []string) int {
 		OCIDirectUploadEndpoint:    ociDirectUploadEndpoint,
 		DirectUploadCAFile:         cmdsupport.EnvOr("AI_MODELS_S3_CA_FILE", ""),
 		DirectUploadInsecure:       cmdsupport.EnvOrBool("AI_MODELS_S3_IGNORE_TLS", false),
-		HuggingFaceAcquisitionMode: publicationports.HuggingFaceAcquisitionMode(hfAcquisitionMode),
+		SourceAcquisitionMode:      publicationports.SourceAcquisitionMode(sourceAcquisitionMode),
 		Revision:                   revision,
 		UploadPath:                 uploadPath,
 		UploadStage:                uploadStage,

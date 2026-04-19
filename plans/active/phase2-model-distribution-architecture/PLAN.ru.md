@@ -258,7 +258,7 @@ Candidate follow-up bundles:
 - manual consistency review between:
   - new bundle
   - `plans/active/phase2-runtime-followups/*`
-  - `plans/active/publication-storage-hardening/*`
+  - `plans/archive/2026/publication-storage-hardening/*`
 - if docs are updated:
   - `make helm-template`
   - `make kubeconform`

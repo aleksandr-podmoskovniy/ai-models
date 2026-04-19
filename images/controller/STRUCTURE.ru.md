@@ -205,7 +205,7 @@ Non-K8s adapters:
   remote summary extraction и object-source planning;
 - live `HuggingFace` publish path больше не держит локальный
   `workspace/model` fallback: canonical path — direct or mirrored object source,
-  а planning failure explicit;
+  cluster-level default теперь `Direct`, а planning failure explicit;
 - `uploadstaging/s3/` и `sourcemirror/objectstore/` не должны сталкиваться по
   семантике: staging — upload/session surface, mirror — persisted source ingest.
 

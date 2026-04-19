@@ -93,7 +93,7 @@ workstream:
 ## 6. Затрагиваемые области
 
 - `plans/active/phase2-runtime-followups/*`
-- `plans/active/publication-storage-hardening/*`
+- `plans/archive/2026/publication-storage-hardening/*`
 - `images/controller/internal/dataplane/publishworker/*`
 - `images/controller/internal/adapters/modelpack/*`
 - `images/controller/internal/adapters/k8s/modeldelivery/*`
@@ -106,8 +106,9 @@ workstream:
 
 ## 7. Критерии приёмки
 
-- Создан отдельный compact continuation bundle, который не раздувает текущие
-  `phase2-runtime-followups` и `publication-storage-hardening`.
+- Создан отдельный compact continuation bundle, который не раздувает текущий
+  `phase2-runtime-followups` и archived predecessor
+  `publication-storage-hardening`.
 - В bundle явно разделены четыре live boundary:
   - canonical publication to internal `DMCR`;
   - optional distribution to/through `DMZ` registry;

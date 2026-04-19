@@ -26,7 +26,7 @@ settings и internal module values. В user-facing contract больше нет:
 Разделение внутри bucket фиксировано самим runtime:
 
 - `raw/` для controller-owned upload staging и, если включён режим
-  `artifacts.huggingFaceAcquisitionMode=Mirror`, для временного source mirror;
+  `artifacts.sourceAcquisitionMode=Mirror`, для временного source mirror;
 - `dmcr/` для опубликованных OCI-артефактов во внутреннем `DMCR`;
 - отдельные будущие append-only данные модуля могут жить только под
   отдельными фиксированными префиксами.
@@ -46,21 +46,26 @@ Custom trust для S3-compatible endpoint задаётся через `artifact
 
 Публичный runtime path для моделей теперь controller-owned:
 
-- `Model` / `ClusterModel` с `spec.source.url` используют один из двух
-  cluster-level acquisition modes:
-  - `artifacts.huggingFaceAcquisitionMode=Mirror`:
-    `HuggingFace -> controller-owned source mirror -> native OCI publish`;
-  - `artifacts.huggingFaceAcquisitionMode=Direct`:
-    `HuggingFace -> direct remote object source -> native OCI publish`;
-- `spec.source.upload` использует controller-owned upload-session path;
-- оба пути публикуют OCI `ModelPack` артефакты во внутренний `DMCR`.
+- `Model` / `ClusterModel` используют один cluster-level
+  `artifacts.sourceAcquisitionMode`:
+  - `Mirror`:
+    remote `source.url` сначала идёт через controller-owned source mirror;
+  - `Direct`:
+    remote `source.url` идёт напрямую из canonical remote source boundary;
+- `spec.source.upload` использует controller-owned upload-session path и
+  остаётся на своей staged object boundary под тем же acquisition contract;
+- все пути публикуют OCI `ModelPack` артефакты во внутренний `DMCR`.
+
+Default — `artifacts.sourceAcquisitionMode=Direct`.
 
 Trade-off между режимами такой:
 
 - `Mirror` сохраняет durable промежуточную копию в object storage, упрощает
-  повторные публикации и resume на границе ingest;
-- `Direct` убирает эту лишнюю копию и ускоряет первую загрузку, но каждая
-  публикация зависит напрямую от доступности и скорости `HuggingFace`.
+  повторные публикации и resume на границе remote ingest;
+- `Direct` убирает эту лишнюю копию и ускоряет первую remote загрузку;
+- для `spec.source.upload` effective source boundary уже является staged
+  object, поэтому режим не создаёт вторую промежуточную копию поверх upload
+  staging.
 
 Для публикации тяжёлых layer blobs внутрь `DMCR` отдельного выбора больше нет.
 Канонический byte path теперь один:

@@ -370,10 +370,10 @@ true
 {{- default "us-east-1" (index $artifacts "region") -}}
 {{- end -}}
 
-{{- define "ai-models.huggingFaceAcquisitionMode" -}}
+{{- define "ai-models.sourceAcquisitionMode" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
-{{- lower (default "Mirror" (index $artifacts "huggingFaceAcquisitionMode")) -}}
+{{- lower (default "Direct" (index $artifacts "sourceAcquisitionMode")) -}}
 {{- end -}}
 
 {{- define "ai-models.artifactsCredentialsSecretName" -}}

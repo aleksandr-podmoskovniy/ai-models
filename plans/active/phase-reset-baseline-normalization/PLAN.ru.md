@@ -334,6 +334,45 @@ working surfaces после большого reset workstream.
 - canonical evidence и structure docs перечисляют только живые filenames для
   direct `HuggingFace` и `sourceworker` service surfaces.
 
+### Slice 12. Tighten residual code and helper seams under current LOC ceiling
+
+Цель:
+
+- разрезать оставшиеся production files, которые ещё смешивают несколько
+  responsibilities в одной boundary, несмотря на уже приемлемый общий LOC;
+- убрать крупнейший helper-only `direct upload` test monolith, чтобы test tree
+  оставался согласованным с production cleanup.
+
+Файлы/каталоги:
+
+- `images/controller/internal/domain/publishstate/*.go`
+- `images/controller/internal/adapters/uploadstaging/s3/*.go`
+- `images/controller/internal/adapters/sourcefetch/*.go`
+- `images/controller/internal/adapters/k8s/uploadsessionstate/*.go`
+- `images/controller/internal/adapters/modelpack/oci/*_test.go`
+- `images/controller/TEST_EVIDENCE.ru.md`
+- `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/domain/publishstate ./internal/adapters/uploadstaging/s3 ./internal/adapters/sourcefetch ./internal/adapters/k8s/uploadsessionstate ./internal/adapters/modelpack/oci`
+- `make verify`
+
+Артефакт результата:
+
+- `publishstate` condition/status surface больше не смешивает phase status
+  builders, ready snapshot projection и generic condition-setter helpers в
+  одном файле;
+- `uploadstaging/s3` object I/O больше не смешивает operation methods и
+  validation/error formatting shell;
+- `sourcefetch` archive inspection больше не держит entrypoint, tar-walk,
+  path normalization и summary helpers в одном mixed file;
+- `uploadsessionstate` secret surface больше не смешивает secret shaping,
+  secret decoding и parse helpers в одном файле;
+- `modelpack/oci` direct upload tests больше не держат один oversized
+  helper-only file, а разделены по server/backend/protocol seams;
+- canonical evidence и structure docs отражают новые live file names.
+
 ## 4. Rollback point
 
 После Slice 1 можно безопасно остановиться: predecessor уже архивирован, а

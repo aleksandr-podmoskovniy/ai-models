@@ -52,7 +52,7 @@ type managerConfig struct {
 	PublicationOCISecretName             string
 	PublicationOCICASecretName           string
 	PublicationOCIDirectUploadEndpoint   string
-	PublicationHFAcquisitionMode         publicationports.HuggingFaceAcquisitionMode
+	PublicationSourceAcquisitionMode     publicationports.SourceAcquisitionMode
 	PublicationMaxConcurrentWorkers      int
 	PublicationWorkerCPURequest          string
 	PublicationWorkerCPULimit            string
@@ -97,7 +97,7 @@ func defaultManagerConfig() managerConfig {
 		PublicationOCISecretName:             cmdsupport.EnvOr(publicationOCISecretEnv, ""),
 		PublicationOCICASecretName:           cmdsupport.EnvOr(publicationOCICASecretEnv, ""),
 		PublicationOCIDirectUploadEndpoint:   cmdsupport.EnvOr(publicationOCIDirectUploadEndpointEnv, ""),
-		PublicationHFAcquisitionMode:         publicationports.NormalizeHuggingFaceAcquisitionMode(publicationports.HuggingFaceAcquisitionMode(cmdsupport.EnvOr(publicationHFAcquisitionModeEnv, ""))),
+		PublicationSourceAcquisitionMode:     publicationports.NormalizeSourceAcquisitionMode(publicationports.SourceAcquisitionMode(cmdsupport.EnvOr(publicationSourceAcquisitionModeEnv, ""))),
 		PublicationMaxConcurrentWorkers:      cmdsupport.EnvOrInt(publicationMaxConcurrentWorkersEnv, defaultPublicationMaxConcurrentWorkers),
 		PublicationWorkerCPURequest:          cmdsupport.EnvOr(publicationWorkerCPURequestEnv, defaultPublicationWorkerCPURequest),
 		PublicationWorkerCPULimit:            cmdsupport.EnvOr(publicationWorkerCPULimitEnv, defaultPublicationWorkerCPULimit),
@@ -142,7 +142,7 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.StringVar(&config.PublicationOCISecretName, "publication-oci-credentials-secret-name", config.PublicationOCISecretName, "Secret with OCI registry username/password for publication workers.")
 	flags.StringVar(&config.PublicationOCICASecretName, "publication-oci-ca-secret-name", config.PublicationOCICASecretName, "Optional Secret with ca.crt for publication worker OCI registry trust.")
 	flags.StringVar(&config.PublicationOCIDirectUploadEndpoint, "publication-oci-direct-upload-endpoint", config.PublicationOCIDirectUploadEndpoint, "Internal DMCR direct-upload HTTPS endpoint used for heavy layer blob uploads.")
-	flags.StringVar((*string)(&config.PublicationHFAcquisitionMode), "publication-huggingface-acquisition-mode", string(config.PublicationHFAcquisitionMode), "HuggingFace acquisition mode for publication workers: mirror or direct.")
+	flags.StringVar((*string)(&config.PublicationSourceAcquisitionMode), "publication-source-acquisition-mode", string(config.PublicationSourceAcquisitionMode), "Source acquisition mode for publication workers: mirror or direct.")
 	flags.IntVar(&config.PublicationMaxConcurrentWorkers, "publication-max-concurrent-workers", config.PublicationMaxConcurrentWorkers, "Maximum number of active publication worker Pods.")
 	flags.StringVar(&config.PublicationWorkerCPURequest, "publication-worker-cpu-request", config.PublicationWorkerCPURequest, "CPU request for publication worker Pods.")
 	flags.StringVar(&config.PublicationWorkerCPULimit, "publication-worker-cpu-limit", config.PublicationWorkerCPULimit, "CPU limit for publication worker Pods.")
@@ -215,7 +215,7 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 				OCIRegistryCASecretName: c.PublicationOCICASecretName,
 				OCIDirectUploadEndpoint: c.PublicationOCIDirectUploadEndpoint,
 				ObjectStorage:           artifactsObjectStorage,
-				HuggingFaceAcquisition:  c.PublicationHFAcquisitionMode,
+				SourceAcquisition:       c.PublicationSourceAcquisitionMode,
 				Resources:               resources,
 			},
 			MaxConcurrentWorkers: c.PublicationMaxConcurrentWorkers,

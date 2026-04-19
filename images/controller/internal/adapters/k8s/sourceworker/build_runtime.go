@@ -132,7 +132,7 @@ func sourceUsesObjectStorage(plan publicationapp.SourceWorkerPlan, options Optio
 		return true
 	}
 	return plan.HuggingFace != nil &&
-		publicationports.NormalizeHuggingFaceAcquisitionMode(options.HuggingFaceAcquisition) == publicationports.HuggingFaceAcquisitionModeMirror
+		publicationports.NormalizeSourceAcquisitionMode(options.SourceAcquisition) == publicationports.SourceAcquisitionModeMirror
 }
 
 func publishUsesObjectStorageTrust(options Options) bool {

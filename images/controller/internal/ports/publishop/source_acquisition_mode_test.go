@@ -18,24 +18,24 @@ package publishop
 
 import "testing"
 
-func TestNormalizeHuggingFaceAcquisitionModeDefaultsToMirror(t *testing.T) {
+func TestNormalizeSourceAcquisitionModeDefaultsToDirect(t *testing.T) {
 	t.Parallel()
 
-	if got, want := NormalizeHuggingFaceAcquisitionMode(""), HuggingFaceAcquisitionModeMirror; got != want {
-		t.Fatalf("NormalizeHuggingFaceAcquisitionMode(\"\") = %q, want %q", got, want)
+	if got, want := NormalizeSourceAcquisitionMode(""), SourceAcquisitionModeDirect; got != want {
+		t.Fatalf("NormalizeSourceAcquisitionMode(\"\") = %q, want %q", got, want)
 	}
 }
 
-func TestValidateHuggingFaceAcquisitionMode(t *testing.T) {
+func TestValidateSourceAcquisitionMode(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
 		name    string
-		input   HuggingFaceAcquisitionMode
+		input   SourceAcquisitionMode
 		wantErr bool
 	}{
-		{name: "mirror", input: HuggingFaceAcquisitionModeMirror},
-		{name: "direct", input: HuggingFaceAcquisitionModeDirect},
+		{name: "mirror", input: SourceAcquisitionModeMirror},
+		{name: "direct", input: SourceAcquisitionModeDirect},
 		{name: "mixed case direct", input: "Direct"},
 		{name: "unsupported", input: "broken", wantErr: true},
 	}
@@ -45,7 +45,7 @@ func TestValidateHuggingFaceAcquisitionMode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := ValidateHuggingFaceAcquisitionMode(tc.input)
+			err := ValidateSourceAcquisitionMode(tc.input)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
@@ -53,7 +53,7 @@ func TestValidateHuggingFaceAcquisitionMode(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("ValidateHuggingFaceAcquisitionMode() error = %v", err)
+				t.Fatalf("ValidateSourceAcquisitionMode() error = %v", err)
 			}
 		})
 	}

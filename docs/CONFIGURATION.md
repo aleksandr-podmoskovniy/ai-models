@@ -27,7 +27,7 @@ module contract for:
 The split inside the bucket is fixed by runtime code:
 
 - `raw/` for controller-owned upload staging and, when
-  `artifacts.huggingFaceAcquisitionMode=Mirror`, the temporary source mirror;
+  `artifacts.sourceAcquisitionMode=Mirror`, the temporary source mirror;
 - `dmcr/` for published OCI artifacts in the internal `DMCR`;
 - optional future append-only module data under separate fixed prefixes.
 
@@ -45,21 +45,27 @@ module runtime or copied from the global HTTPS `CustomCertificate` path.
 
 The public runtime path for models is now controller-owned:
 
-- `Model` / `ClusterModel` with `spec.source.url` use one of two cluster-level
-  acquisition modes:
-  - `artifacts.huggingFaceAcquisitionMode=Mirror`:
-    `HuggingFace -> controller-owned source mirror -> native OCI publish`;
-  - `artifacts.huggingFaceAcquisitionMode=Direct`:
-    `HuggingFace -> direct remote object source -> native OCI publish`;
-- `spec.source.upload` uses the controller-owned upload-session path;
-- both paths publish OCI `ModelPack` artifacts into the internal `DMCR`.
+- `Model` / `ClusterModel` use one cluster-level
+  `artifacts.sourceAcquisitionMode`:
+  - `Mirror`:
+    remote `source.url` first goes through a controller-owned source mirror;
+  - `Direct`:
+    remote `source.url` is consumed directly from the canonical remote source
+    boundary;
+- `spec.source.upload` uses the controller-owned upload-session path and stays
+  on its staged object boundary under the same acquisition contract;
+- all paths publish OCI `ModelPack` artifacts into the internal `DMCR`.
+
+The default is `artifacts.sourceAcquisitionMode=Direct`.
 
 The trade-off is explicit:
 
 - `Mirror` keeps a durable intermediate copy in object storage and makes
-  re-publish/resume on the ingest boundary more predictable;
-- `Direct` removes that extra full copy and speeds up the first import, but the
-  publication depends directly on `HuggingFace` availability and throughput.
+  re-publish/resume on the remote ingest boundary more predictable;
+- `Direct` removes that extra full copy and speeds up the first remote import;
+- for `spec.source.upload`, the effective source boundary is already the staged
+  object, so the mode does not create a second intermediate copy on top of the
+  upload staging contract.
 
 There is no separate upload-mode choice for heavy layer blobs published into
 `DMCR`. The canonical byte path is now fixed:

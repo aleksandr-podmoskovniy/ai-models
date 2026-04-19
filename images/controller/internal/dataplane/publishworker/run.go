@@ -35,7 +35,7 @@ type Options struct {
 	OCIDirectUploadEndpoint    string
 	DirectUploadCAFile         string
 	DirectUploadInsecure       bool
-	HuggingFaceAcquisitionMode publicationports.HuggingFaceAcquisitionMode
+	SourceAcquisitionMode      publicationports.SourceAcquisitionMode
 	Revision                   string
 	UploadPath                 string
 	UploadStage                *cleanuphandle.UploadStagingHandle
@@ -59,22 +59,22 @@ func Run(ctx context.Context, options Options) (publicationartifact.Result, erro
 	if strings.TrimSpace(options.OCIDirectUploadEndpoint) == "" {
 		return publicationartifact.Result{}, errors.New("OCI direct upload endpoint must not be empty")
 	}
-	options.HuggingFaceAcquisitionMode = publicationports.NormalizeHuggingFaceAcquisitionMode(options.HuggingFaceAcquisitionMode)
-	if err := publicationports.ValidateHuggingFaceAcquisitionMode(options.HuggingFaceAcquisitionMode); err != nil {
+	options.SourceAcquisitionMode = publicationports.NormalizeSourceAcquisitionMode(options.SourceAcquisitionMode)
+	if err := publicationports.ValidateSourceAcquisitionMode(options.SourceAcquisitionMode); err != nil {
 		return publicationartifact.Result{}, err
 	}
 	if options.SourceType == modelsv1alpha1.ModelSourceTypeHuggingFace {
-		if options.HuggingFaceAcquisitionMode == publicationports.HuggingFaceAcquisitionModeMirror {
+		if options.SourceAcquisitionMode == publicationports.SourceAcquisitionModeMirror {
 			switch {
 			case strings.TrimSpace(options.RawStageBucket) == "":
-				return publicationartifact.Result{}, errors.New("huggingface mirror acquisition requires raw stage bucket")
+				return publicationartifact.Result{}, errors.New("mirror source acquisition requires raw stage bucket")
 			case strings.TrimSpace(options.RawStageKeyPrefix) == "":
-				return publicationartifact.Result{}, errors.New("huggingface mirror acquisition requires raw stage key prefix")
+				return publicationartifact.Result{}, errors.New("mirror source acquisition requires raw stage key prefix")
 			case options.UploadStaging == nil:
-				return publicationartifact.Result{}, errors.New("huggingface mirror acquisition requires upload staging client")
+				return publicationartifact.Result{}, errors.New("mirror source acquisition requires upload staging client")
 			}
 		}
-		if options.HuggingFaceAcquisitionMode == publicationports.HuggingFaceAcquisitionModeDirect {
+		if options.SourceAcquisitionMode == publicationports.SourceAcquisitionModeDirect {
 			options.RawStageBucket = ""
 			options.RawStageKeyPrefix = ""
 		}

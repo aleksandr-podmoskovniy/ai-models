@@ -173,11 +173,11 @@ func TestOptionsValidateRejectsMissingRequiredFields(t *testing.T) {
 			wantErr: "max concurrent workers",
 		},
 		{
-			name: "unsupported huggingface acquisition mode",
+			name: "unsupported source acquisition mode",
 			mutate: func(options *Options) {
-				options.HuggingFaceAcquisition = "broken"
+				options.SourceAcquisition = "broken"
 			},
-			wantErr: "huggingface acquisition mode",
+			wantErr: "source acquisition mode",
 		},
 	}
 
@@ -204,7 +204,7 @@ func TestOptionsValidateDirectHuggingFaceDoesNotRequireObjectStorage(t *testing.
 	t.Parallel()
 
 	options := testOptions()
-	options.HuggingFaceAcquisition = publicationports.HuggingFaceAcquisitionModeDirect
+	options.SourceAcquisition = publicationports.SourceAcquisitionModeDirect
 	options.ObjectStorage = storageprojection.Options{}
 
 	plan := publicationapp.SourceWorkerPlan{
@@ -223,7 +223,7 @@ func TestOptionsValidateMirrorHuggingFaceRequiresObjectStorage(t *testing.T) {
 	t.Parallel()
 
 	options := testOptions()
-	options.HuggingFaceAcquisition = publicationports.HuggingFaceAcquisitionModeMirror
+	options.SourceAcquisition = publicationports.SourceAcquisitionModeMirror
 	options.ObjectStorage = storageprojection.Options{}
 
 	plan := publicationapp.SourceWorkerPlan{
@@ -246,7 +246,7 @@ func TestOptionsValidateRequiresUploadEndpoint(t *testing.T) {
 	t.Parallel()
 
 	options := testOptions()
-	options.HuggingFaceAcquisition = publicationports.HuggingFaceAcquisitionModeDirect
+	options.SourceAcquisition = publicationports.SourceAcquisitionModeDirect
 	options.OCIDirectUploadEndpoint = ""
 	options.ObjectStorage = storageprojection.Options{
 		CASecretName: "ai-models-artifacts-ca",
