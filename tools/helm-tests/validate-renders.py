@@ -338,6 +338,43 @@ def _validate_port_name_lengths(path: Path, content: str) -> list[str]:
     return errors
 
 
+def _validate_dmcr_secret_delete_rbac(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+
+    for raw_document in _split_yaml_documents(content):
+        lines = raw_document.splitlines()
+        kind = ""
+        metadata_name = ""
+        saw_secret_resources = False
+        saw_secret_delete = False
+
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("kind:"):
+                kind = _parse_inline_scalar(stripped.split(":", 1)[1])
+                continue
+            if stripped.startswith("name:") and metadata_name == "":
+                metadata_name = _parse_inline_scalar(stripped.split(":", 1)[1])
+                continue
+            if stripped == 'resources: ["secrets"]':
+                saw_secret_resources = True
+                continue
+            if (
+                saw_secret_resources
+                and stripped.startswith("verbs:")
+                and '"delete"' in stripped
+            ):
+                saw_secret_delete = True
+
+        if kind == "Role" and metadata_name == "dmcr" and saw_secret_resources:
+            if not saw_secret_delete:
+                errors.append(
+                    f"{path.name}: Role/dmcr must grant delete on secrets for dmcr garbage-collection request cleanup"
+                )
+
+    return errors
+
+
 def _validate_htpasswd_entry(
     path: Path,
     *,
@@ -432,6 +469,7 @@ def validate_render(path: Path) -> list[str]:
             )
 
     errors.extend(_validate_port_name_lengths(path, content))
+    errors.extend(_validate_dmcr_secret_delete_rbac(path, content))
     errors.extend(_validate_dmcr_auth_consistency(path, content))
 
     return errors

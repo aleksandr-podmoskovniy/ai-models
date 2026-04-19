@@ -156,6 +156,30 @@ spec:
             ],
         )
 
+    def test_validate_render_rejects_dmcr_role_without_secret_delete(self) -> None:
+        content = """---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dmcr
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "update", "patch"]
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE.validate_render(render_path)
+
+        self.assertEqual(
+            errors,
+            [
+                "helm-template-test.yaml: Role/dmcr must grant delete on secrets for dmcr garbage-collection request cleanup"
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
