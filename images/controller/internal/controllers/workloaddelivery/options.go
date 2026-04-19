@@ -58,6 +58,7 @@ func (o Options) Validate() error {
 func normalizeOptions(options Options) Options {
 	options.Service = modeldelivery.ServiceOptions{
 		Render:                       modeldelivery.NormalizeOptions(options.Service.Render),
+		ManagedCache:                 modeldelivery.NormalizeManagedCacheOptions(options.Service.ManagedCache),
 		RegistrySourceNamespace:      options.Service.RegistrySourceNamespace,
 		RegistrySourceAuthSecretName: options.Service.RegistrySourceAuthSecretName,
 		RegistrySourceCASecretName:   options.Service.RegistrySourceCASecretName,

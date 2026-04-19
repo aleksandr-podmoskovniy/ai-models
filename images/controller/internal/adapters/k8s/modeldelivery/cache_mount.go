@@ -31,11 +31,22 @@ type CacheMount struct {
 }
 
 func detectCacheMount(template *corev1.PodTemplateSpec, mountPath string) (CacheMount, error) {
+	resolved, found, err := resolveCacheMount(template, mountPath)
+	if err != nil {
+		return CacheMount{}, err
+	}
+	if !found {
+		return CacheMount{}, fmt.Errorf("runtime delivery annotated workload must mount writable model cache at %q", normalizeMountPath(mountPath))
+	}
+	return resolved, nil
+}
+
+func resolveCacheMount(template *corev1.PodTemplateSpec, mountPath string) (CacheMount, bool, error) {
 	if template == nil {
-		return CacheMount{}, errors.New("runtime delivery pod template must not be nil")
+		return CacheMount{}, false, errors.New("runtime delivery pod template must not be nil")
 	}
 	if len(template.Spec.Containers) == 0 {
-		return CacheMount{}, errors.New("runtime delivery pod template must contain at least one container")
+		return CacheMount{}, false, errors.New("runtime delivery pod template must contain at least one container")
 	}
 
 	expectedPath := normalizeMountPath(mountPath)
@@ -50,14 +61,14 @@ func detectCacheMount(template *corev1.PodTemplateSpec, mountPath string) (Cache
 				continue
 			}
 			if mount.Name != resolved.VolumeName {
-				return CacheMount{}, fmt.Errorf("runtime delivery cache mount %q must reference a single backing volume", expectedPath)
+				return CacheMount{}, false, fmt.Errorf("runtime delivery cache mount %q must reference a single backing volume", expectedPath)
 			}
 		}
 	}
 	if strings.TrimSpace(resolved.VolumeName) == "" {
-		return CacheMount{}, fmt.Errorf("runtime delivery annotated workload must mount writable model cache at %q", expectedPath)
+		return CacheMount{}, false, nil
 	}
-	return resolved, nil
+	return resolved, true, nil
 }
 
 func normalizeMountPath(value string) string {

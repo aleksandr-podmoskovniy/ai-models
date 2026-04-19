@@ -101,7 +101,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 func setupDeploymentController(mgr ctrl.Manager, base baseReconciler) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(deploymentControllerName).
-		For(&appsv1.Deployment{}, builder.WithPredicates(workloadEventFilter(base.options.Service.Render))).
+		For(&appsv1.Deployment{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
 		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapDeploymentsForModel)).
 		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapDeploymentsForClusterModel)).
 		Complete(&deploymentReconciler{base})
@@ -110,7 +110,7 @@ func setupDeploymentController(mgr ctrl.Manager, base baseReconciler) error {
 func setupStatefulSetController(mgr ctrl.Manager, base baseReconciler) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(statefulSetControllerName).
-		For(&appsv1.StatefulSet{}, builder.WithPredicates(workloadEventFilter(base.options.Service.Render))).
+		For(&appsv1.StatefulSet{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
 		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapStatefulSetsForModel)).
 		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapStatefulSetsForClusterModel)).
 		Complete(&statefulSetReconciler{base})
@@ -119,7 +119,7 @@ func setupStatefulSetController(mgr ctrl.Manager, base baseReconciler) error {
 func setupDaemonSetController(mgr ctrl.Manager, base baseReconciler) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(daemonSetControllerName).
-		For(&appsv1.DaemonSet{}, builder.WithPredicates(workloadEventFilter(base.options.Service.Render))).
+		For(&appsv1.DaemonSet{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
 		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapDaemonSetsForModel)).
 		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapDaemonSetsForClusterModel)).
 		Complete(&daemonSetReconciler{base})
@@ -128,7 +128,7 @@ func setupDaemonSetController(mgr ctrl.Manager, base baseReconciler) error {
 func setupCronJobController(mgr ctrl.Manager, base baseReconciler) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(cronJobControllerName).
-		For(&batchv1.CronJob{}, builder.WithPredicates(workloadEventFilter(base.options.Service.Render))).
+		For(&batchv1.CronJob{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
 		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapCronJobsForModel)).
 		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapCronJobsForClusterModel)).
 		Complete(&cronJobReconciler{base})

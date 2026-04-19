@@ -43,17 +43,35 @@ const (
 )
 
 func newDeploymentReconciler(t *testing.T, objects ...client.Object) (*baseReconciler, client.Client) {
-	t.Helper()
-
-	scheme := testkit.NewScheme(t, appsv1.AddToScheme)
-	kubeClient := testkit.NewFakeClient(t, scheme, nil, objects...)
-	serviceOptions := modeldelivery.ServiceOptions{
+	return newDeploymentReconcilerWithOptions(t, modeldelivery.ServiceOptions{
 		Render: modeldelivery.Options{
 			RuntimeImage: "example.com/ai-models/controller-runtime:dev",
 		},
 		RegistrySourceNamespace:      testRegistryNamespace,
 		RegistrySourceAuthSecretName: testRegistryAuthName,
-	}
+	}, objects...)
+}
+
+func newDeploymentReconcilerWithManagedCache(t *testing.T, objects ...client.Object) (*baseReconciler, client.Client) {
+	return newDeploymentReconcilerWithOptions(t, modeldelivery.ServiceOptions{
+		Render: modeldelivery.Options{
+			RuntimeImage: "example.com/ai-models/controller-runtime:dev",
+		},
+		ManagedCache: modeldelivery.ManagedCacheOptions{
+			Enabled:          true,
+			StorageClassName: "ai-models-node-cache",
+			VolumeSize:       "32Gi",
+		},
+		RegistrySourceNamespace:      testRegistryNamespace,
+		RegistrySourceAuthSecretName: testRegistryAuthName,
+	}, objects...)
+}
+
+func newDeploymentReconcilerWithOptions(t *testing.T, serviceOptions modeldelivery.ServiceOptions, objects ...client.Object) (*baseReconciler, client.Client) {
+	t.Helper()
+
+	scheme := testkit.NewScheme(t, appsv1.AddToScheme)
+	kubeClient := testkit.NewFakeClient(t, scheme, nil, objects...)
 	service, err := modeldelivery.NewService(kubeClient, scheme, serviceOptions)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -122,6 +140,32 @@ func annotatedDeployment(annotations map[string]string, replicas int32, volumeSo
 					Volumes: []corev1.Volume{{
 						Name:         "model-cache",
 						VolumeSource: volumeSource,
+					}},
+				},
+			},
+		},
+	}
+}
+
+func annotatedDeploymentWithoutCacheMount(annotations map[string]string, replicas int32) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "runtime",
+			Namespace:   "team-a",
+			UID:         types.UID("550e8400-e29b-41d4-a716-446655440999"),
+			Annotations: annotations,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "runtime"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "runtime"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "runtime",
+						Image: "example.com/runtime:dev",
 					}},
 				},
 			},

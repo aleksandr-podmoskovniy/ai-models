@@ -23,9 +23,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	modelpackoci "github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/oci"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	"github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
 
@@ -35,9 +37,6 @@ const (
 	materializeDestinationEnv    = "AI_MODELS_MATERIALIZE_DESTINATION_DIR"
 	materializeCacheRootEnv      = "AI_MODELS_MATERIALIZE_CACHE_ROOT"
 	materializeArtifactFamilyEnv = "AI_MODELS_MATERIALIZE_ARTIFACT_FAMILY"
-
-	cacheStoreDirName = "store"
-	cacheCurrentPath  = "current"
 )
 
 func runMaterializeArtifact(args []string) int {
@@ -102,7 +101,7 @@ func runMaterializeArtifact(args []string) int {
 		ArtifactFamily: artifactFamily,
 	}
 	auth := cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv)
-	result, err := materializeWithCoordination(ctx, cacheRoot, destinationDir, coordination, func(ctx context.Context) (modelpack.MaterializeResult, error) {
+	result, err := nodecache.MaterializeWithCoordination(ctx, cacheRoot, destinationDir, coordination, func(ctx context.Context) (modelpack.MaterializeResult, error) {
 		return modelpackoci.NewMaterializer().Materialize(ctx, input, auth)
 	})
 	if err != nil {
@@ -110,7 +109,11 @@ func runMaterializeArtifact(args []string) int {
 		return cmdsupport.CommandError(commandMaterializeArtifact, err)
 	}
 	if cacheCurrent != "" && coordination.Mode == "" {
-		if err := updateCurrentMaterializationLink(cacheRoot, result.ModelPath); err != nil {
+		if err := nodecache.UpdateCurrentLink(cacheRoot, result.ModelPath); err != nil {
+			logger.Error("artifact materialization failed", slog.Any("error", err))
+			return cmdsupport.CommandError(commandMaterializeArtifact, err)
+		}
+		if err := nodecache.TouchUsage(destinationDir, time.Time{}); err != nil {
 			logger.Error("artifact materialization failed", slog.Any("error", err))
 			return cmdsupport.CommandError(commandMaterializeArtifact, err)
 		}
@@ -140,54 +143,9 @@ func resolveMaterializationPaths(artifactURI, artifactDigest, destinationDir, ca
 		}
 		return destinationDir, "", nil
 	}
-
-	resolvedDigest := strings.TrimSpace(artifactDigest)
-	if resolvedDigest == "" {
-		resolvedDigest = digestFromArtifactURI(artifactURI)
-	}
-	if resolvedDigest == "" {
-		return "", "", errors.New("cache-root requires immutable artifact digest")
-	}
-
-	cacheRoot = filepath.Clean(cacheRoot)
-	return filepath.Join(cacheRoot, cacheStoreDirName, resolvedDigest), filepath.Join(cacheRoot, cacheCurrentPath), nil
-}
-
-func digestFromArtifactURI(artifactURI string) string {
-	artifactURI = strings.TrimSpace(artifactURI)
-	if artifactURI == "" {
-		return ""
-	}
-	before, after, ok := strings.Cut(artifactURI, "@")
-	if !ok || strings.TrimSpace(before) == "" {
-		return ""
-	}
-	return strings.TrimSpace(after)
-}
-
-func updateCurrentMaterializationLink(cacheRoot, targetPath string) error {
-	cacheRoot = filepath.Clean(strings.TrimSpace(cacheRoot))
-	targetPath = filepath.Clean(strings.TrimSpace(targetPath))
-	if cacheRoot == "" || targetPath == "" {
-		return errors.New("cache-root current symlink requires non-empty paths")
-	}
-	if err := os.MkdirAll(cacheRoot, 0o755); err != nil {
-		return err
-	}
-
-	currentPath := filepath.Join(cacheRoot, cacheCurrentPath)
-	relativeTarget, err := filepath.Rel(cacheRoot, targetPath)
+	layout, err := nodecache.ResolveMaterializationLayout(cacheRoot, artifactURI, artifactDigest)
 	if err != nil {
-		return err
+		return "", "", err
 	}
-	tempLink := currentPath + ".tmp"
-	_ = os.Remove(tempLink)
-	if err := os.Symlink(relativeTarget, tempLink); err != nil {
-		return err
-	}
-	if err := os.Rename(tempLink, currentPath); err != nil {
-		_ = os.Remove(tempLink)
-		return err
-	}
-	return nil
+	return layout.DestinationDir, layout.CurrentLinkPath, nil
 }

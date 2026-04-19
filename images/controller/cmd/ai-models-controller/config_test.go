@@ -41,6 +41,15 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 		ArtifactsS3Endpoint:                "https://s3.example.test",
 		ArtifactsS3Region:                  "test",
 		ArtifactsCredentialsSecretName:     "artifacts-credentials",
+		NodeCacheEnabled:                   true,
+		NodeCacheMaxSize:                   "200Gi",
+		NodeCacheFallbackVolumeSize:        "32Gi",
+		NodeCacheStorageClassName:          "ai-models-node-cache",
+		NodeCacheVolumeGroupSetName:        "ai-models-node-cache",
+		NodeCacheVolumeGroupNameOnNode:     "ai-models-cache",
+		NodeCacheThinPoolName:              "model-cache",
+		NodeCacheNodeSelectorJSON:          `{"node-role.kubernetes.io/worker":""}`,
+		NodeCacheBlockDeviceJSON:           `{"status.blockdevice.storage.deckhouse.io/model":"nvme"}`,
 	}
 
 	options := config.bootstrapOptions(corev1.ResourceRequirements{})
@@ -53,6 +62,15 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	}
 	if got, want := options.WorkloadDelivery.Service.Render.CacheMountPath, modeldelivery.DefaultCacheMountPath; got != want {
 		t.Fatalf("delivery cache mount path = %q, want %q", got, want)
+	}
+	if got, want := options.WorkloadDelivery.Service.ManagedCache.Enabled, config.NodeCacheEnabled; got != want {
+		t.Fatalf("delivery managed cache enabled = %t, want %t", got, want)
+	}
+	if got, want := options.WorkloadDelivery.Service.ManagedCache.StorageClassName, config.NodeCacheStorageClassName; got != want {
+		t.Fatalf("delivery managed cache storage class name = %q, want %q", got, want)
+	}
+	if got, want := options.WorkloadDelivery.Service.ManagedCache.VolumeSize, config.NodeCacheFallbackVolumeSize; got != want {
+		t.Fatalf("delivery managed cache volume size = %q, want %q", got, want)
 	}
 	if got, want := options.WorkloadDelivery.Service.RegistrySourceNamespace, config.PublicationWorkerNamespace; got != want {
 		t.Fatalf("delivery source namespace = %q, want %q", got, want)
@@ -71,5 +89,28 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	}
 	if got, want := options.PublicationRuntime.Runtime.OCIDirectUploadEndpoint, config.PublicationOCIDirectUploadEndpoint; got != want {
 		t.Fatalf("publication runtime OCI direct upload endpoint = %q, want %q", got, want)
+	}
+	if got, want := options.NodeCacheSubstrate.MaxSize, config.NodeCacheMaxSize; got != want {
+		t.Fatalf("node cache max size = %q, want %q", got, want)
+	}
+	if got, want := options.NodeCacheSubstrate.StorageClassName, config.NodeCacheStorageClassName; got != want {
+		t.Fatalf("node cache storage class name = %q, want %q", got, want)
+	}
+	if got, want := options.NodeCacheSubstrate.ThinPoolName, config.NodeCacheThinPoolName; got != want {
+		t.Fatalf("node cache thin pool name = %q, want %q", got, want)
+	}
+}
+
+func TestParseManagerConfigRejectsInvalidNodeCacheSelectors(t *testing.T) {
+	t.Parallel()
+
+	_, exitCode, err := parseManagerConfig([]string{
+		"--node-cache-node-selector-json={",
+	})
+	if err == nil {
+		t.Fatal("parseManagerConfig() error = nil, want error")
+	}
+	if exitCode != 2 {
+		t.Fatalf("parseManagerConfig() exitCode = %d, want 2", exitCode)
 	}
 }

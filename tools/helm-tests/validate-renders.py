@@ -375,6 +375,43 @@ def _validate_dmcr_secret_delete_rbac(path: Path, content: str) -> list[str]:
     return errors
 
 
+def _validate_node_cache_runtime_daemonset(path: Path, content: str) -> list[str]:
+    if "--node-cache-enabled=true" not in content:
+        return []
+
+    if "kind: DaemonSet" not in content or "name: ai-models-node-cache-runtime" not in content:
+        return [
+            f"{path.name}: node-cache-enabled render must include DaemonSet/ai-models-node-cache-runtime"
+        ]
+
+    errors: list[str] = []
+    if "ephemeral:" not in content or "volumeClaimTemplate:" not in content:
+        errors.append(
+            f"{path.name}: node-cache runtime DaemonSet must use a generic ephemeral volume"
+        )
+    if "serviceAccountName: ai-models-node-cache-runtime" not in content:
+        errors.append(
+            f"{path.name}: node-cache runtime DaemonSet must use the dedicated ai-models-node-cache-runtime service account"
+        )
+    if "AI_MODELS_NODE_CACHE_INTENT_NAMESPACE" not in content:
+        errors.append(
+            f"{path.name}: node-cache runtime DaemonSet must project AI_MODELS_NODE_CACHE_INTENT_NAMESPACE"
+        )
+    if "AI_MODELS_NODE_CACHE_INTENT_NODE_NAME" not in content or "fieldPath: spec.nodeName" not in content:
+        errors.append(
+            f"{path.name}: node-cache runtime DaemonSet must project AI_MODELS_NODE_CACHE_INTENT_NODE_NAME from spec.nodeName"
+        )
+    if "AI_MODELS_OCI_USERNAME" not in content or "AI_MODELS_OCI_PASSWORD" not in content:
+        errors.append(
+            f"{path.name}: node-cache runtime DaemonSet must project DMCR read credentials for shared-store prefetch"
+        )
+    if "storage:" not in content:
+        errors.append(
+            f"{path.name}: node-cache runtime DaemonSet must request storage for the shared cache volume"
+        )
+    return errors
+
+
 def _validate_htpasswd_entry(
     path: Path,
     *,
@@ -470,6 +507,7 @@ def validate_render(path: Path) -> list[str]:
 
     errors.extend(_validate_port_name_lengths(path, content))
     errors.extend(_validate_dmcr_secret_delete_rbac(path, content))
+    errors.extend(_validate_node_cache_runtime_daemonset(path, content))
     errors.extend(_validate_dmcr_auth_consistency(path, content))
 
     return errors

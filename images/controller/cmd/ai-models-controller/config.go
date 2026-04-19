@@ -17,6 +17,8 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
@@ -26,6 +28,8 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecacheintent"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecachesubstrate"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
@@ -68,6 +72,16 @@ type managerConfig struct {
 	ArtifactsS3IgnoreTLS           bool
 	ArtifactsCredentialsSecretName string
 	ArtifactsCASecretName          string
+
+	NodeCacheEnabled               bool
+	NodeCacheMaxSize               string
+	NodeCacheFallbackVolumeSize    string
+	NodeCacheStorageClassName      string
+	NodeCacheVolumeGroupSetName    string
+	NodeCacheVolumeGroupNameOnNode string
+	NodeCacheThinPoolName          string
+	NodeCacheNodeSelectorJSON      string
+	NodeCacheBlockDeviceJSON       string
 
 	UploadServiceName string
 	UploadPublicHost  string
@@ -112,6 +126,15 @@ func defaultManagerConfig() managerConfig {
 		ArtifactsS3IgnoreTLS:                 cmdsupport.EnvOrBool(artifactsS3IgnoreTLSEnv, false),
 		ArtifactsCredentialsSecretName:       cmdsupport.EnvOr(artifactsCredentialsSecretEnv, ""),
 		ArtifactsCASecretName:                cmdsupport.EnvOr(artifactsCASecretEnv, ""),
+		NodeCacheEnabled:                     cmdsupport.EnvOrBool(nodeCacheEnabledEnv, false),
+		NodeCacheMaxSize:                     cmdsupport.EnvOr(nodeCacheMaxSizeEnv, "200Gi"),
+		NodeCacheFallbackVolumeSize:          cmdsupport.EnvOr(nodeCacheFallbackVolumeSizeEnv, "32Gi"),
+		NodeCacheStorageClassName:            cmdsupport.EnvOr(nodeCacheStorageClassNameEnv, "ai-models-node-cache"),
+		NodeCacheVolumeGroupSetName:          cmdsupport.EnvOr(nodeCacheVolumeGroupSetNameEnv, "ai-models-node-cache"),
+		NodeCacheVolumeGroupNameOnNode:       cmdsupport.EnvOr(nodeCacheVGNameOnNodeEnv, "ai-models-cache"),
+		NodeCacheThinPoolName:                cmdsupport.EnvOr(nodeCacheThinPoolNameEnv, "model-cache"),
+		NodeCacheNodeSelectorJSON:            cmdsupport.EnvOr(nodeCacheNodeSelectorEnv, "{}"),
+		NodeCacheBlockDeviceJSON:             cmdsupport.EnvOr(nodeCacheBlockDeviceSelectorEnv, "{}"),
 		UploadServiceName:                    cmdsupport.EnvOr(uploadServiceNameEnv, "ai-models-controller"),
 		UploadPublicHost:                     cmdsupport.EnvOr(uploadPublicHostEnv, ""),
 		MetricsBindAddress:                   cmdsupport.EnvOr(metricsBindAddressEnv, ":8080"),
@@ -157,6 +180,15 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.BoolVar(&config.ArtifactsS3IgnoreTLS, "artifacts-s3-ignore-tls", config.ArtifactsS3IgnoreTLS, "Disable TLS verification for upload staging object storage.")
 	flags.StringVar(&config.ArtifactsCredentialsSecretName, "artifacts-credentials-secret-name", config.ArtifactsCredentialsSecretName, "Secret with object storage accessKey/secretKey for upload staging.")
 	flags.StringVar(&config.ArtifactsCASecretName, "artifacts-ca-secret-name", config.ArtifactsCASecretName, "Optional Secret with ca.crt for upload staging object storage.")
+	flags.BoolVar(&config.NodeCacheEnabled, "node-cache-enabled", config.NodeCacheEnabled, "Enable ai-models-managed node-local cache substrate.")
+	flags.StringVar(&config.NodeCacheMaxSize, "node-cache-max-size", config.NodeCacheMaxSize, "Per-node thin-pool size budget for managed node-local cache substrate.")
+	flags.StringVar(&config.NodeCacheFallbackVolumeSize, "node-cache-fallback-volume-size", config.NodeCacheFallbackVolumeSize, "Managed local ephemeral volume size injected into workloads for the current runtime delivery fallback path.")
+	flags.StringVar(&config.NodeCacheStorageClassName, "node-cache-storage-class-name", config.NodeCacheStorageClassName, "Managed LocalStorageClass name for node-local cache substrate.")
+	flags.StringVar(&config.NodeCacheVolumeGroupSetName, "node-cache-volume-group-set-name", config.NodeCacheVolumeGroupSetName, "Managed LVMVolumeGroupSet name for node-local cache substrate.")
+	flags.StringVar(&config.NodeCacheVolumeGroupNameOnNode, "node-cache-volume-group-name-on-node", config.NodeCacheVolumeGroupNameOnNode, "Actual VG name created on nodes for node-local cache substrate.")
+	flags.StringVar(&config.NodeCacheThinPoolName, "node-cache-thin-pool-name", config.NodeCacheThinPoolName, "Thin-pool name used for managed node-local cache substrate.")
+	flags.StringVar(&config.NodeCacheNodeSelectorJSON, "node-cache-node-selector-json", config.NodeCacheNodeSelectorJSON, "JSON object with matchLabels for node-local cache substrate node selection.")
+	flags.StringVar(&config.NodeCacheBlockDeviceJSON, "node-cache-block-device-selector-json", config.NodeCacheBlockDeviceJSON, "JSON object with matchLabels for BlockDevice selection in managed node-local cache substrate.")
 	flags.StringVar(&config.UploadServiceName, "upload-service-name", config.UploadServiceName, "Shared Service name used for upload gateway URLs.")
 	flags.StringVar(&config.UploadPublicHost, "upload-public-host", config.UploadPublicHost, "Public host used for upload session ingress URLs.")
 	flags.StringVar(&config.MetricsBindAddress, "metrics-bind-address", config.MetricsBindAddress, "The address the metric endpoint binds to.")
@@ -165,6 +197,12 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.StringVar(&config.LeaderElectionID, "leader-election-id", config.LeaderElectionID, "Leader election ID used for controller manager leases.")
 	flags.StringVar(&config.LeaderElectionNamespace, "leader-election-namespace", config.LeaderElectionNamespace, "Namespace used for leader election leases.")
 	if err := flags.Parse(args); err != nil {
+		return managerConfig{}, 2, err
+	}
+	if _, err := parseMatchLabelsJSON(config.NodeCacheNodeSelectorJSON); err != nil {
+		return managerConfig{}, 2, err
+	}
+	if _, err := parseMatchLabelsJSON(config.NodeCacheBlockDeviceJSON); err != nil {
 		return managerConfig{}, 2, err
 	}
 
@@ -185,6 +223,8 @@ func (c managerConfig) objectStorageOptions() storageprojection.Options {
 
 func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) bootstrap.Options {
 	artifactsObjectStorage := c.objectStorageOptions()
+	nodeSelectorLabels, _ := parseMatchLabelsJSON(c.NodeCacheNodeSelectorJSON)
+	blockDeviceSelectorLabels, _ := parseMatchLabelsJSON(c.NodeCacheBlockDeviceJSON)
 
 	return bootstrap.Options{
 		CleanupJobs: catalogcleanup.Options{
@@ -224,6 +264,20 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 				PublicHost:  c.UploadPublicHost,
 			},
 		},
+		NodeCacheIntent: nodecacheintent.Options{
+			Enabled:   c.NodeCacheEnabled,
+			Namespace: c.CleanupJobNamespace,
+		},
+		NodeCacheSubstrate: nodecachesubstrate.Options{
+			Enabled:                c.NodeCacheEnabled,
+			MaxSize:                c.NodeCacheMaxSize,
+			StorageClassName:       c.NodeCacheStorageClassName,
+			VolumeGroupSetName:     c.NodeCacheVolumeGroupSetName,
+			VolumeGroupNameOnNode:  c.NodeCacheVolumeGroupNameOnNode,
+			ThinPoolName:           c.NodeCacheThinPoolName,
+			NodeSelectorLabels:     nodeSelectorLabels,
+			BlockDeviceMatchLabels: blockDeviceSelectorLabels,
+		},
 		WorkloadDelivery: workloaddelivery.Options{
 			Service: modeldelivery.ServiceOptions{
 				Render: modeldelivery.Options{
@@ -232,6 +286,12 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 					LogLevel:       c.LogLevel,
 					OCIInsecure:    c.PublicationOCIInsecure,
 					CacheMountPath: modeldelivery.DefaultCacheMountPath,
+				},
+				ManagedCache: modeldelivery.ManagedCacheOptions{
+					Enabled:          c.NodeCacheEnabled,
+					StorageClassName: c.NodeCacheStorageClassName,
+					VolumeSize:       c.NodeCacheFallbackVolumeSize,
+					VolumeName:       modeldelivery.DefaultManagedCacheName,
 				},
 				RegistrySourceNamespace:      cmdsupport.FallbackString(c.PublicationWorkerNamespace, c.CleanupJobNamespace),
 				RegistrySourceAuthSecretName: defaultDMCRReadAuthSecretName,
@@ -246,4 +306,12 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 			LeaderElectionNamespace: c.LeaderElectionNamespace,
 		},
 	}
+}
+
+func parseMatchLabelsJSON(raw string) (map[string]string, error) {
+	labels := map[string]string{}
+	if err := json.Unmarshal([]byte(raw), &labels); err != nil {
+		return nil, fmt.Errorf("parse matchLabels json: %w", err)
+	}
+	return labels, nil
 }

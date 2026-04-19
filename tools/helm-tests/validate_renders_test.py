@@ -180,6 +180,137 @@ rules:
             ],
         )
 
+    def test_validate_render_rejects_missing_node_cache_runtime_daemonset(self) -> None:
+        content = """---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-models-controller
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          args:
+            - --node-cache-enabled=true
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE.validate_render(render_path)
+
+        self.assertEqual(
+            errors,
+            [
+                "helm-template-test.yaml: node-cache-enabled render must include DaemonSet/ai-models-node-cache-runtime"
+            ],
+        )
+
+    def test_validate_render_accepts_node_cache_runtime_daemonset(self) -> None:
+        content = """---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-models-controller
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          args:
+            - --node-cache-enabled=true
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ai-models-node-cache-runtime
+spec:
+  template:
+    spec:
+      serviceAccountName: ai-models-node-cache-runtime
+      containers:
+        - name: node-cache-runtime
+          env:
+            - name: AI_MODELS_NODE_CACHE_INTENT_NAMESPACE
+              value: d8-ai-models
+            - name: AI_MODELS_NODE_CACHE_INTENT_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: AI_MODELS_OCI_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: ai-models-dmcr-auth-read
+                  key: username
+            - name: AI_MODELS_OCI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ai-models-dmcr-auth-read
+                  key: password
+      volumes:
+        - name: cache-root
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                resources:
+                  requests:
+                    storage: 1Gi
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE.validate_render(render_path)
+
+        self.assertEqual(errors, [])
+
+    def test_validate_render_rejects_node_cache_runtime_without_intent_projection(self) -> None:
+        content = """---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-models-controller
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          args:
+            - --node-cache-enabled=true
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ai-models-node-cache-runtime
+spec:
+  template:
+    spec:
+      serviceAccountName: ai-models-node-cache-runtime
+      volumes:
+        - name: cache-root
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                resources:
+                  requests:
+                    storage: 64Gi
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE.validate_render(render_path)
+
+        self.assertEqual(
+            errors,
+            [
+                "helm-template-test.yaml: node-cache runtime DaemonSet must project AI_MODELS_NODE_CACHE_INTENT_NAMESPACE",
+                "helm-template-test.yaml: node-cache runtime DaemonSet must project AI_MODELS_NODE_CACHE_INTENT_NODE_NAME from spec.nodeName",
+                "helm-template-test.yaml: node-cache runtime DaemonSet must project DMCR read credentials for shared-store prefetch",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

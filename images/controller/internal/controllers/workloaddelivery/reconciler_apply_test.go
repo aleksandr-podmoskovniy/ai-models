@@ -49,6 +49,9 @@ func TestDeploymentReconcilerAppliesRuntimeDelivery(t *testing.T) {
 	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDigestAnnotation]; got != testDigest {
 		t.Fatalf("resolved digest annotation = %q, want %q", got, testDigest)
 	}
+	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]; got != testArtifactURI {
+		t.Fatalf("resolved artifact URI annotation = %q, want %q", got, testArtifactURI)
+	}
 	if !hasInitContainer(updated.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
 		t.Fatalf("expected init container %q", modeldelivery.DefaultInitContainerName)
 	}
@@ -90,5 +93,35 @@ func TestDeploymentReconcilerClearsStaleManagedStateWhileReferencedModelIsPendin
 	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDigestAnnotation]; found {
 		t.Fatal("did not expect resolved digest annotation while model is pending")
 	}
+	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]; found {
+		t.Fatal("did not expect resolved artifact URI annotation while model is pending")
+	}
 	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
+}
+
+func TestDeploymentReconcilerInjectsManagedLocalCacheWhenWorkloadHasNoMount(t *testing.T) {
+	t.Parallel()
+
+	model := readyModel()
+	workload := annotatedDeploymentWithoutCacheMount(map[string]string{ModelAnnotation: model.Name}, 1)
+	reconciler, kubeClient := newDeploymentReconcilerWithManagedCache(t, model, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
+
+	result := reconcileDeployment(t, reconciler, workload)
+	if result != (ctrl.Result{}) {
+		t.Fatalf("unexpected reconcile result %#v", result)
+	}
+
+	var updated deployment
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &updated); err != nil {
+		t.Fatalf("Get(deployment) error = %v", err)
+	}
+	if !hasInitContainer(updated.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
+		t.Fatalf("expected init container %q", modeldelivery.DefaultInitContainerName)
+	}
+	if len(updated.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 {
+		t.Fatalf("expected managed local cache mount, got %#v", updated.Spec.Template.Spec.Containers[0].VolumeMounts)
+	}
+	if got, want := updated.Spec.Template.Spec.Containers[0].VolumeMounts[0].Name, modeldelivery.DefaultManagedCacheName; got != want {
+		t.Fatalf("managed cache volume name = %q, want %q", got, want)
+	}
 }

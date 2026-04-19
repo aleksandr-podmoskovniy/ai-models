@@ -1,0 +1,108 @@
+{{- if and (include "ai-models.isEnabled" .) (eq (include "ai-models.nodeCacheEnabled" .) "true") }}
+{{- $priorityClassName := include "ai-models.priorityClassName" . -}}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "ai-models.nodeCacheRuntimeName" . }}
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "node-cache-runtime")) | nindent 2 }}
+spec:
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      {{- include "ai-models.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: node-cache-runtime
+  template:
+    metadata:
+      labels:
+        {{- include "ai-models.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: node-cache-runtime
+    spec:
+      serviceAccountName: {{ include "ai-models.nodeCacheRuntimeName" . }}
+      {{- if (include "ai-models.hasRegistrySecret" .) }}
+      imagePullSecrets:
+        - name: {{ include "ai-models.registrySecretName" . }}
+      {{- end }}
+      {{- include "helm_lib_priority_class" (tuple . $priorityClassName) | nindent 6 }}
+      {{- include "helm_lib_tolerations" (tuple . "any-node") | nindent 6 }}
+      {{- include "helm_lib_module_pod_security_context_run_as_user_deckhouse_with_writable_fs" . | nindent 6 }}
+      {{- include "ai-models.nodeCacheRuntimeNodeSelector" . | nindent 6 }}
+      containers:
+        - name: node-cache-runtime
+          {{- include "helm_lib_module_container_security_context_read_only_root_filesystem_capabilities_drop_all_pss_restricted" . | nindent 10 }}
+          image: {{ include "helm_lib_module_image" (list . "controllerRuntime") }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - node-cache-runtime
+          env:
+            - name: LOG_FORMAT
+              value: json
+            - name: {{ "AI_MODELS_NODE_CACHE_ROOT" }}
+              value: /var/lib/ai-models/node-cache
+            - name: {{ "AI_MODELS_NODE_CACHE_MAX_TOTAL_SIZE" }}
+              value: {{ include "ai-models.nodeCacheMaxSize" . | quote }}
+            - name: {{ "AI_MODELS_NODE_CACHE_MAX_UNUSED_AGE" }}
+              value: {{ include "ai-models.nodeCacheMaintenanceMaxUnusedAge" . | quote }}
+            - name: {{ "AI_MODELS_NODE_CACHE_SCAN_INTERVAL" }}
+              value: {{ include "ai-models.nodeCacheMaintenanceScanInterval" . | quote }}
+            - name: AI_MODELS_NODE_CACHE_INTENT_NAMESPACE
+              value: {{ include "ai-models.namespace" . | quote }}
+            - name: AI_MODELS_NODE_CACHE_INTENT_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: PUBLICATION_OCI_INSECURE
+              value: "false"
+            - name: AI_MODELS_OCI_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.dmcrReadAuthSecretName" . }}
+                  key: username
+            - name: AI_MODELS_OCI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.dmcrReadAuthSecretName" . }}
+                  key: password
+            {{- if (include "ai-models.dmcrCASecretName" . | trim) }}
+            - name: AI_MODELS_OCI_CA_FILE
+              value: /etc/ai-models/registry-ca/ca.crt
+            {{- end }}
+          resources:
+            requests:
+              {{- include "helm_lib_module_ephemeral_storage_only_logs" . | nindent 14 }}
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: cache-root
+              mountPath: /var/lib/ai-models/node-cache
+            {{- if (include "ai-models.dmcrCASecretName" . | trim) }}
+            - name: registry-ca
+              mountPath: /etc/ai-models/registry-ca
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: cache-root
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                labels:
+                  {{- include "ai-models.selectorLabels" . | nindent 18 }}
+                  app.kubernetes.io/component: node-cache-runtime
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                storageClassName: {{ include "ai-models.nodeCacheStorageClassName" . }}
+                volumeMode: Filesystem
+                resources:
+                  requests:
+                    storage: {{ include "ai-models.nodeCacheSharedVolumeSize" . }}
+        {{- if (include "ai-models.dmcrCASecretName" . | trim) }}
+        - name: registry-ca
+          secret:
+            secretName: {{ include "ai-models.dmcrCASecretName" . }}
+        {{- end }}
+{{- end }}

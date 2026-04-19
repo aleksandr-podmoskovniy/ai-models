@@ -78,6 +78,15 @@ spec:
             - --artifacts-s3-ignore-tls={{ include "ai-models.artifactsIgnoreTLS" . }}
             - --artifacts-credentials-secret-name={{ include "ai-models.artifactsResolvedSecretName" . }}
             - --artifacts-ca-secret-name={{ include "ai-models.artifactsMountedCASecretName" . }}
+            - --node-cache-enabled={{ include "ai-models.nodeCacheEnabled" . }}
+            - --node-cache-max-size={{ include "ai-models.nodeCacheMaxSize" . }}
+            - --node-cache-fallback-volume-size={{ include "ai-models.nodeCacheFallbackVolumeSize" . }}
+            - --node-cache-storage-class-name={{ include "ai-models.nodeCacheStorageClassName" . }}
+            - --node-cache-volume-group-set-name={{ include "ai-models.nodeCacheVolumeGroupSetName" . }}
+            - --node-cache-volume-group-name-on-node={{ include "ai-models.nodeCacheVolumeGroupNameOnNode" . }}
+            - --node-cache-thin-pool-name={{ include "ai-models.nodeCacheThinPoolName" . }}
+            - --node-cache-node-selector-json={{ include "ai-models.nodeCacheNodeSelectorJSON" . | quote }}
+            - --node-cache-block-device-selector-json={{ include "ai-models.nodeCacheBlockDeviceSelectorJSON" . | quote }}
             - --upload-service-name={{ include "ai-models.controllerServiceName" . }}
             - --upload-public-host={{ include "ai-models.uploadPublicHost" . }}
           env:

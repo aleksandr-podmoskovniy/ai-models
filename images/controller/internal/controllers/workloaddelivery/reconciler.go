@@ -44,7 +44,7 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	managed := hasManagedTemplateState(template, r.options.Service.Render)
+	managed := hasManagedTemplateState(template, r.options.Service)
 
 	reference, found, err := parseReference(object.GetAnnotations())
 	if err != nil {
@@ -115,7 +115,7 @@ func (r *baseReconciler) removeManagedDelivery(
 	original client.Object,
 	template *corev1.PodTemplateSpec,
 ) error {
-	changed := removeManagedTemplateState(template, r.options.Service.Render)
+	changed := removeManagedTemplateState(template, r.options.Service)
 	if err := ociregistry.DeleteProjectedAccess(ctx, r.client, object.GetNamespace(), object.GetUID()); err != nil {
 		return err
 	}

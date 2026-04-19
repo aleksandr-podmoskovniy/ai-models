@@ -59,22 +59,59 @@ Current phase-2 slice implemented here:
   local path from immutable `DMCR` artifacts, and one canonical internal
   helper-owned transport for heavy layer blobs through the `DMCR` direct-upload
   helper;
+- `internal/nodecache` for shared node-local cache contract reused by the
+  current `materialize-artifact` fallback and the new module-owned
+  node-cache runtime plane: digest-addressed shared store layout, ready marker
+  parsing, separate consumer materialization/current-link helper contract,
+  single-writer coordination, access timestamp handling, desired-artifact
+  prefetch into the shared store, protected-digest-aware bounded cache
+  scan/eviction planning, and runtime maintenance loop;
 - `internal/adapters/k8s/modeldelivery` for reusable consumer-side
   `PodTemplateSpec` mutation over `materialize-artifact`, fixed
-  `/data/modelcache` cache-root contract over user-provided storage,
+  `/data/modelcache` cache-root contract over user-provided storage or
+  ai-models-managed local generic ephemeral fallback volume,
   topology-aware per-pod versus direct shared PVC handling with RWX
   single-writer cache-root coordination, and cross-namespace read-only DMCR
   auth/CA projection into the runtime namespace without runtime env patching;
+- `internal/adapters/k8s/nodecacheintent` for controller-owned shaping of
+  per-node desired artifact sets into module-owned `ConfigMap` objects and
+  for runtime-side loading of that intent surface inside the node-cache agent;
+- `internal/adapters/k8s/nodecachesubstrate` for concrete
+  `storage.deckhouse.io/v1alpha1` shaping of managed `LVMVolumeGroupSet`,
+  ready managed `LVMVolumeGroup` filtering, and ai-models-owned
+  `LocalStorageClass` rendering for the forthcoming node-local cache runtime;
 - `internal/controllers/workloaddelivery` for controller-owned adoption of
   annotated `Deployment` / `StatefulSet` / `DaemonSet` / `CronJob`
   workloads: it resolves `Model` or `ClusterModel`, reuses the shared
   `k8s/modeldelivery` service, writes digest rollout annotations onto
-  `PodTemplateSpec`, fail-closes when user-provided `/data/modelcache`
-  storage topology is invalid instead of inventing a second storage contract,
+  `PodTemplateSpec`, auto-injects a managed local fallback volume when
+  node-cache substrate is enabled and the workload did not bring a cache mount,
+  fail-closes when user-provided `/data/modelcache` storage topology is invalid
+  instead of inventing a second storage contract,
   and stays controller-driven instead of introducing generic mutating or
   validating admission hooks for foreign workload kinds; watch scope is now
   narrow to opt-in or already-managed workloads plus referenced
   `Model` / `ClusterModel` objects;
+- `internal/controllers/nodecachesubstrate` for ai-models-owned managed local
+  storage substrate: it keeps one `LVMVolumeGroupSet` plus one
+  `LocalStorageClass` for node-local cache preparation and removes the need to
+  hand-create local-storage resources before the later cache runtime slice
+  lands; workload delivery can already reuse that storage class for managed
+  local fallback volumes, but node-shared cache semantics still remain outside
+  this controller;
+- `internal/controllers/nodecacheintent` for controller-owned per-node desired
+  artifact intent: it watches already-managed scheduled Pods, computes the
+  immutable published-artifact set needed on each node, and maintains one
+  module-owned `ConfigMap` per node for the runtime agent instead of pushing
+  cache policy into workload mutation or inventing a new public API;
+- module render now keeps the first real node-local cache runtime plane as a
+  standard `DaemonSet` with one generic ephemeral volume per node over the
+  ai-models-managed `LocalStorageClass`; that shared-store volume is sized by
+  `nodeCache.sharedVolumeSize`, reads controller-owned per-node intent, and
+  prefetches immutable published artifacts into the shared node-local digest
+  store while workload delivery still uses the fallback path, so maintenance
+  and prefetch already run on the correct node-agent shape without a custom
+  per-node controller loop;
 - `internal/adapters/sourcefetch` for safe `HuggingFace` source
   acquisition and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport, source mirror transfer, archive inspection and

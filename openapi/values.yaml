@@ -52,6 +52,56 @@ properties:
       usePathStyle:
         type: boolean
         default: true
+  nodeCache:
+    type: object
+    description: Managed node-local cache substrate settings exposed by ai-models.
+    additionalProperties: false
+    default:
+      enabled: false
+      maxSize: 200Gi
+      fallbackVolumeSize: 32Gi
+      sharedVolumeSize: 64Gi
+      storageClassName: ai-models-node-cache
+      volumeGroupSetName: ai-models-node-cache
+      volumeGroupNameOnNode: ai-models-cache
+      thinPoolName: model-cache
+      nodeSelector: {}
+      blockDeviceSelector: {}
+    properties:
+      enabled:
+        type: boolean
+        default: false
+      maxSize:
+        type: string
+        default: 200Gi
+      fallbackVolumeSize:
+        type: string
+        default: 32Gi
+      sharedVolumeSize:
+        type: string
+        default: 64Gi
+      storageClassName:
+        type: string
+        default: ai-models-node-cache
+      volumeGroupSetName:
+        type: string
+        default: ai-models-node-cache
+      volumeGroupNameOnNode:
+        type: string
+        default: ai-models-cache
+      thinPoolName:
+        type: string
+        default: model-cache
+      nodeSelector:
+        type: object
+        default: {}
+        additionalProperties:
+          type: string
+      blockDeviceSelector:
+        type: object
+        default: {}
+        additionalProperties:
+          type: string
   registry:
     type: object
     description: Registry credentials injected by Deckhouse runtime.
@@ -96,6 +146,17 @@ properties:
             caSecretName: ""
             insecure: false
             usePathStyle: true
+          nodeCache:
+            enabled: false
+            maxSize: 200Gi
+            fallbackVolumeSize: 32Gi
+            sharedVolumeSize: 64Gi
+            storageClassName: ai-models-node-cache
+            volumeGroupSetName: ai-models-node-cache
+            volumeGroupNameOnNode: ai-models-cache
+            thinPoolName: model-cache
+            nodeSelector: {}
+            blockDeviceSelector: {}
         additionalProperties: true
       conditions:
         type: array

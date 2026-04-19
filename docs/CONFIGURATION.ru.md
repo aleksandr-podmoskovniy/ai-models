@@ -11,6 +11,7 @@ weight: 60
 
 - `logLevel`;
 - `artifacts`.
+- `nodeCache`.
 
 Режим HA, HTTPS policy, ingress class, controller/runtime wiring, внутренний
 `DMCR`, upload-gateway и publication worker остаются во global Deckhouse
@@ -90,3 +91,49 @@ limits контейнера для writable layer и логов.
 Публичный model API тоже намеренно минимален. Пользователь задаёт только
 `spec.source`; формат, task и остальная model metadata вычисляются controller'ом
 из фактического содержимого модели и проецируются в `status.resolved`.
+
+`nodeCache` — это первый landed slice для node-local cache workstream. В
+текущем состоянии он владеет managed local-storage substrate и current local
+fallback volume contract:
+
+- ai-models может держать один managed `LVMVolumeGroupSet` поверх
+  `sds-node-configurator`;
+- ai-models может держать один managed `LocalStorageClass`, который строится по
+  текущему списку ready managed `LVMVolumeGroup`;
+- при включении этого slice ручное создание такого `LocalStorageClass` больше
+  не нужно.
+
+Текущий bounded contract такой:
+
+- `nodeCache.enabled` включает managed substrate controller;
+- `nodeCache.maxSize` становится per-node thin-pool budget;
+- `nodeCache.fallbackVolumeSize` задаёт размер managed local ephemeral volume,
+  который current workload delivery автоматически подкладывает на
+  `/data/modelcache`, если annotated workload не принёс свой cache volume сам;
+- `nodeCache.sharedVolumeSize` задаёт размер per-node shared cache volume,
+  который module-owned `node-cache-runtime` `DaemonSet` запрашивает поверх
+  managed `LocalStorageClass`;
+- `nodeCache.storageClassName`, `nodeCache.volumeGroupSetName`,
+  `nodeCache.volumeGroupNameOnNode` и `nodeCache.thinPoolName` задают
+  ai-models-owned имена substrate-объектов;
+- `nodeCache.nodeSelector` и `nodeCache.blockDeviceSelector` — это
+  `matchLabels` maps для выбора узлов и `BlockDevice`.
+
+Этот slice всё ещё не заменяет live workload delivery path workload-facing
+node-shared mount service'ом. Workload'ы по-прежнему materialize'ятся через
+controller-owned `materialize-artifact` в `/data/modelcache`, но теперь:
+
+- ai-models может сам inject'ить local generic ephemeral volume поверх managed
+  `LocalStorageClass`, если workload не принёс свою cache topology;
+- ai-models теперь держит отдельный per-node shared cache plane как
+  стандартный `DaemonSet` с generic ephemeral volume поверх managed
+  `LocalStorageClass`; размер этого volume задаётся через
+  `nodeCache.sharedVolumeSize`;
+- controller проецирует per-node desired artifact set в module-owned
+  `ConfigMap`, а `node-cache-runtime` использует этот internal intent plane,
+  чтобы prefetch'ить immutable published artifacts из `DMCR` в shared
+  node-local digest store без нового public API.
+
+При этом публичного cleanup/TTL knob пока нет: workload-facing shared mount
+contract ещё не landed, поэтому eviction policy остаётся internal runtime
+behavior, а не обещанным user-facing SLA.

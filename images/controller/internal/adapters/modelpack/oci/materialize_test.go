@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
 
@@ -153,7 +154,7 @@ func TestMaterializerReplacesStaleDestination(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(destination, "stale", "old.txt"), []byte("old"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(destination, markerFileName), []byte(`{"digest":"sha256:stale","modelPath":"`+destination+`/stale"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(destination, nodecache.MarkerFileName), []byte(`{"digest":"sha256:stale","modelPath":"`+destination+`/stale"}`), 0o644); err != nil {
 		t.Fatalf("WriteFile(marker) error = %v", err)
 	}
 

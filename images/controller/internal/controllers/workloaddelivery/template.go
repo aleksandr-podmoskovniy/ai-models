@@ -43,23 +43,29 @@ func podTemplateAndHints(object client.Object) (*corev1.PodTemplateSpec, modelde
 	}
 }
 
-func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeldelivery.Options) bool {
+func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeldelivery.ServiceOptions) bool {
 	if template == nil {
 		return false
 	}
-	options = modeldelivery.NormalizeOptions(options)
+	options = modeldelivery.NormalizeServiceOptions(options)
 
 	changed := false
-	initContainers, removedInit := removeContainerByName(template.Spec.InitContainers, options.InitContainerName)
+	initContainers, removedInit := removeContainerByName(template.Spec.InitContainers, options.Render.InitContainerName)
 	if removedInit {
 		template.Spec.InitContainers = initContainers
 		changed = true
 	}
 
-	annotations, removedAnnotation := removeAnnotation(template.Annotations, modeldelivery.ResolvedDigestAnnotation)
-	if removedAnnotation {
-		template.Annotations = annotations
-		changed = true
+	for _, key := range []string{
+		modeldelivery.ResolvedDigestAnnotation,
+		modeldelivery.ResolvedArtifactURIAnnotation,
+		modeldelivery.ResolvedArtifactFamilyAnnotation,
+	} {
+		var removed bool
+		template.Annotations, removed = removeAnnotation(template.Annotations, key)
+		if removed {
+			changed = true
+		}
 	}
 
 	if !volumeMounted(template, ociregistry.CAVolumeName) {
@@ -70,19 +76,25 @@ func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeld
 		}
 	}
 
+	if modeldelivery.RemoveManagedCacheTemplateState(template, options) {
+		changed = true
+	}
+
 	return changed
 }
 
-func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldelivery.Options) bool {
+func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldelivery.ServiceOptions) bool {
 	if template == nil {
 		return false
 	}
-	options = modeldelivery.NormalizeOptions(options)
+	options = modeldelivery.NormalizeServiceOptions(options)
 
-	if strings.TrimSpace(template.Annotations[modeldelivery.ResolvedDigestAnnotation]) != "" {
+	if strings.TrimSpace(template.Annotations[modeldelivery.ResolvedDigestAnnotation]) != "" ||
+		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]) != "" ||
+		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedArtifactFamilyAnnotation]) != "" {
 		return true
 	}
-	if hasContainerByName(template.Spec.InitContainers, options.InitContainerName) {
+	if hasContainerByName(template.Spec.InitContainers, options.Render.InitContainerName) {
 		return true
 	}
 	for _, volume := range template.Spec.Volumes {
@@ -90,7 +102,7 @@ func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldeli
 			return true
 		}
 	}
-	return false
+	return modeldelivery.HasManagedCacheTemplateState(template, options)
 }
 
 func removeContainerByName(containers []corev1.Container, name string) ([]corev1.Container, bool) {

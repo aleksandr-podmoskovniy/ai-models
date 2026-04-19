@@ -83,4 +83,64 @@ properties:
         type: boolean
         description: Use path-style S3 requests.
         default: true
+  nodeCache:
+    type: object
+    additionalProperties: false
+    description: |
+      Managed node-local cache substrate settings.
+      This slice owns the local storage substrate for the forthcoming node-local
+      cache runtime and removes the need to create `LocalStorageClass`
+      manually. The current workload delivery path still materializes into
+      workload-owned `/data/modelcache`.
+    properties:
+      enabled:
+        type: boolean
+        description: Enable ai-models-managed node-local cache substrate.
+        default: false
+      maxSize:
+        type: string
+        description: Per-node cache substrate size used as thin-pool budget.
+        default: 200Gi
+      fallbackVolumeSize:
+        type: string
+        description: |
+          Size of the managed local ephemeral volume automatically injected into
+          annotated workloads for the current init-container fallback delivery
+          path when they do not bring their own `/data/modelcache` volume.
+        default: 32Gi
+      sharedVolumeSize:
+        type: string
+        description: |
+          Size of the per-node shared cache volume used by the module-owned
+          node-cache runtime `DaemonSet` for prefetch and maintenance of the
+          shared node-local digest store.
+        default: 64Gi
+      storageClassName:
+        type: string
+        description: Name of the managed `LocalStorageClass` created by ai-models.
+        default: ai-models-node-cache
+      volumeGroupSetName:
+        type: string
+        description: Name of the managed `LVMVolumeGroupSet`.
+        default: ai-models-node-cache
+      volumeGroupNameOnNode:
+        type: string
+        description: Actual VG name created on each selected node for the managed cache substrate.
+        default: ai-models-cache
+      thinPoolName:
+        type: string
+        description: Thin-pool name created inside the managed VG for cache capacity budgeting.
+        default: model-cache
+      nodeSelector:
+        type: object
+        description: MatchLabels selector for nodes that should host managed node-local cache substrate.
+        default: {}
+        additionalProperties:
+          type: string
+      blockDeviceSelector:
+        type: object
+        description: MatchLabels selector for BlockDevice resources used to build the managed cache VG.
+        default: {}
+        additionalProperties:
+          type: string
 additionalProperties: false

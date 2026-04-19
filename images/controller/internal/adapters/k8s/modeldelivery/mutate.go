@@ -30,7 +30,9 @@ func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest s
 	template.Spec.InitContainers = upsertContainer(template.Spec.InitContainers, rendered.InitContainer)
 	template.Spec.Volumes = upsertVolumes(template.Spec.Volumes, rendered.Volumes)
 	template.Annotations = upsertAnnotations(template.Annotations, map[string]string{
-		ResolvedDigestAnnotation: digest,
+		ResolvedDigestAnnotation:         digest,
+		ResolvedArtifactURIAnnotation:    rendered.ArtifactURI,
+		ResolvedArtifactFamilyAnnotation: rendered.ArtifactFamily,
 	})
 	return nil
 }

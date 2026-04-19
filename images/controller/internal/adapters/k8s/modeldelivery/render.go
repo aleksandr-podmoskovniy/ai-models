@@ -37,6 +37,8 @@ type Rendered struct {
 	InitContainer    corev1.Container
 	Volumes          []corev1.Volume
 	CurrentModelPath string
+	ArtifactURI      string
+	ArtifactFamily   string
 }
 
 func Render(input Input, options Options) (Rendered, error) {
@@ -76,6 +78,8 @@ func Render(input Input, options Options) (Rendered, error) {
 		},
 		Volumes:          ociregistry.Volumes(input.RegistryAccess.CASecretName),
 		CurrentModelPath: CurrentModelPath(options),
+		ArtifactURI:      strings.TrimSpace(input.Artifact.URI),
+		ArtifactFamily:   strings.TrimSpace(input.ArtifactFamily),
 	}, nil
 }
 

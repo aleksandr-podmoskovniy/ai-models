@@ -17,11 +17,11 @@ limitations under the License.
 package modeldelivery
 
 import (
-	"path/filepath"
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -58,7 +58,7 @@ func TestRenderBuildsMaterializerAgainstExistingCacheMount(t *testing.T) {
 	if got, want := rendered.InitContainer.Args, []string{"materialize-artifact"}; len(got) != len(want) || got[0] != want[0] {
 		t.Fatalf("unexpected init args %#v", got)
 	}
-	if got, want := rendered.CurrentModelPath, filepath.Join(DefaultCacheMountPath, DefaultCurrentPathName); got != want {
+	if got, want := rendered.CurrentModelPath, nodecache.CurrentLinkPath(DefaultCacheMountPath); got != want {
 		t.Fatalf("current model path = %q, want %q", got, want)
 	}
 	if got, want := rendered.InitContainer.VolumeMounts[0].Name, "model-cache"; got != want {

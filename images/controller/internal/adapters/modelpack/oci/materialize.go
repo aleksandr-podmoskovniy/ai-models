@@ -27,10 +27,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
-
-const markerFileName = ".ai-models-materialized.json"
 
 type Materializer struct{}
 
@@ -210,25 +209,8 @@ func validateExpectedDigest(input modelpackports.MaterializeInput, actual string
 	return nil
 }
 
-func readMarker(destination string) (*materializedMarker, error) {
-	markerPath := filepath.Join(destination, markerFileName)
-	body, err := os.ReadFile(markerPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	var marker materializedMarker
-	if err := json.Unmarshal(body, &marker); err != nil {
-		return nil, fmt.Errorf("failed to decode materialization marker: %w", err)
-	}
-	return &marker, nil
-}
-
 func writeMarker(input modelpackports.MaterializeInput, digest, mediaType, modelPath string) (string, error) {
-	markerPath := filepath.Join(input.DestinationDir, markerFileName)
+	markerPath := nodecache.MarkerPath(input.DestinationDir)
 	marker := materializedMarker{
 		Version:     "v1",
 		ArtifactURI: strings.TrimSpace(input.ArtifactURI),

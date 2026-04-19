@@ -26,6 +26,8 @@ import (
 	apiinstall "github.com/deckhouse/ai-models/api/core/install"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecacheintent"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecachesubstrate"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	"github.com/deckhouse/ai-models/controller/internal/monitoring/catalogmetrics"
 	"github.com/go-logr/logr"
@@ -47,6 +49,8 @@ const defaultControllerCacheSyncTimeout = 10 * time.Minute
 type Options struct {
 	CleanupJobs        catalogcleanup.Options
 	PublicationRuntime catalogstatus.Options
+	NodeCacheIntent    nodecacheintent.Options
+	NodeCacheSubstrate nodecachesubstrate.Options
 	WorkloadDelivery   workloaddelivery.Options
 	Runtime            RuntimeOptions
 }
@@ -63,6 +67,8 @@ type App struct {
 	logger             *slog.Logger
 	cleanupJobs        catalogcleanup.Options
 	publicationRuntime catalogstatus.Options
+	nodeCacheIntent    nodecacheintent.Options
+	nodeCacheSubstrate nodecachesubstrate.Options
 	workloadDelivery   workloaddelivery.Options
 	runtime            RuntimeOptions
 }
@@ -77,6 +83,12 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 	if err := options.PublicationRuntime.Validate(); err != nil {
 		return nil, err
 	}
+	if err := options.NodeCacheIntent.Validate(); err != nil {
+		return nil, err
+	}
+	if err := options.NodeCacheSubstrate.Validate(); err != nil {
+		return nil, err
+	}
 	if err := options.WorkloadDelivery.Validate(); err != nil {
 		return nil, err
 	}
@@ -86,6 +98,8 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 	return &App{
 		cleanupJobs:        options.CleanupJobs,
 		publicationRuntime: options.PublicationRuntime,
+		nodeCacheIntent:    options.NodeCacheIntent,
+		nodeCacheSubstrate: options.NodeCacheSubstrate,
 		workloadDelivery:   options.WorkloadDelivery,
 		logger:             logger,
 		runtime:            runtimeOptions,
@@ -93,18 +107,8 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 }
 
 func (a *App) Run(ctx context.Context) error {
-	scheme := runtime.NewScheme()
-	apiinstall.Install(scheme)
-	if err := appsv1.AddToScheme(scheme); err != nil {
-		return err
-	}
-	if err := batchv1.AddToScheme(scheme); err != nil {
-		return err
-	}
-	if err := corev1.AddToScheme(scheme); err != nil {
-		return err
-	}
-	if err := networkingv1.AddToScheme(scheme); err != nil {
+	scheme, err := buildManagerScheme()
+	if err != nil {
 		return err
 	}
 
@@ -113,20 +117,62 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 
+	if err := a.setupManager(mgr); err != nil {
+		return err
+	}
+
+	a.logRuntimeConfiguration()
+
+	if err := mgr.Start(ctx); err != nil {
+		return err
+	}
+
+	a.logger.Info("controller manager stopped")
+	return nil
+}
+
+func buildManagerScheme() (*runtime.Scheme, error) {
+	scheme := runtime.NewScheme()
+	apiinstall.Install(scheme)
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	if err := batchv1.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	if err := networkingv1.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+
+	return scheme, nil
+}
+
+func (a *App) setupManager(mgr ctrl.Manager) error {
 	if err := catalogcleanup.SetupWithManager(mgr, a.cleanupJobs); err != nil {
 		return err
 	}
 	if err := catalogstatus.SetupWithManager(mgr, a.publicationRuntime); err != nil {
 		return err
 	}
+	if err := nodecacheintent.SetupWithManager(mgr, a.logger, a.nodeCacheIntent); err != nil {
+		return err
+	}
+	if err := nodecachesubstrate.SetupWithManager(mgr, a.logger, a.nodeCacheSubstrate); err != nil {
+		return err
+	}
 	if err := workloaddelivery.SetupWithManager(mgr, a.workloadDelivery); err != nil {
 		return err
 	}
+
 	catalogmetrics.SetupCollector(
 		mgr.GetCache(),
 		metrics.Registry,
 		a.logger.With(slog.String("runtimeKind", "metrics")),
 	)
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return err
 	}
@@ -134,6 +180,10 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 
+	return nil
+}
+
+func (a *App) logRuntimeConfiguration() {
 	a.logger.Info(
 		"controller bootstrap ready",
 		slog.String("metricsBindAddress", a.runtime.MetricsBindAddress),
@@ -159,13 +209,20 @@ func (a *App) Run(ctx context.Context) error {
 			slog.String("deliveryRegistrySourceNamespace", a.workloadDelivery.Service.RegistrySourceNamespace),
 		)
 	}
-
-	if err := mgr.Start(ctx); err != nil {
-		return err
+	if a.nodeCacheSubstrate.Enabled {
+		a.logger.Info(
+			"controller node-cache substrate configured",
+			slog.String("storageClassName", a.nodeCacheSubstrate.StorageClassName),
+			slog.String("volumeGroupSetName", a.nodeCacheSubstrate.VolumeGroupSetName),
+			slog.String("maxSize", a.nodeCacheSubstrate.MaxSize),
+		)
 	}
-
-	a.logger.Info("controller manager stopped")
-	return nil
+	if a.nodeCacheIntent.Enabled {
+		a.logger.Info(
+			"controller node-cache intent configured",
+			slog.String("namespace", a.nodeCacheIntent.Namespace),
+		)
+	}
 }
 
 func normalizeRuntimeOptions(options RuntimeOptions) RuntimeOptions {

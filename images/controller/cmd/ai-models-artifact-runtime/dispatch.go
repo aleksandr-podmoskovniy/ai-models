@@ -31,9 +31,10 @@ const (
 	commandUploadGateway       = "upload-gateway"
 	commandArtifactCleanup     = "artifact-cleanup"
 	commandMaterializeArtifact = "materialize-artifact"
+	commandNodeCacheRuntime    = "node-cache-runtime"
 )
 
-var errMissingCommand = errors.New("expected one of: publish-worker, upload-gateway, artifact-cleanup, materialize-artifact")
+var errMissingCommand = errors.New("expected one of: publish-worker, upload-gateway, artifact-cleanup, materialize-artifact, node-cache-runtime")
 
 func run(args []string) int {
 	if err := configureRuntimeLogger(runtimeComponent(args)); err != nil {
@@ -51,6 +52,8 @@ func run(args []string) int {
 		return runArtifactCleanup(args[1:])
 	case args[0] == commandMaterializeArtifact:
 		return runMaterializeArtifact(args[1:])
+	case args[0] == commandNodeCacheRuntime:
+		return runNodeCacheRuntime(args[1:])
 	default:
 		return cmdsupport.CommandError("ai-models-artifact-runtime", errMissingCommand)
 	}
@@ -83,6 +86,8 @@ func runtimeComponent(args []string) string {
 		return "artifact-cleanup"
 	case commandMaterializeArtifact:
 		return "materialize-artifact"
+	case commandNodeCacheRuntime:
+		return "node-cache-runtime"
 	default:
 		return "artifact-runtime"
 	}

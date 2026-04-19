@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-func workloadEventFilter(options modeldelivery.Options) predicate.Predicate {
+func workloadEventFilter(options modeldelivery.ServiceOptions) predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(evt event.CreateEvent) bool {
 			return workloadDeliveryInterest(evt.Object, options)
@@ -40,7 +40,7 @@ func workloadEventFilter(options modeldelivery.Options) predicate.Predicate {
 	}
 }
 
-func workloadDeliveryInterest(object client.Object, options modeldelivery.Options) bool {
+func workloadDeliveryInterest(object client.Object, options modeldelivery.ServiceOptions) bool {
 	if object == nil {
 		return false
 	}

@@ -29,7 +29,8 @@ import (
 )
 
 type ServiceOptions struct {
-	Render Options
+	Render       Options
+	ManagedCache ManagedCacheOptions
 
 	RegistrySourceNamespace      string
 	RegistrySourceAuthSecretName string
@@ -64,7 +65,7 @@ func NewService(client client.Client, scheme *runtime.Scheme, options ServiceOpt
 	if scheme == nil {
 		return nil, errors.New("runtime delivery service scheme must not be nil")
 	}
-	options = normalizeServiceOptions(options)
+	options = NormalizeServiceOptions(options)
 	if err := validateServiceOptions(options); err != nil {
 		return nil, err
 	}
@@ -90,6 +91,9 @@ func (s *Service) ApplyToPodTemplate(
 	}
 	if template == nil {
 		return ApplyResult{}, errors.New("runtime delivery pod template must not be nil")
+	}
+	if err := ensureManagedCacheMount(template, s.options); err != nil {
+		return ApplyResult{}, err
 	}
 	if err := validateTopologyHints(request.Topology); err != nil {
 		return ApplyResult{}, err
@@ -147,13 +151,17 @@ func (s *Service) ApplyToPodTemplate(
 	}, nil
 }
 
-func normalizeServiceOptions(options ServiceOptions) ServiceOptions {
+func NormalizeServiceOptions(options ServiceOptions) ServiceOptions {
 	options.Render = NormalizeOptions(options.Render)
+	options.ManagedCache = NormalizeManagedCacheOptions(options.ManagedCache)
 	return options
 }
 
 func validateServiceOptions(options ServiceOptions) error {
 	if err := ValidateOptions(options.Render); err != nil {
+		return err
+	}
+	if err := ValidateManagedCacheOptions(options.ManagedCache); err != nil {
 		return err
 	}
 	switch {

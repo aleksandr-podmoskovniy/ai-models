@@ -26,7 +26,7 @@ import (
 func TestWorkloadDeliveryInterest(t *testing.T) {
 	t.Parallel()
 
-	options := modeldelivery.Options{}
+	options := modeldelivery.ServiceOptions{Render: modeldelivery.Options{}}
 
 	t.Run("annotated workload is interesting", func(t *testing.T) {
 		t.Parallel()

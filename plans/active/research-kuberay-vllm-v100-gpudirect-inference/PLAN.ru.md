@@ -22,6 +22,17 @@ Research-to-runtime bring-up slice. Работы уже включают не т
 - `KubeRay operator` в `dvp` не требует отдельного refactor: chart уже
   приведён к upstream `kuberay-operator 1.6.0`, а `ap-values.yaml`
   провалидирован на этом baseline через `helm template`.
+- На nightly `vLLM 0.19.0` чистый `RDMA/NCCL` path уже подтверждён без
+  `NCCL_IB_HCA`: worker доходят до `NET/IB`, `Init COMPLETE` и
+  `Connected all trees`, то есть текущий blocker не в сети.
+- Первый `ConfigMap`-патч без пересборки image уже снял `KeyError` в
+  `vllm/v1/worker/gpu_model_runner.py::initialize_attn_backend`, но runtime
+  провалился на следующем `PP` boundary bug в
+  `vllm/model_executor/layers/attention/attention.py::unified_kv_cache_update`
+  / `get_attention_context`.
+- Текущий slice: остаться на official image, не трогать `TP`, сохранить
+  `PP=3`, и расширить `ConfigMap`-патч на второй call-site в `attention.py`,
+  не переходя на custom image и не меняя direct `GPU + RDMA` launch shape.
 
 ## Orchestration
 

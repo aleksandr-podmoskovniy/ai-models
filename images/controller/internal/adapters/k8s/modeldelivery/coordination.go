@@ -21,13 +21,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	CoordinationModeNone   = ""
-	CoordinationModeShared = "shared-cache"
+	CoordinationModeShared = nodecache.CoordinationModeShared
 )
 
 type Coordination struct {

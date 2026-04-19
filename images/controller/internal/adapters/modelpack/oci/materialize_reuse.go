@@ -21,11 +21,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
 
 func maybeReuseMaterialization(destination, digest string) (modelpackports.MaterializeResult, bool, error) {
-	marker, err := readMarker(destination)
+	marker, err := nodecache.ReadMarker(destination)
 	if err != nil {
 		return modelpackports.MaterializeResult{}, false, err
 	}
@@ -48,6 +49,6 @@ func maybeReuseMaterialization(destination, digest string) (modelpackports.Mater
 	}
 	return modelpackports.MaterializeResult{
 		ModelPath:  modelPath,
-		MarkerPath: filepath.Join(destination, markerFileName),
+		MarkerPath: filepath.Join(destination, nodecache.MarkerFileName),
 	}, true, nil
 }

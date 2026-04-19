@@ -18,11 +18,12 @@ package modeldelivery
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -64,7 +65,7 @@ func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
 	if got, want := result.CacheMountPath, DefaultCacheMountPath; got != want {
 		t.Fatalf("cache mount path = %q, want %q", got, want)
 	}
-	if got, want := result.CurrentModelPath, filepath.Join(DefaultCacheMountPath, DefaultCurrentPathName); got != want {
+	if got, want := result.CurrentModelPath, nodecache.CurrentLinkPath(DefaultCacheMountPath); got != want {
 		t.Fatalf("current model path = %q, want %q", got, want)
 	}
 	if got, want := result.TopologyKind, CacheTopologyPerPod; got != want {
@@ -78,6 +79,9 @@ func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
 	}
 	if got, want := template.Annotations[ResolvedDigestAnnotation], publishedArtifact().Digest; got != want {
 		t.Fatalf("resolved digest annotation = %q, want %q", got, want)
+	}
+	if got, want := template.Annotations[ResolvedArtifactURIAnnotation], publishedArtifact().URI; got != want {
+		t.Fatalf("resolved artifact URI annotation = %q, want %q", got, want)
 	}
 
 	authSecretName := projectedAuthSecretName(t, owner.GetUID())
@@ -172,5 +176,64 @@ func TestServiceUsesOwnerNamespaceWhenTargetNamespaceIsEmpty(t *testing.T) {
 	projectedAuth := &corev1.Secret{}
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: result.RegistryAccess.AuthSecretName, Namespace: owner.GetNamespace()}, projectedAuth); err != nil {
 		t.Fatalf("Get(projected auth secret) error = %v", err)
+	}
+}
+
+func TestServiceInjectsManagedCacheVolumeWhenWorkloadDoesNotProvideMount(t *testing.T) {
+	t.Parallel()
+
+	scheme := testkit.NewScheme(t)
+	owner := testkit.NewModel()
+	kubeClient := testkit.NewFakeClient(t, scheme, nil,
+		owner,
+		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
+	)
+
+	service, err := NewService(kubeClient, scheme, ServiceOptions{
+		Render: Options{
+			RuntimeImage: "example.com/ai-models:latest",
+		},
+		ManagedCache: ManagedCacheOptions{
+			Enabled:          true,
+			StorageClassName: "ai-models-node-cache",
+			VolumeSize:       "32Gi",
+		},
+		RegistrySourceNamespace:      "d8-ai-models",
+		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	template := podTemplateWithoutCacheMount("runtime")
+
+	result, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
+		Artifact: publishedArtifact(),
+		Topology: TopologyHints{ReplicaCount: 1},
+	}, template)
+	if err != nil {
+		t.Fatalf("ApplyToPodTemplate() error = %v", err)
+	}
+
+	if got, want := result.TopologyKind, CacheTopologyPerPod; got != want {
+		t.Fatalf("topology kind = %q, want %q", got, want)
+	}
+	if got, want := template.Spec.Containers[0].VolumeMounts[0].MountPath, DefaultCacheMountPath; got != want {
+		t.Fatalf("managed cache mount path = %q, want %q", got, want)
+	}
+
+	volume, found := findVolumeByName(template.Spec.Volumes, DefaultManagedCacheName)
+	if !found {
+		t.Fatalf("expected managed cache volume %q to be injected", DefaultManagedCacheName)
+	}
+	if volume.Ephemeral == nil || volume.Ephemeral.VolumeClaimTemplate == nil {
+		t.Fatalf("expected injected volume to use generic ephemeral PVC, got %#v", volume.VolumeSource)
+	}
+	claim := volume.Ephemeral.VolumeClaimTemplate.Spec
+	if got, want := ptr.Deref(claim.StorageClassName, ""), "ai-models-node-cache"; got != want {
+		t.Fatalf("storage class = %q, want %q", got, want)
+	}
+	if got, want := claim.Resources.Requests.Storage().String(), "32Gi"; got != want {
+		t.Fatalf("volume size = %q, want %q", got, want)
 	}
 }

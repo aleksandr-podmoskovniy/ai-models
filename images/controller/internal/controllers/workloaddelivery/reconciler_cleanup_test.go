@@ -67,6 +67,9 @@ func TestDeploymentReconcilerRemovesManagedStateWhenAnnotationDisappears(t *test
 	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDigestAnnotation]; found {
 		t.Fatal("did not expect resolved digest annotation after annotation removal")
 	}
+	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]; found {
+		t.Fatal("did not expect resolved artifact URI annotation after annotation removal")
+	}
 	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
 }
 
@@ -91,4 +94,43 @@ func TestDeploymentReconcilerIgnoresUnmanagedWorkloadWithoutAnnotations(t *testi
 		t.Fatalf("did not expect init container %q", modeldelivery.DefaultInitContainerName)
 	}
 	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
+}
+
+func TestDeploymentReconcilerRemovesInjectedManagedCacheStateWhenAnnotationDisappears(t *testing.T) {
+	t.Parallel()
+
+	model := readyModel()
+	workload := annotatedDeploymentWithoutCacheMount(map[string]string{ModelAnnotation: model.Name}, 1)
+	reconciler, kubeClient := newDeploymentReconcilerWithManagedCache(t, model, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
+
+	if _, err := reconciler.reconcileWorkload(context.Background(), workload); err != nil {
+		t.Fatalf("initial reconcileWorkload() error = %v", err)
+	}
+
+	var updated deployment
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &updated); err != nil {
+		t.Fatalf("Get(deployment) error = %v", err)
+	}
+	updated.Annotations = nil
+	if err := kubeClient.Update(context.Background(), &updated); err != nil {
+		t.Fatalf("Update(deployment) error = %v", err)
+	}
+
+	result := reconcileDeployment(t, reconciler, &updated)
+	if result != (ctrl.Result{}) {
+		t.Fatalf("unexpected reconcile result %#v", result)
+	}
+
+	var cleaned deployment
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &cleaned); err != nil {
+		t.Fatalf("Get(cleaned deployment) error = %v", err)
+	}
+	if len(cleaned.Spec.Template.Spec.Containers[0].VolumeMounts) != 0 {
+		t.Fatalf("did not expect managed cache mount after cleanup, got %#v", cleaned.Spec.Template.Spec.Containers[0].VolumeMounts)
+	}
+	for _, volume := range cleaned.Spec.Template.Spec.Volumes {
+		if volume.Name == modeldelivery.DefaultManagedCacheName {
+			t.Fatalf("did not expect managed cache volume %q after cleanup", modeldelivery.DefaultManagedCacheName)
+		}
+	}
 }

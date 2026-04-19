@@ -58,14 +58,17 @@ images/controller/
       catalogmetrics/
     publishedsnapshot/
     publicationartifact/
+    nodecache/
     controllers/
       catalogstatus/
       catalogcleanup/
+      nodecachesubstrate/
       workloaddelivery/
     adapters/
       k8s/
         auditevent/
         modeldelivery/
+        nodecachesubstrate/
         ociregistry/
         ownedresource/
         sourceworker/
@@ -159,6 +162,10 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
 - `internal/publishedsnapshot/` — полный immutable publication snapshot;
 - `internal/publicationartifact/` — более узкий artifact result payload и OCI
   destination policy;
+- `internal/nodecache/` — shared node-local cache contract for digest-addressed
+  shared store layout, ready markers, separate consumer
+  materialization/current-link helper surface, single-writer coordination,
+  bounded eviction planning и module-owned maintenance loop;
 - `internal/monitoring/catalogmetrics/` — Prometheus collectors over public
   `Model` / `ClusterModel` truth.
 
@@ -166,6 +173,8 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
 
 - `catalogstatus/` — owner publication lifecycle.
 - `catalogcleanup/` — delete/finalizer owner.
+- `nodecachesubstrate/` — owner controller for managed local storage substrate
+  over `sds-node-configurator` / `sds-local-volume` CR boundaries.
 - `workloaddelivery/` — owner controller for top-level workload annotations
   `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel`.
 
@@ -178,6 +187,8 @@ package без нового owner — patchwork.
 
 - `sourceworker/`
 - `modeldelivery/`
+- `nodecacheintent/`
+- `nodecachesubstrate/`
 - `uploadsession/`
 - `uploadsessionstate/`
 - `ociregistry/`
@@ -197,12 +208,26 @@ Non-K8s adapters:
 Главные правила:
 
 - adapters не тащат public/status policy;
+- `internal/nodecache/` остаётся отдельной reusable boundary: digest-addressed
+  shared store layout, marker parsing, отдельный consumer current-link helper,
+  single-writer coordination и bounded scan/eviction planning не должны жить
+  внутри `cmd/ai-models-artifact-runtime` как скрытый mini cache-manager;
 - `modelpack/oci/` остаётся controller-owned OCI adapter boundary:
   native publish/remove over registry HTTP, manifest/config validation,
   inspect/materialize and layer/media-type handling не должны утекать в
   `publicationartifact/` или в worker shell;
 - `sourcefetch/` остаётся boundary для source acquisition, archive inspection,
   remote summary extraction и object-source planning;
+- `k8s/nodecachesubstrate/` держит только shaping и live-state extraction для
+  внешних storage CR (`LVMVolumeGroupSet`, `LVMVolumeGroup`,
+  `LocalStorageClass`) и не тянет туда runtime delivery policy;
+- `k8s/nodecacheintent/` держит только concrete shaping/load для
+  module-owned per-node `ConfigMap` с desired artifact set и не должен
+  затягивать туда cache maintenance policy;
+- `k8s/modeldelivery/` остаётся boundary для workload mutation и теперь держит
+  module-managed local fallback volume injection отдельно от storage substrate
+  CR shaping и отдельно от будущего workload-facing node-shared cache mount
+  service;
 - live `HuggingFace` publish path больше не держит локальный
   `workspace/model` fallback: canonical path — direct or mirrored object source,
   cluster-level default теперь `Direct`, а planning failure explicit;
@@ -224,7 +249,10 @@ Live rules для `publishworker`:
 - successful upload/HF publish paths больше не идут через `checkpointDir`;
 - valid upload path не должен silently деградировать в local materialization;
 - consumer-side materialization остаётся отдельным runtime concern и живёт в
-  `materialize-artifact`, а не в publish shell.
+  `materialize-artifact`, а общий node-cache contract теперь живёт в
+  `internal/nodecache`, а не в publish shell; bounded maintenance runtime тоже
+  опирается на тот же package, а не собирает свою вторую cache semantics
+  surface.
 
 ### Shared support
 

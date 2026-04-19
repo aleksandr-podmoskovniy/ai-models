@@ -18,18 +18,21 @@ package modeldelivery
 
 import (
 	"errors"
-	"path/filepath"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
 	DefaultInitContainerName = "ai-models-materializer"
 	DefaultCacheMountPath    = "/data/modelcache"
-	DefaultCurrentPathName   = "current"
+	DefaultManagedCacheName  = "ai-models-node-cache"
 
-	ResolvedDigestAnnotation = "ai.deckhouse.io/resolved-digest"
+	ResolvedDigestAnnotation         = "ai.deckhouse.io/resolved-digest"
+	ResolvedArtifactURIAnnotation    = "ai.deckhouse.io/resolved-artifact-uri"
+	ResolvedArtifactFamilyAnnotation = "ai.deckhouse.io/resolved-artifact-family"
 
 	LogFormatEnv     = "LOG_FORMAT"
 	LogLevelEnv      = "LOG_LEVEL"
@@ -46,6 +49,13 @@ type Options struct {
 
 	InitContainerName string
 	CacheMountPath    string
+}
+
+type ManagedCacheOptions struct {
+	Enabled          bool
+	StorageClassName string
+	VolumeSize       string
+	VolumeName       string
 }
 
 func NormalizeOptions(options Options) Options {
@@ -81,6 +91,31 @@ func ValidateOptions(options Options) error {
 	return nil
 }
 
+func NormalizeManagedCacheOptions(options ManagedCacheOptions) ManagedCacheOptions {
+	if strings.TrimSpace(options.VolumeName) == "" {
+		options.VolumeName = DefaultManagedCacheName
+	}
+	return options
+}
+
+func ValidateManagedCacheOptions(options ManagedCacheOptions) error {
+	if !options.Enabled {
+		return nil
+	}
+	switch {
+	case strings.TrimSpace(options.StorageClassName) == "":
+		return errors.New("runtime delivery managed cache storage class name must not be empty")
+	case strings.TrimSpace(options.VolumeSize) == "":
+		return errors.New("runtime delivery managed cache volume size must not be empty")
+	case strings.TrimSpace(options.VolumeName) == "":
+		return errors.New("runtime delivery managed cache volume name must not be empty")
+	}
+	if _, err := resource.ParseQuantity(strings.TrimSpace(options.VolumeSize)); err != nil {
+		return errors.New("runtime delivery managed cache volume size must be a valid quantity")
+	}
+	return nil
+}
+
 func CurrentModelPath(options Options) string {
-	return filepath.Join(strings.TrimSpace(options.CacheMountPath), DefaultCurrentPathName)
+	return nodecache.CurrentLinkPath(strings.TrimSpace(options.CacheMountPath))
 }

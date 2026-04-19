@@ -93,6 +93,96 @@ memory: 128Mi
 {{- default "1Gi" (index $limits "ephemeral-storage") -}}
 {{- end -}}
 
+{{- define "ai-models.nodeCacheEnabled" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+{{- if and (hasKey $nodeCache "enabled") (index $nodeCache "enabled") -}}
+true
+{{- else -}}
+false
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheMaxSize" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+{{- default "200Gi" (index $nodeCache "maxSize") -}}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheFallbackVolumeSize" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+{{- default "32Gi" (index $nodeCache "fallbackVolumeSize") -}}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheSharedVolumeSize" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+{{- default "64Gi" (index $nodeCache "sharedVolumeSize") -}}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheStorageClassName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+{{- default "ai-models-node-cache" (index $nodeCache "storageClassName") -}}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheVolumeGroupSetName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+{{- default "ai-models-node-cache" (index $nodeCache "volumeGroupSetName") -}}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheVolumeGroupNameOnNode" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+{{- default "ai-models-cache" (index $nodeCache "volumeGroupNameOnNode") -}}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheThinPoolName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+{{- default "model-cache" (index $nodeCache "thinPoolName") -}}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheNodeSelectorJSON" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+{{- $selector := (index $nodeCache "nodeSelector") | default dict -}}
+{{- toJson $selector -}}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheBlockDeviceSelectorJSON" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+{{- $selector := (index $nodeCache "blockDeviceSelector") | default dict -}}
+{{- toJson $selector -}}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheRuntimeName" -}}
+ai-models-node-cache-runtime
+{{- end -}}
+
+{{- define "ai-models.nodeCacheRuntimeNodeSelector" -}}
+{{- $selector := dict "kubernetes.io/os" "linux" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+{{- $configured := (index $nodeCache "nodeSelector") | default dict -}}
+{{- range $key, $value := $configured -}}
+{{- $_ := set $selector $key $value -}}
+{{- end -}}
+nodeSelector:
+{{- toYaml $selector | nindent 2 }}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheMaintenanceMaxUnusedAge" -}}
+24h
+{{- end -}}
+
+{{- define "ai-models.nodeCacheMaintenanceScanInterval" -}}
+5m
+{{- end -}}
+
 {{- define "ai-models.dmcrResources" -}}
 cpu: 50m
 memory: 128Mi

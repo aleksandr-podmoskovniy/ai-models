@@ -97,6 +97,17 @@ func podTemplateWithPVCMount(containerName, volumeName, claimName, mountPath str
 	}
 }
 
+func podTemplateWithoutCacheMount(containerName string) *corev1.PodTemplateSpec {
+	return &corev1.PodTemplateSpec{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:  containerName,
+				Image: "example.com/runtime:latest",
+			}},
+		},
+	}
+}
+
 func envByName(env []corev1.EnvVar, name string) string {
 	for _, item := range env {
 		if item.Name == name {

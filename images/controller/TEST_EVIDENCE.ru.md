@@ -374,12 +374,69 @@ paths и test surfaces.
 - Decision surface:
   - workload mutation for runtime delivery
   - storage topology checks
+  - managed local fallback volume injection
   - cache-root and digest rollout annotations
 - Primary evidence:
   - `render_test.go`
-  - `service_test.go`
+  - `service_apply_test.go`
   - `service_topology_test.go`
+  - `service_validation_test.go`
   - `workload_hints_test.go`
+
+### `internal/adapters/k8s/nodecachesubstrate`
+
+- Decision surface:
+  - managed `LVMVolumeGroupSet` shaping
+  - managed thin `LocalStorageClass` shaping
+  - ready managed `LVMVolumeGroup` extraction
+- Primary evidence:
+  - `desired_lvgset_test.go`
+  - `desired_local_storage_class_test.go`
+  - `managed_lvg_test.go`
+
+### `internal/nodecache`
+
+- Decision surface:
+  - digest-addressed shared store layout
+  - consumer materialization layout and current-link update
+  - shared-cache single-writer coordination
+  - access timestamp handling
+  - shared-store prefetch for desired published artifacts
+  - bounded cache scan and eviction planning with protected desired digests
+  - maintenance loop over malformed and idle entries
+- Primary evidence:
+  - `store_layout_test.go`
+  - `materialization_layout_test.go`
+  - `coordination_test.go`
+  - `scan_test.go`
+  - `plan_test.go`
+  - `prefetch_test.go`
+  - `maintain_test.go`
+
+### `internal/adapters/k8s/nodecacheintent`
+
+- Decision surface:
+  - immutable published-artifact intent extraction from already-managed Pods
+  - per-node `ConfigMap` shaping for desired artifact sets
+  - runtime-side intent loading for the node-cache agent
+- Primary evidence:
+  - `adapter_test.go`
+  - `service_test.go`
+
+### Node-cache runtime `DaemonSet`
+
+- Decision surface:
+  - node-agent render presence when `nodeCache.enabled=true`
+  - generic ephemeral volume contract over ai-models-owned `LocalStorageClass`
+  - maintenance env contract for shared cache-root
+  - controller-owned node intent projection into the runtime pod
+  - DMCR read-auth projection for shared-store prefetch
+  - dedicated service-account contract for the node-cache agent
+- Primary evidence:
+  - `tools/helm-tests/validate_renders_test.py`
+  - `tools/helm-tests/validate-renders.py`
+  - `make helm-template`
+  - `make kubeconform`
 
 ### Other concrete K8s adapters
 
@@ -451,6 +508,11 @@ paths и test surfaces.
   - `reconciler_finalizer_test.go`
   - `reconciler_delete_test.go`
   - `reconciler_gc_test.go`
+- `nodecachesubstrate`:
+  - `options_test.go`
+  - `reconciler_test.go`
+- `nodecacheintent`:
+  - `reconciler_test.go`
 - `workloaddelivery`:
   - `annotations_test.go`
   - `options_test.go`
@@ -475,8 +537,9 @@ paths и test surfaces.
 
 ## 7. Residual risks
 
-- Current evidence proves the live publication/runtime baseline, but does not
-  claim future distribution work such as `DMZ` registry or node-local cache.
+- Current evidence proves the live publication/runtime baseline plus the first
+  real node-local shared-cache intent/prefetch plane, but does not claim the
+  final workload-facing shared mount service.
 - Consumer-side materialization into workload cache remains intentional and is
   not hidden by publication-path zero-copy claims.
 - Historical migration detail remains available in archived bundles, not in this
