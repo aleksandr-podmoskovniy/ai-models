@@ -171,15 +171,15 @@ spec:
               value: /etc/ai-models/artifacts-ca/ca.crt
             {{- end }}
           ports:
-            - name: https-direct-upload
+            - name: https-upload
               containerPort: 5002
               protocol: TCP
           readinessProbe:
             tcpSocket:
-              port: https-direct-upload
+              port: https-upload
           livenessProbe:
             tcpSocket:
-              port: https-direct-upload
+              port: https-upload
           resources:
             requests:
               {{- include "helm_lib_module_ephemeral_storage_only_logs" . | nindent 14 }}

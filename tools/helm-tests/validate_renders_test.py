@@ -128,6 +128,34 @@ stringData:
 
         self.assertEqual(errors, [])
 
+    def test_validate_render_rejects_too_long_port_name(self) -> None:
+        content = """---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dmcr
+spec:
+  template:
+    spec:
+      containers:
+        - name: dmcr-direct-upload
+          ports:
+            - name: https-direct-upload
+              containerPort: 5002
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE.validate_render(render_path)
+
+        self.assertEqual(
+            errors,
+            [
+                "helm-template-test.yaml: port name 'https-direct-upload' exceeds Kubernetes 15-character limit"
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

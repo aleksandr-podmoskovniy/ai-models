@@ -75,6 +75,15 @@
 - `NCCL` data path идёт через `NET/IB` на `mlx5_*`;
 - `RoCE v2 GID index` прибит к `3`.
 
+Для текущего nightly runtime на `w1` добавлен ещё один workaround: worker pod
+маскируют `/sys/class/infiniband` и `/sys/class/infiniband_verbs`, чтобы
+каждый `ray-worker` видел только свой целевой `mlx5_*`.
+
+Причина практическая: без этого оба worker на `w1` одновременно видели
+`mlx5_0`, `mlx5_1` и `mlx5_bond_0`, после чего `vLLM 0.19.0` внутри
+`RayWorkerWrapper` сам переписывал `NCCL_IB_HCA`, и `NCCL` падал на
+`socketFinalizeAccept ... wrong type 3 != 4`.
+
 ## Где лежит source of truth
 
 Основной GitOps-каталог живёт вне репозитория `ai-models`:

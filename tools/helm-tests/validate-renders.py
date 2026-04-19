@@ -37,6 +37,8 @@ DISALLOWED_RENDER_MARKERS = (
     "kind: PostgresClass\n",
 )
 
+MAX_PORT_NAME_LENGTH = 15
+
 
 def _find_secret(
     documents: list[dict[object, object]], name: str
@@ -300,6 +302,42 @@ def _validate_dmcr_auth_consistency(path: Path, content: str) -> list[str]:
     return errors
 
 
+def _validate_port_name_lengths(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    lines = content.splitlines()
+    ports_indent: int | None = None
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        indent = _leading_spaces(line)
+        if ports_indent is not None and indent <= ports_indent:
+            ports_indent = None
+
+        if stripped == "ports:":
+            ports_indent = indent
+            continue
+
+        if ports_indent is None:
+            continue
+
+        if indent != ports_indent + 2:
+            continue
+
+        if not stripped.startswith("- name:"):
+            continue
+
+        port_name = _parse_inline_scalar(stripped.split(":", 1)[1].strip())
+        if len(port_name) > MAX_PORT_NAME_LENGTH:
+            errors.append(
+                f"{path.name}: port name {port_name!r} exceeds Kubernetes {MAX_PORT_NAME_LENGTH}-character limit"
+            )
+
+    return errors
+
+
 def _validate_htpasswd_entry(
     path: Path,
     *,
@@ -393,6 +431,7 @@ def validate_render(path: Path) -> list[str]:
                 f"{path.name}: rendered output must not contain retired PostgreSQL shell marker {marker.strip()!r}"
             )
 
+    errors.extend(_validate_port_name_lengths(path, content))
     errors.extend(_validate_dmcr_auth_consistency(path, content))
 
     return errors
