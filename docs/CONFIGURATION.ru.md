@@ -144,9 +144,10 @@ controller-owned `materialize-artifact` в `/data/modelcache`, но теперь
   `nodeCache.sharedVolumeSize`, а storage identity больше не теряется при
   restart node-agent pod'а;
 - `node-cache-runtime` сам получает набор опубликованных артефактов, реально
-  нужных live managed Pod'ам на текущей ноде, и заранее подтягивает
-  неизменяемые артефакты из `DMCR` в общий узловой digest store без
-  отдельного зеркального `ConfigMap`-контракта и без нового публичного API.
+  нужных live managed Pod'ам на текущей ноде только при выбранном direct
+  shared delivery, и заранее подтягивает неизменяемые артефакты из `DMCR` в
+  общий узловой digest store без отдельного зеркального `ConfigMap`-
+  контракта и без нового публичного API.
 
 При этом публичного cleanup/TTL knob пока нет: workload-facing shared mount
 contract ещё не landed, поэтому eviction policy остаётся internal runtime

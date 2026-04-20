@@ -86,8 +86,8 @@ spec:
             - --node-cache-volume-group-set-name={{ include "ai-models.nodeCacheVolumeGroupSetName" . }}
             - --node-cache-volume-group-name-on-node={{ include "ai-models.nodeCacheVolumeGroupNameOnNode" . }}
             - --node-cache-thin-pool-name={{ include "ai-models.nodeCacheThinPoolName" . }}
-            - --node-cache-node-selector-json={{ include "ai-models.nodeCacheNodeSelectorJSON" . | quote }}
-            - --node-cache-block-device-selector-json={{ include "ai-models.nodeCacheBlockDeviceSelectorJSON" . | quote }}
+            - {{ printf "--node-cache-node-selector-json=%s" (include "ai-models.nodeCacheNodeSelectorJSON" .) | quote }}
+            - {{ printf "--node-cache-block-device-selector-json=%s" (include "ai-models.nodeCacheBlockDeviceSelectorJSON" .) | quote }}
             - --upload-service-name={{ include "ai-models.controllerServiceName" . }}
             - --upload-public-host={{ include "ai-models.uploadPublicHost" . }}
           env:

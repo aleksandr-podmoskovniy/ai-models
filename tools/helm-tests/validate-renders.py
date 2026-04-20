@@ -376,10 +376,18 @@ def _validate_dmcr_secret_delete_rbac(path: Path, content: str) -> list[str]:
 
 
 def _validate_node_cache_runtime_plane(path: Path, content: str) -> list[str]:
-    if "--node-cache-enabled=true" not in content:
-        return []
-
     errors: list[str] = []
+    if '--node-cache-node-selector-json="' in content:
+        errors.append(
+            f"{path.name}: controller render must not wrap --node-cache-node-selector-json value in extra quotes inside the argument"
+        )
+    if '--node-cache-block-device-selector-json="' in content:
+        errors.append(
+            f"{path.name}: controller render must not wrap --node-cache-block-device-selector-json value in extra quotes inside the argument"
+        )
+    if "--node-cache-enabled=true" not in content:
+        return errors
+
     if "kind: DaemonSet" in content and "name: ai-models-node-cache-runtime" in content:
         errors.append(
             f"{path.name}: node-cache-enabled render must not keep legacy DaemonSet/ai-models-node-cache-runtime after stable per-node runtime plane rollout"

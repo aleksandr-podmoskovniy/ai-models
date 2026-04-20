@@ -428,7 +428,7 @@ paths и test surfaces.
 - Decision surface:
   - stable per-node runtime Pod/PVC shaping
   - immutable published-artifact extraction from already-managed Pods on the
-    current node
+    current node only for direct shared delivery
   - runtime-side loading of required published artifacts from live cluster
     truth without a dedicated mirror contract
 - Primary evidence:

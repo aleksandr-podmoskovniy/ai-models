@@ -146,9 +146,10 @@ controller-owned `materialize-artifact` into `/data/modelcache`, but now:
   `nodeCache.sharedVolumeSize`, and storage identity no longer depends on the
   node-agent pod lifecycle;
 - `node-cache-runtime` derives the set of published artifacts required by live
-  managed Pods scheduled on the current node and prefetches immutable artifacts
-  from `DMCR` into the shared node-local digest store without a mirrored
-  `ConfigMap` contract or a new public API.
+  managed Pods scheduled on the current node only when those Pods resolved to
+  direct shared delivery, and prefetches immutable artifacts from `DMCR` into
+  the shared node-local digest store without a mirrored `ConfigMap` contract or
+  a new public API.
 
 There is still no public cleanup or TTL knob yet: the workload-facing shared
 mount contract has not landed, so eviction policy remains internal runtime

@@ -32,6 +32,7 @@ func TestDesiredArtifactFromPodReadsManagedAnnotations(t *testing.T) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Annotations: map[string]string{
+				modeldelivery.ResolvedDeliveryModeAnnotation:   string(modeldelivery.DeliveryModeSharedDirect),
 				modeldelivery.ResolvedDigestAnnotation:         "sha256:a",
 				modeldelivery.ResolvedArtifactURIAnnotation:    "oci://example/model-a",
 				modeldelivery.ResolvedArtifactFamilyAnnotation: "gguf-v1",
@@ -57,14 +58,56 @@ func TestDesiredArtifactFromPodReadsManagedAnnotations(t *testing.T) {
 	}
 }
 
-func TestDesiredArtifactsClientLoadsNodeArtifactsFromActiveScheduledPods(t *testing.T) {
+func TestDesiredArtifactFromPodIgnoresFallbackAndLegacyPods(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		annotations map[string]string
+	}{
+		{
+			name: "fallback",
+			annotations: map[string]string{
+				modeldelivery.ResolvedDeliveryModeAnnotation: string(modeldelivery.DeliveryModePerPodFallback),
+				modeldelivery.ResolvedDigestAnnotation:       "sha256:a",
+				modeldelivery.ResolvedArtifactURIAnnotation:  "oci://example/model-a",
+			},
+		},
+		{
+			name: "legacy-without-mode",
+			annotations: map[string]string{
+				modeldelivery.ResolvedDigestAnnotation:      "sha256:a",
+				modeldelivery.ResolvedArtifactURIAnnotation: "oci://example/model-a",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			artifact, found, err := DesiredArtifactFromPod(&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+			})
+			if err != nil {
+				t.Fatalf("DesiredArtifactFromPod() error = %v", err)
+			}
+			if found {
+				t.Fatalf("unexpected desired artifact %#v", artifact)
+			}
+		})
+	}
+}
+
+func TestDesiredArtifactsClientLoadsOnlySharedDirectArtifactsFromActiveScheduledPods(t *testing.T) {
 	t.Parallel()
 
 	client, err := NewDesiredArtifactsClient(fake.NewSimpleClientset(
-		managedPod("runtime-a", "worker-a", corev1.PodRunning, "oci://example/model-a", "sha256:a"),
-		managedPod("runtime-b", "worker-a", corev1.PodPending, "oci://example/model-b", "sha256:b"),
-		managedPod("runtime-c", "worker-b", corev1.PodRunning, "oci://example/model-c", "sha256:c"),
-		managedPod("runtime-d", "worker-a", corev1.PodFailed, "oci://example/model-d", "sha256:d"),
+		managedPod("runtime-a", "worker-a", corev1.PodRunning, string(modeldelivery.DeliveryModeSharedDirect), "oci://example/model-a", "sha256:a"),
+		managedPod("runtime-b", "worker-a", corev1.PodPending, string(modeldelivery.DeliveryModeSharedDirect), "oci://example/model-b", "sha256:b"),
+		managedPod("runtime-c", "worker-b", corev1.PodRunning, string(modeldelivery.DeliveryModeSharedDirect), "oci://example/model-c", "sha256:c"),
+		managedPod("runtime-d", "worker-a", corev1.PodFailed, string(modeldelivery.DeliveryModeSharedDirect), "oci://example/model-d", "sha256:d"),
+		managedPod("runtime-fallback", "worker-a", corev1.PodRunning, string(modeldelivery.DeliveryModePerPodFallback), "oci://example/model-fallback", "sha256:fallback"),
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{Name: "runtime-e", Namespace: "team-a"},
 			Spec:       corev1.PodSpec{NodeName: "worker-a"},
@@ -90,7 +133,7 @@ func TestDesiredArtifactsClientLoadsNodeArtifactsFromActiveScheduledPods(t *test
 	}
 }
 
-func TestDesiredArtifactsClientRejectsIncompleteManagedAnnotationsOnTargetNode(t *testing.T) {
+func TestDesiredArtifactsClientRejectsIncompleteSharedDirectAnnotationsOnTargetNode(t *testing.T) {
 	t.Parallel()
 
 	client, err := NewDesiredArtifactsClient(fake.NewSimpleClientset(&corev1.Pod{
@@ -98,7 +141,8 @@ func TestDesiredArtifactsClientRejectsIncompleteManagedAnnotationsOnTargetNode(t
 			Name:      "runtime-a",
 			Namespace: "team-a",
 			Annotations: map[string]string{
-				modeldelivery.ResolvedDigestAnnotation: "sha256:a",
+				modeldelivery.ResolvedDeliveryModeAnnotation: string(modeldelivery.DeliveryModeSharedDirect),
+				modeldelivery.ResolvedDigestAnnotation:       "sha256:a",
 			},
 		},
 		Spec:   corev1.PodSpec{NodeName: "worker-a"},
@@ -109,18 +153,19 @@ func TestDesiredArtifactsClientRejectsIncompleteManagedAnnotationsOnTargetNode(t
 	}
 
 	if _, err := client.LoadNodeDesiredArtifacts(context.Background(), "worker-a"); err == nil {
-		t.Fatal("expected LoadNodeDesiredArtifacts() to reject incomplete managed pod annotations")
+		t.Fatal("expected LoadNodeDesiredArtifacts() to reject incomplete shared-direct pod annotations")
 	}
 }
 
-func managedPod(name, nodeName string, phase corev1.PodPhase, artifactURI, digest string) *corev1.Pod {
+func managedPod(name, nodeName string, phase corev1.PodPhase, deliveryMode, artifactURI, digest string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "team-a",
 			Annotations: map[string]string{
-				modeldelivery.ResolvedDigestAnnotation:      digest,
-				modeldelivery.ResolvedArtifactURIAnnotation: artifactURI,
+				modeldelivery.ResolvedDeliveryModeAnnotation: deliveryMode,
+				modeldelivery.ResolvedDigestAnnotation:       digest,
+				modeldelivery.ResolvedArtifactURIAnnotation:  artifactURI,
 			},
 		},
 		Spec:   corev1.PodSpec{NodeName: nodeName},

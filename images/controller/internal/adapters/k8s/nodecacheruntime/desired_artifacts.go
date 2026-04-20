@@ -113,13 +113,14 @@ func DesiredArtifactFromPod(pod *corev1.Pod) (nodecache.DesiredArtifact, bool, e
 		return nodecache.DesiredArtifact{}, false, errors.New("node cache runtime pod must not be nil")
 	}
 	annotations := pod.GetAnnotations()
-	digest := strings.TrimSpace(annotations[modeldelivery.ResolvedDigestAnnotation])
-	artifactURI := strings.TrimSpace(annotations[modeldelivery.ResolvedArtifactURIAnnotation])
-	if digest == "" && artifactURI == "" {
+	deliveryMode := strings.TrimSpace(annotations[modeldelivery.ResolvedDeliveryModeAnnotation])
+	if deliveryMode != string(modeldelivery.DeliveryModeSharedDirect) {
 		return nodecache.DesiredArtifact{}, false, nil
 	}
+	digest := strings.TrimSpace(annotations[modeldelivery.ResolvedDigestAnnotation])
+	artifactURI := strings.TrimSpace(annotations[modeldelivery.ResolvedArtifactURIAnnotation])
 	if digest == "" || artifactURI == "" {
-		return nodecache.DesiredArtifact{}, false, errors.New("managed pod node cache published artifact annotations are incomplete")
+		return nodecache.DesiredArtifact{}, false, errors.New("managed pod shared-direct artifact annotations are incomplete")
 	}
 	artifacts, err := nodecache.NormalizeDesiredArtifacts([]nodecache.DesiredArtifact{{
 		ArtifactURI: artifactURI,

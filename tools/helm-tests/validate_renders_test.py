@@ -248,6 +248,36 @@ metadata:
 
         self.assertEqual(errors, [])
 
+    def test_validate_render_rejects_quoted_node_cache_json_flags(self) -> None:
+        content = """---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-models-controller
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          args:
+            - --node-cache-enabled=false
+            - --node-cache-node-selector-json="{}"
+            - --node-cache-block-device-selector-json="{\\"role\\":\\"gpu\\"}"
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE.validate_render(render_path)
+
+        self.assertEqual(
+            errors,
+            [
+                "helm-template-test.yaml: controller render must not wrap --node-cache-node-selector-json value in extra quotes inside the argument",
+                "helm-template-test.yaml: controller render must not wrap --node-cache-block-device-selector-json value in extra quotes inside the argument",
+            ],
+        )
+
     def test_validate_render_rejects_legacy_node_cache_runtime_daemonset(self) -> None:
         content = """---
 apiVersion: apps/v1

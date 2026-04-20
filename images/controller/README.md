@@ -82,7 +82,8 @@ Current phase-2 slice implemented here:
   cache-root layout details into consumers;
 - `internal/adapters/k8s/nodecacheruntime` for stable per-node Pod/PVC shaping
   of the node-cache runtime plane plus runtime-side extraction of the
-  published artifacts required by live managed Pods on the same node;
+  published artifacts required by live managed Pods on the same node only when
+  those Pods were resolved to direct shared delivery;
 - `internal/adapters/k8s/nodecachesubstrate` for concrete
   `storage.deckhouse.io/v1alpha1` shaping of managed `LVMVolumeGroupSet`,
   ready managed `LVMVolumeGroup` filtering, and ai-models-owned
@@ -115,11 +116,11 @@ Current phase-2 slice implemented here:
   controller-owned stable per-node Pod plus stable PVC over the ai-models-
   managed `LocalStorageClass`; that shared-store volume is sized by
   `nodeCache.sharedVolumeSize`, reads the published artifacts required by live
-  managed Pods on the current node, and prefetches immutable artifacts
-  into the shared node-local digest store while workload delivery still uses
-  the fallback path, so maintenance and prefetch already run on a node-owned
-  storage surface that can be reused by the next CSI-like slice without
-  another ownership rewrite;
+  managed Pods on the current node only for direct shared delivery, and
+  prefetches immutable artifacts into the shared node-local digest store
+  without treating fallback workloads as hidden consumers of that plane, so
+  maintenance and prefetch already run on a node-owned storage surface that
+  can be reused by the next CSI-like slice without another ownership rewrite;
 - `internal/adapters/sourcefetch` for safe `HuggingFace` remote source fetch
   and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport, source mirror transfer, archive inspection and

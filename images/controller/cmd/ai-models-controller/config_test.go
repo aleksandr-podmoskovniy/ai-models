@@ -114,3 +114,27 @@ func TestParseManagerConfigRejectsInvalidNodeCacheSelectors(t *testing.T) {
 		t.Fatalf("parseManagerConfig() exitCode = %d, want 2", exitCode)
 	}
 }
+
+func TestParseManagerConfigAcceptsQuotedNodeCacheSelectors(t *testing.T) {
+	t.Parallel()
+
+	config, exitCode, err := parseManagerConfig([]string{
+		`--node-cache-node-selector-json="{\"node-role.kubernetes.io/worker\":\"\"}"`,
+		`--node-cache-block-device-selector-json="{\"status.blockdevice.storage.deckhouse.io/model\":\"nvme\"}"`,
+	})
+	if err != nil {
+		t.Fatalf("parseManagerConfig() error = %v", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("parseManagerConfig() exitCode = %d, want 0", exitCode)
+	}
+	if got, want := config.NodeCacheNodeSelectorJSON, `"{\"node-role.kubernetes.io/worker\":\"\"}"`; got != want {
+		t.Fatalf("node selector raw = %q, want %q", got, want)
+	}
+	if _, err := parseMatchLabelsJSON(config.NodeCacheNodeSelectorJSON); err != nil {
+		t.Fatalf("parseMatchLabelsJSON(node selector) error = %v", err)
+	}
+	if _, err := parseMatchLabelsJSON(config.NodeCacheBlockDeviceJSON); err != nil {
+		t.Fatalf("parseMatchLabelsJSON(block device selector) error = %v", err)
+	}
+}
