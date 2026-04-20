@@ -93,14 +93,14 @@ func TestBuildDirectHuggingFacePublicationOmitsMirrorArgsAndArtifactsProjection(
 
 	request := testOperationRequest()
 	options := testOptions()
-	options.SourceAcquisition = publicationports.SourceAcquisitionModeDirect
+	options.SourceFetch = publicationports.SourceFetchModeDirect
 
 	pod, err := Build(request, options, "")
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
 
-	assertContains(t, pod.Spec.Containers[0].Args, "--source-acquisition-mode")
+	assertContains(t, pod.Spec.Containers[0].Args, "--source-fetch-mode")
 	assertContains(t, pod.Spec.Containers[0].Args, "direct")
 	assertNotContains(t, pod.Spec.Containers[0].Args, "--raw-stage-bucket")
 	assertNotContains(t, pod.Spec.Containers[0].Args, "--raw-stage-key-prefix")
@@ -118,7 +118,7 @@ func TestBuildProjectsOnlyArtifactsCAForDirectLayerUpload(t *testing.T) {
 
 	request := testOperationRequest()
 	options := testOptions()
-	options.SourceAcquisition = publicationports.SourceAcquisitionModeDirect
+	options.SourceFetch = publicationports.SourceFetchModeDirect
 	options.OCIDirectUploadEndpoint = "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443"
 	options.ObjectStorage.CASecretName = "ai-models-artifacts-ca"
 

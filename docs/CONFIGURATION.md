@@ -28,7 +28,7 @@ module contract for:
 The split inside the bucket is fixed by runtime code:
 
 - `raw/` for controller-owned upload staging and, when
-  `artifacts.sourceAcquisitionMode=Mirror`, the temporary source mirror;
+  `artifacts.sourceFetchMode=Mirror`, the temporary source mirror;
 - `dmcr/` for published OCI artifacts in the internal `DMCR`;
 - optional future append-only module data under separate fixed prefixes.
 
@@ -47,17 +47,17 @@ module runtime or copied from the global HTTPS `CustomCertificate` path.
 The public runtime path for models is now controller-owned:
 
 - `Model` / `ClusterModel` use one cluster-level
-  `artifacts.sourceAcquisitionMode`:
+  `artifacts.sourceFetchMode`:
   - `Mirror`:
     remote `source.url` first goes through a controller-owned source mirror;
   - `Direct`:
     remote `source.url` is consumed directly from the canonical remote source
     boundary;
 - `spec.source.upload` uses the controller-owned upload-session path and stays
-  on its staged object boundary under the same acquisition contract;
+  on its own staged object boundary;
 - all paths publish OCI `ModelPack` artifacts into the internal `DMCR`.
 
-The default is `artifacts.sourceAcquisitionMode=Direct`.
+The default is `artifacts.sourceFetchMode=Direct`.
 
 The trade-off is explicit:
 
@@ -129,17 +129,18 @@ controller-owned `materialize-artifact` into `/data/modelcache`, but now:
   cache topology;
 - workloads now get one stable runtime-facing model delivery contract via
   `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`, and
-  `AI_MODELS_MODEL_FAMILY` instead of depending directly on raw
-  `/data/modelcache/current` layout details;
+  `AI_MODELS_MODEL_FAMILY`; the projected model path is the stable
+  `/data/modelcache/model` entrypoint instead of the raw internal
+  `/data/modelcache/current` layout detail;
 - ai-models now keeps a separate per-node shared cache plane as a
   controller-owned stable runtime Pod plus stable PVC over the managed
   `LocalStorageClass`; the shared volume size is controlled by
   `nodeCache.sharedVolumeSize`, and storage identity no longer depends on the
   node-agent pod lifecycle;
-- the controller projects per-node desired artifact sets into module-owned
-  `ConfigMap` objects, and `node-cache-runtime` uses that internal intent plane
-  to prefetch immutable published artifacts from `DMCR` into the shared
-  node-local digest store without adding a new public API.
+- `node-cache-runtime` derives the desired published-artifact set directly from
+  live managed Pods scheduled on the current node and prefetches immutable
+  artifacts from `DMCR` into the shared node-local digest store without a
+  mirrored `ConfigMap` contract or a new public API.
 
 There is still no public cleanup or TTL knob yet: the workload-facing shared
 mount contract has not landed, so eviction policy remains internal runtime

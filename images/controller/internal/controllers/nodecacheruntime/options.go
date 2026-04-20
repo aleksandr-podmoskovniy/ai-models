@@ -38,7 +38,6 @@ type Options struct {
 	MaxTotalSize        string
 	MaxUnusedAge        string
 	ScanInterval        string
-	IntentNamespace     string
 	OCIInsecure         bool
 	OCIAuthSecretName   string
 	OCIRegistryCASecret string
@@ -80,7 +79,6 @@ func (o Options) runtimeSpec(nodeName string) k8sadapters.RuntimeSpec {
 		MaxTotalSize:        o.MaxTotalSize,
 		MaxUnusedAge:        o.MaxUnusedAge,
 		ScanInterval:        o.ScanInterval,
-		IntentNamespace:     o.IntentNamespace,
 		OCIInsecure:         o.OCIInsecure,
 		OCIAuthSecretName:   o.OCIAuthSecretName,
 		OCIRegistryCASecret: o.OCIRegistryCASecret,
@@ -112,8 +110,6 @@ func (o Options) validateRequiredFields() error {
 		return errors.New("node cache runtime max unused age must not be empty")
 	case strings.TrimSpace(o.ScanInterval) == "":
 		return errors.New("node cache runtime scan interval must not be empty")
-	case strings.TrimSpace(o.IntentNamespace) == "":
-		return errors.New("node cache runtime intent namespace must not be empty")
 	case strings.TrimSpace(o.OCIAuthSecretName) == "":
 		return errors.New("node cache runtime OCI auth secret must not be empty")
 	case len(o.NodeSelectorLabels) == 0:

@@ -31,6 +31,10 @@ Research-to-runtime bring-up slice. Работы уже включают не т
 - отдельно для reasoning-модели зафиксировано, что
   `engine_kwargs.reasoning_parser=deepseek_r1` обязателен, иначе reasoning
   токены уходят в обычный `content`.
+- archived `SKALA` документ оставлен как low-level smoke reference и больше
+  не должен читаться как альтернативный deployment path для whole app;
+  для прикладной раскатки source of truth теперь явно закреплён за
+  `KUBERAY-VLLM-RUNBOOK.ru.md`.
 
 ## Orchestration
 

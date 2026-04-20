@@ -26,8 +26,7 @@ func TestParseNodeCacheRuntimeConfigFromEnv(t *testing.T) {
 	t.Setenv(nodeCacheMaxSizeEnv, "200Gi")
 	t.Setenv(nodeCacheMaxUnusedAgeEnv, "48h")
 	t.Setenv(nodeCacheScanIntervalEnv, "10m")
-	t.Setenv(nodeCacheIntentNamespaceEnv, "d8-ai-models")
-	t.Setenv(nodeCacheIntentNodeNameEnv, "node-1")
+	t.Setenv(nodeCacheNodeNameEnv, "node-1")
 
 	config, exitCode, err := parseNodeCacheRuntimeConfig(nil)
 	if err != nil {
@@ -48,9 +47,6 @@ func TestParseNodeCacheRuntimeConfigFromEnv(t *testing.T) {
 	if got, want := config.ScanInterval, 10*time.Minute; got != want {
 		t.Fatalf("ScanInterval = %s, want %s", got, want)
 	}
-	if got, want := config.IntentNamespace, "d8-ai-models"; got != want {
-		t.Fatalf("IntentNamespace = %q, want %q", got, want)
-	}
 	if got, want := config.NodeName, "node-1"; got != want {
 		t.Fatalf("NodeName = %q, want %q", got, want)
 	}
@@ -64,20 +60,9 @@ func TestParseNodeCacheRuntimeConfigRejectsEmptyRoot(t *testing.T) {
 	}
 }
 
-func TestParseNodeCacheRuntimeConfigRejectsEmptyIntentNamespace(t *testing.T) {
-	t.Setenv(nodeCacheRootEnv, "/cache")
-	t.Setenv(nodeCacheIntentNamespaceEnv, "")
-	t.Setenv(nodeCacheIntentNodeNameEnv, "node-1")
-
-	if _, exitCode, err := parseNodeCacheRuntimeConfig(nil); err == nil || exitCode != 2 {
-		t.Fatalf("expected exitCode=2 and error, got exitCode=%d err=%v", exitCode, err)
-	}
-}
-
 func TestParseNodeCacheRuntimeConfigRejectsEmptyNodeName(t *testing.T) {
 	t.Setenv(nodeCacheRootEnv, "/cache")
-	t.Setenv(nodeCacheIntentNamespaceEnv, "d8-ai-models")
-	t.Setenv(nodeCacheIntentNodeNameEnv, "")
+	t.Setenv(nodeCacheNodeNameEnv, "")
 
 	if _, exitCode, err := parseNodeCacheRuntimeConfig(nil); err == nil || exitCode != 2 {
 		t.Fatalf("expected exitCode=2 and error, got exitCode=%d err=%v", exitCode, err)

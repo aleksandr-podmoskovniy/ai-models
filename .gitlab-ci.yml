@@ -49,8 +49,8 @@ show:dev-manifest:
         source: deckhouse
       EOF
 
-      Then configure ModuleConfig ai-models with the required PostgreSQL and
-      artifact storage settings for your environment.
+      Then configure ModuleConfig ai-models with the required publication,
+      runtime, and artifact storage settings for your environment.
       OUTER
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"

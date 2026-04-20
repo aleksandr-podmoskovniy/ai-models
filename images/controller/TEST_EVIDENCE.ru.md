@@ -27,7 +27,7 @@ paths и test surfaces.
 - Byte path:
   - `resolved HF objects -> native OCI publish`
 - Runtime selection:
-  - `artifacts.sourceAcquisitionMode=Direct`
+  - `artifacts.sourceFetchMode=Direct`
 - Full-size local copies during successful publish:
   - `0`
 - Primary evidence:
@@ -48,7 +48,7 @@ paths и test surfaces.
 - Byte path:
   - `HF objects -> source mirror objects -> native OCI publish`
 - Runtime selection:
-  - `artifacts.sourceAcquisitionMode=Mirror`
+  - `artifacts.sourceFetchMode=Mirror`
 - Full-size local copies during successful publish:
   - `0`
 - Primary evidence:
@@ -60,7 +60,7 @@ paths и test surfaces.
   - `internal/adapters/modelpack/oci/layer_matrix_object_source_test.go`
 - Proved properties:
   - publish continues from mirrored objects, not from local rematerialization;
-  - mirror resume/TLS edges stay covered on the acquisition boundary;
+  - mirror resume/TLS edges stay covered on the source fetch boundary;
   - mirror state/manifest JSON now decodes through `OpenRead`, not temp-file
     download.
 
@@ -156,8 +156,9 @@ paths и test surfaces.
   - workload cache policy remains separate from publish-worker byte path;
   - workload-facing runtime contract is stable through
     `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`, and
-    `AI_MODELS_MODEL_FAMILY` instead of making consumers depend directly on
-    raw `/data/modelcache/current`.
+    `AI_MODELS_MODEL_FAMILY`; consumers now read the stable
+    `/data/modelcache/model` projection instead of depending directly on raw
+    `/data/modelcache/current`.
 
 ## 2. Domain and application evidence
 
@@ -405,7 +406,8 @@ paths и test surfaces.
 
 - Decision surface:
   - digest-addressed shared store layout
-  - consumer materialization layout and current-link update
+  - consumer materialization layout plus internal current-link and stable
+    workload-model-link updates
   - shared-cache single-writer coordination
   - access timestamp handling
   - shared-store prefetch for desired published artifacts
@@ -420,14 +422,18 @@ paths и test surfaces.
   - `prefetch_test.go`
   - `maintain_test.go`
 
-### `internal/adapters/k8s/nodecacheintent`
+### `internal/adapters/k8s/nodecacheruntime`
 
 - Decision surface:
-  - immutable published-artifact intent extraction from already-managed Pods
-  - per-node `ConfigMap` shaping for desired artifact sets
-  - runtime-side intent loading for the node-cache agent
+  - stable per-node runtime Pod/PVC shaping
+  - immutable published-artifact extraction from already-managed Pods on the
+    current node
+  - runtime-side desired-set loading from live cluster truth without a
+    dedicated mirror contract
 - Primary evidence:
-  - `adapter_test.go`
+  - `intents_test.go`
+  - `pod_test.go`
+  - `pvc_test.go`
   - `service_test.go`
 
 ### Stable per-node node-cache runtime plane
@@ -439,8 +445,9 @@ paths и test surfaces.
     agent; legacy `DaemonSet` render is gone
   - stable per-node Pod/PVC contract over ai-models-owned `LocalStorageClass`
   - maintenance env contract for shared cache-root
-  - controller-owned node intent projection into the runtime Pod
+  - runtime-side live Pod lookup scoped to the current node
   - DMCR read-auth projection for shared-store prefetch
+  - read-only Pod-list RBAC contract for the node-cache agent
   - dedicated service-account contract for the node-cache agent
 - Primary evidence:
   - `pod_test.go`
@@ -526,7 +533,7 @@ paths и test surfaces.
 - `nodecachesubstrate`:
   - `options_test.go`
   - `reconciler_test.go`
-- `nodecacheintent`:
+- `nodecacheruntime`:
   - `reconciler_test.go`
 - `workloaddelivery`:
   - `annotations_test.go`
@@ -544,6 +551,9 @@ paths и test surfaces.
   - `collector_state_metrics_test.go`
   - `collector_incomplete_status_test.go`
   - `collector_test_helpers_test.go`
+- `internal/monitoring/runtimehealth`:
+  - `collector_nodecache_runtime_test.go`
+  - `collector_test_helpers_test.go`
 - `internal/publicationartifact`: `contract_test.go`, `location_test.go`
 - `internal/publishedsnapshot`: `snapshot_test.go`
 - `internal/support/cleanuphandle`: `handle_test.go`
@@ -553,8 +563,8 @@ paths и test surfaces.
 ## 7. Residual risks
 
 - Current evidence proves the live publication/runtime baseline plus the first
-  real node-local shared-cache intent/prefetch plane, but does not claim the
-  final workload-facing shared mount service.
+  real node-local shared-cache prefetch plane, but does not claim the final
+  workload-facing shared mount service.
 - Consumer-side materialization into workload cache remains intentional and is
   not hidden by publication-path zero-copy claims.
 - Historical migration detail remains available in archived bundles, not in this

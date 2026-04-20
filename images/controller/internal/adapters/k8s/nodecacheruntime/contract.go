@@ -20,6 +20,7 @@ const (
 	ManagedLabelKey        = "ai.deckhouse.io/node-cache-runtime"
 	ManagedLabelValue      = "managed"
 	NodeNameAnnotationKey  = "ai.deckhouse.io/node-cache-runtime-node-name"
+	RuntimeNodeNameEnv     = "AI_MODELS_NODE_NAME"
 	DefaultContainerName   = "node-cache-runtime"
 	registryCAPath         = "/etc/ai-models/registry-ca"
 	registryCAFilePath     = "/etc/ai-models/registry-ca/ca.crt"
@@ -38,7 +39,6 @@ type RuntimeSpec struct {
 	MaxTotalSize        string
 	MaxUnusedAge        string
 	ScanInterval        string
-	IntentNamespace     string
 	OCIInsecure         bool
 	OCIAuthSecretName   string
 	OCIRegistryCASecret string

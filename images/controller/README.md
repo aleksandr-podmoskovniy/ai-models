@@ -62,10 +62,11 @@ Current phase-2 slice implemented here:
 - `internal/nodecache` for shared node-local cache contract reused by the
   current `materialize-artifact` fallback and the new module-owned
   node-cache runtime plane: digest-addressed shared store layout, ready marker
-  parsing, separate consumer materialization/current-link helper contract,
-  single-writer coordination, access timestamp handling, desired-artifact
-  prefetch into the shared store, protected-digest-aware bounded cache
-  scan/eviction planning, and runtime maintenance loop;
+  parsing, separate consumer materialization plus internal current-link and
+  stable workload-model-link helper contract, single-writer coordination,
+  access timestamp handling, desired-artifact prefetch into the shared store,
+  protected-digest-aware bounded cache scan/eviction planning, and runtime
+  maintenance loop;
 - `internal/adapters/k8s/modeldelivery` for reusable consumer-side
   `PodTemplateSpec` mutation over `materialize-artifact`, fixed
   `/data/modelcache` cache-root contract over user-provided storage or
@@ -75,11 +76,12 @@ Current phase-2 slice implemented here:
   auth/CA projection into the runtime namespace plus one stable
   workload-facing runtime env contract
   (`AI_MODELS_MODEL_PATH` / `AI_MODELS_MODEL_DIGEST` /
-  `AI_MODELS_MODEL_FAMILY`) instead of leaking raw cache-root layout details
-  into consumers;
-- `internal/adapters/k8s/nodecacheintent` for controller-owned shaping of
-  per-node desired artifact sets into module-owned `ConfigMap` objects and
-  for runtime-side loading of that intent surface inside the node-cache agent;
+  `AI_MODELS_MODEL_FAMILY`) that now projects the stable
+  `/data/modelcache/model` entrypoint instead of leaking raw cache-root layout
+  details into consumers;
+- `internal/adapters/k8s/nodecacheruntime` for stable per-node Pod/PVC shaping
+  of the node-cache runtime plane plus runtime-side extraction of desired
+  artifact sets directly from live managed Pods scheduled on the same node;
 - `internal/adapters/k8s/nodecachesubstrate` for concrete
   `storage.deckhouse.io/v1alpha1` shaping of managed `LVMVolumeGroupSet`,
   ready managed `LVMVolumeGroup` filtering, and ai-models-owned
@@ -103,21 +105,21 @@ Current phase-2 slice implemented here:
   lands; workload delivery can already reuse that storage class for managed
   local fallback volumes, but node-shared cache semantics still remain outside
   this controller;
-- `internal/controllers/nodecacheintent` for controller-owned per-node desired
-  artifact intent: it watches already-managed scheduled Pods, computes the
-  immutable published-artifact set needed on each node, and maintains one
-  module-owned `ConfigMap` per node for the runtime agent instead of pushing
-  cache policy into workload mutation or inventing a new public API;
+- `internal/controllers/nodecacheruntime` for controller-owned stable per-node
+  runtime Pod/PVC ownership: it reconciles the node-cache agent only for the
+  selected nodes and keeps runtime shaping separate from workload mutation and
+  storage substrate ownership;
 - module render now keeps the first real node-local cache runtime plane as a
   controller-owned stable per-node Pod plus stable PVC over the ai-models-
   managed `LocalStorageClass`; that shared-store volume is sized by
-  `nodeCache.sharedVolumeSize`, reads controller-owned per-node intent, and
-  prefetches immutable published artifacts into the shared node-local digest
-  store while workload delivery still uses the fallback path, so maintenance
-  and prefetch already run on a node-owned storage surface that can be reused
-  by the next CSI-like slice without another ownership rewrite;
-- `internal/adapters/sourcefetch` for safe `HuggingFace` source
-  acquisition and archive hardening, with one canonical remote ingest entrypoint
+  `nodeCache.sharedVolumeSize`, reads desired published artifacts directly from
+  live managed Pods on the current node, and prefetches immutable artifacts
+  into the shared node-local digest store while workload delivery still uses
+  the fallback path, so maintenance and prefetch already run on a node-owned
+  storage surface that can be reused by the next CSI-like slice without
+  another ownership rewrite;
+- `internal/adapters/sourcefetch` for safe `HuggingFace` remote source fetch
+  and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport, source mirror transfer, archive inspection and
   remote summary extraction instead of split orchestration in the worker;
   remote `source.url` bytes now support two explicit runtime modes:
@@ -242,6 +244,11 @@ Current phase-2 slice implemented here:
   over public `Model` / `ClusterModel` state: phase one-hot gauges,
   ready/validated booleans, small info metrics, and artifact size from
   public `spec/status` instead of runtime-local counters or log parsing;
+- `internal/monitoring/runtimehealth` for module-owned Prometheus collectors
+  over the managed node-cache runtime plane: stable per-node agent `Pod`
+  phase/readiness, selector-scoped desired-vs-ready summary gauges, and shared-
+  cache `PVC` bind/requested-size signals from ai-models-owned runtime
+  resources instead of ad-hoc `kubectl` inspection;
 - `internal/support/cleanuphandle` for controller-owned backend-specific delete
   state
   that must not leak into public status;

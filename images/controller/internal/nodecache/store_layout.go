@@ -24,6 +24,7 @@ import (
 const (
 	StoreDirName     = "store"
 	CurrentLinkName  = "current"
+	WorkloadLinkName = "model"
 	MarkerFileName   = ".ai-models-materialized.json"
 	LastUsedFileName = ".ai-models-last-used"
 )

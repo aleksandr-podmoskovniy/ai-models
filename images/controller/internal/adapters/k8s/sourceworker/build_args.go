@@ -35,16 +35,16 @@ func buildArgs(
 		"--artifact-uri", artifactURI,
 		"--source-type", string(plan.SourceType),
 		"--oci-direct-upload-endpoint", strings.TrimSpace(options.OCIDirectUploadEndpoint),
-		"--source-acquisition-mode", string(options.SourceAcquisition),
+		"--source-fetch-mode", string(options.SourceFetch),
 	}
-	return append(args, sourceArgs(plan, request.Owner.UID, options.ObjectStorage.Bucket, options.SourceAcquisition)...)
+	return append(args, sourceArgs(plan, request.Owner.UID, options.ObjectStorage.Bucket, options.SourceFetch)...)
 }
 
-func sourceArgs(plan publicationapp.SourceWorkerPlan, ownerUID types.UID, rawBucket string, modes ...publicationports.SourceAcquisitionMode) []string {
+func sourceArgs(plan publicationapp.SourceWorkerPlan, ownerUID types.UID, rawBucket string, modes ...publicationports.SourceFetchMode) []string {
 	if plan.HuggingFace != nil {
-		mode := publicationports.SourceAcquisitionModeDirect
+		mode := publicationports.SourceFetchModeDirect
 		if len(modes) > 0 {
-			mode = publicationports.NormalizeSourceAcquisitionMode(modes[0])
+			mode = publicationports.NormalizeSourceFetchMode(modes[0])
 		}
 		return append(huggingFaceArgs(plan.HuggingFace), remoteRawStageArgs(ownerUID, rawBucket, mode)...)
 	}
@@ -73,8 +73,8 @@ func uploadArgs(source *publicationapp.UploadSourcePlan) []string {
 	return args
 }
 
-func remoteRawStageArgs(ownerUID types.UID, rawBucket string, mode publicationports.SourceAcquisitionMode) []string {
-	if publicationports.NormalizeSourceAcquisitionMode(mode) != publicationports.SourceAcquisitionModeMirror {
+func remoteRawStageArgs(ownerUID types.UID, rawBucket string, mode publicationports.SourceFetchMode) []string {
+	if publicationports.NormalizeSourceFetchMode(mode) != publicationports.SourceFetchModeMirror {
 		return nil
 	}
 	if strings.TrimSpace(rawBucket) == "" {

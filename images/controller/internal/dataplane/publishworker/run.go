@@ -29,24 +29,24 @@ import (
 )
 
 type Options struct {
-	SourceType                 modelsv1alpha1.ModelSourceType
-	ArtifactURI                string
-	HFModelID                  string
-	OCIDirectUploadEndpoint    string
-	DirectUploadCAFile         string
-	DirectUploadInsecure       bool
-	SourceAcquisitionMode      publicationports.SourceAcquisitionMode
-	Revision                   string
-	UploadPath                 string
-	UploadStage                *cleanuphandle.UploadStagingHandle
-	RawStageBucket             string
-	RawStageKeyPrefix          string
-	InputFormat                modelsv1alpha1.ModelInputFormat
-	Task                       string
-	HFToken                    string
-	UploadStaging              uploadStagingClient
-	ModelPackPublisher         modelpackports.Publisher
-	RegistryAuth               modelpackports.RegistryAuth
+	SourceType              modelsv1alpha1.ModelSourceType
+	ArtifactURI             string
+	HFModelID               string
+	OCIDirectUploadEndpoint string
+	DirectUploadCAFile      string
+	DirectUploadInsecure    bool
+	SourceFetchMode         publicationports.SourceFetchMode
+	Revision                string
+	UploadPath              string
+	UploadStage             *cleanuphandle.UploadStagingHandle
+	RawStageBucket          string
+	RawStageKeyPrefix       string
+	InputFormat             modelsv1alpha1.ModelInputFormat
+	Task                    string
+	HFToken                 string
+	UploadStaging           uploadStagingClient
+	ModelPackPublisher      modelpackports.Publisher
+	RegistryAuth            modelpackports.RegistryAuth
 }
 
 func Run(ctx context.Context, options Options) (publicationartifact.Result, error) {
@@ -59,22 +59,22 @@ func Run(ctx context.Context, options Options) (publicationartifact.Result, erro
 	if strings.TrimSpace(options.OCIDirectUploadEndpoint) == "" {
 		return publicationartifact.Result{}, errors.New("OCI direct upload endpoint must not be empty")
 	}
-	options.SourceAcquisitionMode = publicationports.NormalizeSourceAcquisitionMode(options.SourceAcquisitionMode)
-	if err := publicationports.ValidateSourceAcquisitionMode(options.SourceAcquisitionMode); err != nil {
+	options.SourceFetchMode = publicationports.NormalizeSourceFetchMode(options.SourceFetchMode)
+	if err := publicationports.ValidateSourceFetchMode(options.SourceFetchMode); err != nil {
 		return publicationartifact.Result{}, err
 	}
 	if options.SourceType == modelsv1alpha1.ModelSourceTypeHuggingFace {
-		if options.SourceAcquisitionMode == publicationports.SourceAcquisitionModeMirror {
+		if options.SourceFetchMode == publicationports.SourceFetchModeMirror {
 			switch {
 			case strings.TrimSpace(options.RawStageBucket) == "":
-				return publicationartifact.Result{}, errors.New("mirror source acquisition requires raw stage bucket")
+				return publicationartifact.Result{}, errors.New("mirror source fetch requires raw stage bucket")
 			case strings.TrimSpace(options.RawStageKeyPrefix) == "":
-				return publicationartifact.Result{}, errors.New("mirror source acquisition requires raw stage key prefix")
+				return publicationartifact.Result{}, errors.New("mirror source fetch requires raw stage key prefix")
 			case options.UploadStaging == nil:
-				return publicationartifact.Result{}, errors.New("mirror source acquisition requires upload staging client")
+				return publicationartifact.Result{}, errors.New("mirror source fetch requires upload staging client")
 			}
 		}
-		if options.SourceAcquisitionMode == publicationports.SourceAcquisitionModeDirect {
+		if options.SourceFetchMode == publicationports.SourceFetchModeDirect {
 			options.RawStageBucket = ""
 			options.RawStageKeyPrefix = ""
 		}

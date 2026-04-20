@@ -22,8 +22,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	intentcontract "github.com/deckhouse/ai-models/controller/internal/nodecacheintent"
 )
 
 func TestEnsureDesiredArtifactsPrefetchesOnlyMissingDigests(t *testing.T) {
@@ -32,15 +30,15 @@ func TestEnsureDesiredArtifactsPrefetchesOnlyMissingDigests(t *testing.T) {
 	cacheRoot := filepath.Join(t.TempDir(), "cache")
 	writeReadyMaterialization(t, StorePath(cacheRoot, "sha256:ready"), "sha256:ready", time.Now().UTC())
 
-	intents := []intentcontract.ArtifactIntent{
+	artifacts := []DesiredArtifact{
 		{ArtifactURI: "oci://example/model-ready@sha256:ready", Digest: "sha256:ready"},
 		{ArtifactURI: "oci://example/model-missing@sha256:missing", Digest: "sha256:missing"},
 	}
 
 	var gotDigests []string
-	err := EnsureDesiredArtifacts(context.Background(), cacheRoot, intents, func(_ context.Context, intent intentcontract.ArtifactIntent, destinationDir string) error {
-		gotDigests = append(gotDigests, intent.Digest)
-		writeReadyMaterialization(t, destinationDir, intent.Digest, time.Now().UTC())
+	err := EnsureDesiredArtifacts(context.Background(), cacheRoot, artifacts, func(_ context.Context, artifact DesiredArtifact, destinationDir string) error {
+		gotDigests = append(gotDigests, artifact.Digest)
+		writeReadyMaterialization(t, destinationDir, artifact.Digest, time.Now().UTC())
 		return nil
 	})
 	if err != nil {
@@ -69,7 +67,7 @@ func TestRunRuntimeCycleProtectsDesiredDigestsFromEviction(t *testing.T) {
 		t.Fatalf("TouchUsage(evict) error = %v", err)
 	}
 
-	loader := staticIntentLoader{intents: []intentcontract.ArtifactIntent{{
+	loader := staticDesiredArtifactLoader{artifacts: []DesiredArtifact{{
 		ArtifactURI: "oci://example/model-protected@sha256:protected",
 		Digest:      "sha256:protected",
 	}}}
@@ -80,7 +78,7 @@ func TestRunRuntimeCycleProtectsDesiredDigestsFromEviction(t *testing.T) {
 			MaxUnusedAge:      24 * time.Hour,
 			ScanInterval:      time.Minute,
 		},
-	}, loader, func(context.Context, intentcontract.ArtifactIntent, string) error { return nil })
+	}, loader, func(context.Context, DesiredArtifact, string) error { return nil })
 	if err != nil {
 		t.Fatalf("runRuntimeCycle() error = %v", err)
 	}
@@ -100,10 +98,10 @@ func TestRunRuntimeCycleProtectsDesiredDigestsFromEviction(t *testing.T) {
 	}
 }
 
-type staticIntentLoader struct {
-	intents []intentcontract.ArtifactIntent
+type staticDesiredArtifactLoader struct {
+	artifacts []DesiredArtifact
 }
 
-func (l staticIntentLoader) LoadIntents(context.Context) ([]intentcontract.ArtifactIntent, error) {
-	return l.intents, nil
+func (l staticDesiredArtifactLoader) LoadDesiredArtifacts(context.Context) ([]DesiredArtifact, error) {
+	return l.artifacts, nil
 }

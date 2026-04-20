@@ -12,9 +12,9 @@ internal values, а Deployment получает новый `checksum/config` и 
 rollout `dmcr`, хотя физический blob GC не должен быть жёстко привязан к одному
 delete-событию.
 
-Этот bundle является компактным continuation workstream поверх
-`plans/active/phase2-runtime-followups/`, но не дублирует его как source of
-truth для остального publication/runtime path.
+Этот bundle является компактным continuation workstream поверх archived
+`plans/archive/2026/phase2-runtime-followups/`, но не дублирует его как
+source of truth для остального publication/runtime path.
 
 ## Постановка задачи
 

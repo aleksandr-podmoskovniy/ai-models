@@ -33,6 +33,10 @@ func CurrentLinkPath(cacheRoot string) string {
 	return filepath.Join(filepath.Clean(strings.TrimSpace(cacheRoot)), CurrentLinkName)
 }
 
+func WorkloadModelPath(cacheRoot string) string {
+	return filepath.Join(filepath.Clean(strings.TrimSpace(cacheRoot)), WorkloadLinkName)
+}
+
 func ResolveMaterializationLayout(cacheRoot, artifactURI, artifactDigest string) (MaterializationLayout, error) {
 	cacheRoot = filepath.Clean(strings.TrimSpace(cacheRoot))
 	if cacheRoot == "" || cacheRoot == "." {
@@ -58,21 +62,37 @@ func UpdateCurrentLink(cacheRoot, targetModelPath string) error {
 	if cacheRoot == "" || cacheRoot == "." || targetModelPath == "" || targetModelPath == "." {
 		return errors.New("cache-root current symlink requires non-empty paths")
 	}
-	if err := os.MkdirAll(cacheRoot, 0o755); err != nil {
+	return updateRelativeLink(CurrentLinkPath(cacheRoot), targetModelPath)
+}
+
+func UpdateWorkloadModelLink(cacheRoot string) error {
+	cacheRoot = filepath.Clean(strings.TrimSpace(cacheRoot))
+	if cacheRoot == "" || cacheRoot == "." {
+		return errors.New("cache-root workload model symlink requires non-empty path")
+	}
+	return updateRelativeLink(WorkloadModelPath(cacheRoot), CurrentLinkPath(cacheRoot))
+}
+
+func updateRelativeLink(linkPath, targetPath string) error {
+	linkPath = filepath.Clean(strings.TrimSpace(linkPath))
+	targetPath = filepath.Clean(strings.TrimSpace(targetPath))
+	if linkPath == "" || linkPath == "." || targetPath == "" || targetPath == "." {
+		return errors.New("relative symlink update requires non-empty paths")
+	}
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
 		return err
 	}
 
-	currentPath := CurrentLinkPath(cacheRoot)
-	relativeTarget, err := filepath.Rel(cacheRoot, targetModelPath)
+	relativeTarget, err := filepath.Rel(filepath.Dir(linkPath), targetPath)
 	if err != nil {
 		return err
 	}
-	tempLink := currentPath + ".tmp"
+	tempLink := linkPath + ".tmp"
 	_ = os.Remove(tempLink)
 	if err := os.Symlink(relativeTarget, tempLink); err != nil {
 		return err
 	}
-	if err := os.Rename(tempLink, currentPath); err != nil {
+	if err := os.Rename(tempLink, linkPath); err != nil {
 		_ = os.Remove(tempLink)
 		return err
 	}

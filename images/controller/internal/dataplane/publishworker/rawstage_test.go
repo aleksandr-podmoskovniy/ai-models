@@ -86,7 +86,7 @@ func TestRemoteSourceMirrorPropagatesUploadHTTPClient(t *testing.T) {
 	staging := &fakeUploadStagingWithHTTPClient{httpClient: httpClient}
 
 	options := remoteSourceMirror(Options{
-		SourceAcquisitionMode: publicationports.SourceAcquisitionModeMirror,
+		SourceFetchMode: publicationports.SourceFetchModeMirror,
 		RawStageBucket:        "artifacts",
 		RawStageKeyPrefix:     "raw/1111-2222/source-url",
 		UploadStaging:         staging,
@@ -106,7 +106,7 @@ func TestRemoteSourceMirrorDisabledForDirectMode(t *testing.T) {
 	staging := &fakeUploadStagingWithHTTPClient{httpClient: httpClient}
 
 	options := remoteSourceMirror(Options{
-		SourceAcquisitionMode: publicationports.SourceAcquisitionModeDirect,
+		SourceFetchMode: publicationports.SourceFetchModeDirect,
 		RawStageBucket:        "artifacts",
 		RawStageKeyPrefix:     "raw/1111-2222/source-url",
 		UploadStaging:         staging,

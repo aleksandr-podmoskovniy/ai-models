@@ -54,14 +54,15 @@ properties:
           directly in `d8-ai-models`. This Secret is required; inline
           credentials are not supported.
         default: ""
-      sourceAcquisitionMode:
+      sourceFetchMode:
         type: string
         enum:
           - Mirror
           - Direct
         default: Direct
         description: |
-          Cluster-level source acquisition mode for publication workers.
+          Cluster-level remote source fetch mode for publication workers.
+          This setting applies only to remote `spec.source.url` ingestion.
           `Mirror` first stores selected remote source files in controller-owned
           object storage under `raw/` and then publishes from that durable
           temporary copy when the source adapter supports it. `Direct`

@@ -117,7 +117,13 @@ func runMaterializeArtifact(args []string) int {
 			logger.Error("artifact materialization failed", slog.Any("error", err))
 			return cmdsupport.CommandError(commandMaterializeArtifact, err)
 		}
-		result.ModelPath = cacheCurrent
+	}
+	if cacheCurrent != "" {
+		if err := nodecache.UpdateWorkloadModelLink(cacheRoot); err != nil {
+			logger.Error("artifact materialization failed", slog.Any("error", err))
+			return cmdsupport.CommandError(commandMaterializeArtifact, err)
+		}
+		result.ModelPath = nodecache.WorkloadModelPath(cacheRoot)
 	}
 
 	logger.Info(

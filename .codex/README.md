@@ -20,6 +20,14 @@ Precedence внутри repo-local Codex surface:
 - удерживать workflow docs в `docs/development/` и `plans/README.md`
   выровненными с этим instruction surface.
 
+Current ai-models baseline:
+
+- live roadmap is publication/runtime-first, not backend-first;
+- internal registry/publication backend stays implementation detail of the
+  module;
+- workflow surface must describe the current `Model` / `ClusterModel` plus
+  publication/runtime baseline, not archived pre-phase attempts.
+
 ## Reusable core
 
 Этот репозиторий хранит не только project-specific роли, но и reusable baseline
@@ -63,6 +71,8 @@ Write-capable agents:
 - `model-catalog-api`
 
 Они нужны только там, где generic core уже не покрывает предметную область.
+`backend_integrator` относится к внутренним publication backend/runtime
+деталям, а не к backend-first roadmap как project phase.
 
 ## Recommended orchestration
 
@@ -76,7 +86,7 @@ Decision matrix:
   нужен отдельный docs-only framing pass
 - layout/module shell/repo topology -> `repo_architect`
 - runtime/auth/storage/ingress/build/HA/observability -> `integration_architect`
-- backend-engine-specific runtime details -> `backend_integrator`
+- publication-backend-specific runtime details -> `backend_integrator`
 - `Model` / `ClusterModel` / API / CRD / conditions -> `api_designer`
 - scoped implementation after clear boundaries -> `module_implementer`
 - substantial final handoff -> `review-gate`; если использовалась delegation
@@ -108,7 +118,8 @@ Cadence:
    slice: делать отдельный governance bundle.
 
 Для ai-models-specific задач поверх этого добавлять:
-- `backend_integrator` для internal backend engine и 3p runtime details
+- `backend_integrator` для internal publication backend/runtime и 3p runtime
+  details
 - `model-catalog-api` для `Model` / `ClusterModel`
 
 Практический нюанс:

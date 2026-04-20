@@ -40,7 +40,7 @@ func publishFromHuggingFace(ctx context.Context, options Options) (publicationar
 	logger := slog.Default().With(
 		slog.String("sourceType", string(modelsv1alpha1.ModelSourceTypeHuggingFace)),
 		slog.String("sourceRepoID", strings.TrimSpace(options.HFModelID)),
-		slog.String("sourceAcquisitionMode", string(publicationports.NormalizeSourceAcquisitionMode(options.SourceAcquisitionMode))),
+		slog.String("sourceFetchMode", string(publicationports.NormalizeSourceFetchMode(options.SourceFetchMode))),
 	)
 
 	fetchStarted := time.Now()

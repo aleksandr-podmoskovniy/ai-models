@@ -26,11 +26,11 @@ import (
 	apiinstall "github.com/deckhouse/ai-models/api/core/install"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
-	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecacheintent"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecacheruntime"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecachesubstrate"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	"github.com/deckhouse/ai-models/controller/internal/monitoring/catalogmetrics"
+	"github.com/deckhouse/ai-models/controller/internal/monitoring/runtimehealth"
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -50,7 +50,6 @@ const defaultControllerCacheSyncTimeout = 10 * time.Minute
 type Options struct {
 	CleanupJobs        catalogcleanup.Options
 	PublicationRuntime catalogstatus.Options
-	NodeCacheIntent    nodecacheintent.Options
 	NodeCacheRuntime   nodecacheruntime.Options
 	NodeCacheSubstrate nodecachesubstrate.Options
 	WorkloadDelivery   workloaddelivery.Options
@@ -69,7 +68,6 @@ type App struct {
 	logger             *slog.Logger
 	cleanupJobs        catalogcleanup.Options
 	publicationRuntime catalogstatus.Options
-	nodeCacheIntent    nodecacheintent.Options
 	nodeCacheRuntime   nodecacheruntime.Options
 	nodeCacheSubstrate nodecachesubstrate.Options
 	workloadDelivery   workloaddelivery.Options
@@ -84,9 +82,6 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 		return nil, err
 	}
 	if err := options.PublicationRuntime.Validate(); err != nil {
-		return nil, err
-	}
-	if err := options.NodeCacheIntent.Validate(); err != nil {
 		return nil, err
 	}
 	if err := options.NodeCacheRuntime.Validate(); err != nil {
@@ -104,7 +99,6 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 	return &App{
 		cleanupJobs:        options.CleanupJobs,
 		publicationRuntime: options.PublicationRuntime,
-		nodeCacheIntent:    options.NodeCacheIntent,
 		nodeCacheRuntime:   options.NodeCacheRuntime,
 		nodeCacheSubstrate: options.NodeCacheSubstrate,
 		workloadDelivery:   options.WorkloadDelivery,
@@ -164,9 +158,6 @@ func (a *App) setupManager(mgr ctrl.Manager) error {
 	if err := catalogstatus.SetupWithManager(mgr, a.publicationRuntime); err != nil {
 		return err
 	}
-	if err := nodecacheintent.SetupWithManager(mgr, a.logger, a.nodeCacheIntent); err != nil {
-		return err
-	}
 	if err := nodecacheruntime.SetupWithManager(mgr, a.logger, a.nodeCacheRuntime); err != nil {
 		return err
 	}
@@ -182,6 +173,17 @@ func (a *App) setupManager(mgr ctrl.Manager) error {
 		metrics.Registry,
 		a.logger.With(slog.String("runtimeKind", "metrics")),
 	)
+	if a.nodeCacheRuntime.Enabled {
+		runtimehealth.SetupCollector(
+			mgr.GetCache(),
+			metrics.Registry,
+			a.logger.With(slog.String("runtimeKind", "metrics")),
+			runtimehealth.Options{
+				RuntimeNamespace:   a.nodeCacheRuntime.Namespace,
+				NodeSelectorLabels: a.nodeCacheRuntime.NodeSelectorLabels,
+			},
+		)
+	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return err
@@ -225,12 +227,6 @@ func (a *App) logRuntimeConfiguration() {
 			slog.String("storageClassName", a.nodeCacheSubstrate.StorageClassName),
 			slog.String("volumeGroupSetName", a.nodeCacheSubstrate.VolumeGroupSetName),
 			slog.String("maxSize", a.nodeCacheSubstrate.MaxSize),
-		)
-	}
-	if a.nodeCacheIntent.Enabled {
-		a.logger.Info(
-			"controller node-cache intent configured",
-			slog.String("namespace", a.nodeCacheIntent.Namespace),
 		)
 	}
 	if a.nodeCacheRuntime.Enabled {

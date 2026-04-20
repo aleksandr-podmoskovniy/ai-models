@@ -134,16 +134,16 @@ Managed node-local cache substrate и runtime delivery continuation поверх
   loop над shared cache-root без pod-scoped storage identity и не выдаёт
   current fallback path за уже готовый shared mount service.
 - Managed workload delivery проецирует в `PodTemplateSpec` immutable published
-  artifact identity, а ai-models держит отдельный internal node-cache intent
-  plane, который:
-  - собирает per-node desired artifact set по реально запланированным managed
-    `Pod`;
-  - проецирует этот set в module-owned per-node `ConfigMap`;
+  artifact identity, а ai-models держит bounded runtime-side desired-set
+  handoff, который:
+  - собирает per-node desired artifact set по live managed `Pod` на текущей
+    ноде;
   - позволяет `node-cache-runtime` реально prefetch'ить shared cache entries в
-    node-local store без нового public API.
-- Shared cache entries, которые входят в текущий desired node intent set, не
-  выталкиваются idle/size eviction policy по умолчанию, пока intent остаётся
-  актуальным.
+    node-local store без mirrored `ConfigMap` contract и без нового public
+    API.
+- Shared cache entries, которые входят в текущий desired artifact set для
+  ноды, не выталкиваются idle/size eviction policy по умолчанию, пока этот set
+  остаётся актуальным.
 - Workload-facing runtime contract больше не заставляет consumer code знать
   raw cache-root/current implementation detail: controller-owned delivery
   surface явно проецирует stable model-path/env contract отдельно от
@@ -166,8 +166,8 @@ Managed node-local cache substrate и runtime delivery continuation поверх
   - bounded eviction planning over ready and malformed cache entries.
   - stable per-node runtime Pod/PVC shaping and render guardrails;
   - bounded node-cache maintenance loop over malformed/idle entries.
-  - pod-to-node intent extraction and per-node ConfigMap shaping;
-  - per-node intent reconcile over scheduled/removed managed Pods;
+  - runtime-side desired-set extraction from live managed Pods on the current
+    node;
   - shared-store prefetch and protected-digest eviction behavior.
   - workload-facing model-path/env projection over current fallback delivery.
   - stable per-node runtime Pod/PVC shaping and reconcile lifecycle for shared
@@ -183,11 +183,10 @@ Managed node-local cache substrate и runtime delivery continuation поверх
   delete;
 - без отдельного controller-owned `LocalStorageClass` maintainer loop придётся
   либо требовать ручной storage setup, либо делать brittle render-time magic;
-- если оставить node maintenance plane на custom per-node reconcile, следующий
-  CSI-like slice придётся насаживать на уже устаревший ownership shell вместо
-  стандартного node-agent `DaemonSet`;
+- если снова ввести отдельный mirrored desired-state contract поверх live Pod
+  truth, следующий CSI-like slice унаследует лишний ownership seam вместо
+  одного bounded runtime handoff;
 - можно преждевременно вывести user-facing cleanup policy без реального cache
   runtime, что создаст ложный продуктовый контракт.
-- если начать prefetch'ить shared store без отдельного node intent plane,
-  runtime agent либо будет тянуть все артефакты на все ноды, либо получит
-  неявный ad-hoc источник истины вместо bounded controller-owned contract.
+- если runtime-side live Pod lookup расширить без discipline по scope/RBAC,
+  можно снова размыть границу между workload mutation и node-cache runtime.

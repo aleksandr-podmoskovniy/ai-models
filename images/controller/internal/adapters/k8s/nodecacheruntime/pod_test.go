@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
-	"github.com/deckhouse/ai-models/controller/internal/nodecacheintent"
 )
 
 func TestDesiredPod(t *testing.T) {
@@ -35,7 +34,6 @@ func TestDesiredPod(t *testing.T) {
 		MaxTotalSize:        "200Gi",
 		MaxUnusedAge:        "24h",
 		ScanInterval:        "5m",
-		IntentNamespace:     "d8-ai-models",
 		OCIInsecure:         true,
 		OCIAuthSecretName:   "ai-models-dmcr-auth-read",
 		OCIRegistryCASecret: "ai-models-dmcr-ca",
@@ -78,11 +76,8 @@ func TestDesiredPod(t *testing.T) {
 	if env[nodecache.RuntimeCacheRootEnv] != nodecache.RuntimeCacheRootPath {
 		t.Fatalf("unexpected cache root env %#v", env)
 	}
-	if env[nodecacheintent.RuntimeNamespaceEnv] != "d8-ai-models" {
-		t.Fatalf("unexpected intent namespace env %#v", env)
-	}
-	if env[nodecacheintent.RuntimeNodeNameEnv] != "worker-a" {
-		t.Fatalf("unexpected intent node env %#v", env)
+	if env[RuntimeNodeNameEnv] != "worker-a" {
+		t.Fatalf("unexpected node name env %#v", env)
 	}
 	if env["AI_MODELS_OCI_CA_FILE"] != registryCAFilePath {
 		t.Fatalf("unexpected registry CA env %#v", env)
@@ -100,7 +95,6 @@ func TestDesiredPodOmitsOptionalRegistryCAAndPullSecret(t *testing.T) {
 		MaxTotalSize:       "200Gi",
 		MaxUnusedAge:       "24h",
 		ScanInterval:       "5m",
-		IntentNamespace:    "d8-ai-models",
 		OCIAuthSecretName:  "ai-models-dmcr-auth-read",
 	})
 	if err != nil {

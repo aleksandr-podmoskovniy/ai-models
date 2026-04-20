@@ -49,7 +49,7 @@ Read-only reviews, обязательные до implementation slices:
 
 Проверки:
 
-- `rg -n "materialize-artifact|KitOps|DMCR|modeldelivery|source mirror|cache" images/controller`
+- `rg -n "materialize-artifact|DMCR|modeldelivery|source mirror|cache|modelpack/oci" images/controller`
 
 Артефакт результата:
 
@@ -98,10 +98,11 @@ Read-only reviews, обязательные до implementation slices:
 
 Нужно зафиксировать:
 
-- current blockers в `KitOps` adapter:
-  - local `ModelDir`
-  - temp config/context dirs
-  - pack/push shell over filesystem context;
+- current constraints в native OCI publisher:
+  - direct-upload/object-source boundaries;
+  - manifest/config assembly owned by `modelpack/oci`;
+  - no false new "streaming" label if current digest-first path already covers
+    the required contract;
 - minimum contract для нового stream-capable publisher:
   - direct blob/layer writer;
   - manifest/config assembly;
@@ -114,7 +115,6 @@ Read-only reviews, обязательные до implementation slices:
 
 Файлы/каталоги:
 
-- `images/controller/internal/adapters/modelpack/kitops/*`
 - `images/controller/internal/adapters/modelpack/oci/*`
 - `images/controller/internal/dataplane/publishworker/*`
 - `plans/active/phase2-model-distribution-architecture/*`
@@ -126,7 +126,7 @@ Read-only reviews, обязательные до implementation slices:
 Артефакт результата:
 
 - written technical verdict:
-  - `KitOps` path stays filesystem-based;
+  - current native OCI/direct-upload path stays sufficient baseline;
   - or new publisher slice is justified and scoped.
 
 ### Slice 4. Спроектировать node-local cache mount service
@@ -248,7 +248,7 @@ Candidate follow-up bundles:
 
 - `DMZ` architecture agreed;
 - streaming verdict written;
-- current `KitOps` path intentionally remains baseline.
+- current native OCI/direct-upload path intentionally remains baseline.
 
 Это всё ещё не ломает current init-container delivery path и не требует
 полуготового node-cache runtime.
@@ -257,7 +257,7 @@ Candidate follow-up bundles:
 
 - manual consistency review between:
   - new bundle
-  - `plans/active/phase2-runtime-followups/*`
+  - `plans/archive/2026/phase2-runtime-followups/*`
   - `plans/archive/2026/publication-storage-hardening/*`
 - if docs are updated:
   - `make helm-template`

@@ -37,7 +37,7 @@ type RuntimeOptions struct {
 	OCIRegistryCASecretName string
 	OCIDirectUploadEndpoint string
 	ObjectStorage           storageprojection.Options
-	SourceAcquisition       publicationports.SourceAcquisitionMode
+	SourceFetch             publicationports.SourceFetchMode
 	ImagePullPolicy         corev1.PullPolicy
 	Resources               corev1.ResourceRequirements
 }
@@ -46,7 +46,7 @@ func NormalizeRuntimeOptions(options RuntimeOptions) RuntimeOptions {
 	if options.ImagePullPolicy == "" {
 		options.ImagePullPolicy = corev1.PullIfNotPresent
 	}
-	options.SourceAcquisition = publicationports.NormalizeSourceAcquisitionMode(options.SourceAcquisition)
+	options.SourceFetch = publicationports.NormalizeSourceFetchMode(options.SourceFetch)
 	return options
 }
 
@@ -55,7 +55,7 @@ func ValidateRuntimeOptions(component string, options RuntimeOptions) error {
 	if component == "" {
 		return errors.New("source worker runtime component name must not be empty")
 	}
-	if err := publicationports.ValidateSourceAcquisitionMode(options.SourceAcquisition); err != nil {
+	if err := publicationports.ValidateSourceFetchMode(options.SourceFetch); err != nil {
 		return fmt.Errorf("%s %w", component, err)
 	}
 

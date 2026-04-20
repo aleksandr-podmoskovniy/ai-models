@@ -2,27 +2,34 @@
 
 ## Назначение репозитория
 
-`ai-models` — это **модуль Deckhouse Kubernetes Platform**, который добавляет capability платформы: единый каталог опубликованных моделей и внутренний registry backend.
+`ai-models` — это **модуль Deckhouse Kubernetes Platform**, который добавляет
+capability платформы: единый каталог моделей, controller-owned
+publication/runtime path и внутренний registry-backed publication backend.
 
 Репозиторий должен оставаться **DKP module root**, а не превращаться в отдельный kubebuilder/operator repo.
 
 ## Текущая дорожка разработки
 
-### Этап 1. Внутренний managed backend
+### Этап 1. Publication/runtime baseline
 Сначала модуль должен уметь:
-- поднять внутренний backend как компонент модуля;
-- подключить его к PostgreSQL и S3-совместимому хранилищу;
-- сделать рабочий UI и базовую эксплуатацию в DKP;
-- интегрировать логирование, мониторинг и базовую аутентификацию.
+- держать DKP-native `Model` / `ClusterModel` catalog API;
+- публиковать канонический OCI `ModelPack` artifact через controller-owned
+  runtime во внутренний `DMCR`;
+- поддерживать source mirror / upload staging в S3-совместимом хранилище;
+- доставлять опубликованный artifact в workload через текущий runtime delivery
+  baseline, включая `materialize-artifact` fallback и node-cache substrate /
+  runtime shell;
+- интегрировать логирование, мониторинг, базовую аутентификацию и
+  object-storage wiring.
 
-На этом этапе **публичный API каталога ещё не обязателен**. Главная цель — получить работающий, проверяемый и поддерживаемый backend.
+Главная цель этапа — получить работающий, проверяемый и поддерживаемый
+publication/runtime baseline без возврата к backend-first narrative.
 
-### Этап 2. Публичный DKP API каталога моделей
-После рабочего backend добавляется:
-- `Model`;
-- `ClusterModel`;
-- контроллер публикации и синхронизации с внутренним backend;
-- статусы, conditions и platform UX.
+### Этап 2. Distribution/runtime expansion
+После рабочего baseline добавляются:
+- `DMZ`/mirror distribution topology поверх canonical internal artifact;
+- optional node-local shared mount/cache service поверх текущего fallback path;
+- статусы, conditions, observability и platform UX для новых runtime topologies.
 
 ### Этап 3. Упрочнение и переупаковка
 После рабочих этапов 1 и 2 добавляются:
@@ -33,7 +40,8 @@
 
 ## Постоянные правила
 
-- Не выводить наружу сырые сущности внутреннего backend engine как платформенный контракт.
+- Не выводить наружу сырые сущности внутреннего publication backend/runtime
+  как платформенный контракт.
 - Не смешивать код контроллеров, DKP templates, docs и upstream patching в одних и тех же каталогах.
 - Любой executable runtime code размещать под `images/*`; top-level `api/` оставлять только для DKP API contract.
 - Не делать большие архитектурные изменения без явного плана.
@@ -138,7 +146,8 @@ Planning обязателен, если:
 - задача меняет больше одного каталога;
 - задача тянет архитектурное решение;
 - задача меняет контракт values/OpenAPI/API;
-- задача затрагивает внутренний backend, auth, storage или observability;
+- задача затрагивает publication backend/raw-ingest, auth, storage или
+  observability;
 - задача предполагает patching upstream.
 - задача меняет repo-local workflow/governance surface
   (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`,
@@ -188,14 +197,15 @@ Delegation обязателен, если:
 
 ### Project-specific overlays
 
-- `backend_integrator` — используется только для внутреннего backend engine внутри `ai-models`.
+- `backend_integrator` — используется только для внутренних publication
+  backend/runtime details внутри `ai-models`.
 
 ## Канонический mapping
 
 - `task-intake-and-slicing` -> `task_framer` только для fuzzy/broad intake; в остальных случаях main agent может оформить bundle сам.
 - layout/module shell/repo boundaries -> `repo_architect`
 - runtime/build/auth/storage/ingress/observability -> `integration_architect`
-- backend-engine-specific runtime details -> `backend_integrator`
+- publication-backend-specific runtime details -> `backend_integrator`
 - Kubernetes/DKP API/CRD/status/conditions -> `api_designer`
 - scoped write delegation после ясных boundaries -> `module_implementer`
 - финальная substantial review -> `review-gate`, а при delegation или multi-area task ещё и `reviewer`

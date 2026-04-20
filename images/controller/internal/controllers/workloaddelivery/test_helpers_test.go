@@ -193,6 +193,17 @@ func hasRuntimeEnv(containers []corev1.Container, name string) bool {
 	return false
 }
 
+func runtimeEnvValue(containers []corev1.Container, name string) string {
+	for _, container := range containers {
+		for _, env := range container.Env {
+			if env.Name == name {
+				return env.Value
+			}
+		}
+	}
+	return ""
+}
+
 func assertProjectedAuthSecretExists(t *testing.T, kubeClient client.Client, namespace string, ownerUID types.UID) {
 	t.Helper()
 

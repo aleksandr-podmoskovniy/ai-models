@@ -40,7 +40,7 @@ const (
 	publicationOCISecretEnv               = "PUBLICATION_OCI_CREDENTIALS_SECRET_NAME"
 	publicationOCICASecretEnv             = "PUBLICATION_OCI_CA_SECRET_NAME"
 	publicationOCIDirectUploadEndpointEnv = "PUBLICATION_OCI_DIRECT_UPLOAD_ENDPOINT"
-	publicationSourceAcquisitionModeEnv   = "PUBLICATION_SOURCE_ACQUISITION_MODE"
+	publicationSourceFetchModeEnv   = "PUBLICATION_SOURCE_FETCH_MODE"
 	publicationMaxConcurrentWorkersEnv    = "PUBLICATION_MAX_CONCURRENT_WORKERS"
 	publicationWorkerCPURequestEnv        = "PUBLICATION_WORKER_CPU_REQUEST"
 	publicationWorkerCPULimitEnv          = "PUBLICATION_WORKER_CPU_LIMIT"

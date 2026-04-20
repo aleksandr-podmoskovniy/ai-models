@@ -120,5 +120,5 @@ func ValidateManagedCacheOptions(options ManagedCacheOptions) error {
 }
 
 func ModelPath(options Options) string {
-	return nodecache.CurrentLinkPath(strings.TrimSpace(options.CacheMountPath))
+	return nodecache.WorkloadModelPath(strings.TrimSpace(options.CacheMountPath))
 }

@@ -58,6 +58,9 @@ func TestDeploymentReconcilerAppliesRuntimeDelivery(t *testing.T) {
 	if !hasRuntimeEnv(updated.Spec.Template.Spec.Containers, modeldelivery.ModelPathEnv) {
 		t.Fatalf("expected runtime env %q", modeldelivery.ModelPathEnv)
 	}
+	if got, want := runtimeEnvValue(updated.Spec.Template.Spec.Containers, modeldelivery.ModelPathEnv), modeldelivery.ModelPath(modeldelivery.Options{CacheMountPath: modeldelivery.DefaultCacheMountPath}); got != want {
+		t.Fatalf("runtime model path env = %q, want %q", got, want)
+	}
 	if !hasRuntimeEnv(updated.Spec.Template.Spec.Containers, modeldelivery.ModelDigestEnv) {
 		t.Fatalf("expected runtime env %q", modeldelivery.ModelDigestEnv)
 	}

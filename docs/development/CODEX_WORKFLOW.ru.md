@@ -38,9 +38,9 @@
 Человек пишет задачу обычным языком.
 
 Примеры:
-- "Нужно поднять backend ai-models в модуле и подключить PostgreSQL и S3".
-- "Нужно сделать values и OpenAPI для конфигурации backend ai-models".
-- "Нужно начать проектирование Model и ClusterModel поверх backend ai-models".
+- "Нужно стабилизировать publication/runtime baseline ai-models и object-storage wiring".
+- "Нужно сделать values и OpenAPI для publication/runtime конфигурации ai-models".
+- "Нужно спроектировать следующий runtime slice поверх текущего `Model` / `ClusterModel` baseline".
 
 Человек не обязан сам раскладывать задачу на архитектуру, slice и rollback.
 
@@ -95,7 +95,7 @@ product/runtime task.
 - для структуры репозитория — `repo_architect`;
 - для runtime/build/integration boundaries — `integration_architect`;
 - для Kubernetes/DKP API — `api_designer`;
-- для backend-specific деталей поверх этого — `backend_integrator`.
+- для publication-backend-specific деталей поверх этого — `backend_integrator`.
 
 Их findings должны быть коротко зафиксированы в текущем
 `plans/active/<slug>/PLAN.ru.md` или соседних notes до реализации.

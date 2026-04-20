@@ -31,7 +31,7 @@ type uploadHTTPClientProvider interface {
 }
 
 func remoteSourceMirror(options Options) *sourcefetch.SourceMirrorOptions {
-	if publicationports.NormalizeSourceAcquisitionMode(options.SourceAcquisitionMode) != publicationports.SourceAcquisitionModeMirror {
+	if publicationports.NormalizeSourceFetchMode(options.SourceFetchMode) != publicationports.SourceFetchModeMirror {
 		return nil
 	}
 	if strings.TrimSpace(options.RawStageBucket) == "" || strings.TrimSpace(options.RawStageKeyPrefix) == "" {

@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
-	"github.com/deckhouse/ai-models/controller/internal/nodecacheintent"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -115,8 +114,7 @@ func podEnv(spec RuntimeSpec) []corev1.EnvVar {
 		{Name: nodecache.RuntimeMaxSizeEnv, Value: spec.MaxTotalSize},
 		{Name: nodecache.RuntimeMaxUnusedAgeEnv, Value: spec.MaxUnusedAge},
 		{Name: nodecache.RuntimeScanIntervalEnv, Value: spec.ScanInterval},
-		{Name: nodecacheintent.RuntimeNamespaceEnv, Value: spec.IntentNamespace},
-		{Name: nodecacheintent.RuntimeNodeNameEnv, Value: spec.NodeName},
+		{Name: RuntimeNodeNameEnv, Value: spec.NodeName},
 		{Name: "PUBLICATION_OCI_INSECURE", Value: strconv.FormatBool(spec.OCIInsecure)},
 		{
 			Name: "AI_MODELS_OCI_USERNAME",

@@ -20,7 +20,7 @@ properties:
       endpoint: ""
       region: us-east-1
       credentialsSecretName: ""
-      sourceAcquisitionMode: Direct
+      sourceFetchMode: Direct
       caSecretName: ""
       insecure: false
       usePathStyle: true
@@ -37,12 +37,13 @@ properties:
       credentialsSecretName:
         type: string
         default: ""
-      sourceAcquisitionMode:
+      sourceFetchMode:
         type: string
         default: Direct
         enum:
           - Mirror
           - Direct
+        description: Remote source fetch mode used for `spec.source.url` ingestion.
       caSecretName:
         type: string
         default: ""
@@ -142,7 +143,7 @@ properties:
             endpoint: ""
             region: us-east-1
             credentialsSecretName: ""
-            sourceAcquisitionMode: Direct
+            sourceFetchMode: Direct
             caSecretName: ""
             insecure: false
             usePathStyle: true

@@ -19,7 +19,8 @@ node-local model cache mounts
 
 - canonical publish target = internal `DMCR`;
 - runtime delivery = `materialize-artifact` init container inside workload;
-- publish path = local snapshot/model dir plus `KitOps` pack/push shell;
+- publish path = ai-models-owned native OCI `ModelPack` publication over the
+  current direct-upload/object-source baseline;
 - runtime cache ownership = workload-owned volume, а не node-local shared cache.
 
 Новый запрос пользователя требует уже не bounded fix, а отдельный архитектурный
@@ -43,7 +44,8 @@ workstream:
 - distribution topology стала отдельной boundary поверх уже опубликованного OCI
   artifact, а не смешивалась с source ingest;
 - streaming publish в OCI был либо честно доказан как реальный новый adapter,
-  либо явно отвергнут как несовместимый с текущим `KitOps`/filesystem contract;
+  либо явно отвергнут как лишний поверх уже landed native OCI/direct-upload
+  baseline;
 - runtime delivery эволюционировала от init-container materialization к
   optional node-local cache/mount service без ломки текущего workload contract;
 - интеграция с `sds-node-configurator` использовалась только как storage
@@ -65,7 +67,7 @@ workstream:
   - auth/trust boundaries;
   - failure/lag semantics;
 - проверить feasibility streaming publish directly to OCI:
-  - current `KitOps` constraints;
+  - current native OCI publisher constraints;
   - что требуется от нового publisher;
   - возможен ли direct source/upload -> OCI path без полного local model dir;
 - описать target runtime delivery without init container:
@@ -84,15 +86,15 @@ workstream:
 
 - не реализовывать в этом bundle весь node cache daemon или новый CSI driver;
 - не вводить сейчас новый public `Model.spec` для distribution/runtime knobs;
-- не обещать streaming publish поверх текущего `KitOps`, если для этого всё ещё
-  нужен full filesystem context;
+- не обещать новый streaming surface, если уже landed native OCI/direct-upload
+  baseline покрывает требуемый contract и спор остаётся только в terminology;
 - не тащить `sds-node-configurator` API напрямую в public model contract;
 - не смешивать `DMZ` distribution scenario с source ingest semantics;
 - не удалять текущий init-container path до появления defendable replacement.
 
 ## 6. Затрагиваемые области
 
-- `plans/active/phase2-runtime-followups/*`
+- `plans/archive/2026/phase2-runtime-followups/*`
 - `plans/archive/2026/publication-storage-hardening/*`
 - `images/controller/internal/dataplane/publishworker/*`
 - `images/controller/internal/adapters/modelpack/*`
@@ -106,7 +108,7 @@ workstream:
 
 ## 7. Критерии приёмки
 
-- Создан отдельный compact continuation bundle, который не раздувает текущий
+- Создан отдельный compact continuation bundle, который не раздувает archived
   `phase2-runtime-followups` и archived predecessor
   `publication-storage-hardening`.
 - В bundle явно разделены четыре live boundary:
@@ -118,10 +120,11 @@ workstream:
   как изменение `Model.spec.source` или source-ingest contract.
 - По streaming publish есть явный verdict:
   - либо нужен новый stream-capable publisher adapter;
-  - либо current `KitOps` path признан incompatible with true streaming, и это
-    зафиксировано как non-goal до отдельного implementation slice.
-- Bundle явно фиксирует, что current `KitOps` publisher зависит от local model
-  directory / filesystem context и не должен masquerade as streaming publish.
+  - либо current native OCI/direct-upload path признан sufficient baseline, а
+    дополнительный streaming slice зафиксирован как separate enhancement.
+- Bundle явно фиксирует, что live publication baseline уже принадлежит
+  ai-models-owned native OCI publisher и не опирается на historical `KitOps`
+  shell как source of truth.
 - Node-local cache scenario описан как optional replacement/extension поверх
   текущего init-container delivery, а не как incidental side effect в
   `k8s/modeldelivery`.
@@ -141,7 +144,8 @@ workstream:
 - легко смешать canonical artifact publication и external distribution topology,
   после чего `Model.status` перестанет быть понятным;
 - попытка "сделать streaming publish быстро" может закончиться только ещё одним
-  temp-dir wrapper поверх `KitOps`, а не реальным streaming path;
+  wrapper'ом поверх уже landed native OCI publisher, а не реальным новым
+  capability;
 - попытка встроить node-local cache прямо в current `modeldelivery` adapter
   может создать новый giant package и сломать boundary discipline;
 - прямое связывание ai-models с `sds-node-configurator` CRDs без отдельного

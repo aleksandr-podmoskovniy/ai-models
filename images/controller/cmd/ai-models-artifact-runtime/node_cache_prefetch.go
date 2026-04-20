@@ -19,29 +19,29 @@ package main
 import (
 	"context"
 
-	k8snodecacheintent "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/nodecacheintent"
+	k8snodecacheruntime "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/nodecacheruntime"
 	modelpackoci "github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/oci"
-	intentcontract "github.com/deckhouse/ai-models/controller/internal/nodecacheintent"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
 
-type nodeIntentLoader struct {
-	client   *k8snodecacheintent.Client
+type nodeDesiredArtifactLoader struct {
+	client   *k8snodecacheruntime.Client
 	nodeName string
 }
 
-func (l nodeIntentLoader) LoadIntents(ctx context.Context) ([]intentcontract.ArtifactIntent, error) {
-	return l.client.LoadNodeIntents(ctx, l.nodeName)
+func (l nodeDesiredArtifactLoader) LoadDesiredArtifacts(ctx context.Context) ([]nodecache.DesiredArtifact, error) {
+	return l.client.LoadNodeDesiredArtifacts(ctx, l.nodeName)
 }
 
-func nodeCachePrefetcher(auth modelpackports.RegistryAuth) func(context.Context, intentcontract.ArtifactIntent, string) error {
+func nodeCachePrefetcher(auth modelpackports.RegistryAuth) func(context.Context, nodecache.DesiredArtifact, string) error {
 	materializer := modelpackoci.NewMaterializer()
-	return func(ctx context.Context, intent intentcontract.ArtifactIntent, destinationDir string) error {
+	return func(ctx context.Context, artifact nodecache.DesiredArtifact, destinationDir string) error {
 		_, err := materializer.Materialize(ctx, modelpackports.MaterializeInput{
-			ArtifactURI:    intent.ArtifactURI,
-			ArtifactDigest: intent.Digest,
+			ArtifactURI:    artifact.ArtifactURI,
+			ArtifactDigest: artifact.Digest,
 			DestinationDir: destinationDir,
-			ArtifactFamily: intent.Family,
+			ArtifactFamily: artifact.Family,
 		}, auth)
 		return err
 	}

@@ -20,21 +20,19 @@ import (
 	"context"
 	"errors"
 	"time"
-
-	intentcontract "github.com/deckhouse/ai-models/controller/internal/nodecacheintent"
 )
 
-type IntentLoader interface {
-	LoadIntents(context.Context) ([]intentcontract.ArtifactIntent, error)
+type DesiredArtifactLoader interface {
+	LoadDesiredArtifacts(context.Context) ([]DesiredArtifact, error)
 }
 
 type RuntimeOptions struct {
 	Maintenance MaintenanceOptions
 }
 
-func RunRuntimeLoop(ctx context.Context, options RuntimeOptions, loader IntentLoader, prefetch PrefetchFunc) error {
+func RunRuntimeLoop(ctx context.Context, options RuntimeOptions, loader DesiredArtifactLoader, prefetch PrefetchFunc) error {
 	if loader == nil {
-		return errors.New("node cache runtime intent loader must not be nil")
+		return errors.New("node cache runtime desired artifact loader must not be nil")
 	}
 	options.Maintenance = NormalizeMaintenanceOptions(options.Maintenance)
 	if err := ValidateMaintenanceOptions(options.Maintenance); err != nil {
@@ -59,12 +57,12 @@ func RunRuntimeLoop(ctx context.Context, options RuntimeOptions, loader IntentLo
 	}
 }
 
-func runRuntimeCycle(ctx context.Context, options RuntimeOptions, loader IntentLoader, prefetch PrefetchFunc) error {
-	intents, err := loader.LoadIntents(ctx)
+func runRuntimeCycle(ctx context.Context, options RuntimeOptions, loader DesiredArtifactLoader, prefetch PrefetchFunc) error {
+	artifacts, err := loader.LoadDesiredArtifacts(ctx)
 	if err != nil {
 		return err
 	}
-	if err := EnsureDesiredArtifacts(ctx, options.Maintenance.CacheRoot, intents, prefetch); err != nil {
+	if err := EnsureDesiredArtifacts(ctx, options.Maintenance.CacheRoot, artifacts, prefetch); err != nil {
 		return err
 	}
 
@@ -75,7 +73,7 @@ func runRuntimeCycle(ctx context.Context, options RuntimeOptions, loader IntentL
 	_, err = maintainSnapshot(snapshot, PlanInput{
 		MaxTotalSizeBytes: options.Maintenance.MaxTotalSizeBytes,
 		MaxUnusedAge:      options.Maintenance.MaxUnusedAge,
-		ProtectedDigests:  intentcontract.ProtectedDigests(intents),
+		ProtectedDigests:  ProtectedDigests(artifacts),
 	})
 	return err
 }

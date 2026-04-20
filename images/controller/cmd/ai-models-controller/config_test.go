@@ -36,7 +36,7 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 		PublicationOCICASecretName:         "ai-models-dmcr-ca",
 		PublicationOCIInsecure:             false,
 		PublicationOCIDirectUploadEndpoint: "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443",
-		PublicationSourceAcquisitionMode:   publicationports.SourceAcquisitionModeDirect,
+		PublicationSourceFetchMode:         publicationports.SourceFetchModeDirect,
 		ArtifactsBucket:                    "models",
 		ArtifactsS3Endpoint:                "https://s3.example.test",
 		ArtifactsS3Region:                  "test",
@@ -84,8 +84,8 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	if got, want := options.PublicationRuntime.RuntimeLogLevel, config.LogLevel; got != want {
 		t.Fatalf("publication runtime log level = %q, want %q", got, want)
 	}
-	if got, want := options.PublicationRuntime.Runtime.SourceAcquisition, config.PublicationSourceAcquisitionMode; got != want {
-		t.Fatalf("publication runtime source acquisition mode = %q, want %q", got, want)
+	if got, want := options.PublicationRuntime.Runtime.SourceFetch, config.PublicationSourceFetchMode; got != want {
+		t.Fatalf("publication runtime source fetch mode = %q, want %q", got, want)
 	}
 	if got, want := options.PublicationRuntime.Runtime.OCIDirectUploadEndpoint, config.PublicationOCIDirectUploadEndpoint; got != want {
 		t.Fatalf("publication runtime OCI direct upload endpoint = %q, want %q", got, want)

@@ -22,29 +22,26 @@ import (
 	"strings"
 	"time"
 
-	k8snodecacheintent "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/nodecacheintent"
+	k8snodecacheruntime "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/nodecacheruntime"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
-	intentcontract "github.com/deckhouse/ai-models/controller/internal/nodecacheintent"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
-	nodeCacheRootEnv            = nodecache.RuntimeCacheRootEnv
-	nodeCacheMaxSizeEnv         = nodecache.RuntimeMaxSizeEnv
-	nodeCacheMaxUnusedAgeEnv    = nodecache.RuntimeMaxUnusedAgeEnv
-	nodeCacheScanIntervalEnv    = nodecache.RuntimeScanIntervalEnv
-	nodeCacheIntentNamespaceEnv = intentcontract.RuntimeNamespaceEnv
-	nodeCacheIntentNodeNameEnv  = intentcontract.RuntimeNodeNameEnv
+	nodeCacheRootEnv         = nodecache.RuntimeCacheRootEnv
+	nodeCacheMaxSizeEnv      = nodecache.RuntimeMaxSizeEnv
+	nodeCacheMaxUnusedAgeEnv = nodecache.RuntimeMaxUnusedAgeEnv
+	nodeCacheScanIntervalEnv = nodecache.RuntimeScanIntervalEnv
+	nodeCacheNodeNameEnv     = k8snodecacheruntime.RuntimeNodeNameEnv
 )
 
 type nodeCacheRuntimeConfig struct {
-	CacheRoot       string
-	MaxTotalSize    string
-	MaxUnusedAge    time.Duration
-	ScanInterval    time.Duration
-	IntentNamespace string
-	NodeName        string
+	CacheRoot    string
+	MaxTotalSize string
+	MaxUnusedAge time.Duration
+	ScanInterval time.Duration
+	NodeName     string
 }
 
 func runNodeCacheRuntime(args []string) int {
@@ -66,7 +63,6 @@ func runNodeCacheRuntime(args []string) int {
 		slog.String("maxTotalSize", strings.TrimSpace(config.MaxTotalSize)),
 		slog.String("maxUnusedAge", config.MaxUnusedAge.String()),
 		slog.String("scanInterval", config.ScanInterval.String()),
-		slog.String("intentNamespace", strings.TrimSpace(config.IntentNamespace)),
 		slog.String("nodeName", strings.TrimSpace(config.NodeName)),
 	)
 	logger.Info("node cache runtime started")
@@ -74,7 +70,7 @@ func runNodeCacheRuntime(args []string) int {
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
 
-	intentClient, err := k8snodecacheintent.NewInClusterClient(config.IntentNamespace)
+	intentClient, err := k8snodecacheruntime.NewInClusterClient()
 	if err != nil {
 		return cmdsupport.CommandError(commandNodeCacheRuntime, err)
 	}
@@ -85,7 +81,7 @@ func runNodeCacheRuntime(args []string) int {
 			MaxUnusedAge:      config.MaxUnusedAge,
 			ScanInterval:      config.ScanInterval,
 		},
-	}, nodeIntentLoader{client: intentClient, nodeName: config.NodeName}, nodeCachePrefetcher(cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv))); err != nil {
+	}, nodeDesiredArtifactLoader{client: intentClient, nodeName: config.NodeName}, nodeCachePrefetcher(cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv))); err != nil {
 		return cmdsupport.CommandError(commandNodeCacheRuntime, err)
 	}
 
@@ -94,12 +90,11 @@ func runNodeCacheRuntime(args []string) int {
 
 func parseNodeCacheRuntimeConfig(args []string) (nodeCacheRuntimeConfig, int, error) {
 	config := nodeCacheRuntimeConfig{
-		CacheRoot:       cmdsupport.EnvOr(nodeCacheRootEnv, ""),
-		MaxTotalSize:    cmdsupport.EnvOr(nodeCacheMaxSizeEnv, ""),
-		MaxUnusedAge:    durationEnvOr(nodeCacheMaxUnusedAgeEnv, nodecache.DefaultMaxUnusedAge),
-		ScanInterval:    durationEnvOr(nodeCacheScanIntervalEnv, nodecache.DefaultMaintenancePeriod),
-		IntentNamespace: cmdsupport.EnvOr(nodeCacheIntentNamespaceEnv, ""),
-		NodeName:        cmdsupport.EnvOr(nodeCacheIntentNodeNameEnv, ""),
+		CacheRoot:    cmdsupport.EnvOr(nodeCacheRootEnv, ""),
+		MaxTotalSize: cmdsupport.EnvOr(nodeCacheMaxSizeEnv, ""),
+		MaxUnusedAge: durationEnvOr(nodeCacheMaxUnusedAgeEnv, nodecache.DefaultMaxUnusedAge),
+		ScanInterval: durationEnvOr(nodeCacheScanIntervalEnv, nodecache.DefaultMaintenancePeriod),
+		NodeName:     cmdsupport.EnvOr(nodeCacheNodeNameEnv, ""),
 	}
 
 	flags := cmdsupport.NewFlagSet(commandNodeCacheRuntime)
@@ -107,19 +102,15 @@ func parseNodeCacheRuntimeConfig(args []string) (nodeCacheRuntimeConfig, int, er
 	flags.StringVar(&config.MaxTotalSize, "max-total-size", config.MaxTotalSize, "Maximum total cache size before size-pressure eviction.")
 	flags.DurationVar(&config.MaxUnusedAge, "max-unused-age", config.MaxUnusedAge, "Maximum age since last use before idle eviction.")
 	flags.DurationVar(&config.ScanInterval, "scan-interval", config.ScanInterval, "Maintenance scan interval.")
-	flags.StringVar(&config.IntentNamespace, "intent-namespace", config.IntentNamespace, "Namespace with node cache intent ConfigMaps.")
-	flags.StringVar(&config.NodeName, "node-name", config.NodeName, "Current node name used to resolve desired cache intent.")
+	flags.StringVar(&config.NodeName, "node-name", config.NodeName, "Current node name used to resolve desired cache state.")
 	if err := flags.Parse(args); err != nil {
 		return nodeCacheRuntimeConfig{}, 2, err
 	}
 	if strings.TrimSpace(config.CacheRoot) == "" {
 		return nodeCacheRuntimeConfig{}, 2, fmt.Errorf("%s must not be empty", nodeCacheRootEnv)
 	}
-	if strings.TrimSpace(config.IntentNamespace) == "" {
-		return nodeCacheRuntimeConfig{}, 2, fmt.Errorf("%s must not be empty", nodeCacheIntentNamespaceEnv)
-	}
 	if strings.TrimSpace(config.NodeName) == "" {
-		return nodeCacheRuntimeConfig{}, 2, fmt.Errorf("%s must not be empty", nodeCacheIntentNodeNameEnv)
+		return nodeCacheRuntimeConfig{}, 2, fmt.Errorf("%s must not be empty", nodeCacheNodeNameEnv)
 	}
 	return config, 0, nil
 }

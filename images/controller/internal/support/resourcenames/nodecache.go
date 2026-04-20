@@ -21,17 +21,8 @@ import (
 	"strings"
 )
 
-const nodeCacheIntentConfigMapPrefix = "ai-models-node-cache-intent-"
 const nodeCacheRuntimePodPrefix = "ai-models-node-cache-runtime-"
 const nodeCacheRuntimePVCPrefix = "ai-models-node-cache-"
-
-func NodeCacheIntentConfigMapName(nodeName string) (string, error) {
-	suffix, err := normalizedNodeNameSuffix(nodeName)
-	if err != nil {
-		return "", err
-	}
-	return nodeCacheIntentConfigMapPrefix + suffix, nil
-}
 
 func NodeCacheRuntimePodName(nodeName string) (string, error) {
 	suffix, err := normalizedNodeNameSuffix(nodeName)

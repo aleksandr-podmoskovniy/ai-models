@@ -60,3 +60,27 @@ func TestUpdateCurrentLinkCreatesRelativeSymlink(t *testing.T) {
 		t.Fatalf("symlink target = %q, want %q", got, want)
 	}
 }
+
+func TestUpdateWorkloadModelLinkTargetsInternalCurrentLink(t *testing.T) {
+	t.Parallel()
+
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	targetPath := filepath.Join(cacheRoot, StoreDirName, "sha256:deadbeef", "model")
+	if err := os.MkdirAll(targetPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(targetPath) error = %v", err)
+	}
+	if err := UpdateCurrentLink(cacheRoot, targetPath); err != nil {
+		t.Fatalf("UpdateCurrentLink() error = %v", err)
+	}
+	if err := UpdateWorkloadModelLink(cacheRoot); err != nil {
+		t.Fatalf("UpdateWorkloadModelLink() error = %v", err)
+	}
+
+	linkTarget, err := os.Readlink(WorkloadModelPath(cacheRoot))
+	if err != nil {
+		t.Fatalf("Readlink(model) error = %v", err)
+	}
+	if got, want := linkTarget, CurrentLinkName; got != want {
+		t.Fatalf("workload model target = %q, want %q", got, want)
+	}
+}

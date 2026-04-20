@@ -123,7 +123,6 @@ func newTestReconciler(t *testing.T, objects ...client.Object) (*Reconciler, cli
 			MaxTotalSize:       "200Gi",
 			MaxUnusedAge:       "24h",
 			ScanInterval:       "5m",
-			IntentNamespace:    "d8-ai-models",
 			OCIAuthSecretName:  "ai-models-dmcr-auth-read",
 			NodeSelectorLabels: map[string]string{"node-role.deckhouse.io/ai-models-cache": "enabled"},
 		},

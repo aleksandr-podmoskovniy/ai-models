@@ -75,7 +75,7 @@ func TestFetchRemoteDirectModeDoesNotPassSourceMirror(t *testing.T) {
 	_, err := fetchRemote(context.Background(), Options{
 		SourceType:            modelsv1alpha1.ModelSourceTypeHuggingFace,
 		HFModelID:             "owner/model",
-		SourceAcquisitionMode: publicationports.SourceAcquisitionModeDirect,
+		SourceFetchMode: publicationports.SourceFetchModeDirect,
 		Revision:              "main",
 	})
 	if err != nil {
@@ -90,7 +90,7 @@ func TestRunRejectsMirrorModeWithoutRawStageBoundary(t *testing.T) {
 		SourceType:            modelsv1alpha1.ModelSourceTypeHuggingFace,
 		ArtifactURI:           "registry.internal.local/ai-models/test@sha256:deadbeef",
 		HFModelID:             "owner/model",
-		SourceAcquisitionMode: publicationports.SourceAcquisitionModeMirror,
+		SourceFetchMode: publicationports.SourceFetchModeMirror,
 		ModelPackPublisher:    fakePublisher{},
 	})
 	if err == nil {

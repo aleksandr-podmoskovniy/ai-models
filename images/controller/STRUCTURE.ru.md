@@ -56,18 +56,21 @@ images/controller/
       auditsink/
     monitoring/
       catalogmetrics/
+      runtimehealth/
     publishedsnapshot/
     publicationartifact/
     nodecache/
     controllers/
       catalogstatus/
       catalogcleanup/
+      nodecacheruntime/
       nodecachesubstrate/
       workloaddelivery/
     adapters/
       k8s/
         auditevent/
         modeldelivery/
+        nodecacheruntime/
         nodecachesubstrate/
         ociregistry/
         ownedresource/
@@ -164,10 +167,14 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
   destination policy;
 - `internal/nodecache/` — shared node-local cache contract for digest-addressed
   shared store layout, ready markers, separate consumer
-  materialization/current-link helper surface, single-writer coordination,
-  bounded eviction planning и module-owned maintenance loop;
+  materialization plus internal current-link и stable workload-model-link
+  helper surface, single-writer coordination, bounded eviction planning и
+  module-owned maintenance loop;
 - `internal/monitoring/catalogmetrics/` — Prometheus collectors over public
   `Model` / `ClusterModel` truth.
+- `internal/monitoring/runtimehealth/` — Prometheus collectors over managed
+  runtime-plane health for stable per-node node-cache agents and their shared
+  `PVC`, including selector-scoped desired/managed/ready summary signal.
 
 ### Controllers
 
@@ -187,7 +194,7 @@ package без нового owner — patchwork.
 
 - `sourceworker/`
 - `modeldelivery/`
-- `nodecacheintent/`
+- `nodecacheruntime/`
 - `nodecachesubstrate/`
 - `uploadsession/`
 - `uploadsessionstate/`
@@ -209,27 +216,30 @@ Non-K8s adapters:
 
 - adapters не тащат public/status policy;
 - `internal/nodecache/` остаётся отдельной reusable boundary: digest-addressed
-  shared store layout, marker parsing, отдельный consumer current-link helper,
-  single-writer coordination и bounded scan/eviction planning не должны жить
-  внутри `cmd/ai-models-artifact-runtime` как скрытый mini cache-manager;
+  shared store layout, marker parsing, отдельные consumer-facing stable
+  model-link и internal current-link helpers, single-writer coordination и
+  bounded scan/eviction planning не должны жить внутри
+  `cmd/ai-models-artifact-runtime` как скрытый mini cache-manager;
 - `modelpack/oci/` остаётся controller-owned OCI adapter boundary:
   native publish/remove over registry HTTP, manifest/config validation,
   inspect/materialize and layer/media-type handling не должны утекать в
   `publicationartifact/` или в worker shell;
-- `sourcefetch/` остаётся boundary для source acquisition, archive inspection,
+- `sourcefetch/` остаётся boundary для remote source fetch, archive inspection,
   remote summary extraction и object-source planning;
 - `k8s/nodecachesubstrate/` держит только shaping и live-state extraction для
   внешних storage CR (`LVMVolumeGroupSet`, `LVMVolumeGroup`,
   `LocalStorageClass`) и не тянет туда runtime delivery policy;
-- `k8s/nodecacheintent/` держит только concrete shaping/load для
-  module-owned per-node `ConfigMap` с desired artifact set и не должен
-  затягивать туда cache maintenance policy;
+- `k8s/nodecacheruntime/` держит только concrete shaping для stable per-node
+  runtime Pod/PVC и bounded runtime-side desired-set extraction from live Pods
+  on the current node; cache maintenance policy и public workload semantics не
+  должны утекать туда;
 - `k8s/modeldelivery/` остаётся boundary для workload mutation и теперь держит
   module-managed local fallback volume injection отдельно от storage substrate
   CR shaping, плюс стабильный workload-facing env contract
   (`AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`,
-  `AI_MODELS_MODEL_FAMILY`) отдельно от raw cache-root/current internals и
-  отдельно от будущего workload-facing node-shared cache mount service;
+  `AI_MODELS_MODEL_FAMILY`) через stable `/data/modelcache/model` projection
+  отдельно от raw cache-root/current internals и отдельно от будущего
+  workload-facing node-shared cache mount service;
 - live `HuggingFace` publish path больше не держит локальный
   `workspace/model` fallback: canonical path — direct or mirrored object source,
   cluster-level default теперь `Direct`, а planning failure explicit;
@@ -312,6 +322,9 @@ runtime semantics или status logic, это уже не support.
   mixed service shell;
 - `catalogmetrics` tests split на state-metric emission, incomplete-status
   behavior and thin gather/assert helpers вместо одного mixed collector file;
+- `runtimehealth` tests split на managed runtime resource emission and thin
+  gather/assert helpers instead of mixing runtime-plane health with public
+  catalog truth;
 - `modelpack/oci` split на publish/materialize/validation/session shells,
   отдельные layer-matrix publish/validation/archive-helper proofs и thin
   file, registry-server, registry dispatch, registry upload-state and
@@ -353,7 +366,7 @@ runtime semantics или status logic, это уже не support.
 ### `internal/adapters/sourcefetch/`
 
 - Это всё ещё самый тяжёлый concrete adapter.
-- Это допустимо, пока boundary остаётся только про source acquisition.
+- Это допустимо, пока boundary остаётся только про remote source fetch.
 - Сюда нельзя складывать format validation, publish status или runtime policy.
 - Даже внутри `sourcefetch/` archive dispatch, remote summary, mirror transfer и
   direct object-source planning не должны снова схлопываться в один giant file.

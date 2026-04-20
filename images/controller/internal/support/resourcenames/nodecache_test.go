@@ -18,18 +18,6 @@ package resourcenames
 
 import "testing"
 
-func TestNodeCacheIntentConfigMapName(t *testing.T) {
-	t.Parallel()
-
-	name, err := NodeCacheIntentConfigMapName("worker-1.example.local")
-	if err != nil {
-		t.Fatalf("NodeCacheIntentConfigMapName() error = %v", err)
-	}
-	if got, want := name, "ai-models-node-cache-intent-worker-1-example-local"; got != want {
-		t.Fatalf("name = %q, want %q", got, want)
-	}
-}
-
 func TestNodeCacheRuntimePodName(t *testing.T) {
 	t.Parallel()
 

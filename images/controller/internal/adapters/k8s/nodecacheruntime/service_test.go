@@ -150,7 +150,6 @@ func testRuntimeSpec() RuntimeSpec {
 		MaxTotalSize:       "200Gi",
 		MaxUnusedAge:       "24h",
 		ScanInterval:       "5m",
-		IntentNamespace:    "d8-ai-models",
 		OCIAuthSecretName:  "ai-models-dmcr-auth-read",
 	}
 }

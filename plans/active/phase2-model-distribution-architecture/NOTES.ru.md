@@ -8,8 +8,6 @@ contract.
 Target interpretation:
 
 - ai-models keeps one canonical published artifact contract;
-- current `KitOps`-based publisher is only an implementation detail and may be
-  replaced;
 - the long-term target is a controller-owned `ModelPack` publisher
   implemented by ai-models itself, without dependency on external packaging
   brands in the runtime contract;
@@ -19,8 +17,9 @@ Target interpretation:
 Practical consequence:
 
 - "streaming to OCI" means building our own stream-capable publisher adapter,
-  not wrapping `KitOps` in more temp-dir logic;
-- current filesystem-based `KitOps` path should be treated as transitional.
+  not wrapping the landed native OCI publisher in new terminology-only glue;
+- historical `KitOps` path is no longer live repo baseline and should not come
+  back as a planning dependency.
 
 ### 2. DMZ registry is a distribution tier, not a source-ingest tier
 
@@ -150,7 +149,7 @@ Interpretation and likely priority:
 
 ### 7. Recommended priority order
 
-1. Replace `KitOps` with ai-models-owned publisher implementation.
+1. Finish hardening the ai-models-owned publisher implementation where needed.
 2. Add bounded `DMZ` distribution tier above canonical internal OCI artifact.
 3. Build node-local cache delivery with explicit mount contract and fallback to
    current init-container path.

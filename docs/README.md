@@ -15,8 +15,9 @@ The repository currently contains:
 
 - DKP module metadata and runtime templates for module-owned publication
   surfaces;
-- a short stable user-facing configuration contract for logging, PostgreSQL,
-  and S3-compatible artifacts; shared runtime settings are derived from
+- a short stable user-facing configuration contract for logging,
+  publication/runtime settings, and S3-compatible artifacts; shared runtime
+  settings are derived from
   platform and global Deckhouse defaults;
 - phase-2 `Model` / `ClusterModel` API and controller work for source-first
   publication into OCI-backed `ModelPack` artifacts; a standalone runtime

@@ -1,105 +1,159 @@
-# KubeRay + vLLM + GPUDirect RDMA на `k8s-dvp`
+# KubeRay + vLLM на 3x V100 с GPUDirect RDMA
 
-## Назначение
+## Цель запуска
 
-Документ покрывает:
+Этот документ отвечает на один практический вопрос: как поднять рабочий
+`RayService` с `KubeRay + vLLM` на стенде `k8s-dvp`, где три `V100 32GB`
+используются в распределённом режиме через `GPUDirect RDMA` между подами.
 
-- раскатку `KubeRay operator` и `RayService` через `Argo CD`;
-- запуск `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B` на `3x V100 32GB`;
-- текущий pod-level `RDMA/GPUDirect` профиль на `k8s-dvp`;
-- live-проверки `Ray`, `Serve`, OpenAI-compatible API и `RDMA`;
-- типовые проблемы текущего стенда.
+Документ основан не на абстрактной схеме, а на реальном запуске
+`deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`, который уже поднимался на этом
+стенде и отвечал через внешний API. Здесь зафиксированы:
 
-Это не низкоуровневая инструкция по подготовке `RED OS 8` с нуля. Для host-side
-`RDMA`, `nvidia-peermem`, `perftest` и pod-level smoke уже есть отдельный
-предыдущий документ:
+- проверенный стенд и текущий рабочий профиль;
+- что должно быть готово до раскатки;
+- где лежат GitOps-манифесты;
+- какой именно `RayService` раскатывается;
+- почему в текущем профиле пока остаётся узкий патч в `vLLM`;
+- как раскатать сервис;
+- как проверить, что `Ray`, `Serve`, API и `RDMA` действительно работают.
 
-- `plans/archive/2026/research-sdn-underlay-rdma-dra-gpu-placement/SKALA-SDN-RDMA-SMOKE.ru.md`
+Этот документ не повторяет подготовку хостов: `RED OS`, `OFED`,
+`nvidia-peermem` и базовый `RDMA` с нуля. Ниже эти вещи считаются уже
+доведёнными до рабочего состояния и перечислены как обязательные предпосылки.
 
-Текущий документ начинается с точки, в которой базовый `RDMA/GPUDirect RDMA`
-на стенде уже доведён до рабочего состояния.
+## Что считается успешным запуском
 
-## Область применимости
+Запуск можно считать успешным, когда одновременно выполнены следующие условия:
 
-Проверенная прикладная конфигурация:
+- `RayService` находится в состоянии `Running`;
+- `Ray` видит все три GPU и не держит ресурсы в ожидании группы размещения
+  (`placement group`);
+- `Serve` показывает приложение и deployment в состоянии `HEALTHY`;
+- внешний API на `openai-api.k8s-dvp.apiac.ru` отвечает;
+- в логах worker-подов видно, что `NCCL` поднялся именно через `NET/IB`, а не
+  ушёл в откат на обычный `TCP`;
+- внутри worker-подов есть живой `RDMA`-интерфейс, активный `mlx5_*` и ненулевой
+  `GID[3]`.
 
-- cluster: `k8s-dvp.apiac.ru`
-- namespace для сервиса: `kuberay-projects`
-- namespace для оператора: `kuberay-operator`
-- `KubeRay` operator через `Argo CD`
-- образ: `rayproject/ray-llm:nightly.260418.64385a-py311-cu128`
-- `Ray 2.55.x` lineage
-- `vLLM >= 0.19.0`
-- модель: `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`
-- `dtype=half`
-- `tensor_parallel_size=1`
-- `pipeline_parallel_size=3`
-- `max_model_len=8192`
-- `max_num_seqs=1`
-- `reasoning_parser=deepseek_r1`
-- storage class: `ceph-fs-nvme-sc`
-- ingress host: `openai-api.k8s-dvp.apiac.ru`
+## Маршрут запуска
 
-## Как выглядел проверенный стенд
+Документ лучше проходить именно в таком порядке:
 
-### Кластер и приложения
+1. Сначала проверить, что базовый `RDMA` и `GPUDirect RDMA` уже живы на
+   уровне узлов и тестовых подов.
+2. Затем проверить, что в кластере уже есть нужные `UnderlayNetwork`,
+   `DeviceClass` и нормальный `memlock` на GPU-нодах.
+3. После этого раскатать `KubeRay` по шагам: `CRD -> оператор -> memlock ->
+   HF secret -> RayService`.
+4. Затем проверить, что живы `Ray`, `Serve`, внешний API и `NCCL over RDMA`.
+5. Только после этого смотреть на сетевые цифры, логи и типовые проблемы.
 
-| Что | Значение |
-| --- | --- |
-| `Argo CD` app для CRD | `kuberay-operator-crds` |
-| `Argo CD` app для оператора | `kuberay-operator` |
-| `memlock` на GPU-нодах | `apply-containerd-memlock.sh` |
-| `Argo CD` app для сервиса | `kuberay-service-v100-rdma` |
-| `RayService` | `llm-v100-rdma-deepseek-r1-qwen14b` |
-| стабильный API service | `llm-v100-rdma-deepseek-r1-qwen14b-serve-svc` |
-| внешний API host | `openai-api.k8s-dvp.apiac.ru` |
+## Стенд и рабочий профиль
 
-### Три worker с `GPU + RDMA`
+### Что это за стенд
 
-| Worker group | Узел | GPU claim | Underlay | Direct iface | RDMA device |
-| --- | --- | --- | --- | --- | --- |
+В текущем профиле используются две GPU-ноды:
+
+| Узел | Тип | Что на нём используется |
+| ---- | --- | ----------------------- |
+| `k8s-dvp-w1-gpu.apiac.ru` | физический узел | две рабочие пары `GPU + RDMA` |
+| `k8s-dvp-w3-gpu.apiac.ru` | `VM` на `PVE` | одна рабочая пара `GPU + RDMA` |
+
+Поэтому в схеме участвуют три группы worker, хотя нод всего две: на `w1`
+используются две разные пары `GPU + RDMA`, а на `w3` одна.
+
+### Какие worker и прямые сети используются
+
+| Группа worker | Узел | Заявка на GPU | Прямая сеть | Прямой интерфейс | RDMA-устройство |
+| ------------- | ---- | ------------- | ----------- | ---------------- | --------------- |
 | `v100-w1-80` | `k8s-dvp-w1-gpu.apiac.ru` | `gpu-v100-w1-81-gpudirect` | `rdma-w1-pair80` | `enp130s0np0` | `mlx5_1` |
 | `v100-w1-c2` | `k8s-dvp-w1-gpu.apiac.ru` | `gpu-v100-w1-c2-gpudirect` | `rdma-w1-pairc0` | `enp193s0np0` | `mlx5_0` |
 | `v100-w3-01` | `k8s-dvp-w3-gpu.apiac.ru` | `gpu-v100-w3-01-gpudirect` | `rdma-w3-pair00` | `enp2s0np0` | `mlx5_0` |
 
-### Прямая сеть для `RDMA/NCCL`
+Прямые адреса на рабочей схеме:
 
-| Worker | IP на underlay | `GID index` |
-| --- | --- | --- |
+| Worker | Прямой IP | `GID index` |
+| ------ | --------- | ----------- |
 | `v100-w1-80` | `172.31.140.1/29` | `3` |
 | `v100-w3-01` | `172.31.140.2/29` | `3` |
 | `v100-w1-c2` | `172.31.140.3/29` | `3` |
 
-Практически важна следующая модель сети:
+Практически эта сеть используется так:
 
-- socket bootstrap для `Ray`, `Gloo` и control path идёт через `eth0`;
-- `NCCL` data path идёт через `NET/IB` на `mlx5_*`;
-- `RoCE v2 GID index` прибит к `3`.
+- `eth0` нужен для начальной координации `Ray` и `Gloo`;
+- основной обмен `NCCL` идёт через `NET/IB` на `mlx5_*`;
+- для `RoCE v2` используется `GID index = 3`.
 
-## Где лежит source of truth
+### Какой профиль сейчас считается рабочим
 
-Основной GitOps-каталог живёт вне репозитория `ai-models`:
+Ниже приведён точный профиль, на котором сервис уже поднимался и отвечал:
+
+- кластер: `k8s-dvp.apiac.ru`
+- пространство имён сервиса: `kuberay-projects`
+- пространство имён оператора: `kuberay-operator`
+- `KubeRay operator`: `v1.6.0`
+- образ: `rayproject/ray-llm:nightly.260418.64385a-py311-cu128`
+- `RayService.spec.rayVersion`: `"2.55.0"`
+- `ray` внутри контейнера: `3.0.0.dev0`
+- `vllm`: `0.19.0`
+- `torch`: `2.10.0+cu128`
+- `transformers`: `4.57.6`
+- модель: `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`
+- `dtype`: `half`
+- `tensor_parallel_size`: `1`
+- `pipeline_parallel_size`: `3`
+- `max_model_len`: `8192`
+- `max_num_seqs`: `1`
+- `reasoning_parser`: `deepseek_r1`
+- класс хранилища: `ceph-fs-nvme-sc`
+- внешний адрес API: `openai-api.k8s-dvp.apiac.ru`
+
+Из этого профиля важны четыре вещи:
+
+- рабочая конфигурация подтверждена именно на `vllm 0.19.0`, а не на
+  условном `0.19.x`;
+- поле `rayVersion` в `RayService` и фактическая версия `ray` внутри образа
+  здесь не совпадают, и для этого профиля это не считается проблемой;
+- распределение сделано как `PP=3`, `TP=1`, то есть один worker на каждую
+  `V100`;
+- для reasoning-модели `reasoning_parser=deepseek_r1` обязателен.
+
+На head-поде рабочий набор библиотек выглядел так:
 
 ```text
-/Users/myskat_90/Обучение/gitlab.ap.com/k8s-config/argo-projects/k8s-dvp.apiac.ru/kuberay
+vllm 0.19.0
+ray 3.0.0.dev0
+torch 2.10.0+cu128
+transformers 4.57.6
 ```
 
-Ключевые файлы:
+## Что должно быть готово до раскатки
 
-- `argo-app/01-helm-kuberay-operator-crds.yaml`
-- `argo-app/02-helm-kuberay-operator.yaml`
-- `argo-app/10-kuberay-service-v100-rdma.yaml`
-- `apply-containerd-memlock.sh`
-- `charts/ray-service-v100-rdma/20-v100-rdma-deepseek-r1-qwen14b-rayservice.yaml`
-- `charts/ray-service-v100-rdma/12-api-ingress.yaml`
-- `charts/ray-service-v100-rdma/03-hf-secret.yaml.example`
-- `charts/ray-service-v100-rdma/README.ru.md`
+До запуска `KubeRay` должны быть закрыты три слоя: узлы, сеть и кластерные
+объекты.
 
-## Что должно существовать до раскатки
+### 1. Базовый `RDMA` и `GPUDirect RDMA` уже живы
 
-### Cluster-scoped объекты
+Перед раскаткой должно быть уже подтверждено, что:
 
-До запуска сервиса в кластере уже должны существовать:
+- на GPU-нодах работает обычный `RDMA`;
+- `nvidia-peermem` поднимается штатно;
+- `perftest` доступен и умеет работать с CUDA;
+- тестовый под получает прямой сетевой интерфейс и `/dev/infiniband/uverbs*`;
+- `ib_write_bw` и `ib_send_lat` уже проходили внутри тестового пода.
+
+Если это ещё не так, сначала нужно чинить низкоуровневый слой: узел,
+виртуализацию, прямую сеть, `GID`, `RDMA`-устройство в поде и только потом идти в
+`RayService`.
+
+Для `w3` это особенно важно, потому что нода живёт как `VM` на `PVE`. На ней
+до раскатки должны быть уже исправлены `vIOMMU`, `intel_iommu=on iommu=pt` и
+видимый `iommu_group` у проброшенного Mellanox PF.
+
+### 2. Нужные сетевые объекты уже существуют в кластере
+
+До раскатки сервиса в кластере уже должны быть:
 
 - `UnderlayNetwork`:
   - `rdma-w1-pair80`
@@ -113,19 +167,16 @@
   - `d8-sdn-rdma-w1-pairc0`
   - `d8-sdn-rdma-w3-pair00`
 
-Если этот слой ещё не готов, сначала закрывается archived `SKALA`-workstream.
+### 3. На GPU-нодах уже поднят нормальный `memlock`
 
-### `memlock` на GPU-нодах
-
-Для текущего `NCCL over RDMA` на `V100` нужно, чтобы worker pod поднимались с
-нормальным `RLIMIT_MEMLOCK`. В `dvp` это сейчас intentionally вынесено в
-локальный standalone-скрипт, а не в отдельный `Argo CD` app:
+Для `NCCL over RDMA` на `V100` нужен нормальный `memlock`. На `dvp` это
+делается отдельным скриптом:
 
 ```text
 /Users/myskat_90/Обучение/gitlab.ap.com/k8s-config/argo-projects/k8s-dvp.apiac.ru/kuberay/apply-containerd-memlock.sh
 ```
 
-После применения новые worker должны показывать:
+Проверка внутри worker-пода:
 
 ```bash
 ulimit -l
@@ -135,49 +186,132 @@ cat /proc/self/limits | grep 'Max locked memory'
 Исправное состояние:
 
 - `unlimited`
-- или эквивалентный высокий лимит без `65536 bytes`.
+- либо другой высокий лимит, но не `65536 bytes`
 
-## Что создаёт manifest-каталог сервиса
+Если здесь снова `65536 bytes`, сначала нужно чинить узел и `containerd`,
+а не сам `RayService`.
 
-`charts/ray-service-v100-rdma` materialize-ит как plain manifests:
+## Где лежат манифесты
 
-- namespace `kuberay-projects`
+GitOps-каталог находится вне репозитория `ai-models`:
+
+```text
+/Users/myskat_90/Обучение/gitlab.ap.com/k8s-config/argo-projects/k8s-dvp.apiac.ru/kuberay
+```
+
+Основные файлы:
+
+- `argo-app/01-helm-kuberay-operator-crds.yaml`
+- `argo-app/02-helm-kuberay-operator.yaml`
+- `argo-app/10-kuberay-service-v100-rdma.yaml`
+- `apply-containerd-memlock.sh`
+- `charts/ray-service-v100-rdma/20-v100-rdma-deepseek-r1-qwen14b-rayservice.yaml`
+- `charts/ray-service-v100-rdma/12-api-ingress.yaml`
+- `charts/ray-service-v100-rdma/03-hf-secret.yaml.example`
+- `charts/ray-service-v100-rdma/README.ru.md`
+
+Практически здесь важно следующее:
+
+- каталог `charts/kuberay-operator` в `dvp` сделан как локальная копия
+  официального чарта `KubeRay v1.6.0`;
+- каталог `charts/ray-service-v100-rdma` не является Helm chart:
+  `Chart.yaml`, `values.yaml` и `templates/` там убраны;
+- `Argo CD` читает каталог сервиса как обычный набор манифестов.
+
+## Что именно раскатывается
+
+Каталог `charts/ray-service-v100-rdma` создаёт:
+
+- пространство имён `kuberay-projects`
 - `ServiceAccount kuberay-llm`
 - `PersistentVolumeClaim model-cache-pvc`
-- внешний `Redis` для `Ray` fault tolerance
-- namespaced `ResourceClaimTemplate` под текущие `GPU/RDMA` пары
+- внешний `Redis` для устойчивости `Ray`
+- `ResourceClaimTemplate` под пары `GPU/RDMA`
 - `RayService llm-v100-rdma-deepseek-r1-qwen14b`
 - `Ingress llm-v100-rdma-api`
 
-Имена активных ресурсов выровнены под текущий baseline:
+Внутри `RayService` сейчас закреплены такие параметры:
 
-- `RayService llm-v100-rdma-deepseek-r1-qwen14b`
-- стабильный сервис `llm-v100-rdma-deepseek-r1-qwen14b-serve-svc`
+- `model_source: deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`
+- `distributed_executor_backend: ray`
+- `tensor_parallel_size: 1`
+- `pipeline_parallel_size: 3`
+- `dtype: half`
+- `gpu_memory_utilization: 0.90`
+- `max_model_len: 8192`
+- `max_num_seqs: 1`
+- `reasoning_parser: deepseek_r1`
 
-## Что с operator chart и service manifests
+Размещение такое:
 
-Каталог `charts/kuberay-operator` в `dvp` не является отдельной самодельной
-форкой. Официальный chart уже скопирован в `dvp` и дальше обслуживается как
-локальный source of truth.
+- одна реплика `Serve`
+- одна группа размещения (`placement group`) на три набора по `CPU:8, GPU:1`
+- один worker-под на каждую `V100`
 
-Текущий baseline там:
+Из практических нюансов здесь важны ещё две вещи:
 
-- `KubeRay operator v1.6.0`
-- шаблоны совпадают с официальным каталогом
-- отдельный refactor operator chart здесь не нужен
+- если задать слишком маленький `max_tokens`, reasoning-модель может успеть
+  вернуть только поле `reasoning` без обычного текста ответа;
+- в рабочем прогоне с `max_tokens=512` модель уже возвращала и поле
+  `reasoning`, и обычный `content: "4"`.
 
-При этом каталог `charts/ray-service-v100-rdma` теперь тоже не helmized:
+## Что важно не сломать в текущем профиле
 
-- `Chart.yaml`, `values.yaml` и `templates/` там убраны;
-- `Argo CD` читает его как обычный каталог raw manifests;
-- это самостоятельный plain-manifest каталог внутри `dvp`, без внешнего
-  `Argo` source path.
+### 1. `Gloo` и `Ray` не стартуют через прямой интерфейс `enp*`
 
-## Рабочая последовательность запуска
+В текущем рабочем профиле:
 
-### Шаг 1. Включить `KubeRay` CRD
+- `GLOO_SOCKET_IFNAME` и `NCCL_SOCKET_IFNAME` должны смотреть на `eth0`;
+- `NCCL_IB_HCA` и связанная `RDMA`-настройка должны оставаться на `mlx5_*`.
 
-Через `Argo CD`:
+Практический смысл такой:
+
+- `eth0` нужен для начальной координации;
+- основной путь обмена `NCCL` идёт через `NET/IB` на `mlx5_*`;
+- если прибить `GLOO_SOCKET_IFNAME` к прямому интерфейсу `enp*`, начальная
+  координация может снова сломаться, потому что эти интерфейсы в текущем
+  профиле `sdn/DRA` приезжают в под без отдельного `L3`-адреса.
+
+### 2. Патч в `vLLM` пока убирать нельзя
+
+На образе `rayproject/ray-llm:nightly.260418.64385a-py311-cu128` с
+`vllm 0.19.0` сам `RDMA/NCCL` уже работает. Проблема была не в сети, а в том,
+как `vLLM` ведёт себя в многонодовом режиме с `pipeline_parallel_size=3`.
+
+Без патча происходило следующее:
+
+- `rpc_rank` после переназначения уже новый;
+- `global_rank` оставался старым;
+- `WorkerWrapperBase.initialize_from_config()` выбирал `kv_cache_config` по
+  старому `global_rank`;
+- этап конвейера получал не свои слои и не своё отображение `KV`;
+- дальше модель падала с `KeyError` или начинала выдавать мусор.
+
+Сейчас это обходится узким патчем без собственного образа и без
+`sitecustomize.py`. Через связку `ConfigMap + initContainer + subPath` в
+worker-поде
+подменяется только одно место:
+
+- `vllm/v1/executor/ray_utils.py`
+- `RayWorkerWrapper.adjust_rank()`
+
+После этого `adjust_rank()` обновляет и `rpc_rank`, и `global_rank`, и
+конвейер `PP=3` начинает работать нормально.
+
+Итоговая рабочая связка сейчас такая:
+
+- `vllm 0.19.0`
+- `ray 3.0.0.dev0`
+- `torch 2.10.0+cu128`
+- `transformers 4.57.6`
+- образ `nightly.260418.64385a-py311-cu128`
+- узкий патч только на `RayWorkerWrapper.adjust_rank()`
+
+Если это поведение будет исправлено в самом `vLLM`, патч можно будет убрать.
+
+## Порядок запуска
+
+### 1. Включить CRD `KubeRay`
 
 ```bash
 argocd app sync kuberay-operator-crds
@@ -186,7 +320,8 @@ argocd app sync kuberay-operator-crds
 Проверка:
 
 ```bash
-KUBECONFIG=/Users/myskat_90/.kube/k8s-config kubectl get crd | egrep 'rayservices|rayclusters|rayjobs'
+KUBECONFIG=/Users/myskat_90/.kube/k8s-config \
+kubectl get crd | egrep 'rayservices|rayclusters|rayjobs'
 ```
 
 Ожидается:
@@ -195,7 +330,7 @@ KUBECONFIG=/Users/myskat_90/.kube/k8s-config kubectl get crd | egrep 'rayservice
 - `rayclusters.ray.io`
 - `rayjobs.ray.io`
 
-### Шаг 2. Включить `KubeRay` operator
+### 2. Включить оператор
 
 ```bash
 argocd app sync kuberay-operator
@@ -204,33 +339,33 @@ argocd app sync kuberay-operator
 Проверка:
 
 ```bash
-KUBECONFIG=/Users/myskat_90/.kube/k8s-config kubectl -n kuberay-operator get deploy,pods
+KUBECONFIG=/Users/myskat_90/.kube/k8s-config \
+kubectl -n kuberay-operator get deploy,pods
 ```
 
-Исправное состояние:
+Нормальное состояние:
 
-- deployment оператора `Available=True`;
-- pod оператора `Running`.
+- deployment оператора `Available=True`
+- pod оператора `Running`
 
-### Шаг 3. Поднять `memlock` на GPU-нодах
-
-Выполнить локальный скрипт из `dvp` каталога:
+### 3. Поднять `memlock` на GPU-нодах
 
 ```bash
 /Users/myskat_90/Обучение/gitlab.ap.com/k8s-config/argo-projects/k8s-dvp.apiac.ru/kuberay/apply-containerd-memlock.sh --ssh
 ```
 
-### Шаг 4. Подготовить `HF` token
+После этого новые worker-поды должны показывать высокий `memlock`, а не
+`65536 bytes`.
 
-Отредактировать:
+### 4. Подготовить токен `HF`
+
+Нужно отредактировать файл:
 
 ```text
 /Users/myskat_90/Обучение/gitlab.ap.com/k8s-config/argo-projects/k8s-dvp.apiac.ru/kuberay/charts/ray-service-v100-rdma/03-hf-secret.yaml.example
 ```
 
-И применить уже под реальным именем секрета `hf-secret`.
-
-Ожидаемый объект:
+В кластере после этого должен появиться секрет `hf-secret`:
 
 ```yaml
 apiVersion: v1
@@ -246,85 +381,35 @@ stringData:
 Проверка:
 
 ```bash
-KUBECONFIG=/Users/myskat_90/.kube/k8s-config kubectl -n kuberay-projects get secret hf-secret
+KUBECONFIG=/Users/myskat_90/.kube/k8s-config \
+kubectl -n kuberay-projects get secret hf-secret
 ```
 
-### Шаг 5. Включить сервис
+### 5. Включить сервис
 
 ```bash
 argocd app sync kuberay-service-v100-rdma
 ```
 
-Проверка ресурсов:
+Проверка:
 
 ```bash
-KUBECONFIG=/Users/myskat_90/.kube/k8s-config kubectl -n kuberay-projects get rayservice,raycluster,pods,pvc,svc,ingress -o wide
+KUBECONFIG=/Users/myskat_90/.kube/k8s-config \
+kubectl -n kuberay-projects get rayservice,raycluster,pods,pvc,svc,ingress -o wide
 ```
 
-Исправное состояние:
+После раскатки ожидается:
 
-- `RayService llm-v100-rdma-deepseek-r1-qwen14b` в `Running`;
-- `RayCluster ...` в `ready`;
-- `head` и три `worker` pod в `Running`;
-- `model-cache-pvc` в `Bound`;
-- есть стабильный сервис `llm-v100-rdma-deepseek-r1-qwen14b-serve-svc`;
-- ingress `llm-v100-rdma-api` существует.
+- `RayService llm-v100-rdma-deepseek-r1-qwen14b` в `Running`
+- `RayCluster ...` в `ready`
+- head и три worker-пода в `Running`
+- `model-cache-pvc` в `Bound`
+- есть сервис `llm-v100-rdma-deepseek-r1-qwen14b-serve-svc`
+- есть ingress `llm-v100-rdma-api`
 
-## Что делает `RayService`
+## Как проверить, что сервис реально жив
 
-Текущий baseline в `serveConfigV2`:
-
-- `model_source: deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`
-- `distributed_executor_backend: ray`
-- `tensor_parallel_size: 1`
-- `pipeline_parallel_size: 3`
-- `dtype: half`
-- `gpu_memory_utilization: 0.90`
-- `max_model_len: 8192`
-- `max_num_seqs: 1`
-
-Практический нюанс для reasoning-модели:
-
-- при маленьком `max_tokens` модель может успеть отдать только `reasoning` и
-  ещё не дойти до финального `content`;
-- на live-проверке с `max_tokens=512` она уже возвращала нормальный
-  `content: "4"` и отдельный `reasoning`.
-
-Рабочая разрезка:
-
-- одна Serve replica;
-- placement group на три bundle по `CPU:8, GPU:1`;
-- один worker pod на каждую `V100`.
-
-## Почему здесь всё ещё есть runtime hotfix
-
-На pinned nightly `rayproject/ray-llm:nightly.260418.64385a-py311-cu128`
-`RDMA/NCCL` path уже рабочий, но `vLLM` Ray executor на multi-node `PP=3`
-оставляет stale `global_rank` после worker re-rank.
-
-Практический эффект:
-
-- `rpc_rank` после re-rank уже новый;
-- `global_rank` остаётся старым;
-- `WorkerWrapperBase.initialize_from_config()` выбирает `kv_cache_config`
-  по stale `global_rank`;
-- `PP` stage получает не свой layer/KV mapping и дальше даёт либо
-  `KeyError` по boundary-слоям, либо мусорный output.
-
-Поэтому текущий baseline intentionally оставляет маленький runtime hotfix,
-но уже не через `sitecustomize.py` и не через custom image. В worker pod
-через `ConfigMap + initContainer + subPath mount` патчится только:
-
-- `vllm/v1/executor/ray_utils.py`
-- `RayWorkerWrapper.adjust_rank()`
-
-После этого `adjust_rank()` синхронно обновляет и `rpc_rank`, и
-`global_rank`, и `PP=3` pipeline начинает работать корректно на live
-`DeepSeek-R1-Distill-Qwen-14B`.
-
-## Live-проверки после раскатки
-
-### 1. Проверить `Ray`
+### 1. Проверить `Ray` и `Serve`
 
 ```bash
 HEAD_POD=$(
@@ -337,21 +422,17 @@ kubectl -n kuberay-projects exec "$HEAD_POD" -c ray-head -- \
   bash -lc 'ray status && echo "=====SERVE=====" && serve status'
 ```
 
-Ожидаемое состояние:
+Ожидаемая картина:
 
 - `Recent failures: (no failures)`
 - `3.0/3.0 GPU used`
 - `applications.llms.status = RUNNING`
 - `LLMServer:deepseek-r1-distill-qwen-14b = HEALTHY`
 - `OpenAiIngress = HEALTHY`
+- `ray status` не показывает незакрытый спрос по текущей группе размещения
+  (`placement group`)
 
 ### 2. Проверить внешний API
-
-Сервисный host:
-
-```text
-https://openai-api.k8s-dvp.apiac.ru
-```
 
 Список моделей:
 
@@ -359,7 +440,7 @@ https://openai-api.k8s-dvp.apiac.ru
 curl -k https://openai-api.k8s-dvp.apiac.ru/v1/models
 ```
 
-Простой inference:
+Простой запрос:
 
 ```bash
 curl -k https://openai-api.k8s-dvp.apiac.ru/v1/chat/completions \
@@ -373,9 +454,12 @@ curl -k https://openai-api.k8s-dvp.apiac.ru/v1/chat/completions \
   }'
 ```
 
-### 3. Проверить, что `Ray` реально использует `RDMA`
+Если нужно проверить не только сам ответ, но и reasoning-часть, лучше сразу
+давать больший `max_tokens`, например `512`.
 
-На worker в логах должны присутствовать:
+### 3. Проверить, что `NCCL` действительно пошёл через `RDMA`
+
+В логах worker-пода нужны строки вида:
 
 ```text
 NCCL_SOCKET_IFNAME set by environment to eth0
@@ -386,11 +470,11 @@ Init COMPLETE
 Connected all trees
 ```
 
-Практический смысл:
+Это означает:
 
-- `eth0` используется для socket bootstrap;
-- `mlx5_*` используется для `NCCL` data path;
-- `NCCL` не откатывается на plain TCP transport.
+- `eth0` используется только для начальной координации;
+- основной путь обмена `NCCL` идёт через `mlx5_*`;
+- отката на обычный `TCP` нет.
 
 Команда:
 
@@ -400,7 +484,7 @@ kubectl -n kuberay-projects exec <worker-pod> -c ray-worker -- \
   bash -lc 'grep -R -h -E "Bootstrap:|NET/IB|Using network IB|Init COMPLETE|Connected all trees" /tmp/ray/session_latest/logs/worker-* | tail -n 60'
 ```
 
-### 4. Проверить live `RDMA` surface в worker
+### 4. Проверить `RDMA` внутри worker
 
 Пример для `w1-c2`:
 
@@ -415,32 +499,25 @@ kubectl -n kuberay-projects exec "$W1C2_POD" -c ray-worker -- \
   bash -lc 'ibv_devinfo -d mlx5_0 | egrep "state:|active_mtu:|link_layer:" && cat /sys/class/infiniband/mlx5_0/ports/1/gids/3'
 ```
 
-Исправное состояние:
+Ожидается:
 
 - `PORT_ACTIVE`
 - `active_mtu: 4096`
 - `link_layer: Ethernet`
 - ненулевой `GID[3]`
 
-## Подтверждённые метрики на live `Ray` worker
+## Какие сетевые цифры уже получены на текущей рабочей паре подов
 
-Ниже именно те цифры, которые были сняты не на старых `gpudirect-pod-*`, а на
-текущей живой межузловой паре `Ray` worker:
+Замеры ниже снимались уже на текущей рабочей межузловой паре подов, а не на
+старых тестовых `gpudirect-pod-*`.
 
-- server:
-  worker из группы `v100-w1-c2`
-- client:
-  worker из группы `v100-w3-01`
-- device:
-  `mlx5_0`
-- direct IP:
-  `172.31.140.3 <-> 172.31.140.2`
-- `GID index`:
-  `3`
+- принимающая сторона теста: worker-под из группы `v100-w1-c2`
+- отправляющая сторона теста: worker-под из группы `v100-w3-01`
+- устройство: `mlx5_0`
+- прямые IP: `172.31.140.3 <-> 172.31.140.2`
+- `GID index`: `3`
 
-### `RDMA` throughput
-
-Команды:
+### Пропускная способность `RDMA`
 
 ```bash
 ib_write_bw -d mlx5_0 -x 3 -m 4096 -q 8 -F --report_gbits -D 5
@@ -451,9 +528,7 @@ ib_write_bw -d mlx5_0 -x 3 -m 4096 -q 8 -F --report_gbits -D 5 172.31.140.3
 
 - `BW average[Gb/sec] 97.29`
 
-### `RDMA` latency
-
-Команды:
+### Задержка `RDMA`
 
 ```bash
 ib_send_lat -d mlx5_0 -x 3 -s 64 -n 5000 -F
@@ -468,57 +543,44 @@ ib_send_lat -d mlx5_0 -x 3 -s 64 -n 5000 -F 172.31.140.3
 - `99% percentile 5.92 usec`
 - `99.9% percentile 8.16 usec`
 
-Практический вывод:
+Это означает, что межузловой `RDMA` между worker-подами действительно живой, а
+`Ray` и `vLLM` работают поверх реального `NET/IB`, а не поверх аварийного
+отката на обычный `TCP`.
 
-- текущий `RDMA` path на live worker работает на уровне,
-  ожидаемом от этого стенда;
-- `Ray` и `vLLM` сидят поверх уже живого `NET/IB` path, а не поверх деградировавшего
-  TCP-only fallback.
+## Что логи подтверждают, а что нет
 
-## Что видно в логах `Ray` про сеть
+По логам `Ray`, `vLLM` и `NCCL` можно уверенно подтвердить:
 
-Из самих `Ray`/`vLLM` логов можно вытащить:
+- что `NCCL` использует `NET/IB`;
+- какие `mlx5_*` реально задействованы;
+- что `Serve` и `Ray` дошли до рабочего состояния;
+- полную задержку запроса на уровне `Serve proxy`.
 
-- факт использования `NET/IB`;
-- точные `mlx5_*`, через которые идёт `NCCL`;
-- bootstrap timings;
-- latency API-запросов на уровне `Serve proxy`.
+По этим логам нельзя надёжно получить:
 
-Из логов `Ray` нельзя надёжно получить:
+- точную пропускную способность линии;
+- чистую сетевую задержку `RDMA`;
+- счётчики байтов по интерфейсам.
 
-- чистый line-rate в `Gb/sec`;
-- чистую `RDMA` latency в `usec`;
-- byte counters/throughput per interface.
+Для этого и нужны отдельные замеры `perftest`.
 
-Поэтому для wire-level метрик используются отдельные `perftest`-команды,
-запущенные внутри тех же worker pod.
-
-### Что уже видно в `Serve proxy` логах
-
-На текущем живом rollout `proxy` фиксировал:
+В текущем запуске `Serve proxy` показывал, например:
 
 - `GET /v1/models`: `10.7ms`, `11.7ms`, `12.2ms`, `16.8ms`
-- `POST /v1/chat/completions`:
-  - `8047.0ms`
-  - `11025.0ms`
-  - `20225.2ms`
-  - `21071.0ms`
-  - `24476.9ms`
-  - `30378.3ms`
-  - `72948.7ms`
-  - `119112.0ms`
-  - `161373.4ms`
+- `POST /v1/chat/completions`: `8047.0ms`, `11025.0ms`, `20225.2ms`,
+  `21071.0ms`, `24476.9ms`, `30378.3ms`, `72948.7ms`, `119112.0ms`,
+  `161373.4ms`
 
-Это уже end-to-end latency inference path, не отдельная задержка сети.
+Это уже полная задержка запроса к модели, а не чистая сетевая задержка.
 
-## Типовые проблемы
+## Частые проблемы
 
-### `HF` token не задан
+### Не задан токен `HF`
 
-Симптом:
+Симптомы:
 
-- `preload-*` на head не скачивает модель;
-- `head` долго висит в `Init`.
+- `preload-*` на head-поде не скачивает модель;
+- head-под долго висит в `Init`.
 
 Проверка:
 
@@ -527,41 +589,65 @@ KUBECONFIG=/Users/myskat_90/.kube/k8s-config \
 kubectl -n kuberay-projects logs <head-pod> -c preload-deepseek-r1-distill-qwen-14b
 ```
 
-### Worker получил `RDMA` device, но `NCCL` не видит живой `GID`
+### Worker-под получил `RDMA`-устройство, но `NCCL` не видит `GID`
 
-Симптом:
+Симптомы:
 
-- в логах `local GID ::, remote GID ::`
-- `ibv_modify_qp failed ... No data available`
+- в логах `local GID ::, remote GID ::`;
+- `ibv_modify_qp failed ... No data available`.
 
-Что проверять:
+Что смотреть:
 
-- отработал ли `init-underlay-ip`;
-- есть ли underlay IP на `enp*`;
-- живой ли `GID[3]` у нужного `mlx5_*`.
+- появился ли прямой IP на `enp*`;
+- живой ли `GID[3]` у нужного `mlx5_*`;
+- соответствует ли интерфейс той паре `GPU + RDMA`, на которую был рассчитан
+  worker.
 
-### Маленький `memlock`
+### Слишком маленький `memlock`
 
 Симптом:
 
 - `ibv_create_cq failed with error Cannot allocate memory`
 
-Что проверять:
+Проверка:
 
 ```bash
 ulimit -l
 cat /proc/self/limits | grep 'Max locked memory'
 ```
 
-Если там снова `65536 bytes`, сначала чинится node/runtime слой, а не сам
-`RayService`.
+Если там снова `65536 bytes`, сначала нужно чинить ноду и `containerd`, а
+не сам `RayService`.
 
-### В логах есть страшный `raylet` crash, но сервис жив
+### `vLLM` снова падает с `KeyError` по `model.layers...self_attn.attn`
 
-На текущем стенде это уже встречалось. В `raylet.err` лежали старые хвосты
-неудачного раннего старта, а текущий rollout уже был healthy.
+Если вернулась ошибка вида:
 
-Проверять надо не только `raylet.err`, а сразу вместе:
+```text
+KeyError: model.layers.{...}.self_attn.attn
+```
+
+в первую очередь надо проверить, не потерялся ли текущий узкий патч на
+`RayWorkerWrapper.adjust_rank()`. Для этого профиля это не сетевой симптом, а
+симптом рассинхронизации рангов внутри `vLLM V1`.
+
+### Модель отвечает только полем `reasoning` или не успевает дойти до обычного ответа
+
+Сначала надо проверить две вещи:
+
+- в `serveConfigV2` действительно задан `reasoning_parser: deepseek_r1`;
+- в запросе достаточно большой `max_tokens`.
+
+Для быстрой живой проверки лучше не ставить слишком маленький `max_tokens`.
+На этом стенде рабочий прогон с нормальным текстом ответа уже проходил на
+`max_tokens=512`.
+
+### В логах есть старый `raylet` crash, но сервис уже жив
+
+Такое на этом стенде уже было. В `raylet.err` лежали хвосты от раннего
+неудачного запуска, хотя текущий запуск уже работал нормально.
+
+Поэтому проверять нужно не только `raylet.err`, а сразу всё вместе:
 
 ```bash
 ray status
@@ -569,26 +655,26 @@ serve status
 kubectl get rayservice,raycluster,pods -n kuberay-projects
 ```
 
-Если там всё `Running/HEALTHY`, старый хвост в `session_latest/logs` сам по
-себе не означает живую проблему.
+Если там всё `Running/HEALTHY`, старые строки в `session_latest/logs` сами по
+себе ещё не означают, что проблема актуальна.
 
-### Warning про `FA2` на `V100`
+### Предупреждение про `FA2` на `V100`
 
-Симптом:
+Обычно это выглядит так:
 
 ```text
 Cannot use FA version 2 ... compute capability >= 8
 ```
 
-Для `V100/Volta` это ожидаемо. Дальше `vLLM` уходит в другой backend
-внимания и сам warning не считается blocker.
+Для `V100/Volta` это ожидаемо. Дальше `vLLM` переключается на другой механизм
+внимания, и само предупреждение не считается блокирующим.
 
-## Что не входит в документ
+## Что здесь не разбирается
 
-Документ не покрывает:
+В документ не входят:
 
-- host-side подготовку `RED OS 8` и NVIDIA/OFED с нуля;
-- ручную отладку `DeviceClass` / `UnderlayNetwork` контроллеров;
-- смену модели или переход на другой `ray-llm` image;
-- бенчмарки качества/скорости самой модели;
-- production hardening поверх текущего лабораторного профиля.
+- подготовка `RED OS 8`, NVIDIA и `OFED` на хосте с нуля;
+- ручная отладка `UnderlayNetwork` и `DeviceClass` контроллеров;
+- перенос запуска на другую модель или другой образ `ray-llm`;
+- бенчмарки качества и скорости самой модели;
+- доведение текущей схемы до production-ready состояния.

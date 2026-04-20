@@ -21,16 +21,14 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
-
-	intentcontract "github.com/deckhouse/ai-models/controller/internal/nodecacheintent"
 )
 
-type PrefetchFunc func(context.Context, intentcontract.ArtifactIntent, string) error
+type PrefetchFunc func(context.Context, DesiredArtifact, string) error
 
 func EnsureDesiredArtifacts(
 	ctx context.Context,
 	cacheRoot string,
-	intents []intentcontract.ArtifactIntent,
+	artifacts []DesiredArtifact,
 	run PrefetchFunc,
 ) error {
 	if run == nil {
@@ -40,8 +38,8 @@ func EnsureDesiredArtifacts(
 	if cacheRoot == "" {
 		return errors.New("node cache prefetch cache-root must not be empty")
 	}
-	intents, err := intentcontract.NormalizeIntents(intents)
-	if err != nil || len(intents) == 0 {
+	artifacts, err := NormalizeDesiredArtifacts(artifacts)
+	if err != nil || len(artifacts) == 0 {
 		return err
 	}
 
@@ -51,18 +49,18 @@ func EnsureDesiredArtifacts(
 	}
 	ready := readyDigestSet(snapshot)
 
-	for _, intent := range intents {
-		if _, found := ready[intent.Digest]; found {
+	for _, artifact := range artifacts {
+		if _, found := ready[artifact.Digest]; found {
 			continue
 		}
-		destinationDir := StorePath(cacheRoot, intent.Digest)
+		destinationDir := StorePath(cacheRoot, artifact.Digest)
 		slog.Default().Info(
 			"node cache prefetch started",
-			slog.String("artifactURI", intent.ArtifactURI),
-			slog.String("digest", intent.Digest),
+			slog.String("artifactURI", artifact.ArtifactURI),
+			slog.String("digest", artifact.Digest),
 			slog.String("destinationDir", destinationDir),
 		)
-		if err := run(ctx, intent, destinationDir); err != nil {
+		if err := run(ctx, artifact, destinationDir); err != nil {
 			return err
 		}
 	}

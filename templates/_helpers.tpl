@@ -448,10 +448,10 @@ true
 {{- default "us-east-1" (index $artifacts "region") -}}
 {{- end -}}
 
-{{- define "ai-models.sourceAcquisitionMode" -}}
+{{- define "ai-models.sourceFetchMode" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
-{{- lower (default "Direct" (index $artifacts "sourceAcquisitionMode")) -}}
+{{- lower (default "Direct" (index $artifacts "sourceFetchMode")) -}}
 {{- end -}}
 
 {{- define "ai-models.artifactsCredentialsSecretName" -}}

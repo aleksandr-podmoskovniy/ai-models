@@ -131,8 +131,16 @@ func TestRunMaterializeArtifactSupportsCacheRoot(t *testing.T) {
 	if got, want := linkTarget, filepath.Join("store", "sha256:deadbeef", "model"); got != want {
 		t.Fatalf("current target = %q, want %q", got, want)
 	}
-	if _, err := os.Stat(filepath.Join(currentPath, "config.json")); err != nil {
-		t.Fatalf("expected config.json through current symlink: %v", err)
+	modelPath := filepath.Join(cacheRoot, "model")
+	modelTarget, err := os.Readlink(modelPath)
+	if err != nil {
+		t.Fatalf("Readlink(model) error = %v", err)
+	}
+	if got, want := modelTarget, "current"; got != want {
+		t.Fatalf("model target = %q, want %q", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(modelPath, "config.json")); err != nil {
+		t.Fatalf("expected config.json through workload model symlink: %v", err)
 	}
 }
 

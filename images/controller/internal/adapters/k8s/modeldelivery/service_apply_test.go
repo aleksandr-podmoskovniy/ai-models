@@ -65,7 +65,7 @@ func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
 	if got, want := result.CacheMountPath, DefaultCacheMountPath; got != want {
 		t.Fatalf("cache mount path = %q, want %q", got, want)
 	}
-	if got, want := result.ModelPath, nodecache.CurrentLinkPath(DefaultCacheMountPath); got != want {
+	if got, want := result.ModelPath, nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
 		t.Fatalf("model path = %q, want %q", got, want)
 	}
 	if got, want := result.TopologyKind, CacheTopologyPerPod; got != want {
@@ -74,7 +74,7 @@ func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
 	if len(template.Spec.InitContainers) != 1 {
 		t.Fatalf("unexpected init containers %#v", template.Spec.InitContainers)
 	}
-	if got, want := envByName(template.Spec.Containers[0].Env, ModelPathEnv), nodecache.CurrentLinkPath(DefaultCacheMountPath); got != want {
+	if got, want := envByName(template.Spec.Containers[0].Env, ModelPathEnv), nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
 		t.Fatalf("%s = %q, want %q", ModelPathEnv, got, want)
 	}
 	if got, want := envByName(template.Spec.Containers[0].Env, ModelDigestEnv), publishedArtifact().Digest; got != want {
