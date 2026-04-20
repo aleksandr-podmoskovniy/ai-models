@@ -57,6 +57,7 @@ const (
 	artifactsCASecretEnv                  = "ARTIFACTS_CA_SECRET_NAME"
 	nodeCacheEnabledEnv                   = "NODE_CACHE_ENABLED"
 	nodeCacheMaxSizeEnv                   = "NODE_CACHE_MAX_SIZE"
+	nodeCacheSharedVolumeSizeEnv          = "NODE_CACHE_SHARED_VOLUME_SIZE"
 	nodeCacheFallbackVolumeSizeEnv        = "NODE_CACHE_FALLBACK_VOLUME_SIZE"
 	nodeCacheStorageClassNameEnv          = "NODE_CACHE_STORAGE_CLASS_NAME"
 	nodeCacheVolumeGroupSetNameEnv        = "NODE_CACHE_VOLUME_GROUP_SET_NAME"

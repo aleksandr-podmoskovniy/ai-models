@@ -27,6 +27,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecacheintent"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecacheruntime"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecachesubstrate"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	"github.com/deckhouse/ai-models/controller/internal/monitoring/catalogmetrics"
@@ -50,6 +51,7 @@ type Options struct {
 	CleanupJobs        catalogcleanup.Options
 	PublicationRuntime catalogstatus.Options
 	NodeCacheIntent    nodecacheintent.Options
+	NodeCacheRuntime   nodecacheruntime.Options
 	NodeCacheSubstrate nodecachesubstrate.Options
 	WorkloadDelivery   workloaddelivery.Options
 	Runtime            RuntimeOptions
@@ -68,6 +70,7 @@ type App struct {
 	cleanupJobs        catalogcleanup.Options
 	publicationRuntime catalogstatus.Options
 	nodeCacheIntent    nodecacheintent.Options
+	nodeCacheRuntime   nodecacheruntime.Options
 	nodeCacheSubstrate nodecachesubstrate.Options
 	workloadDelivery   workloaddelivery.Options
 	runtime            RuntimeOptions
@@ -86,6 +89,9 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 	if err := options.NodeCacheIntent.Validate(); err != nil {
 		return nil, err
 	}
+	if err := options.NodeCacheRuntime.Validate(); err != nil {
+		return nil, err
+	}
 	if err := options.NodeCacheSubstrate.Validate(); err != nil {
 		return nil, err
 	}
@@ -99,6 +105,7 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 		cleanupJobs:        options.CleanupJobs,
 		publicationRuntime: options.PublicationRuntime,
 		nodeCacheIntent:    options.NodeCacheIntent,
+		nodeCacheRuntime:   options.NodeCacheRuntime,
 		nodeCacheSubstrate: options.NodeCacheSubstrate,
 		workloadDelivery:   options.WorkloadDelivery,
 		logger:             logger,
@@ -158,6 +165,9 @@ func (a *App) setupManager(mgr ctrl.Manager) error {
 		return err
 	}
 	if err := nodecacheintent.SetupWithManager(mgr, a.logger, a.nodeCacheIntent); err != nil {
+		return err
+	}
+	if err := nodecacheruntime.SetupWithManager(mgr, a.logger, a.nodeCacheRuntime); err != nil {
 		return err
 	}
 	if err := nodecachesubstrate.SetupWithManager(mgr, a.logger, a.nodeCacheSubstrate); err != nil {
@@ -221,6 +231,14 @@ func (a *App) logRuntimeConfiguration() {
 		a.logger.Info(
 			"controller node-cache intent configured",
 			slog.String("namespace", a.nodeCacheIntent.Namespace),
+		)
+	}
+	if a.nodeCacheRuntime.Enabled {
+		a.logger.Info(
+			"controller node-cache runtime configured",
+			slog.String("namespace", a.nodeCacheRuntime.Namespace),
+			slog.String("storageClassName", a.nodeCacheRuntime.StorageClassName),
+			slog.String("sharedVolumeSize", a.nodeCacheRuntime.SharedVolumeSize),
 		)
 	}
 }

@@ -36,6 +36,7 @@
 - `pipeline_parallel_size=3`
 - `max_model_len=8192`
 - `max_num_seqs=1`
+- `reasoning_parser=deepseek_r1`
 - storage class: `ceph-fs-nvme-sc`
 - ingress host: `openai-api.k8s-dvp.apiac.ru`
 
@@ -282,27 +283,44 @@ KUBECONFIG=/Users/myskat_90/.kube/k8s-config kubectl -n kuberay-projects get ray
 - `max_model_len: 8192`
 - `max_num_seqs: 1`
 
+Практический нюанс для reasoning-модели:
+
+- при маленьком `max_tokens` модель может успеть отдать только `reasoning` и
+  ещё не дойти до финального `content`;
+- на live-проверке с `max_tokens=512` она уже возвращала нормальный
+  `content: "4"` и отдельный `reasoning`.
+
 Рабочая разрезка:
 
 - одна Serve replica;
 - placement group на три bundle по `CPU:8, GPU:1`;
 - один worker pod на каждую `V100`.
 
-## Почему в manifest-каталоге больше нет runtime hotfix
+## Почему здесь всё ещё есть runtime hotfix
 
-Раньше в этом каталоге был локальный workaround через `sitecustomize.py`, потому что
-на `rayproject/ray-llm:2.54.0-py311-cu128` профиль
-`DeepSeek-R1-Distill-Qwen-14B + V1 + PP=3` доходил до рабочего `RDMA/NCCL`,
-но падал внутри `initialize_attn_backend`.
+На pinned nightly `rayproject/ray-llm:nightly.260418.64385a-py311-cu128`
+`RDMA/NCCL` path уже рабочий, но `vLLM` Ray executor на multi-node `PP=3`
+оставляет stale `global_rank` после worker re-rank.
 
-Для текущего эксперимента этот hotfix intentionally убран:
+Практический эффект:
 
-- сервис переведён на pinned nightly
-  `rayproject/ray-llm:nightly.260418.64385a-py311-cu128`;
-- модель оставлена той же;
-- профиль ужат до smoke-нагрузки `8192 x 1`;
-- цель — проверить, закрывает ли новый upstream `vLLM >= 0.19.0`
-  старый `PP=3` runtime fail без локальных monkey-patch.
+- `rpc_rank` после re-rank уже новый;
+- `global_rank` остаётся старым;
+- `WorkerWrapperBase.initialize_from_config()` выбирает `kv_cache_config`
+  по stale `global_rank`;
+- `PP` stage получает не свой layer/KV mapping и дальше даёт либо
+  `KeyError` по boundary-слоям, либо мусорный output.
+
+Поэтому текущий baseline intentionally оставляет маленький runtime hotfix,
+но уже не через `sitecustomize.py` и не через custom image. В worker pod
+через `ConfigMap + initContainer + subPath mount` патчится только:
+
+- `vllm/v1/executor/ray_utils.py`
+- `RayWorkerWrapper.adjust_rank()`
+
+После этого `adjust_rank()` синхронно обновляет и `rpc_rank`, и
+`global_rank`, и `PP=3` pipeline начинает работать корректно на live
+`DeepSeek-R1-Distill-Qwen-14B`.
 
 ## Live-проверки после раскатки
 

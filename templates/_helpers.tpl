@@ -163,18 +163,6 @@ false
 ai-models-node-cache-runtime
 {{- end -}}
 
-{{- define "ai-models.nodeCacheRuntimeNodeSelector" -}}
-{{- $selector := dict "kubernetes.io/os" "linux" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
-{{- $configured := (index $nodeCache "nodeSelector") | default dict -}}
-{{- range $key, $value := $configured -}}
-{{- $_ := set $selector $key $value -}}
-{{- end -}}
-nodeSelector:
-{{- toYaml $selector | nindent 2 }}
-{{- end -}}
-
 {{- define "ai-models.nodeCacheMaintenanceMaxUnusedAge" -}}
 24h
 {{- end -}}

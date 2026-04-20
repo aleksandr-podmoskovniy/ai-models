@@ -55,8 +55,14 @@ func TestDeploymentReconcilerAppliesRuntimeDelivery(t *testing.T) {
 	if !hasInitContainer(updated.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
 		t.Fatalf("expected init container %q", modeldelivery.DefaultInitContainerName)
 	}
-	if hasRuntimeEnv(updated.Spec.Template.Spec.Containers, "AI_MODELS_MODEL_PATH") {
-		t.Fatal("did not expect runtime env injection")
+	if !hasRuntimeEnv(updated.Spec.Template.Spec.Containers, modeldelivery.ModelPathEnv) {
+		t.Fatalf("expected runtime env %q", modeldelivery.ModelPathEnv)
+	}
+	if !hasRuntimeEnv(updated.Spec.Template.Spec.Containers, modeldelivery.ModelDigestEnv) {
+		t.Fatalf("expected runtime env %q", modeldelivery.ModelDigestEnv)
+	}
+	if !hasRuntimeEnv(updated.Spec.Template.Spec.Containers, modeldelivery.ModelFamilyEnv) {
+		t.Fatalf("expected runtime env %q", modeldelivery.ModelFamilyEnv)
 	}
 	assertProjectedAuthSecretExists(t, kubeClient, workload.Namespace, workload.UID)
 }

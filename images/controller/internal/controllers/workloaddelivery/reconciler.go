@@ -101,7 +101,7 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 		slog.String("namespace", object.GetNamespace()),
 		slog.String("name", object.GetName()),
 		slog.String("digest", resolution.Artifact.Digest),
-		slog.String("currentModelPath", result.CurrentModelPath),
+		slog.String("modelPath", result.ModelPath),
 		slog.String("topologyKind", string(result.TopologyKind)),
 	)
 	r.recorder.Eventf(object, "Normal", "ModelDeliveryApplied", "Applied runtime delivery for digest %s", resolution.Artifact.Digest)

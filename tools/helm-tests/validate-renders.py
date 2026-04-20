@@ -375,39 +375,30 @@ def _validate_dmcr_secret_delete_rbac(path: Path, content: str) -> list[str]:
     return errors
 
 
-def _validate_node_cache_runtime_daemonset(path: Path, content: str) -> list[str]:
+def _validate_node_cache_runtime_plane(path: Path, content: str) -> list[str]:
     if "--node-cache-enabled=true" not in content:
         return []
 
-    if "kind: DaemonSet" not in content or "name: ai-models-node-cache-runtime" not in content:
-        return [
-            f"{path.name}: node-cache-enabled render must include DaemonSet/ai-models-node-cache-runtime"
-        ]
-
     errors: list[str] = []
-    if "ephemeral:" not in content or "volumeClaimTemplate:" not in content:
+    if "kind: DaemonSet" in content and "name: ai-models-node-cache-runtime" in content:
         errors.append(
-            f"{path.name}: node-cache runtime DaemonSet must use a generic ephemeral volume"
+            f"{path.name}: node-cache-enabled render must not keep legacy DaemonSet/ai-models-node-cache-runtime after stable per-node runtime plane rollout"
         )
-    if "serviceAccountName: ai-models-node-cache-runtime" not in content:
+    if '--node-cache-shared-volume-size=' not in content:
         errors.append(
-            f"{path.name}: node-cache runtime DaemonSet must use the dedicated ai-models-node-cache-runtime service account"
+            f"{path.name}: controller render must pass --node-cache-shared-volume-size for the stable node-cache runtime PVC contract"
         )
-    if "AI_MODELS_NODE_CACHE_INTENT_NAMESPACE" not in content:
+    if "kind: ServiceAccount" not in content or "name: ai-models-node-cache-runtime" not in content:
         errors.append(
-            f"{path.name}: node-cache runtime DaemonSet must project AI_MODELS_NODE_CACHE_INTENT_NAMESPACE"
+            f"{path.name}: node-cache-enabled render must include ServiceAccount/ai-models-node-cache-runtime"
         )
-    if "AI_MODELS_NODE_CACHE_INTENT_NODE_NAME" not in content or "fieldPath: spec.nodeName" not in content:
+    if "kind: Role" not in content or "name: ai-models-node-cache-runtime" not in content:
         errors.append(
-            f"{path.name}: node-cache runtime DaemonSet must project AI_MODELS_NODE_CACHE_INTENT_NODE_NAME from spec.nodeName"
+            f"{path.name}: node-cache-enabled render must include Role/ai-models-node-cache-runtime"
         )
-    if "AI_MODELS_OCI_USERNAME" not in content or "AI_MODELS_OCI_PASSWORD" not in content:
+    if "kind: RoleBinding" not in content or "name: ai-models-node-cache-runtime" not in content:
         errors.append(
-            f"{path.name}: node-cache runtime DaemonSet must project DMCR read credentials for shared-store prefetch"
-        )
-    if "storage:" not in content:
-        errors.append(
-            f"{path.name}: node-cache runtime DaemonSet must request storage for the shared cache volume"
+            f"{path.name}: node-cache-enabled render must include RoleBinding/ai-models-node-cache-runtime"
         )
     return errors
 
@@ -507,7 +498,7 @@ def validate_render(path: Path) -> list[str]:
 
     errors.extend(_validate_port_name_lengths(path, content))
     errors.extend(_validate_dmcr_secret_delete_rbac(path, content))
-    errors.extend(_validate_node_cache_runtime_daemonset(path, content))
+    errors.extend(_validate_node_cache_runtime_plane(path, content))
     errors.extend(_validate_dmcr_auth_consistency(path, content))
 
     return errors

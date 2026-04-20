@@ -65,8 +65,8 @@ func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
 	if got, want := result.CacheMountPath, DefaultCacheMountPath; got != want {
 		t.Fatalf("cache mount path = %q, want %q", got, want)
 	}
-	if got, want := result.CurrentModelPath, nodecache.CurrentLinkPath(DefaultCacheMountPath); got != want {
-		t.Fatalf("current model path = %q, want %q", got, want)
+	if got, want := result.ModelPath, nodecache.CurrentLinkPath(DefaultCacheMountPath); got != want {
+		t.Fatalf("model path = %q, want %q", got, want)
 	}
 	if got, want := result.TopologyKind, CacheTopologyPerPod; got != want {
 		t.Fatalf("topology kind = %q, want %q", got, want)
@@ -74,8 +74,14 @@ func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
 	if len(template.Spec.InitContainers) != 1 {
 		t.Fatalf("unexpected init containers %#v", template.Spec.InitContainers)
 	}
-	if got := len(template.Spec.Containers[0].Env); got != 0 {
-		t.Fatalf("expected runtime env to stay untouched, got %#v", template.Spec.Containers[0].Env)
+	if got, want := envByName(template.Spec.Containers[0].Env, ModelPathEnv), nodecache.CurrentLinkPath(DefaultCacheMountPath); got != want {
+		t.Fatalf("%s = %q, want %q", ModelPathEnv, got, want)
+	}
+	if got, want := envByName(template.Spec.Containers[0].Env, ModelDigestEnv), publishedArtifact().Digest; got != want {
+		t.Fatalf("%s = %q, want %q", ModelDigestEnv, got, want)
+	}
+	if got, want := envByName(template.Spec.Containers[0].Env, ModelFamilyEnv), "hf-safetensors-v1"; got != want {
+		t.Fatalf("%s = %q, want %q", ModelFamilyEnv, got, want)
 	}
 	if got, want := template.Annotations[ResolvedDigestAnnotation], publishedArtifact().Digest; got != want {
 		t.Fatalf("resolved digest annotation = %q, want %q", got, want)

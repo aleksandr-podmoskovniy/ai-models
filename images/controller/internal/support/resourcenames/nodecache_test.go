@@ -29,3 +29,27 @@ func TestNodeCacheIntentConfigMapName(t *testing.T) {
 		t.Fatalf("name = %q, want %q", got, want)
 	}
 }
+
+func TestNodeCacheRuntimePodName(t *testing.T) {
+	t.Parallel()
+
+	name, err := NodeCacheRuntimePodName("worker-1.example.local")
+	if err != nil {
+		t.Fatalf("NodeCacheRuntimePodName() error = %v", err)
+	}
+	if got, want := name, "ai-models-node-cache-runtime-worker-1-example-local"; got != want {
+		t.Fatalf("name = %q, want %q", got, want)
+	}
+}
+
+func TestNodeCacheRuntimePVCName(t *testing.T) {
+	t.Parallel()
+
+	name, err := NodeCacheRuntimePVCName("worker-1.example.local")
+	if err != nil {
+		t.Fatalf("NodeCacheRuntimePVCName() error = %v", err)
+	}
+	if got, want := name, "ai-models-node-cache-worker-1-example-local"; got != want {
+		t.Fatalf("name = %q, want %q", got, want)
+	}
+}

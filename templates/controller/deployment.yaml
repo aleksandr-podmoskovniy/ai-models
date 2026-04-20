@@ -80,6 +80,7 @@ spec:
             - --artifacts-ca-secret-name={{ include "ai-models.artifactsMountedCASecretName" . }}
             - --node-cache-enabled={{ include "ai-models.nodeCacheEnabled" . }}
             - --node-cache-max-size={{ include "ai-models.nodeCacheMaxSize" . }}
+            - --node-cache-shared-volume-size={{ include "ai-models.nodeCacheSharedVolumeSize" . }}
             - --node-cache-fallback-volume-size={{ include "ai-models.nodeCacheFallbackVolumeSize" . }}
             - --node-cache-storage-class-name={{ include "ai-models.nodeCacheStorageClassName" . }}
             - --node-cache-volume-group-set-name={{ include "ai-models.nodeCacheVolumeGroupSetName" . }}

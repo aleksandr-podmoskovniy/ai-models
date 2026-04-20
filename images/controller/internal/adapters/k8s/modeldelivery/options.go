@@ -34,6 +34,9 @@ const (
 	ResolvedArtifactURIAnnotation    = "ai.deckhouse.io/resolved-artifact-uri"
 	ResolvedArtifactFamilyAnnotation = "ai.deckhouse.io/resolved-artifact-family"
 
+	ModelPathEnv     = "AI_MODELS_MODEL_PATH"
+	ModelDigestEnv   = "AI_MODELS_MODEL_DIGEST"
+	ModelFamilyEnv   = "AI_MODELS_MODEL_FAMILY"
 	LogFormatEnv     = "LOG_FORMAT"
 	LogLevelEnv      = "LOG_LEVEL"
 	defaultLogFormat = "json"
@@ -116,6 +119,6 @@ func ValidateManagedCacheOptions(options ManagedCacheOptions) error {
 	return nil
 }
 
-func CurrentModelPath(options Options) string {
+func ModelPath(options Options) string {
 	return nodecache.CurrentLinkPath(strings.TrimSpace(options.CacheMountPath))
 }

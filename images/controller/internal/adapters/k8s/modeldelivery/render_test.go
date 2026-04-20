@@ -58,11 +58,20 @@ func TestRenderBuildsMaterializerAgainstExistingCacheMount(t *testing.T) {
 	if got, want := rendered.InitContainer.Args, []string{"materialize-artifact"}; len(got) != len(want) || got[0] != want[0] {
 		t.Fatalf("unexpected init args %#v", got)
 	}
-	if got, want := rendered.CurrentModelPath, nodecache.CurrentLinkPath(DefaultCacheMountPath); got != want {
-		t.Fatalf("current model path = %q, want %q", got, want)
+	if got, want := rendered.ModelPath, nodecache.CurrentLinkPath(DefaultCacheMountPath); got != want {
+		t.Fatalf("model path = %q, want %q", got, want)
 	}
 	if got, want := rendered.InitContainer.VolumeMounts[0].Name, "model-cache"; got != want {
 		t.Fatalf("cache volume name = %q, want %q", got, want)
+	}
+	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.CurrentLinkPath(DefaultCacheMountPath); got != want {
+		t.Fatalf("runtime model path env = %q, want %q", got, want)
+	}
+	if got, want := envValue(rendered.RuntimeEnv, ModelDigestEnv), "sha256:deadbeef"; got != want {
+		t.Fatalf("runtime model digest env = %q, want %q", got, want)
+	}
+	if got, want := envValue(rendered.RuntimeEnv, ModelFamilyEnv), "hf-safetensors-v1"; got != want {
+		t.Fatalf("runtime model family env = %q, want %q", got, want)
 	}
 	if got := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_CACHE_ROOT"); got != DefaultCacheMountPath {
 		t.Fatalf("cache root env = %q, want %q", got, DefaultCacheMountPath)
@@ -107,6 +116,9 @@ func TestRenderBuildsSharedCacheCoordinationEnv(t *testing.T) {
 
 	if got, want := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_COORDINATION_MODE"), CoordinationModeShared; got != want {
 		t.Fatalf("coordination mode = %q, want %q", got, want)
+	}
+	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.CurrentLinkPath(DefaultCacheMountPath); got != want {
+		t.Fatalf("runtime model path env = %q, want %q", got, want)
 	}
 	if got := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_COORDINATION_NAMESPACE"); got != "" {
 		t.Fatalf("did not expect coordination namespace env, got %q", got)

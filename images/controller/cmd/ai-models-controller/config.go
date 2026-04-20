@@ -29,8 +29,10 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecacheintent"
+	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecacheruntime"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecachesubstrate"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -75,6 +77,7 @@ type managerConfig struct {
 
 	NodeCacheEnabled               bool
 	NodeCacheMaxSize               string
+	NodeCacheSharedVolumeSize      string
 	NodeCacheFallbackVolumeSize    string
 	NodeCacheStorageClassName      string
 	NodeCacheVolumeGroupSetName    string
@@ -128,6 +131,7 @@ func defaultManagerConfig() managerConfig {
 		ArtifactsCASecretName:                cmdsupport.EnvOr(artifactsCASecretEnv, ""),
 		NodeCacheEnabled:                     cmdsupport.EnvOrBool(nodeCacheEnabledEnv, false),
 		NodeCacheMaxSize:                     cmdsupport.EnvOr(nodeCacheMaxSizeEnv, "200Gi"),
+		NodeCacheSharedVolumeSize:            cmdsupport.EnvOr(nodeCacheSharedVolumeSizeEnv, nodecache.DefaultSharedVolumeSize),
 		NodeCacheFallbackVolumeSize:          cmdsupport.EnvOr(nodeCacheFallbackVolumeSizeEnv, "32Gi"),
 		NodeCacheStorageClassName:            cmdsupport.EnvOr(nodeCacheStorageClassNameEnv, "ai-models-node-cache"),
 		NodeCacheVolumeGroupSetName:          cmdsupport.EnvOr(nodeCacheVolumeGroupSetNameEnv, "ai-models-node-cache"),
@@ -182,6 +186,7 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.StringVar(&config.ArtifactsCASecretName, "artifacts-ca-secret-name", config.ArtifactsCASecretName, "Optional Secret with ca.crt for upload staging object storage.")
 	flags.BoolVar(&config.NodeCacheEnabled, "node-cache-enabled", config.NodeCacheEnabled, "Enable ai-models-managed node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheMaxSize, "node-cache-max-size", config.NodeCacheMaxSize, "Per-node thin-pool size budget for managed node-local cache substrate.")
+	flags.StringVar(&config.NodeCacheSharedVolumeSize, "node-cache-shared-volume-size", config.NodeCacheSharedVolumeSize, "Stable per-node shared cache PVC size used by the managed node-cache runtime plane.")
 	flags.StringVar(&config.NodeCacheFallbackVolumeSize, "node-cache-fallback-volume-size", config.NodeCacheFallbackVolumeSize, "Managed local ephemeral volume size injected into workloads for the current runtime delivery fallback path.")
 	flags.StringVar(&config.NodeCacheStorageClassName, "node-cache-storage-class-name", config.NodeCacheStorageClassName, "Managed LocalStorageClass name for node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheVolumeGroupSetName, "node-cache-volume-group-set-name", config.NodeCacheVolumeGroupSetName, "Managed LVMVolumeGroupSet name for node-local cache substrate.")
@@ -267,6 +272,23 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 		NodeCacheIntent: nodecacheintent.Options{
 			Enabled:   c.NodeCacheEnabled,
 			Namespace: c.CleanupJobNamespace,
+		},
+		NodeCacheRuntime: nodecacheruntime.Options{
+			Enabled:             c.NodeCacheEnabled,
+			Namespace:           c.CleanupJobNamespace,
+			RuntimeImage:        cmdsupport.FallbackString(c.PublicationWorkerImage, c.CleanupJobImage),
+			ImagePullSecretName: cmdsupport.FallbackString(c.PublicationWorkerImagePullSecretName, c.CleanupJobImagePullSecretName),
+			ServiceAccountName:  nodecache.RuntimeServiceAccount,
+			StorageClassName:    c.NodeCacheStorageClassName,
+			SharedVolumeSize:    c.NodeCacheSharedVolumeSize,
+			MaxTotalSize:        c.NodeCacheMaxSize,
+			MaxUnusedAge:        nodecache.DefaultMaxUnusedAge.String(),
+			ScanInterval:        nodecache.DefaultMaintenancePeriod.String(),
+			IntentNamespace:     c.CleanupJobNamespace,
+			OCIInsecure:         c.PublicationOCIInsecure,
+			OCIAuthSecretName:   defaultDMCRReadAuthSecretName,
+			OCIRegistryCASecret: c.PublicationOCICASecretName,
+			NodeSelectorLabels:  nodeSelectorLabels,
 		},
 		NodeCacheSubstrate: nodecachesubstrate.Options{
 			Enabled:                c.NodeCacheEnabled,

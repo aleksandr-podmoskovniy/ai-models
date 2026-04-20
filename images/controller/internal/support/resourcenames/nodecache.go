@@ -22,8 +22,34 @@ import (
 )
 
 const nodeCacheIntentConfigMapPrefix = "ai-models-node-cache-intent-"
+const nodeCacheRuntimePodPrefix = "ai-models-node-cache-runtime-"
+const nodeCacheRuntimePVCPrefix = "ai-models-node-cache-"
 
 func NodeCacheIntentConfigMapName(nodeName string) (string, error) {
+	suffix, err := normalizedNodeNameSuffix(nodeName)
+	if err != nil {
+		return "", err
+	}
+	return nodeCacheIntentConfigMapPrefix + suffix, nil
+}
+
+func NodeCacheRuntimePodName(nodeName string) (string, error) {
+	suffix, err := normalizedNodeNameSuffix(nodeName)
+	if err != nil {
+		return "", err
+	}
+	return nodeCacheRuntimePodPrefix + suffix, nil
+}
+
+func NodeCacheRuntimePVCName(nodeName string) (string, error) {
+	suffix, err := normalizedNodeNameSuffix(nodeName)
+	if err != nil {
+		return "", err
+	}
+	return nodeCacheRuntimePVCPrefix + suffix, nil
+}
+
+func normalizedNodeNameSuffix(nodeName string) (string, error) {
 	nodeName = strings.TrimSpace(nodeName)
 	if nodeName == "" {
 		return "", errors.New("node name must not be empty")
@@ -40,5 +66,5 @@ func NodeCacheIntentConfigMapName(nodeName string) (string, error) {
 	if nodeName == "" {
 		return "", errors.New("node name normalized to an empty value")
 	}
-	return nodeCacheIntentConfigMapPrefix + nodeName, nil
+	return nodeName, nil
 }

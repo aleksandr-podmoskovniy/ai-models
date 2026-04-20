@@ -72,7 +72,11 @@ Current phase-2 slice implemented here:
   ai-models-managed local generic ephemeral fallback volume,
   topology-aware per-pod versus direct shared PVC handling with RWX
   single-writer cache-root coordination, and cross-namespace read-only DMCR
-  auth/CA projection into the runtime namespace without runtime env patching;
+  auth/CA projection into the runtime namespace plus one stable
+  workload-facing runtime env contract
+  (`AI_MODELS_MODEL_PATH` / `AI_MODELS_MODEL_DIGEST` /
+  `AI_MODELS_MODEL_FAMILY`) instead of leaking raw cache-root layout details
+  into consumers;
 - `internal/adapters/k8s/nodecacheintent` for controller-owned shaping of
   per-node desired artifact sets into module-owned `ConfigMap` objects and
   for runtime-side loading of that intent surface inside the node-cache agent;
@@ -105,13 +109,13 @@ Current phase-2 slice implemented here:
   module-owned `ConfigMap` per node for the runtime agent instead of pushing
   cache policy into workload mutation or inventing a new public API;
 - module render now keeps the first real node-local cache runtime plane as a
-  standard `DaemonSet` with one generic ephemeral volume per node over the
-  ai-models-managed `LocalStorageClass`; that shared-store volume is sized by
+  controller-owned stable per-node Pod plus stable PVC over the ai-models-
+  managed `LocalStorageClass`; that shared-store volume is sized by
   `nodeCache.sharedVolumeSize`, reads controller-owned per-node intent, and
   prefetches immutable published artifacts into the shared node-local digest
   store while workload delivery still uses the fallback path, so maintenance
-  and prefetch already run on the correct node-agent shape without a custom
-  per-node controller loop;
+  and prefetch already run on a node-owned storage surface that can be reused
+  by the next CSI-like slice without another ownership rewrite;
 - `internal/adapters/sourcefetch` for safe `HuggingFace` source
   acquisition and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport, source mirror transfer, archive inspection and

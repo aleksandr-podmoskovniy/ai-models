@@ -11,28 +11,26 @@ Research-to-runtime bring-up slice. Работы уже включают не т
 - `Qwen/Qwen3-14B` на `ray-llm 2.54.0 / vLLM 0.15.0 V1 / PP=3 / 3x V100`
   доходит до рабочего `RDMA/NCCL`, но падает на
   `KeyError: model.layers.{0,13,27}.self_attn.attn`;
-- `DeepSeek-R1-Distill-Qwen-14B` на том же профиле падает на
+- `DeepSeek-R1-Distill-Qwen-14B` на том же старом профиле падает на
   `KeyError: model.layers.{0,16}.self_attn.attn`;
-- локальный hotfix на `vLLM 0.15.0` уже дал сигнал о классе проблемы, но не
-  должен оставаться baseline решением;
-- текущий следующий slice: сохранить baseline на
-  `DeepSeek-R1-Distill-Qwen-14B`, убрать локальный hotfix и перейти на pinned
-  nightly `rayproject/ray-llm:nightly.260418.64385a-py311-cu128`
-  (`vLLM >= 0.19.0`) для повторной проверки exact `PP=3` runtime path;
-- `KubeRay operator` в `dvp` не требует отдельного refactor: chart уже
-  приведён к upstream `kuberay-operator 1.6.0`, а `ap-values.yaml`
-  провалидирован на этом baseline через `helm template`.
-- На nightly `vLLM 0.19.0` чистый `RDMA/NCCL` path уже подтверждён без
-  `NCCL_IB_HCA`: worker доходят до `NET/IB`, `Init COMPLETE` и
-  `Connected all trees`, то есть текущий blocker не в сети.
-- Первый `ConfigMap`-патч без пересборки image уже снял `KeyError` в
-  `vllm/v1/worker/gpu_model_runner.py::initialize_attn_backend`, но runtime
-  провалился на следующем `PP` boundary bug в
-  `vllm/model_executor/layers/attention/attention.py::unified_kv_cache_update`
-  / `get_attention_context`.
-- Текущий slice: остаться на official image, не трогать `TP`, сохранить
-  `PP=3`, и расширить `ConfigMap`-патч на второй call-site в `attention.py`,
-  не переходя на custom image и не меняя direct `GPU + RDMA` launch shape.
+- на pinned nightly `rayproject/ray-llm:nightly.260418.64385a-py311-cu128`
+  (`vLLM >= 0.19.0`) сам `RDMA/NCCL` path уже подтверждён:
+  `NET/IB`, `Init COMPLETE`, `Connected all trees`;
+- финальный blocker оказался в `vLLM` Ray executor:
+  после worker re-rank upstream `adjust_rank()` обновляет только `rpc_rank`,
+  но оставляет stale `global_rank`;
+- из-за этого `WorkerWrapperBase.initialize_from_config()` выбирает
+  `kv_cache_config` по wrong `global_rank`, и `PP` stage получает не свой
+  layer/KV mapping;
+- корректный runtime workaround без custom image: маленький `ConfigMap`
+  патчит только `vllm/v1/executor/ray_utils.py::RayWorkerWrapper.adjust_rank`,
+  синхронизируя `rpc_rank` и `global_rank`;
+- в live cluster это сняло мусорный output path: сервис на `PP=3` и
+  direct `GPU + RDMA` стал `HEALTHY`, а `DeepSeek` снова возвращает
+  корректный `content` при достаточном `max_tokens`;
+- отдельно для reasoning-модели зафиксировано, что
+  `engine_kwargs.reasoning_parser=deepseek_r1` обязателен, иначе reasoning
+  токены уходят в обычный `content`.
 
 ## Orchestration
 

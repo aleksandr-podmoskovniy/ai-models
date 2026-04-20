@@ -343,6 +343,80 @@ delivery поверх уже опубликованных OCI artifacts.
 - `nodeCache` contract получает live shared-store volume budget вместо прежнего
   внутреннего service-volume placeholder.
 
+### Slice 12. Отделить workload-facing model-path contract от cache-root internals
+
+Цель:
+
+- перестать заставлять consumer workload code знать raw
+  `/data/modelcache/current` detail и зафиксировать отдельный
+  controller-owned runtime env/model-path contract, который потом сможет
+  пережить замену current init fallback на CSI-like shared mount service без
+  нового workload API churn.
+
+Файлы/каталоги:
+
+- `images/controller/internal/adapters/k8s/modeldelivery/*`
+- `images/controller/internal/controllers/workloaddelivery/*`
+- `images/controller/README.md`
+- `images/controller/STRUCTURE.ru.md`
+- `images/controller/TEST_EVIDENCE.ru.md`
+- `docs/CONFIGURATION.md`
+- `docs/CONFIGURATION.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery`
+
+Артефакт результата:
+
+- runtime workloads получают stable model-path/env projection поверх current
+  fallback path, while cache-root/current remains an internal delivery detail
+  that future node-local shared mount service can replace without changing the
+  workload-facing contract again.
+
+### Slice 13. Нормализовать shared cache runtime plane к stable per-node agent
+
+Цель:
+
+- убрать architectural dead-end в виде `DaemonSet` с pod-scoped generic
+  ephemeral volume и перевести shared cache runtime на controller-owned
+  per-node Pod + stable PVC, чтобы следующий CSI/node-plugin slice получил
+  node-owned storage surface без нового ownership rewrite.
+
+Файлы/каталоги:
+
+- `plans/active/node-local-cache-runtime-delivery/*`
+- `images/controller/internal/adapters/k8s/nodecacheruntime/*`
+- `images/controller/internal/controllers/nodecacheruntime/*`
+- `images/controller/internal/bootstrap/*`
+- `images/controller/cmd/ai-models-controller/*`
+- `images/controller/internal/support/resourcenames/*`
+- `templates/controller/*`
+- `templates/node-cache-runtime/*`
+- `tools/helm-tests/*`
+- `images/controller/README.md`
+- `images/controller/STRUCTURE.ru.md`
+- `images/controller/TEST_EVIDENCE.ru.md`
+- `docs/CONFIGURATION.md`
+- `docs/CONFIGURATION.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/nodecacheruntime ./internal/controllers/nodecacheruntime ./internal/support/resourcenames`
+- `cd images/controller && go test ./internal/bootstrap ./cmd/ai-models-controller`
+- `python3 tools/helm-tests/validate_renders_test.py`
+- `make helm-template`
+- `python3 tools/helm-tests/validate-renders.py tools/kubeconform/renders`
+- `make kubeconform`
+
+Артефакт результата:
+
+- node-cache shared store больше не живёт на pod-scoped ephemeral volume;
+- ai-models держит один stable runtime Pod и один stable PVC на выбранную ноду;
+- current shared-store prefetch/maintenance plane получает storage identity,
+  пригодную для следующего CSI/node-plugin slice;
+- старый `DaemonSet` render больше не остаётся parallel source of truth.
+
 ## 4. Rollback point
 
 После Slice 2 можно безопасно остановиться: config и wiring уже видны, но
@@ -373,8 +447,16 @@ surfaces.
 workload fallback останутся прежними.
 
 После Slice 11 можно откатиться без ломки current workload delivery path:
-shared-store prefetch и node intent plane уйдут, но substrate, `DaemonSet`
-shape и current fallback volume contract останутся рабочими.
+shared-store prefetch и node intent plane уйдут, но substrate, stable runtime
+agent plane и current fallback volume contract останутся рабочими.
+
+После Slice 12 можно откатиться без ломки substrate/shared-store plane:
+изменится только workload-facing delivery contract surface поверх current
+fallback path.
+
+После Slice 13 можно откатиться без ломки current workload delivery path:
+runtime agent plane сменит только ownership shell shared cache storage, а
+workload-facing fallback contract и intent plane останутся прежними.
 
 ## 5. Final validation
 
@@ -384,6 +466,8 @@ shape и current fallback volume contract останутся рабочими.
 - `cd images/controller && go test ./internal/nodecache ./cmd/ai-models-artifact-runtime ./internal/adapters/k8s/modeldelivery ./internal/adapters/modelpack/oci`
 - `cd images/controller && go test ./cmd/ai-models-controller ./internal/bootstrap ./internal/support/resourcenames`
 - `cd images/controller && go test ./internal/nodecacheintent ./internal/adapters/k8s/nodecacheintent ./internal/controllers/nodecacheintent`
+- `cd images/controller && go test ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery`
+- `cd images/controller && go test ./internal/adapters/k8s/nodecacheruntime ./internal/controllers/nodecacheruntime ./internal/support/resourcenames`
 - `python3 tools/helm-tests/validate_renders_test.py`
 - `make helm-template`
 - `python3 tools/helm-tests/validate-renders.py tools/kubeconform/renders`

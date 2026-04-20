@@ -180,7 +180,7 @@ rules:
             ],
         )
 
-    def test_validate_render_rejects_missing_node_cache_runtime_daemonset(self) -> None:
+    def test_validate_render_rejects_missing_stable_node_cache_runtime_plane(self) -> None:
         content = """---
 apiVersion: apps/v1
 kind: Deployment
@@ -203,11 +203,14 @@ spec:
         self.assertEqual(
             errors,
             [
-                "helm-template-test.yaml: node-cache-enabled render must include DaemonSet/ai-models-node-cache-runtime"
+                "helm-template-test.yaml: controller render must pass --node-cache-shared-volume-size for the stable node-cache runtime PVC contract",
+                "helm-template-test.yaml: node-cache-enabled render must include ServiceAccount/ai-models-node-cache-runtime",
+                "helm-template-test.yaml: node-cache-enabled render must include Role/ai-models-node-cache-runtime",
+                "helm-template-test.yaml: node-cache-enabled render must include RoleBinding/ai-models-node-cache-runtime",
             ],
         )
 
-    def test_validate_render_accepts_node_cache_runtime_daemonset(self) -> None:
+    def test_validate_render_accepts_stable_node_cache_runtime_plane(self) -> None:
         content = """---
 apiVersion: apps/v1
 kind: Deployment
@@ -220,42 +223,22 @@ spec:
         - name: controller
           args:
             - --node-cache-enabled=true
+            - --node-cache-shared-volume-size=64Gi
 ---
-apiVersion: apps/v1
-kind: DaemonSet
+apiVersion: v1
+kind: ServiceAccount
 metadata:
   name: ai-models-node-cache-runtime
-spec:
-  template:
-    spec:
-      serviceAccountName: ai-models-node-cache-runtime
-      containers:
-        - name: node-cache-runtime
-          env:
-            - name: AI_MODELS_NODE_CACHE_INTENT_NAMESPACE
-              value: d8-ai-models
-            - name: AI_MODELS_NODE_CACHE_INTENT_NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
-            - name: AI_MODELS_OCI_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: ai-models-dmcr-auth-read
-                  key: username
-            - name: AI_MODELS_OCI_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: ai-models-dmcr-auth-read
-                  key: password
-      volumes:
-        - name: cache-root
-          ephemeral:
-            volumeClaimTemplate:
-              spec:
-                resources:
-                  requests:
-                    storage: 1Gi
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ai-models-node-cache-runtime
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-models-node-cache-runtime
 """
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -265,7 +248,7 @@ spec:
 
         self.assertEqual(errors, [])
 
-    def test_validate_render_rejects_node_cache_runtime_without_intent_projection(self) -> None:
+    def test_validate_render_rejects_legacy_node_cache_runtime_daemonset(self) -> None:
         content = """---
 apiVersion: apps/v1
 kind: Deployment
@@ -278,23 +261,27 @@ spec:
         - name: controller
           args:
             - --node-cache-enabled=true
+            - --node-cache-shared-volume-size=64Gi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-models-node-cache-runtime
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ai-models-node-cache-runtime
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-models-node-cache-runtime
 ---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: ai-models-node-cache-runtime
-spec:
-  template:
-    spec:
-      serviceAccountName: ai-models-node-cache-runtime
-      volumes:
-        - name: cache-root
-          ephemeral:
-            volumeClaimTemplate:
-              spec:
-                resources:
-                  requests:
-                    storage: 64Gi
 """
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -305,9 +292,7 @@ spec:
         self.assertEqual(
             errors,
             [
-                "helm-template-test.yaml: node-cache runtime DaemonSet must project AI_MODELS_NODE_CACHE_INTENT_NAMESPACE",
-                "helm-template-test.yaml: node-cache runtime DaemonSet must project AI_MODELS_NODE_CACHE_INTENT_NODE_NAME from spec.nodeName",
-                "helm-template-test.yaml: node-cache runtime DaemonSet must project DMCR read credentials for shared-store prefetch",
+                "helm-template-test.yaml: node-cache-enabled render must not keep legacy DaemonSet/ai-models-node-cache-runtime after stable per-node runtime plane rollout",
             ],
         )
 

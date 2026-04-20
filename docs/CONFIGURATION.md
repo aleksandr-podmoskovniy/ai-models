@@ -112,8 +112,8 @@ The current bounded contract is:
   `/data/modelcache` when an annotated workload does not bring its own cache
   volume;
 - `nodeCache.sharedVolumeSize` defines the per-node shared cache volume
-  requested by the module-owned `node-cache-runtime` `DaemonSet` over the
-  managed `LocalStorageClass`;
+  requested by the controller-owned stable runtime Pod/PVC over the managed
+  `LocalStorageClass`;
 - `nodeCache.storageClassName`, `nodeCache.volumeGroupSetName`,
   `nodeCache.volumeGroupNameOnNode`, and `nodeCache.thinPoolName` define the
   ai-models-owned substrate object names;
@@ -127,10 +127,15 @@ controller-owned `materialize-artifact` into `/data/modelcache`, but now:
 - the current fallback path can auto-inject a local generic ephemeral volume
   over the managed `LocalStorageClass` when the workload does not bring its own
   cache topology;
-- ai-models now keeps a separate per-node shared cache plane as a standard
-  `DaemonSet` with a generic ephemeral volume over the managed
-  `LocalStorageClass`; the volume size is controlled by
-  `nodeCache.sharedVolumeSize`;
+- workloads now get one stable runtime-facing model delivery contract via
+  `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`, and
+  `AI_MODELS_MODEL_FAMILY` instead of depending directly on raw
+  `/data/modelcache/current` layout details;
+- ai-models now keeps a separate per-node shared cache plane as a
+  controller-owned stable runtime Pod plus stable PVC over the managed
+  `LocalStorageClass`; the shared volume size is controlled by
+  `nodeCache.sharedVolumeSize`, and storage identity no longer depends on the
+  node-agent pod lifecycle;
 - the controller projects per-node desired artifact sets into module-owned
   `ConfigMap` objects, and `node-cache-runtime` uses that internal intent plane
   to prefetch immutable published artifacts from `DMCR` into the shared

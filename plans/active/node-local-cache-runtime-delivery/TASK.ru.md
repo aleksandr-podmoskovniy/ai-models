@@ -129,12 +129,10 @@ Managed node-local cache substrate и runtime delivery continuation поверх
 - Для будущего node-cache runtime уже есть bounded scan/planning surface,
   которая умеет строить eviction candidates по реальному cache-root state без
   публичного обещания, что cleanup policy уже активна в кластере.
-- Есть module-owned node-cache runtime plane на стандартном `DaemonSet` +
-  generic ephemeral volume поверх ai-models-owned `LocalStorageClass`, который
-  исполняет bounded maintenance loop над shared cache-root без custom per-node
-  controller/PVC ownership shell, не забирает весь substrate budget у current
-  fallback path service-volume request'ом и не выдаёт current fallback path за
-  уже готовый shared mount service.
+- Есть controller-owned stable per-node runtime Pod + PVC поверх
+  ai-models-owned `LocalStorageClass`, который исполняет bounded maintenance
+  loop над shared cache-root без pod-scoped storage identity и не выдаёт
+  current fallback path за уже готовый shared mount service.
 - Managed workload delivery проецирует в `PodTemplateSpec` immutable published
   artifact identity, а ai-models держит отдельный internal node-cache intent
   plane, который:
@@ -146,6 +144,14 @@ Managed node-local cache substrate и runtime delivery continuation поверх
 - Shared cache entries, которые входят в текущий desired node intent set, не
   выталкиваются idle/size eviction policy по умолчанию, пока intent остаётся
   актуальным.
+- Workload-facing runtime contract больше не заставляет consumer code знать
+  raw cache-root/current implementation detail: controller-owned delivery
+  surface явно проецирует stable model-path/env contract отдельно от
+  внутренней cache layout semantics.
+- Shared node-cache runtime plane больше не зависит от pod-scoped generic
+  ephemeral volume, который теряет shared-store identity при agent restart:
+  ai-models держит stable per-node runtime agent + PVC contract, пригодный для
+  следующего CSI/node-plugin slice без ещё одного ownership rewrite.
 - Runtime delivery fallback через current workload-owned `/data/modelcache`
   остаётся совместимым: user-provided cache topology по-прежнему поддержан.
 - Тесты систематически покрывают:
@@ -158,11 +164,14 @@ Managed node-local cache substrate и runtime delivery continuation поверх
   - cache-root layout/marker parsing;
   - coordination lock reuse and stale-lock recovery;
   - bounded eviction planning over ready and malformed cache entries.
-  - node-cache runtime DaemonSet shaping and render guardrails;
+  - stable per-node runtime Pod/PVC shaping and render guardrails;
   - bounded node-cache maintenance loop over malformed/idle entries.
   - pod-to-node intent extraction and per-node ConfigMap shaping;
   - per-node intent reconcile over scheduled/removed managed Pods;
   - shared-store prefetch and protected-digest eviction behavior.
+  - workload-facing model-path/env projection over current fallback delivery.
+  - stable per-node runtime Pod/PVC shaping and reconcile lifecycle for shared
+    cache plane.
 - Перед завершением проходит `make verify`.
 
 ## 8. Риски
@@ -180,5 +189,5 @@ Managed node-local cache substrate и runtime delivery continuation поверх
 - можно преждевременно вывести user-facing cleanup policy без реального cache
   runtime, что создаст ложный продуктовый контракт.
 - если начать prefetch'ить shared store без отдельного node intent plane,
-  `DaemonSet` либо будет тянуть все артефакты на все ноды, либо получит
+  runtime agent либо будет тянуть все артефакты на все ноды, либо получит
   неявный ad-hoc источник истины вместо bounded controller-owned contract.

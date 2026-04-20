@@ -28,6 +28,7 @@ func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest s
 	}
 
 	template.Spec.InitContainers = upsertContainer(template.Spec.InitContainers, rendered.InitContainer)
+	template.Spec.Containers = upsertRuntimeEnv(template.Spec.Containers, rendered.RuntimeEnv)
 	template.Spec.Volumes = upsertVolumes(template.Spec.Volumes, rendered.Volumes)
 	template.Annotations = upsertAnnotations(template.Annotations, map[string]string{
 		ResolvedDigestAnnotation:         digest,
@@ -47,12 +48,39 @@ func upsertContainer(existing []corev1.Container, desired corev1.Container) []co
 	return append(existing, desired)
 }
 
+func upsertRuntimeEnv(containers []corev1.Container, desired []corev1.EnvVar) []corev1.Container {
+	if len(desired) == 0 {
+		return containers
+	}
+	for index := range containers {
+		containers[index].Env = upsertEnv(containers[index].Env, desired)
+	}
+	return containers
+}
+
 func upsertVolumes(existing []corev1.Volume, desired []corev1.Volume) []corev1.Volume {
 	for _, item := range desired {
 		replaced := false
 		for i := range existing {
 			if existing[i].Name == item.Name {
 				existing[i] = item
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			existing = append(existing, item)
+		}
+	}
+	return existing
+}
+
+func upsertEnv(existing []corev1.EnvVar, desired []corev1.EnvVar) []corev1.EnvVar {
+	for _, item := range desired {
+		replaced := false
+		for index := range existing {
+			if existing[index].Name == item.Name {
+				existing[index] = item
 				replaced = true
 				break
 			}

@@ -25,6 +25,8 @@ const (
 	RuntimeMaxSizeEnv        = "AI_MODELS_NODE_CACHE_MAX_TOTAL_SIZE"
 	RuntimeMaxUnusedAgeEnv   = "AI_MODELS_NODE_CACHE_MAX_UNUSED_AGE"
 	RuntimeScanIntervalEnv   = "AI_MODELS_NODE_CACHE_SCAN_INTERVAL"
+	RuntimeServiceAccount    = "ai-models-node-cache-runtime"
+	DefaultSharedVolumeSize  = "64Gi"
 	DefaultMaxUnusedAge      = 24 * time.Hour
 	DefaultMaintenancePeriod = 5 * time.Minute
 )

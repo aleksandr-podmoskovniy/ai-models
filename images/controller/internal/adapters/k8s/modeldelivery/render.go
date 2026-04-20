@@ -34,11 +34,12 @@ type Input struct {
 }
 
 type Rendered struct {
-	InitContainer    corev1.Container
-	Volumes          []corev1.Volume
-	CurrentModelPath string
-	ArtifactURI      string
-	ArtifactFamily   string
+	InitContainer  corev1.Container
+	RuntimeEnv     []corev1.EnvVar
+	Volumes        []corev1.Volume
+	ModelPath      string
+	ArtifactURI    string
+	ArtifactFamily string
 }
 
 func Render(input Input, options Options) (Rendered, error) {
@@ -76,10 +77,11 @@ func Render(input Input, options Options) (Rendered, error) {
 			Env:             buildInitEnv(input, options),
 			VolumeMounts:    initMounts,
 		},
-		Volumes:          ociregistry.Volumes(input.RegistryAccess.CASecretName),
-		CurrentModelPath: CurrentModelPath(options),
-		ArtifactURI:      strings.TrimSpace(input.Artifact.URI),
-		ArtifactFamily:   strings.TrimSpace(input.ArtifactFamily),
+		RuntimeEnv:     buildRuntimeEnv(input, options),
+		Volumes:        ociregistry.Volumes(input.RegistryAccess.CASecretName),
+		ModelPath:      ModelPath(options),
+		ArtifactURI:    strings.TrimSpace(input.Artifact.URI),
+		ArtifactFamily: strings.TrimSpace(input.ArtifactFamily),
 	}, nil
 }
 
@@ -105,6 +107,17 @@ func buildInitEnv(input Input, options Options) []corev1.EnvVar {
 	}
 	if family := strings.TrimSpace(input.ArtifactFamily); family != "" {
 		env = append(env, corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_FAMILY", Value: family})
+	}
+	return env
+}
+
+func buildRuntimeEnv(input Input, options Options) []corev1.EnvVar {
+	env := []corev1.EnvVar{
+		{Name: ModelPathEnv, Value: ModelPath(options)},
+		{Name: ModelDigestEnv, Value: strings.TrimSpace(input.Artifact.Digest)},
+	}
+	if family := strings.TrimSpace(input.ArtifactFamily); family != "" {
+		env = append(env, corev1.EnvVar{Name: ModelFamilyEnv, Value: family})
 	}
 	return env
 }

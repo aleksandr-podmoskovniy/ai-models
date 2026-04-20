@@ -46,7 +46,7 @@ type ApplyRequest struct {
 
 type ApplyResult struct {
 	CacheMountPath    string
-	CurrentModelPath  string
+	ModelPath         string
 	RegistryAccess    ociregistry.Projection
 	ResolvedDigestKey string
 	TopologyKind      CacheTopologyKind
@@ -144,7 +144,7 @@ func (s *Service) ApplyToPodTemplate(
 
 	return ApplyResult{
 		CacheMountPath:    topology.CacheMount.MountPath,
-		CurrentModelPath:  rendered.CurrentModelPath,
+		ModelPath:         rendered.ModelPath,
 		RegistryAccess:    projection,
 		ResolvedDigestKey: ResolvedDigestAnnotation,
 		TopologyKind:      topology.Kind,

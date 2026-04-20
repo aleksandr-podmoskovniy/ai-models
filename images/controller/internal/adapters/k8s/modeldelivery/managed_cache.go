@@ -207,3 +207,33 @@ func containerMountsPath(container corev1.Container, mountPath string) bool {
 	}
 	return false
 }
+
+func RemoveManagedRuntimeEnv(containers []corev1.Container) ([]corev1.Container, bool) {
+	removed := false
+	for index := range containers {
+		filtered := containers[index].Env[:0]
+		for _, env := range containers[index].Env {
+			switch env.Name {
+			case ModelPathEnv, ModelDigestEnv, ModelFamilyEnv:
+				removed = true
+				continue
+			default:
+				filtered = append(filtered, env)
+			}
+		}
+		containers[index].Env = filtered
+	}
+	return containers, removed
+}
+
+func HasManagedRuntimeEnv(containers []corev1.Container) bool {
+	for _, container := range containers {
+		for _, env := range container.Env {
+			switch env.Name {
+			case ModelPathEnv, ModelDigestEnv, ModelFamilyEnv:
+				return true
+			}
+		}
+	}
+	return false
+}

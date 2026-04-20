@@ -55,6 +55,11 @@ func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeld
 		template.Spec.InitContainers = initContainers
 		changed = true
 	}
+	containers, removedRuntimeEnv := modeldelivery.RemoveManagedRuntimeEnv(template.Spec.Containers)
+	if removedRuntimeEnv {
+		template.Spec.Containers = containers
+		changed = true
+	}
 
 	for _, key := range []string{
 		modeldelivery.ResolvedDigestAnnotation,
@@ -92,6 +97,9 @@ func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldeli
 	if strings.TrimSpace(template.Annotations[modeldelivery.ResolvedDigestAnnotation]) != "" ||
 		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]) != "" ||
 		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedArtifactFamilyAnnotation]) != "" {
+		return true
+	}
+	if modeldelivery.HasManagedRuntimeEnv(template.Spec.Containers) {
 		return true
 	}
 	if hasContainerByName(template.Spec.InitContainers, options.Render.InitContainerName) {

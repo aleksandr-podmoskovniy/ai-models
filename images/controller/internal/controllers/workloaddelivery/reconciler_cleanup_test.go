@@ -64,6 +64,15 @@ func TestDeploymentReconcilerRemovesManagedStateWhenAnnotationDisappears(t *test
 	if hasInitContainer(cleaned.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
 		t.Fatalf("did not expect init container %q after annotation removal", modeldelivery.DefaultInitContainerName)
 	}
+	if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, modeldelivery.ModelPathEnv) {
+		t.Fatalf("did not expect runtime env %q after annotation removal", modeldelivery.ModelPathEnv)
+	}
+	if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, modeldelivery.ModelDigestEnv) {
+		t.Fatalf("did not expect runtime env %q after annotation removal", modeldelivery.ModelDigestEnv)
+	}
+	if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, modeldelivery.ModelFamilyEnv) {
+		t.Fatalf("did not expect runtime env %q after annotation removal", modeldelivery.ModelFamilyEnv)
+	}
 	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDigestAnnotation]; found {
 		t.Fatal("did not expect resolved digest annotation after annotation removal")
 	}
@@ -127,6 +136,15 @@ func TestDeploymentReconcilerRemovesInjectedManagedCacheStateWhenAnnotationDisap
 	}
 	if len(cleaned.Spec.Template.Spec.Containers[0].VolumeMounts) != 0 {
 		t.Fatalf("did not expect managed cache mount after cleanup, got %#v", cleaned.Spec.Template.Spec.Containers[0].VolumeMounts)
+	}
+	for _, envName := range []string{
+		modeldelivery.ModelPathEnv,
+		modeldelivery.ModelDigestEnv,
+		modeldelivery.ModelFamilyEnv,
+	} {
+		if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, envName) {
+			t.Fatalf("did not expect runtime env %q after cleanup", envName)
+		}
 	}
 	for _, volume := range cleaned.Spec.Template.Spec.Volumes {
 		if volume.Name == modeldelivery.DefaultManagedCacheName {

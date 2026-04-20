@@ -146,12 +146,18 @@ paths и test surfaces.
   - `1`, inside the consumer-owned cache/storage surface
 - Primary evidence:
   - `internal/adapters/modelpack/oci/materialize_test.go`
+  - `internal/adapters/k8s/modeldelivery/render_test.go`
+  - `internal/adapters/k8s/modeldelivery/service_apply_test.go`
   - `internal/adapters/k8s/modeldelivery/service_test.go`
   - `internal/adapters/k8s/modeldelivery/service_topology_test.go`
 - Proved properties:
   - publication-path zero-copy claims do not pretend away consumer-side cache
     materialization;
-  - workload cache policy remains separate from publish-worker byte path.
+  - workload cache policy remains separate from publish-worker byte path;
+  - workload-facing runtime contract is stable through
+    `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`, and
+    `AI_MODELS_MODEL_FAMILY` instead of making consumers depend directly on
+    raw `/data/modelcache/current`.
 
 ## 2. Domain and application evidence
 
@@ -376,6 +382,7 @@ paths и test surfaces.
   - storage topology checks
   - managed local fallback volume injection
   - cache-root and digest rollout annotations
+  - stable workload-facing runtime env projection and cleanup
 - Primary evidence:
   - `render_test.go`
   - `service_apply_test.go`
@@ -423,16 +430,24 @@ paths и test surfaces.
   - `adapter_test.go`
   - `service_test.go`
 
-### Node-cache runtime `DaemonSet`
+### Stable per-node node-cache runtime plane
 
 - Decision surface:
-  - node-agent render presence when `nodeCache.enabled=true`
-  - generic ephemeral volume contract over ai-models-owned `LocalStorageClass`
+  - controller render passes stable shared-volume size contract when
+    `nodeCache.enabled=true`
+  - module render keeps only service-account/RBAC surface for the runtime
+    agent; legacy `DaemonSet` render is gone
+  - stable per-node Pod/PVC contract over ai-models-owned `LocalStorageClass`
   - maintenance env contract for shared cache-root
-  - controller-owned node intent projection into the runtime pod
+  - controller-owned node intent projection into the runtime Pod
   - DMCR read-auth projection for shared-store prefetch
   - dedicated service-account contract for the node-cache agent
 - Primary evidence:
+  - `pod_test.go`
+  - `pvc_test.go`
+  - `service_test.go`
+  - `options_test.go`
+  - `reconciler_test.go`
   - `tools/helm-tests/validate_renders_test.py`
   - `tools/helm-tests/validate-renders.py`
   - `make helm-template`

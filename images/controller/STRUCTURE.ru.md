@@ -226,8 +226,10 @@ Non-K8s adapters:
   затягивать туда cache maintenance policy;
 - `k8s/modeldelivery/` остаётся boundary для workload mutation и теперь держит
   module-managed local fallback volume injection отдельно от storage substrate
-  CR shaping и отдельно от будущего workload-facing node-shared cache mount
-  service;
+  CR shaping, плюс стабильный workload-facing env contract
+  (`AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`,
+  `AI_MODELS_MODEL_FAMILY`) отдельно от raw cache-root/current internals и
+  отдельно от будущего workload-facing node-shared cache mount service;
 - live `HuggingFace` publish path больше не держит локальный
   `workspace/model` fallback: canonical path — direct or mirrored object source,
   cluster-level default теперь `Direct`, а planning failure explicit;
