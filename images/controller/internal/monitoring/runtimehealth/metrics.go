@@ -81,6 +81,11 @@ var (
 		"Requested storage size of the managed node-cache runtime PVC.",
 		"namespace", "name", "node", "storage_class",
 	)
+	workloadDeliveryWorkloadsManagedMetric = newMetricInfo(
+		"workload_delivery_workloads_managed",
+		"Number of top-level workloads with applied managed runtime delivery grouped by namespace, kind, delivery mode, and delivery reason.",
+		"namespace", "kind", "delivery_mode", "delivery_reason",
+	)
 )
 
 func collectorDescs() []*prometheus.Desc {
@@ -94,5 +99,6 @@ func collectorDescs() []*prometheus.Desc {
 		nodeCacheRuntimePodReadyMetric.desc,
 		nodeCacheRuntimePVCBoundMetric.desc,
 		nodeCacheRuntimePVCRequestedBytesMetric.desc,
+		workloadDeliveryWorkloadsManagedMetric.desc,
 	}
 }

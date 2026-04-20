@@ -26,6 +26,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 )
 
 func TestRunMaterializeArtifactFromEnv(t *testing.T) {
@@ -141,6 +143,53 @@ func TestRunMaterializeArtifactSupportsCacheRoot(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(modelPath, "config.json")); err != nil {
 		t.Fatalf("expected config.json through workload model symlink: %v", err)
+	}
+}
+
+func TestRunMaterializeArtifactUsesSharedStoreWithoutGlobalSymlinks(t *testing.T) {
+	layerTar := tarBytes(t, map[string]string{
+		"model/config.json": "{}",
+	})
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v2/ai-models/catalog/model/manifests/sha256:deadbeef":
+			w.Header().Set("Docker-Content-Digest", "sha256:deadbeef")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"schemaVersion":2,"artifactType":"application/vnd.cncf.model.manifest.v1+json","config":{"mediaType":"application/vnd.cncf.model.config.v1+json","digest":"sha256:config","size":10},"layers":[{"mediaType":"application/vnd.cncf.model.weight.v1.tar","digest":"sha256:layer","size":30,"annotations":{"org.cncf.model.filepath":"model"}}]}`))
+		case "/v2/ai-models/catalog/model/blobs/sha256:config":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"descriptor":{"name":"model"},"modelfs":{"type":"layers","diffIds":["sha256:layer-diff"]},"config":{}}`))
+		case "/v2/ai-models/catalog/model/blobs/sha256:layer":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(layerTar)
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	caFile := writePEMFile(t, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}))
+	cacheRoot := filepath.Join(t.TempDir(), "modelcache")
+
+	t.Setenv("AI_MODELS_MATERIALIZE_ARTIFACT_URI", strings.TrimPrefix(server.URL, "https://")+"/ai-models/catalog/model@sha256:deadbeef")
+	t.Setenv("AI_MODELS_MATERIALIZE_CACHE_ROOT", cacheRoot)
+	t.Setenv("AI_MODELS_MATERIALIZE_SHARED_STORE", "true")
+	t.Setenv("AI_MODELS_OCI_USERNAME", "reader")
+	t.Setenv("AI_MODELS_OCI_PASSWORD", "secret")
+	t.Setenv("AI_MODELS_OCI_CA_FILE", caFile)
+
+	if exitCode := runMaterializeArtifact(nil); exitCode != 0 {
+		t.Fatalf("runMaterializeArtifact() exitCode = %d", exitCode)
+	}
+
+	if _, err := os.Stat(filepath.Join(nodecache.SharedArtifactModelPath(cacheRoot, "sha256:deadbeef"), "config.json")); err != nil {
+		t.Fatalf("expected config.json through shared artifact model path: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(cacheRoot, "current")); !os.IsNotExist(err) {
+		t.Fatalf("did not expect current symlink in shared-store mode, stat err=%v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(cacheRoot, "model")); !os.IsNotExist(err) {
+		t.Fatalf("did not expect model symlink in shared-store mode, stat err=%v", err)
 	}
 }
 

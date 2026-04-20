@@ -33,6 +33,8 @@ const (
 	ResolvedDigestAnnotation         = "ai.deckhouse.io/resolved-digest"
 	ResolvedArtifactURIAnnotation    = "ai.deckhouse.io/resolved-artifact-uri"
 	ResolvedArtifactFamilyAnnotation = "ai.deckhouse.io/resolved-artifact-family"
+	ResolvedDeliveryModeAnnotation   = "ai.deckhouse.io/resolved-delivery-mode"
+	ResolvedDeliveryReasonAnnotation = "ai.deckhouse.io/resolved-delivery-reason"
 
 	ModelPathEnv     = "AI_MODELS_MODEL_PATH"
 	ModelDigestEnv   = "AI_MODELS_MODEL_DIGEST"
@@ -122,3 +124,19 @@ func ValidateManagedCacheOptions(options ManagedCacheOptions) error {
 func ModelPath(options Options) string {
 	return nodecache.WorkloadModelPath(strings.TrimSpace(options.CacheMountPath))
 }
+
+type DeliveryMode string
+
+const (
+	DeliveryModePerPodFallback DeliveryMode = "PerPodFallback"
+	DeliveryModeSharedDirect   DeliveryMode = "SharedDirect"
+)
+
+type DeliveryReason string
+
+const (
+	DeliveryReasonWorkloadCacheVolume      DeliveryReason = "WorkloadCacheVolume"
+	DeliveryReasonManagedFallbackVolume    DeliveryReason = "ManagedFallbackVolume"
+	DeliveryReasonStatefulSetClaimTemplate DeliveryReason = "StatefulSetClaimTemplate"
+	DeliveryReasonSharedPersistentVolume   DeliveryReason = "SharedPersistentVolumeClaim"
+)

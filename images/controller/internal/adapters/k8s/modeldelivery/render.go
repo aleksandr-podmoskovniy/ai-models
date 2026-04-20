@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -30,6 +31,7 @@ type Input struct {
 	ArtifactFamily string
 	RegistryAccess ociregistry.Projection
 	CacheMount     CacheMount
+	TopologyKind   CacheTopologyKind
 	Coordination   Coordination
 }
 
@@ -68,6 +70,11 @@ func Render(input Input, options Options) (Rendered, error) {
 		MountPath: options.CacheMountPath,
 	}}, ociregistry.VolumeMounts(input.RegistryAccess.CASecretName)...)
 
+	modelPath := ModelPath(options)
+	if input.TopologyKind == CacheTopologySharedDirect {
+		modelPath = nodecache.SharedArtifactModelPath(options.CacheMountPath, input.Artifact.Digest)
+	}
+
 	return Rendered{
 		InitContainer: corev1.Container{
 			Name:            options.InitContainerName,
@@ -77,9 +84,9 @@ func Render(input Input, options Options) (Rendered, error) {
 			Env:             buildInitEnv(input, options),
 			VolumeMounts:    initMounts,
 		},
-		RuntimeEnv:     buildRuntimeEnv(input, options),
+		RuntimeEnv:     buildRuntimeEnv(input, options, modelPath),
 		Volumes:        ociregistry.Volumes(input.RegistryAccess.CASecretName),
-		ModelPath:      ModelPath(options),
+		ModelPath:      modelPath,
 		ArtifactURI:    strings.TrimSpace(input.Artifact.URI),
 		ArtifactFamily: strings.TrimSpace(input.ArtifactFamily),
 	}, nil
@@ -105,15 +112,18 @@ func buildInitEnv(input Input, options Options) []corev1.EnvVar {
 			},
 		)
 	}
+	if input.TopologyKind == CacheTopologySharedDirect {
+		env = append(env, corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_SHARED_STORE", Value: "true"})
+	}
 	if family := strings.TrimSpace(input.ArtifactFamily); family != "" {
 		env = append(env, corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_FAMILY", Value: family})
 	}
 	return env
 }
 
-func buildRuntimeEnv(input Input, options Options) []corev1.EnvVar {
+func buildRuntimeEnv(input Input, options Options, modelPath string) []corev1.EnvVar {
 	env := []corev1.EnvVar{
-		{Name: ModelPathEnv, Value: ModelPath(options)},
+		{Name: ModelPathEnv, Value: modelPath},
 		{Name: ModelDigestEnv, Value: strings.TrimSpace(input.Artifact.Digest)},
 	}
 	if family := strings.TrimSpace(input.ArtifactFamily); family != "" {

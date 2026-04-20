@@ -24,13 +24,15 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func gatherMetrics(t *testing.T, options Options, objects ...client.Object) []*dto.MetricFamily {
 	t.Helper()
 
-	scheme := testkit.NewScheme(t)
+	scheme := testkit.NewScheme(t, appsv1.AddToScheme, batchv1.AddToScheme)
 	reader := testkit.NewFakeClient(t, scheme, nil, objects...)
 	registry := prometheus.NewPedanticRegistry()
 	NewCollector(reader, slog.New(slog.NewTextHandler(io.Discard, nil)), options).Register(registry)

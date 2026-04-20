@@ -21,6 +21,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
 
 type MaterializationLayout struct {
@@ -35,6 +37,10 @@ func CurrentLinkPath(cacheRoot string) string {
 
 func WorkloadModelPath(cacheRoot string) string {
 	return filepath.Join(filepath.Clean(strings.TrimSpace(cacheRoot)), WorkloadLinkName)
+}
+
+func SharedArtifactModelPath(cacheRoot, digest string) string {
+	return modelpackports.MaterializedModelPath(StorePath(cacheRoot, digest))
 }
 
 func ResolveMaterializationLayout(cacheRoot, artifactURI, artifactDigest string) (MaterializationLayout, error) {

@@ -89,6 +89,12 @@ func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
 	if got, want := template.Annotations[ResolvedArtifactURIAnnotation], publishedArtifact().URI; got != want {
 		t.Fatalf("resolved artifact URI annotation = %q, want %q", got, want)
 	}
+	if got, want := template.Annotations[ResolvedDeliveryModeAnnotation], string(DeliveryModePerPodFallback); got != want {
+		t.Fatalf("resolved delivery mode annotation = %q, want %q", got, want)
+	}
+	if got, want := template.Annotations[ResolvedDeliveryReasonAnnotation], string(DeliveryReasonWorkloadCacheVolume); got != want {
+		t.Fatalf("resolved delivery reason annotation = %q, want %q", got, want)
+	}
 
 	authSecretName := projectedAuthSecretName(t, owner.GetUID())
 	projectedAuth := &corev1.Secret{}
@@ -223,6 +229,12 @@ func TestServiceInjectsManagedCacheVolumeWhenWorkloadDoesNotProvideMount(t *test
 
 	if got, want := result.TopologyKind, CacheTopologyPerPod; got != want {
 		t.Fatalf("topology kind = %q, want %q", got, want)
+	}
+	if got, want := template.Annotations[ResolvedDeliveryModeAnnotation], string(DeliveryModePerPodFallback); got != want {
+		t.Fatalf("resolved delivery mode annotation = %q, want %q", got, want)
+	}
+	if got, want := template.Annotations[ResolvedDeliveryReasonAnnotation], string(DeliveryReasonManagedFallbackVolume); got != want {
+		t.Fatalf("resolved delivery reason annotation = %q, want %q", got, want)
 	}
 	if got, want := template.Spec.Containers[0].VolumeMounts[0].MountPath, DefaultCacheMountPath; got != want {
 		t.Fatalf("managed cache mount path = %q, want %q", got, want)

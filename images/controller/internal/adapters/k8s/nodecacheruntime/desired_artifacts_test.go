@@ -44,7 +44,7 @@ func TestDesiredArtifactFromPodReadsManagedAnnotations(t *testing.T) {
 		t.Fatalf("DesiredArtifactFromPod() error = %v", err)
 	}
 	if !found {
-		t.Fatal("expected managed pod intent to be found")
+		t.Fatal("expected managed pod published artifact to be found")
 	}
 	if got, want := artifact.ArtifactURI, "oci://example/model-a"; got != want {
 		t.Fatalf("artifact URI = %q, want %q", got, want)
@@ -57,10 +57,10 @@ func TestDesiredArtifactFromPodReadsManagedAnnotations(t *testing.T) {
 	}
 }
 
-func TestClientLoadsNodeIntentsFromActiveScheduledPods(t *testing.T) {
+func TestDesiredArtifactsClientLoadsNodeArtifactsFromActiveScheduledPods(t *testing.T) {
 	t.Parallel()
 
-	client, err := NewClient(fake.NewSimpleClientset(
+	client, err := NewDesiredArtifactsClient(fake.NewSimpleClientset(
 		managedPod("runtime-a", "worker-a", corev1.PodRunning, "oci://example/model-a", "sha256:a"),
 		managedPod("runtime-b", "worker-a", corev1.PodPending, "oci://example/model-b", "sha256:b"),
 		managedPod("runtime-c", "worker-b", corev1.PodRunning, "oci://example/model-c", "sha256:c"),
@@ -72,7 +72,7 @@ func TestClientLoadsNodeIntentsFromActiveScheduledPods(t *testing.T) {
 		},
 	))
 	if err != nil {
-		t.Fatalf("NewClient() error = %v", err)
+		t.Fatalf("NewDesiredArtifactsClient() error = %v", err)
 	}
 
 	artifacts, err := client.LoadNodeDesiredArtifacts(context.Background(), "worker-a")
@@ -90,10 +90,10 @@ func TestClientLoadsNodeIntentsFromActiveScheduledPods(t *testing.T) {
 	}
 }
 
-func TestClientRejectsIncompleteManagedAnnotationsOnTargetNode(t *testing.T) {
+func TestDesiredArtifactsClientRejectsIncompleteManagedAnnotationsOnTargetNode(t *testing.T) {
 	t.Parallel()
 
-	client, err := NewClient(fake.NewSimpleClientset(&corev1.Pod{
+	client, err := NewDesiredArtifactsClient(fake.NewSimpleClientset(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "runtime-a",
 			Namespace: "team-a",
@@ -105,7 +105,7 @@ func TestClientRejectsIncompleteManagedAnnotationsOnTargetNode(t *testing.T) {
 		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 	}))
 	if err != nil {
-		t.Fatalf("NewClient() error = %v", err)
+		t.Fatalf("NewDesiredArtifactsClient() error = %v", err)
 	}
 
 	if _, err := client.LoadNodeDesiredArtifacts(context.Background(), "worker-a"); err == nil {

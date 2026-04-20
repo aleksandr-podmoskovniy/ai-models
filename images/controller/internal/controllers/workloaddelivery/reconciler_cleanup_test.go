@@ -79,6 +79,12 @@ func TestDeploymentReconcilerRemovesManagedStateWhenAnnotationDisappears(t *test
 	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]; found {
 		t.Fatal("did not expect resolved artifact URI annotation after annotation removal")
 	}
+	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]; found {
+		t.Fatal("did not expect resolved delivery mode annotation after annotation removal")
+	}
+	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]; found {
+		t.Fatal("did not expect resolved delivery reason annotation after annotation removal")
+	}
 	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
 }
 

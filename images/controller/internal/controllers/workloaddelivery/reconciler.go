@@ -103,8 +103,18 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 		slog.String("digest", resolution.Artifact.Digest),
 		slog.String("modelPath", result.ModelPath),
 		slog.String("topologyKind", string(result.TopologyKind)),
+		slog.String("deliveryMode", string(result.DeliveryMode)),
+		slog.String("deliveryReason", string(result.DeliveryReason)),
 	)
-	r.recorder.Eventf(object, "Normal", "ModelDeliveryApplied", "Applied runtime delivery for digest %s", resolution.Artifact.Digest)
+	r.recorder.Eventf(
+		object,
+		"Normal",
+		"ModelDeliveryApplied",
+		"Applied runtime delivery for digest %s with mode %s (%s)",
+		resolution.Artifact.Digest,
+		result.DeliveryMode,
+		result.DeliveryReason,
+	)
 
 	return ctrl.Result{}, nil
 }

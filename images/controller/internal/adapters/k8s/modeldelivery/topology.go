@@ -37,12 +37,14 @@ type TopologyHints struct {
 }
 
 type CacheTopology struct {
-	Kind       CacheTopologyKind
-	CacheMount CacheMount
-	ClaimName  string
+	Kind           CacheTopologyKind
+	CacheMount     CacheMount
+	ClaimName      string
+	DeliveryMode   DeliveryMode
+	DeliveryReason DeliveryReason
 }
 
-func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, mountPath string) (CacheTopology, error) {
+func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, mountPath, managedVolumeName string) (CacheTopology, error) {
 	cacheMount, err := detectCacheMount(template, mountPath)
 	if err != nil {
 		return CacheTopology{}, err
@@ -51,9 +53,11 @@ func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, 
 	hints = normalizeTopologyHints(hints)
 	if claimTemplateExists(hints.VolumeClaimTemplates, cacheMount.VolumeName) {
 		return CacheTopology{
-			Kind:       CacheTopologyPerPod,
-			CacheMount: cacheMount,
-			ClaimName:  cacheMount.VolumeName,
+			Kind:           CacheTopologyPerPod,
+			CacheMount:     cacheMount,
+			ClaimName:      cacheMount.VolumeName,
+			DeliveryMode:   DeliveryModePerPodFallback,
+			DeliveryReason: DeliveryReasonStatefulSetClaimTemplate,
 		}, nil
 	}
 
@@ -69,14 +73,22 @@ func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, 
 			return CacheTopology{}, fmt.Errorf("runtime delivery cache volume %q must reference a non-empty persistentVolumeClaim name", cacheMount.VolumeName)
 		}
 		return CacheTopology{
-			Kind:       CacheTopologySharedDirect,
-			CacheMount: cacheMount,
-			ClaimName:  claimName,
+			Kind:           CacheTopologySharedDirect,
+			CacheMount:     cacheMount,
+			ClaimName:      claimName,
+			DeliveryMode:   DeliveryModeSharedDirect,
+			DeliveryReason: DeliveryReasonSharedPersistentVolume,
 		}, nil
 	case volume.EmptyDir != nil || volume.Ephemeral != nil:
+		reason := DeliveryReasonWorkloadCacheVolume
+		if strings.TrimSpace(managedVolumeName) != "" && volume.Name == strings.TrimSpace(managedVolumeName) {
+			reason = DeliveryReasonManagedFallbackVolume
+		}
 		return CacheTopology{
-			Kind:       CacheTopologyPerPod,
-			CacheMount: cacheMount,
+			Kind:           CacheTopologyPerPod,
+			CacheMount:     cacheMount,
+			DeliveryMode:   DeliveryModePerPodFallback,
+			DeliveryReason: reason,
 		}, nil
 	default:
 		return CacheTopology{}, fmt.Errorf("runtime delivery cache volume %q uses unsupported source; expected persistentVolumeClaim, emptyDir, ephemeral, or StatefulSet claim template", cacheMount.VolumeName)

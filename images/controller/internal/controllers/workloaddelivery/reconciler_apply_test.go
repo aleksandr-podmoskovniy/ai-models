@@ -52,6 +52,12 @@ func TestDeploymentReconcilerAppliesRuntimeDelivery(t *testing.T) {
 	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]; got != testArtifactURI {
 		t.Fatalf("resolved artifact URI annotation = %q, want %q", got, testArtifactURI)
 	}
+	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]; got != string(modeldelivery.DeliveryModePerPodFallback) {
+		t.Fatalf("resolved delivery mode annotation = %q", got)
+	}
+	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]; got != string(modeldelivery.DeliveryReasonWorkloadCacheVolume) {
+		t.Fatalf("resolved delivery reason annotation = %q", got)
+	}
 	if !hasInitContainer(updated.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
 		t.Fatalf("expected init container %q", modeldelivery.DefaultInitContainerName)
 	}
@@ -105,6 +111,12 @@ func TestDeploymentReconcilerClearsStaleManagedStateWhileReferencedModelIsPendin
 	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]; found {
 		t.Fatal("did not expect resolved artifact URI annotation while model is pending")
 	}
+	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]; found {
+		t.Fatal("did not expect resolved delivery mode annotation while model is pending")
+	}
+	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]; found {
+		t.Fatal("did not expect resolved delivery reason annotation while model is pending")
+	}
 	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
 }
 
@@ -126,6 +138,12 @@ func TestDeploymentReconcilerInjectsManagedLocalCacheWhenWorkloadHasNoMount(t *t
 	}
 	if !hasInitContainer(updated.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
 		t.Fatalf("expected init container %q", modeldelivery.DefaultInitContainerName)
+	}
+	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]; got != string(modeldelivery.DeliveryModePerPodFallback) {
+		t.Fatalf("resolved delivery mode annotation = %q", got)
+	}
+	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]; got != string(modeldelivery.DeliveryReasonManagedFallbackVolume) {
+		t.Fatalf("resolved delivery reason annotation = %q", got)
 	}
 	if len(updated.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 {
 		t.Fatalf("expected managed local cache mount, got %#v", updated.Spec.Template.Spec.Containers[0].VolumeMounts)

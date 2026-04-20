@@ -87,6 +87,42 @@ func TestRenderBuildsMaterializerAgainstExistingCacheMount(t *testing.T) {
 	}
 }
 
+func TestRenderBuildsDigestScopedModelPathForSharedTopology(t *testing.T) {
+	t.Parallel()
+
+	rendered, err := Render(Input{
+		Artifact: publication.PublishedArtifact{
+			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
+			URI:       "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
+			Digest:    "sha256:deadbeef",
+			MediaType: "application/vnd.cncf.model.manifest.v1+json",
+		},
+		RegistryAccess: ociregistry.Projection{
+			AuthSecretName: "projected-registry-auth",
+		},
+		CacheMount: CacheMount{
+			VolumeName: "model-cache",
+			MountPath:  DefaultCacheMountPath,
+		},
+		TopologyKind: CacheTopologySharedDirect,
+	}, Options{
+		RuntimeImage: "example.com/ai-models:latest",
+	})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	if got, want := rendered.ModelPath, nodecache.SharedArtifactModelPath(DefaultCacheMountPath, "sha256:deadbeef"); got != want {
+		t.Fatalf("model path = %q, want %q", got, want)
+	}
+	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.SharedArtifactModelPath(DefaultCacheMountPath, "sha256:deadbeef"); got != want {
+		t.Fatalf("runtime model path env = %q, want %q", got, want)
+	}
+	if got := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_SHARED_STORE"); got != "true" {
+		t.Fatalf("shared store env = %q, want true", got)
+	}
+}
+
 func TestRenderBuildsSharedCacheCoordinationEnv(t *testing.T) {
 	t.Parallel()
 
@@ -104,6 +140,7 @@ func TestRenderBuildsSharedCacheCoordinationEnv(t *testing.T) {
 			VolumeName: "model-cache",
 			MountPath:  DefaultCacheMountPath,
 		},
+		TopologyKind: CacheTopologySharedDirect,
 		Coordination: Coordination{
 			Mode: CoordinationModeShared,
 		},
@@ -117,7 +154,7 @@ func TestRenderBuildsSharedCacheCoordinationEnv(t *testing.T) {
 	if got, want := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_COORDINATION_MODE"), CoordinationModeShared; got != want {
 		t.Fatalf("coordination mode = %q, want %q", got, want)
 	}
-	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
+	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.SharedArtifactModelPath(DefaultCacheMountPath, "sha256:deadbeef"); got != want {
 		t.Fatalf("runtime model path env = %q, want %q", got, want)
 	}
 	if got := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_COORDINATION_NAMESPACE"); got != "" {

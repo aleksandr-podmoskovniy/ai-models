@@ -76,12 +76,13 @@ Current phase-2 slice implemented here:
   auth/CA projection into the runtime namespace plus one stable
   workload-facing runtime env contract
   (`AI_MODELS_MODEL_PATH` / `AI_MODELS_MODEL_DIGEST` /
-  `AI_MODELS_MODEL_FAMILY`) that now projects the stable
-  `/data/modelcache/model` entrypoint instead of leaking raw cache-root layout
-  details into consumers;
+  `AI_MODELS_MODEL_FAMILY`) that now projects either the stable
+  `/data/modelcache/model` entrypoint for per-pod delivery or a digest-scoped
+  shared-store path for direct shared-cache topology instead of leaking raw
+  cache-root layout details into consumers;
 - `internal/adapters/k8s/nodecacheruntime` for stable per-node Pod/PVC shaping
-  of the node-cache runtime plane plus runtime-side extraction of desired
-  artifact sets directly from live managed Pods scheduled on the same node;
+  of the node-cache runtime plane plus runtime-side extraction of the
+  published artifacts required by live managed Pods on the same node;
 - `internal/adapters/k8s/nodecachesubstrate` for concrete
   `storage.deckhouse.io/v1alpha1` shaping of managed `LVMVolumeGroupSet`,
   ready managed `LVMVolumeGroup` filtering, and ai-models-owned
@@ -89,8 +90,9 @@ Current phase-2 slice implemented here:
 - `internal/controllers/workloaddelivery` for controller-owned adoption of
   annotated `Deployment` / `StatefulSet` / `DaemonSet` / `CronJob`
   workloads: it resolves `Model` or `ClusterModel`, reuses the shared
-  `k8s/modeldelivery` service, writes digest rollout annotations onto
-  `PodTemplateSpec`, auto-injects a managed local fallback volume when
+  `k8s/modeldelivery` service, writes resolved artifact plus delivery
+  mode/reason annotations onto `PodTemplateSpec`, auto-injects a managed local
+  fallback volume when
   node-cache substrate is enabled and the workload did not bring a cache mount,
   fail-closes when user-provided `/data/modelcache` storage topology is invalid
   instead of inventing a second storage contract,
@@ -112,8 +114,8 @@ Current phase-2 slice implemented here:
 - module render now keeps the first real node-local cache runtime plane as a
   controller-owned stable per-node Pod plus stable PVC over the ai-models-
   managed `LocalStorageClass`; that shared-store volume is sized by
-  `nodeCache.sharedVolumeSize`, reads desired published artifacts directly from
-  live managed Pods on the current node, and prefetches immutable artifacts
+  `nodeCache.sharedVolumeSize`, reads the published artifacts required by live
+  managed Pods on the current node, and prefetches immutable artifacts
   into the shared node-local digest store while workload delivery still uses
   the fallback path, so maintenance and prefetch already run on a node-owned
   storage surface that can be reused by the next CSI-like slice without
@@ -246,9 +248,10 @@ Current phase-2 slice implemented here:
   public `spec/status` instead of runtime-local counters or log parsing;
 - `internal/monitoring/runtimehealth` for module-owned Prometheus collectors
   over the managed node-cache runtime plane: stable per-node agent `Pod`
-  phase/readiness, selector-scoped desired-vs-ready summary gauges, and shared-
-  cache `PVC` bind/requested-size signals from ai-models-owned runtime
-  resources instead of ad-hoc `kubectl` inspection;
+  phase/readiness, selector-scoped desired-vs-ready summary gauges, shared-
+  cache `PVC` bind/requested-size signals, and aggregated top-level workload
+  delivery mode/reason counts from ai-models-owned runtime state instead of
+  ad-hoc `kubectl` inspection;
 - `internal/support/cleanuphandle` for controller-owned backend-specific delete
   state
   that must not leak into public status;

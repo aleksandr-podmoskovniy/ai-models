@@ -174,7 +174,9 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
   `Model` / `ClusterModel` truth.
 - `internal/monitoring/runtimehealth/` — Prometheus collectors over managed
   runtime-plane health for stable per-node node-cache agents and their shared
-  `PVC`, including selector-scoped desired/managed/ready summary signal.
+  `PVC`, including selector-scoped desired/managed/ready summary signal and
+  aggregated workload-delivery mode/reason counts over managed top-level
+  workloads.
 
 ### Controllers
 
@@ -230,15 +232,16 @@ Non-K8s adapters:
   внешних storage CR (`LVMVolumeGroupSet`, `LVMVolumeGroup`,
   `LocalStorageClass`) и не тянет туда runtime delivery policy;
 - `k8s/nodecacheruntime/` держит только concrete shaping для stable per-node
-  runtime Pod/PVC и bounded runtime-side desired-set extraction from live Pods
-  on the current node; cache maintenance policy и public workload semantics не
-  должны утекать туда;
+  runtime Pod/PVC и bounded runtime-side вычитку набора опубликованных
+  артефактов, реально нужных live Pod'ам на текущей ноде; cache maintenance
+  policy и public workload semantics не должны утекать туда;
 - `k8s/modeldelivery/` остаётся boundary для workload mutation и теперь держит
   module-managed local fallback volume injection отдельно от storage substrate
   CR shaping, плюс стабильный workload-facing env contract
   (`AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`,
-  `AI_MODELS_MODEL_FAMILY`) через stable `/data/modelcache/model` projection
-  отдельно от raw cache-root/current internals и отдельно от будущего
+  `AI_MODELS_MODEL_FAMILY`) через stable per-pod `/data/modelcache/model`
+  projection или digest-специфичный shared-store path для direct shared-cache
+  topology, отдельно от raw cache-root/current internals и отдельно от будущего
   workload-facing node-shared cache mount service;
 - live `HuggingFace` publish path больше не держит локальный
   `workspace/model` fallback: canonical path — direct or mirrored object source,

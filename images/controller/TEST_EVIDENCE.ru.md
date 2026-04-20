@@ -156,9 +156,10 @@ paths и test surfaces.
   - workload cache policy remains separate from publish-worker byte path;
   - workload-facing runtime contract is stable through
     `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`, and
-    `AI_MODELS_MODEL_FAMILY`; consumers now read the stable
-    `/data/modelcache/model` projection instead of depending directly on raw
-    `/data/modelcache/current`.
+    `AI_MODELS_MODEL_FAMILY`; per-pod delivery now reads the stable
+    `/data/modelcache/model` projection, while direct shared-cache topology
+    reads a digest-scoped path inside the shared store instead of depending on
+    a global `/data/modelcache/current` link.
 
 ## 2. Domain and application evidence
 
@@ -382,7 +383,7 @@ paths и test surfaces.
   - workload mutation for runtime delivery
   - storage topology checks
   - managed local fallback volume injection
-  - cache-root and digest rollout annotations
+  - cache-root, digest, delivery-mode and delivery-reason annotations
   - stable workload-facing runtime env projection and cleanup
 - Primary evidence:
   - `render_test.go`
@@ -428,10 +429,10 @@ paths и test surfaces.
   - stable per-node runtime Pod/PVC shaping
   - immutable published-artifact extraction from already-managed Pods on the
     current node
-  - runtime-side desired-set loading from live cluster truth without a
-    dedicated mirror contract
+  - runtime-side loading of required published artifacts from live cluster
+    truth without a dedicated mirror contract
 - Primary evidence:
-  - `intents_test.go`
+  - `desired_artifacts_test.go`
   - `pod_test.go`
   - `pvc_test.go`
   - `service_test.go`
@@ -553,6 +554,7 @@ paths и test surfaces.
   - `collector_test_helpers_test.go`
 - `internal/monitoring/runtimehealth`:
   - `collector_nodecache_runtime_test.go`
+  - `collector_workload_delivery_test.go`
   - `collector_test_helpers_test.go`
 - `internal/publicationartifact`: `contract_test.go`, `location_test.go`
 - `internal/publishedsnapshot`: `snapshot_test.go`

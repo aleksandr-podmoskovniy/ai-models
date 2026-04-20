@@ -37,6 +37,7 @@ const (
 	materializeDestinationEnv    = "AI_MODELS_MATERIALIZE_DESTINATION_DIR"
 	materializeCacheRootEnv      = "AI_MODELS_MATERIALIZE_CACHE_ROOT"
 	materializeArtifactFamilyEnv = "AI_MODELS_MATERIALIZE_ARTIFACT_FAMILY"
+	materializeSharedStoreEnv    = "AI_MODELS_MATERIALIZE_SHARED_STORE"
 )
 
 func runMaterializeArtifact(args []string) int {
@@ -91,6 +92,9 @@ func runMaterializeArtifact(args []string) int {
 			slog.String("coordinationHolder", coordination.HolderID),
 		)
 	}
+	if materializeUsesSharedStore() {
+		logger = logger.With(slog.Bool("sharedStore", true))
+	}
 	cmdsupport.SetDefaultLogger(logger)
 	logger.Info("artifact materialization started")
 
@@ -108,7 +112,7 @@ func runMaterializeArtifact(args []string) int {
 		logger.Error("artifact materialization failed", slog.Any("error", err))
 		return cmdsupport.CommandError(commandMaterializeArtifact, err)
 	}
-	if cacheCurrent != "" && coordination.Mode == "" {
+	if cacheCurrent != "" && !materializeUsesSharedStore() && coordination.Mode == "" {
 		if err := nodecache.UpdateCurrentLink(cacheRoot, result.ModelPath); err != nil {
 			logger.Error("artifact materialization failed", slog.Any("error", err))
 			return cmdsupport.CommandError(commandMaterializeArtifact, err)
@@ -118,12 +122,14 @@ func runMaterializeArtifact(args []string) int {
 			return cmdsupport.CommandError(commandMaterializeArtifact, err)
 		}
 	}
-	if cacheCurrent != "" {
+	if cacheCurrent != "" && !materializeUsesSharedStore() && coordination.Mode == "" {
 		if err := nodecache.UpdateWorkloadModelLink(cacheRoot); err != nil {
 			logger.Error("artifact materialization failed", slog.Any("error", err))
 			return cmdsupport.CommandError(commandMaterializeArtifact, err)
 		}
 		result.ModelPath = nodecache.WorkloadModelPath(cacheRoot)
+	} else if cacheRoot != "" {
+		result.ModelPath = nodecache.SharedArtifactModelPath(cacheRoot, result.Digest)
 	}
 
 	logger.Info(
@@ -154,4 +160,8 @@ func resolveMaterializationPaths(artifactURI, artifactDigest, destinationDir, ca
 		return "", "", err
 	}
 	return layout.DestinationDir, layout.CurrentLinkPath, nil
+}
+
+func materializeUsesSharedStore() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv(materializeSharedStoreEnv)), "true")
 }

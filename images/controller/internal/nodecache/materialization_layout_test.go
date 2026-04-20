@@ -84,3 +84,12 @@ func TestUpdateWorkloadModelLinkTargetsInternalCurrentLink(t *testing.T) {
 		t.Fatalf("workload model target = %q, want %q", got, want)
 	}
 }
+
+func TestSharedArtifactModelPathUsesDigestStoreContractPath(t *testing.T) {
+	t.Parallel()
+
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	if got, want := SharedArtifactModelPath(cacheRoot, "sha256:deadbeef"), filepath.Join(cacheRoot, StoreDirName, "sha256:deadbeef", "model"); got != want {
+		t.Fatalf("shared artifact model path = %q, want %q", got, want)
+	}
+}

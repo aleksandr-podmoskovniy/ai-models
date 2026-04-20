@@ -1,192 +1,158 @@
 ## 1. Заголовок
 
-Managed node-local cache substrate и runtime delivery continuation поверх
-`sds-node-configurator`
+Доведение доставки моделей до промышленной двурежимной схемы
 
 ## 2. Контекст
 
-Архитектурный predecessor
-`plans/active/phase2-model-distribution-architecture/*` уже зафиксировал
-целевую phase-2 форму:
+Для `ai-models` уже зафиксирован канонический путь публикации:
 
-- canonical publication остаётся controller-owned и заканчивается во внутреннем
+- модель публикуется controller-owned способом;
+- результатом публикации становится неизменяемый артефакт во внутреннем
   `DMCR`;
-- current runtime delivery всё ещё materialize'ит артефакт в
-  workload-owned `/data/modelcache`;
-- node-local cache должен стать отдельной boundary поверх уже опубликованного
-  OCI artifact;
-- `sds-node-configurator` должен использоваться как storage substrate, а не как
-  cache manager.
+- прикладной запуск не должен зависеть от исторического backend shell.
 
-Пользователь ужесточил требования для continuation slice:
+По части runtime-доставки сейчас есть два разных, но смешанных в описании слоя:
 
-- local cache должен жить на node-local disk;
-- модуль должен сам готовить local storage substrate и не требовать ручного
-  `LocalStorageClass`;
-- у cache plane должен быть размерный budget;
-- runtime tree должен двигаться к целевой структуре без giant package и без
-  смешения storage substrate с delivery semantics.
+- текущий рабочий путь: контроллер меняет шаблон запуска и раскладывает модель
+  в `/data/modelcache` через `materialize-artifact`;
+- подготовленный узловой слой: managed local storage, stable per-node runtime
+  `Pod/PVC` и предзагрузка опубликованных артефактов в общий узловой digest
+  store.
+
+Проблема не в отсутствии задела, а в дрейфе постановки:
+
+- текущий запасной путь и целевой быстрый путь описывались как будто это уже
+  один и тот же контракт;
+- bundle разросся и перестал быть компактной рабочей поверхностью;
+- в обсуждениях смешались storage substrate, узловой кэш и доставка модели в
+  прикладной объект.
+
+Нужен один канонический active bundle, который жёстко фиксирует:
+
+- что уже считается рабочим текущим состоянием;
+- какой именно целевой путь доводим;
+- какими срезами идём к финальной схеме без возврата к старой каше.
 
 ## 3. Постановка задачи
 
-Нужно открыть implementation continuation для node-local cache delivery и
-посадить первый реальный slice на managed substrate plane:
+Нужно довести runtime-доставку модели до простой и объяснимой двурежимной
+схемы.
 
-- ai-models controller должен уметь держать managed
-  `LVMVolumeGroupSet` для cache substrate поверх `sds-node-configurator`;
-- ai-models controller должен автоматически держать
-  `LocalStorageClass` для этого substrate, чтобы пользователь не создавал её
-  вручную;
-- cluster-level config должен задавать:
-  - enablement;
-  - cache size budget для substrate thin-pool;
-  - node selector и block-device selector для substrate;
-- runtime/delivery tree должен получить отдельную boundary под managed
-  node-cache substrate, а не разрастись внутри текущего `modeldelivery`.
+Целевой смысл такой:
 
-При этом нужно сохранить честную границу:
+1. Если на ноде доступен managed local storage, то модель подтягивается из
+   `DMCR` в узловой общий кэш и прикладной объект получает общий mount с этой
+   моделью.
+2. Если узловой общий кэш недоступен или не может быть использован, то
+   контроллер оставляет запасной путь: прикладной объект получает свой том, а
+   модель раскладывается в него из `DMCR`.
 
-- current workload delivery path через `materialize-artifact` остаётся рабочим
-  fallback;
-- при включённом managed node cache workload не должен требовать ручного
-  `PersistentVolumeClaim` или заранее подготовленного `/data/modelcache` mount;
-- eviction/unused cleanup policy для самого cache plane не надо имитировать до
-  появления реального node-cache runtime.
+При этом должны сохраняться четыре инварианта:
+
+- канонический источник опубликованной модели в обоих режимах — `DMCR`;
+- прикладной код видит один и тот же стабильный runtime-контракт независимо от
+  режима доставки;
+- публичный `Model` / `ClusterModel` контракт не засоряется storage-specific
+  деталями;
+- будущий переход на более прямой локальный storage path не должен ломать
+  workload-facing контракт.
 
 ## 4. Scope
 
-- новый compact continuation bundle для node-local cache workstream;
-- cluster-level module config для managed node-cache substrate;
-- controller-owned reconciliation for:
-  - `storage.deckhouse.io/v1alpha1` `LVMVolumeGroupSet`;
-  - `storage.deckhouse.io/v1alpha1` `LocalStorageClass`;
-- отдельный K8s adapter boundary для shaping внешних storage CR;
-- bootstrap/config/RBAC wiring нового controller;
-- managed local-volume fallback для current workload delivery path поверх
-  ai-models-owned `LocalStorageClass`;
-- отдельная internal boundary для shared node-cache layout, marker,
-  coordination и eviction planning;
-- docs/structure/evidence under current-state wording.
+- переписать и зафиксировать канонический active bundle для этого workstream;
+- явно разделить:
+  - публикацию модели;
+  - доставку модели в прикладной объект;
+  - узловой общий кэш;
+  - запасной том прикладного объекта;
+- довести основной быстрый режим доставки через узловой общий кэш и общий
+  mount;
+- сохранить и упростить запасной режим доставки через том прикладного объекта;
+- определить и реализовать понятные правила выбора режима;
+- убрать остаточный дрифт терминов, полумёртвых seams и misleading docs вокруг
+  `materialize-artifact`, узлового runtime plane и workload delivery;
+- дотянуть недостающие сигналы наблюдаемости, тесты и эксплуатационную
+  документацию по этой схеме.
 
 ## 5. Non-goals
 
-- не реализовывать в этом bundle сам node-cache daemon/CSI node plugin;
-- не переводить workload delivery на новый mount path до появления реального
-  cache plane;
-- не выводить наружу cleanup/TTL knob до появления реального node-cache
-  runtime, который действительно умеет его исполнять;
-- не вводить новый public `Model.spec` contract для runtime storage;
-- не выдавать per-pod local fallback volume за уже готовый shared node cache
-  service;
-- не делать destructive automatic cleanup для уже созданного substrate при
-  disable path;
-- не притворяться, что `maxUnusedAge` уже работает без отдельного cache
-  runtime.
+- не трогать `vLLM`, `KubeRay` и исследовательские стендовые документы;
+- не менять канонический publication flow во внутренний `DMCR`;
+- не тащить storage topology в публичный `Model.spec` или `ClusterModel.spec`;
+- не обещать в этом bundle уже готовое "прямое хранилище" на ноде;
+- не открывать заново отдельный workstream по `DMZ` registry;
+- не строить новый зеркальный per-node intent контракт, если достаточно live
+  cluster truth;
+- не ломать текущий рабочий запасной путь до появления defendable быстрого
+  пути.
 
 ## 6. Затрагиваемые области
 
 - `plans/active/node-local-cache-runtime-delivery/*`
+- `images/controller/internal/controllers/workloaddelivery/*`
+- `images/controller/internal/adapters/k8s/modeldelivery/*`
+- `images/controller/internal/controllers/nodecacheruntime/*`
+- `images/controller/internal/adapters/k8s/nodecacheruntime/*`
+- `images/controller/internal/nodecache/*`
+- `images/controller/internal/monitoring/runtimehealth/*`
+- `images/controller/internal/support/resourcenames/*`
+- `images/controller/cmd/ai-models-artifact-runtime/*`
+- `images/controller/cmd/ai-models-controller/*`
 - `openapi/config-values.yaml`
 - `openapi/values.yaml`
 - `templates/_helpers.tpl`
 - `templates/controller/*`
-- `images/controller/cmd/ai-models-controller/*`
-- `images/controller/internal/bootstrap/*`
-- `images/controller/internal/controllers/*`
-- `images/controller/internal/adapters/k8s/*`
-- `images/controller/internal/nodecache/*`
-- `images/controller/cmd/ai-models-artifact-runtime/*`
-- `templates/node-cache-runtime/*`
-- `tools/helm-tests/*`
+- `docs/CONFIGURATION.md`
+- `docs/CONFIGURATION.ru.md`
 - `images/controller/README.md`
 - `images/controller/STRUCTURE.ru.md`
 - `images/controller/TEST_EVIDENCE.ru.md`
-- `docs/CONFIGURATION.md`
-- `docs/CONFIGURATION.ru.md`
 
 ## 7. Критерии приёмки
 
-- Есть отдельный continuation bundle, который явно продолжает
-  `phase2-model-distribution-architecture`, а не плодит новый sibling source of
-  truth.
-- ai-models получает отдельный controller-owned substrate boundary для managed
-  node-local cache storage.
-- При включении managed substrate controller:
-  - держит `LVMVolumeGroupSet` с predictable ai-models-owned labels;
-  - держит `LocalStorageClass` по текущему списку managed `LVMVolumeGroup`;
-  - не требует ручного создания `LocalStorageClass`.
-- Cache size budget действительно влияет на substrate shape через thin-pool
-  size, а не остаётся мёртвым config knob.
-- При включённом `nodeCache` current workload delivery умеет сам подложить
-  managed local ephemeral volume на `/data/modelcache`, используя ai-models
-  owned `LocalStorageClass`, если workload не принёс свой cache volume сам.
-- Shared node-cache layout, marker и coordination больше не живут как
-  command-local business logic inside `materialize-artifact`, а вынесены в
-  отдельную reusable internal boundary.
-- Shared node-cache digest store больше не смешан в одном helper surface с
-  workload-local `current` symlink contract: consumer materialization layout
-  явно отделён от общего node-wide cache store.
-- Для будущего node-cache runtime уже есть bounded scan/planning surface,
-  которая умеет строить eviction candidates по реальному cache-root state без
-  публичного обещания, что cleanup policy уже активна в кластере.
-- Есть controller-owned stable per-node runtime Pod + PVC поверх
-  ai-models-owned `LocalStorageClass`, который исполняет bounded maintenance
-  loop над shared cache-root без pod-scoped storage identity и не выдаёт
-  current fallback path за уже готовый shared mount service.
-- Managed workload delivery проецирует в `PodTemplateSpec` immutable published
-  artifact identity, а ai-models держит bounded runtime-side desired-set
-  handoff, который:
-  - собирает per-node desired artifact set по live managed `Pod` на текущей
-    ноде;
-  - позволяет `node-cache-runtime` реально prefetch'ить shared cache entries в
-    node-local store без mirrored `ConfigMap` contract и без нового public
-    API.
-- Shared cache entries, которые входят в текущий desired artifact set для
-  ноды, не выталкиваются idle/size eviction policy по умолчанию, пока этот set
-  остаётся актуальным.
-- Workload-facing runtime contract больше не заставляет consumer code знать
-  raw cache-root/current implementation detail: controller-owned delivery
-  surface явно проецирует stable model-path/env contract отдельно от
-  внутренней cache layout semantics.
-- Shared node-cache runtime plane больше не зависит от pod-scoped generic
-  ephemeral volume, который теряет shared-store identity при agent restart:
-  ai-models держит stable per-node runtime agent + PVC contract, пригодный для
-  следующего CSI/node-plugin slice без ещё одного ownership rewrite.
-- Runtime delivery fallback через current workload-owned `/data/modelcache`
-  остаётся совместимым: user-provided cache topology по-прежнему поддержан.
+- В active bundle есть одна каноническая формулировка текущего состояния и
+  одна каноническая формулировка цели; bundle больше не смешивает текущий
+  запасной путь с ещё не доведённым быстрым путём.
+- Основной быстрый режим доставки реализован как workload-facing использование
+  узлового общего кэша, а не как повторная полная раскладка модели в каждый
+  прикладной объект.
+- Один и тот же опубликованный артефакт может переиспользоваться несколькими
+  прикладными объектами на одной ноде без отдельной полной перезаливки в их
+  собственные тома.
+- Запасной режим остаётся рабочим:
+  - при невозможности использовать узловой общий кэш контроллер либо
+    переиспользует пользовательский том, либо подкладывает managed local том;
+  - модель по-прежнему раскладывается из `DMCR` в том прикладного объекта;
+  - cleanup управляемой мутации работает корректно.
+- В обоих режимах прикладной код видит один и тот же стабильный контракт через
+  `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST` и
+  `AI_MODELS_MODEL_FAMILY`, без знания внутреннего layout узлового кэша.
+- Выбор режима доставки детерминирован, объясним и наблюдаем:
+  - нет скрытого fallback без событий, аннотаций или метрик;
+  - причина переключения на запасной режим читаема оператором.
+- Узловой runtime plane остаётся controller-owned per-node `Pod/PVC`, а
+  shared storage identity не теряется при restart runtime pod'а.
+- Runtime plane продолжает опираться на live managed pod truth по текущей
+  ноде; новый зеркальный per-node intent plane не появляется.
+- Документация и структура репозитория больше не утверждают, что
+  workload-facing shared mount service уже готов, если в коде он ещё не
+  доведён.
 - Тесты систематически покрывают:
-  - config validation;
-  - desired object shaping;
-  - reconcile on empty/live managed LVG set;
-  - no-op disabled path;
-  - managed fallback volume injection/removal;
-  - coexistence with user-provided cache topology;
-  - cache-root layout/marker parsing;
-  - coordination lock reuse and stale-lock recovery;
-  - bounded eviction planning over ready and malformed cache entries.
-  - stable per-node runtime Pod/PVC shaping and render guardrails;
-  - bounded node-cache maintenance loop over malformed/idle entries.
-  - runtime-side desired-set extraction from live managed Pods on the current
-    node;
-  - shared-store prefetch and protected-digest eviction behavior.
-  - workload-facing model-path/env projection over current fallback delivery.
-  - stable per-node runtime Pod/PVC shaping and reconcile lifecycle for shared
-    cache plane.
+  - выбор режима доставки;
+  - применение и снятие managed мутации;
+  - переиспользование одной модели на одной ноде;
+  - корректный переход на запасной путь;
+  - сигналы о причинах fallback;
+  - базовую устойчивость узлового runtime plane.
 - Перед завершением проходит `make verify`.
 
 ## 8. Риски
 
-- легко протащить storage-specific shape прямо в `modeldelivery` и получить
-  giant mixed package;
-- destructive cleanup при disable path может задеть уже созданные local cache
-  volumes, поэтому этот slice должен fail-safe freeze, а не aggressively
-  delete;
-- без отдельного controller-owned `LocalStorageClass` maintainer loop придётся
-  либо требовать ручной storage setup, либо делать brittle render-time magic;
-- если снова ввести отдельный mirrored desired-state contract поверх live Pod
-  truth, следующий CSI-like slice унаследует лишний ownership seam вместо
-  одного bounded runtime handoff;
-- можно преждевременно вывести user-facing cleanup policy без реального cache
-  runtime, что создаст ложный продуктовый контракт.
-- если runtime-side live Pod lookup расширить без discipline по scope/RBAC,
-  можно снова размыть границу между workload mutation и node-cache runtime.
+- легко снова смешать storage substrate и workload-facing semantics в одном
+  пакете;
+- можно случайно выдать текущий подготовительный узловой слой за уже готовую
+  пользовательскую функцию;
+- можно сломать рабочий запасной путь ради недоделанного быстрого пути;
+- можно начать протаскивать storage-specific knobs в публичный model contract;
+- можно повторно развести bundle и live code по разным словарям и снова
+  потерять каноническую картину.

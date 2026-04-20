@@ -22,7 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest string) error {
+func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest string, deliveryMode DeliveryMode, deliveryReason DeliveryReason) error {
 	if template == nil {
 		return errors.New("runtime delivery pod template must not be nil")
 	}
@@ -34,6 +34,8 @@ func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest s
 		ResolvedDigestAnnotation:         digest,
 		ResolvedArtifactURIAnnotation:    rendered.ArtifactURI,
 		ResolvedArtifactFamilyAnnotation: rendered.ArtifactFamily,
+		ResolvedDeliveryModeAnnotation:   string(deliveryMode),
+		ResolvedDeliveryReasonAnnotation: string(deliveryReason),
 	})
 	return nil
 }

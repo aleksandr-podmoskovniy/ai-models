@@ -32,18 +32,18 @@ import (
 
 const podNodeNameFieldSelector = "spec.nodeName"
 
-type Client struct {
+type DesiredArtifactsClient struct {
 	client kubernetes.Interface
 }
 
-func NewClient(client kubernetes.Interface) (*Client, error) {
+func NewDesiredArtifactsClient(client kubernetes.Interface) (*DesiredArtifactsClient, error) {
 	if client == nil {
-		return nil, errors.New("node cache runtime pod client must not be nil")
+		return nil, errors.New("node cache runtime desired artifacts client must not be nil")
 	}
-	return &Client{client: client}, nil
+	return &DesiredArtifactsClient{client: client}, nil
 }
 
-func NewInClusterClient() (*Client, error) {
+func NewInClusterDesiredArtifactsClient() (*DesiredArtifactsClient, error) {
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, err
@@ -52,12 +52,12 @@ func NewInClusterClient() (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewClient(clientset)
+	return NewDesiredArtifactsClient(clientset)
 }
 
-func (c *Client) LoadNodeDesiredArtifacts(ctx context.Context, nodeName string) ([]nodecache.DesiredArtifact, error) {
+func (c *DesiredArtifactsClient) LoadNodeDesiredArtifacts(ctx context.Context, nodeName string) ([]nodecache.DesiredArtifact, error) {
 	if c == nil {
-		return nil, errors.New("node cache runtime pod client must not be nil")
+		return nil, errors.New("node cache runtime desired artifacts client must not be nil")
 	}
 
 	nodeName = strings.TrimSpace(nodeName)
@@ -119,7 +119,7 @@ func DesiredArtifactFromPod(pod *corev1.Pod) (nodecache.DesiredArtifact, bool, e
 		return nodecache.DesiredArtifact{}, false, nil
 	}
 	if digest == "" || artifactURI == "" {
-		return nodecache.DesiredArtifact{}, false, errors.New("managed pod node cache desired artifact annotations are incomplete")
+		return nodecache.DesiredArtifact{}, false, errors.New("managed pod node cache published artifact annotations are incomplete")
 	}
 	artifacts, err := nodecache.NormalizeDesiredArtifacts([]nodecache.DesiredArtifact{{
 		ArtifactURI: artifactURI,

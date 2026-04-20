@@ -1,8 +1,8 @@
 ## 1. Current phase
 
-Этап 2. Public `Model` / `ClusterModel` source intent не меняется. Это
-implementation continuation для node-local cache substrate и будущего runtime
-delivery поверх уже опубликованных OCI artifacts.
+Этап 2. Каноническая публикация в `DMCR` уже зафиксирована. Текущий workstream
+закрывает именно runtime topology: быстрый узловой путь доставки модели и
+запасной путь через том прикладного объекта.
 
 ## 2. Orchestration
 
@@ -10,458 +10,210 @@ delivery поверх уже опубликованных OCI artifacts.
 
 Причина:
 
-- задача меняет runtime/config/RBAC/docs surface;
-- она одновременно затрагивает storage substrate, controller wiring и repo
-  structure;
-- по правилам репозитория сюда просится read-only delegation, но в текущей
-  сессии она не используется, поэтому архитектурная дисциплина фиксируется
-  прямо в bundle и финальном review.
+- задача одновременно затрагивает runtime delivery, storage substrate,
+  controller wiring, values/OpenAPI, эксплуатационные сигналы и документацию;
+- здесь легко снова размыть границы между публикацией, узловым кэшем и
+  доставкой модели в прикладной объект;
+- финальная форма должна быть defendable как production-ready contract, а не
+  как ещё один временный обходной слой.
+
+Read-only reviews, обязательные перед большими implementation slices:
+
+- `repo_architect`
+  - проверить, что новый путь не превращает `images/controller` в giant mixed
+    runtime tree;
+- `integration_architect`
+  - проверить границы между storage substrate, узловым runtime plane,
+    доставкой в прикладной объект и наблюдаемостью;
+- `api_designer`
+  - проверить, что runtime/storage policy не протаскивается в публичный
+    `Model` / `ClusterModel` контракт.
 
 ## 3. Slices
 
-### Slice 1. Зафиксировать continuation bundle и substrate contract
+### Slice 1. Перефиксировать workstream и заморозить целевую схему
 
 Цель:
 
-- перевести architecture predecessor в implementation bundle без смешения с
-  archived `phase2-runtime-followups` predecessor.
+- оставить один канонический active bundle, который ясно описывает:
+  - текущее состояние;
+  - целевую двурежимную схему;
+  - инварианты, которые нельзя потом размыть в коде.
 
 Файлы/каталоги:
 
 - `plans/active/node-local-cache-runtime-delivery/*`
-- `plans/active/phase2-model-distribution-architecture/*`
 
 Проверки:
 
-- manual consistency review
+- manual consistency review against:
+  - `docs/CONFIGURATION.ru.md`
+  - `images/controller/README.md`
+  - `images/controller/STRUCTURE.ru.md`
+  - `images/controller/internal/controllers/workloaddelivery/*`
+  - `images/controller/internal/controllers/nodecacheruntime/*`
 
 Артефакт результата:
 
-- compact bundle с explicit managed-substrate-first scope.
+- compact bundle с одной целевой картиной и без смешения fast path и fallback
+  path.
 
-### Slice 2. Добавить managed node-cache substrate config и controller wiring
-
-Цель:
-
-- ввести cluster-level config и bootstrap/RBAC surface для managed substrate.
-
-Файлы/каталоги:
-
-- `openapi/config-values.yaml`
-- `openapi/values.yaml`
-- `templates/_helpers.tpl`
-- `templates/controller/*`
-- `images/controller/cmd/ai-models-controller/*`
-- `images/controller/internal/bootstrap/*`
-
-Проверки:
-
-- `cd images/controller && go test ./cmd/ai-models-controller ./internal/bootstrap`
-
-Артефакт результата:
-
-- controller получает validated substrate options and wiring.
-
-### Slice 3. Реализовать managed substrate controller и K8s adapter
+### Slice 2. Вычистить vocabulary drift и остаточные ложные seams
 
 Цель:
 
-- дать ai-models owner controller над `LVMVolumeGroupSet` и
-  `LocalStorageClass`.
+- привести код, docs и bundle к одному словарю:
+  - `узловой общий кэш`;
+  - `запасной том прикладного объекта`;
+  - `стабильный workload-facing runtime-контракт`;
+- удалить или локализовать surfaces, которые больше не участвуют в живом пути
+  и только создают архитектурный шум.
 
 Файлы/каталоги:
 
-- `images/controller/internal/controllers/nodecachesubstrate/*`
-- `images/controller/internal/adapters/k8s/nodecachesubstrate/*`
-
-Проверки:
-
-- `cd images/controller && go test ./internal/controllers/nodecachesubstrate ./internal/adapters/k8s/nodecachesubstrate`
-
-Артефакт результата:
-
-- ai-models держит managed substrate CRs без render-time guessing.
-
-### Slice 4. Синхронизировать docs, structure и evidence
-
-Цель:
-
-- честно описать live state после landed substrate slice и не выдать его за
-  уже готовый node-cache runtime.
-
-Файлы/каталоги:
-
-- `docs/CONFIGURATION.md`
-- `docs/CONFIGURATION.ru.md`
-- `images/controller/README.md`
-- `images/controller/STRUCTURE.ru.md`
-- `images/controller/TEST_EVIDENCE.ru.md`
-
-Проверки:
-
-- `make helm-template`
-- `make kubeconform`
-
-Артефакт результата:
-
-- docs/evidence совпадают с landed substrate-first shape.
-
-### Slice 5. Добавить managed local fallback volume для current workload delivery
-
-Цель:
-
-- убрать требование к annotated workload заранее приносить local cache mount,
-  если ai-models already owns node-local `LocalStorageClass`.
-
-Файлы/каталоги:
-
-- `openapi/config-values.yaml`
-- `openapi/values.yaml`
-- `templates/_helpers.tpl`
-- `templates/controller/*`
-- `images/controller/cmd/ai-models-controller/*`
-- `images/controller/internal/adapters/k8s/modeldelivery/*`
+- `images/controller/internal/nodecache*`
 - `images/controller/internal/controllers/workloaddelivery/*`
-- `docs/CONFIGURATION.md`
-- `docs/CONFIGURATION.ru.md`
-- `images/controller/README.md`
-- `images/controller/STRUCTURE.ru.md`
-- `images/controller/TEST_EVIDENCE.ru.md`
-
-Проверки:
-
-- `cd images/controller && go test ./cmd/ai-models-controller ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery`
-
-Артефакт результата:
-
-- current init-container fallback умеет auto-inject managed local ephemeral
-  volume on `/data/modelcache` while preserving user-provided cache topology.
-
-### Slice 6. Вынести shared node-cache contract из command-local materialize shell
-
-Цель:
-
-- перестать держать cache layout, marker и coordination внутри
-  `cmd/ai-models-artifact-runtime`, чтобы будущий node-cache runtime и eviction
-  logic опирались на одну reusable boundary.
-
-Файлы/каталоги:
-
-- `images/controller/internal/nodecache/*`
-- `images/controller/cmd/ai-models-artifact-runtime/*`
-- `images/controller/STRUCTURE.ru.md`
-- `images/controller/TEST_EVIDENCE.ru.md`
-
-Проверки:
-
-- `cd images/controller && go test ./cmd/ai-models-artifact-runtime ./internal/nodecache`
-
-Артефакт результата:
-
-- `materialize-artifact` становится thin entrypoint, а shared cache-root
-  behavior живёт в отдельном `internal/nodecache` package tree.
-
-### Slice 7. Добавить bounded node-cache scan и eviction planning surface
-
-Цель:
-
-- подготовить future node-cache runtime к idle cleanup без вывода мёртвого
-  public knob и без смешения planner logic с CLI/runtime entrypoint.
-
-Файлы/каталоги:
-
-- `images/controller/internal/nodecache/*`
-- `images/controller/STRUCTURE.ru.md`
-- `images/controller/TEST_EVIDENCE.ru.md`
-
-Проверки:
-
-- `cd images/controller && go test ./internal/nodecache`
-
-Артефакт результата:
-
-- node-cache tree уже умеет систематически читать cache-root state и строить
-  eviction candidates по size/age without pretending that cluster cleanup is
-  already active.
-
-### Slice 8. Добавить controller-owned node-cache runtime plane
-
-Цель:
-
-- посадить первый реальный per-node runtime поверх managed `LocalStorageClass`,
-  чтобы bounded maintenance loop уже исполнялся отдельным cache plane, а не
-  оставался только library contract.
-
-Файлы/каталоги:
-
-- `images/controller/internal/nodecache/*`
-- `images/controller/cmd/ai-models-artifact-runtime/*`
 - `images/controller/internal/controllers/nodecacheruntime/*`
-- `images/controller/internal/adapters/k8s/nodecacheruntime/*`
-- `images/controller/internal/bootstrap/*`
-- `images/controller/cmd/ai-models-controller/*`
-- `images/controller/internal/support/resourcenames/*`
-- `templates/controller/rbac.yaml`
-- `images/controller/README.md`
-- `images/controller/STRUCTURE.ru.md`
-- `images/controller/TEST_EVIDENCE.ru.md`
-
-Проверки:
-
-- `cd images/controller && go test ./internal/nodecache ./cmd/ai-models-artifact-runtime ./internal/controllers/nodecacheruntime ./internal/adapters/k8s/nodecacheruntime ./internal/bootstrap ./cmd/ai-models-controller`
-
-Артефакт результата:
-
-- ai-models держит bounded per-node maintenance plane поверх local PVC, а
-  shared cache cleanup и planning больше не зависят от будущего mount service
-  или от `materialize-artifact` fallback.
-
-### Slice 9. Разрезать shared store и consumer current-link contract
-
-Цель:
-
-- убрать оставшееся смешение node-wide digest store и workload-local
-  `current` symlink surface внутри `internal/nodecache`, чтобы будущий mount
-  service не наследовал single-model assumption от current fallback path.
-
-Файлы/каталоги:
-
-- `images/controller/internal/nodecache/*`
-- `images/controller/cmd/ai-models-artifact-runtime/*`
-- `images/controller/internal/adapters/k8s/modeldelivery/*`
-- `images/controller/internal/adapters/modelpack/oci/*`
-- `images/controller/README.md`
-- `images/controller/STRUCTURE.ru.md`
-- `images/controller/TEST_EVIDENCE.ru.md`
-
-Проверки:
-
-- `cd images/controller && go test ./internal/nodecache ./cmd/ai-models-artifact-runtime ./internal/adapters/k8s/modeldelivery ./internal/adapters/modelpack/oci`
-
-Артефакт результата:
-
-- shared digest store contract и consumer materialization layout получили
-  отдельные names/seams, а node-cache runtime больше не выглядит так, будто
-  global `current` symlink является canonical store truth.
-
-### Slice 10. Стабилизировать node-cache runtime plane как controller-owned per-node Pod/PVC
-
-Цель:
-
-- зафиксировать bounded live ownership shell для node-cache runtime:
-  controller-owned stable per-node Pod/PVC поверх ai-models-owned
-  `LocalStorageClass` без возврата к legacy `DaemonSet` narrative.
-
-Файлы/каталоги:
-
-- `plans/active/node-local-cache-runtime-delivery/*`
-- `templates/_helpers.tpl`
-- `templates/controller/*`
-- `templates/node-cache-runtime/*`
-- `images/controller/cmd/ai-models-controller/*`
-- `images/controller/internal/bootstrap/*`
-- `images/controller/internal/support/resourcenames/*`
-- `tools/helm-tests/*`
-- `images/controller/README.md`
-- `images/controller/STRUCTURE.ru.md`
-- `images/controller/TEST_EVIDENCE.ru.md`
 - `docs/CONFIGURATION.md`
 - `docs/CONFIGURATION.ru.md`
-
-Проверки:
-
-- `cd images/controller && go test ./cmd/ai-models-controller ./internal/bootstrap ./internal/support/resourcenames`
-- `python3 tools/helm-tests/validate_renders_test.py`
-- `make helm-template`
-- `python3 tools/helm-tests/validate-renders.py tools/kubeconform/renders`
-- `make kubeconform`
-
-Артефакт результата:
-
-- node-cache runtime plane живёт как controller-owned stable per-node Pod/PVC
-  contract;
-- module render не держит parallel `DaemonSet` source of truth;
-- controller bootstrap/RBAC и render surfaces согласованы с текущим runtime
-  ownership shell.
-
-### Slice 11. Убрать mirrored node intent plane и перейти на live Pod truth
-
-Цель:
-
-- убрать отдельный per-node intent `ConfigMap` contract и перевести
-  `node-cache-runtime` на bounded runtime-side desired-set extraction from
-  live managed Pods on the current node.
-
-Файлы/каталоги:
-
-- `plans/active/node-local-cache-runtime-delivery/*`
-- `images/controller/internal/nodecacheintent/*`
-- `images/controller/internal/nodecache/*`
-- `images/controller/cmd/ai-models-artifact-runtime/*`
-- `images/controller/internal/adapters/k8s/nodecacheruntime/*`
-- `images/controller/internal/bootstrap/*`
-- `images/controller/cmd/ai-models-controller/*`
-- `images/controller/internal/support/resourcenames/*`
-- `templates/controller/*`
-- `templates/node-cache-runtime/*`
-- `openapi/config-values.yaml`
-- `openapi/values.yaml`
-- `tools/helm-tests/*`
 - `images/controller/README.md`
 - `images/controller/STRUCTURE.ru.md`
 - `images/controller/TEST_EVIDENCE.ru.md`
-- `docs/CONFIGURATION.md`
-- `docs/CONFIGURATION.ru.md`
 
 Проверки:
 
-- `cd images/controller && go test ./internal/nodecache ./cmd/ai-models-artifact-runtime`
-- `cd images/controller && go test ./internal/adapters/k8s/nodecacheruntime ./internal/controllers/nodecacheruntime ./internal/bootstrap ./cmd/ai-models-controller`
-- `python3 tools/helm-tests/validate_renders_test.py`
-- `make helm-template`
-- `python3 tools/helm-tests/validate-renders.py tools/kubeconform/renders`
-- `make kubeconform`
+- `rg -n "materialize-artifact|nodecacheintent|shared mount|AI_MODELS_MODEL_PATH|fallback" images/controller docs/CONFIGURATION.ru.md`
+- `cd images/controller && go test ./internal/controllers/workloaddelivery ./internal/controllers/nodecacheruntime ./internal/nodecache`
 
 Артефакт результата:
 
-- `node-cache-runtime` читает desired published artifacts напрямую из live
-  managed Pods на текущей ноде;
-- отдельный controller-owned per-node intent `ConfigMap` contract удалён;
-- runtime plane получает реальный prefetch path в shared digest store без
-  отдельного mirror слоя;
-- eviction planner умеет защищать currently desired digests от idle/size
-  pressure eviction по умолчанию;
-- `nodeCache` contract получает live shared-store volume budget вместо прежнего
-  внутреннего service-volume placeholder.
+- один словарь и один объяснимый contract surface без старых полумёртвых
+  narrative seams.
 
-### Slice 12. Отделить workload-facing model-path contract от cache-root internals
+### Slice 3. Довести быстрый режим через узловой общий кэш
 
 Цель:
 
-- перестать заставлять consumer workload code знать raw
-  `/data/modelcache/current` detail и зафиксировать отдельный
-  controller-owned runtime env/model-path contract, который потом сможет
-  пережить замену current init fallback на CSI-like shared mount service без
-  нового workload API churn.
+- сделать так, чтобы при доступном узловом кэше прикладной объект получал
+  модель из node-owned shared plane, а не через отдельную полную раскладку в
+  собственный том.
 
 Файлы/каталоги:
 
 - `images/controller/internal/adapters/k8s/modeldelivery/*`
 - `images/controller/internal/controllers/workloaddelivery/*`
-- `images/controller/README.md`
-- `images/controller/STRUCTURE.ru.md`
-- `images/controller/TEST_EVIDENCE.ru.md`
-- `docs/CONFIGURATION.md`
-- `docs/CONFIGURATION.ru.md`
+- `images/controller/internal/adapters/k8s/nodecacheruntime/*`
+- `images/controller/internal/controllers/nodecacheruntime/*`
+- `images/controller/internal/nodecache/*`
+- `images/controller/cmd/ai-models-artifact-runtime/*`
 
 Проверки:
 
-- `cd images/controller && go test ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery`
+- `cd images/controller && go test ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery ./internal/adapters/k8s/nodecacheruntime ./internal/controllers/nodecacheruntime ./internal/nodecache ./cmd/ai-models-artifact-runtime`
 
 Артефакт результата:
 
-- runtime workloads получают stable model-path/env projection поверх current
-  fallback path, while cache-root/current remains an internal delivery detail
-  that future node-local shared mount service can replace without changing the
-  workload-facing contract again.
+- workload-facing shared delivery path, который переиспользует одну и ту же
+  модель на ноде и не требует per-workload full materialization при готовом
+  узловом кэше.
 
-### Slice 13. Нормализовать shared cache runtime plane к stable per-node agent
+### Slice 4. Упростить и стабилизировать запасной путь
 
 Цель:
 
-- закрепить shared cache runtime на controller-owned stable per-node Pod +
-  PVC, чтобы следующий CSI/node-plugin slice получил node-owned storage
-  surface без нового ownership rewrite.
+- сохранить рабочий fallback path и сделать его строго детерминированным:
+  когда именно он выбирается, что именно контроллер инжектит и как снимает
+  эту мутацию, когда быстрый путь недоступен.
 
 Файлы/каталоги:
 
-- `plans/active/node-local-cache-runtime-delivery/*`
-- `images/controller/internal/adapters/k8s/nodecacheruntime/*`
-- `images/controller/internal/controllers/nodecacheruntime/*`
-- `images/controller/internal/bootstrap/*`
+- `images/controller/internal/adapters/k8s/modeldelivery/*`
+- `images/controller/internal/controllers/workloaddelivery/*`
 - `images/controller/cmd/ai-models-controller/*`
-- `images/controller/internal/support/resourcenames/*`
+- `openapi/config-values.yaml`
+- `openapi/values.yaml`
+- `templates/_helpers.tpl`
 - `templates/controller/*`
-- `templates/node-cache-runtime/*`
-- `tools/helm-tests/*`
-- `images/controller/README.md`
-- `images/controller/STRUCTURE.ru.md`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery ./cmd/ai-models-controller`
+- `make helm-template`
+
+Артефакт результата:
+
+- запасной путь остаётся рабочим, понятным и не маскируется под основную
+  целевую схему.
+
+### Slice 5. Дотянуть сигналы наблюдаемости и эксплуатационный контур
+
+Цель:
+
+- дать оператору ясный ответ:
+  - какой режим выбран;
+  - почему включился fallback;
+  - в каком состоянии узловой runtime plane;
+  - можно ли считать быстрый путь реально готовым на конкретной ноде.
+
+Файлы/каталоги:
+
+- `images/controller/internal/monitoring/runtimehealth/*`
+- `images/controller/internal/controllers/workloaddelivery/*`
+- `images/controller/internal/controllers/nodecacheruntime/*`
 - `images/controller/TEST_EVIDENCE.ru.md`
 - `docs/CONFIGURATION.md`
 - `docs/CONFIGURATION.ru.md`
 
 Проверки:
 
-- `cd images/controller && go test ./internal/adapters/k8s/nodecacheruntime ./internal/controllers/nodecacheruntime ./internal/support/resourcenames`
-- `cd images/controller && go test ./internal/bootstrap ./cmd/ai-models-controller`
-- `python3 tools/helm-tests/validate_renders_test.py`
+- `cd images/controller && go test ./internal/monitoring/runtimehealth ./internal/controllers/workloaddelivery ./internal/controllers/nodecacheruntime`
+
+Артефакт результата:
+
+- production-readable signals по режиму доставки и состоянию узлового слоя.
+
+### Slice 6. Синхронизировать docs, values и repo surface с итоговой схемой
+
+Цель:
+
+- привести values, OpenAPI, docs и controller structure к одному финальному
+  описанию без обещаний того, чего ещё нет, и без legacy wording drift.
+
+Файлы/каталоги:
+
+- `openapi/config-values.yaml`
+- `openapi/values.yaml`
+- `templates/_helpers.tpl`
+- `templates/controller/*`
+- `docs/CONFIGURATION.md`
+- `docs/CONFIGURATION.ru.md`
+- `images/controller/README.md`
+- `images/controller/STRUCTURE.ru.md`
+- `images/controller/TEST_EVIDENCE.ru.md`
+
+Проверки:
+
 - `make helm-template`
-- `python3 tools/helm-tests/validate-renders.py tools/kubeconform/renders`
 - `make kubeconform`
 
 Артефакт результата:
 
-- node-cache shared store больше не живёт на pod-scoped ephemeral volume;
-- ai-models держит один stable runtime Pod и один stable PVC на выбранную ноду;
-- current shared-store prefetch/maintenance plane получает storage identity,
-  пригодную для следующего CSI/node-plugin slice;
-- runtime plane больше не держит parallel render/source-of-truth поверх другого
-  ownership shell.
+- repo-local surfaces совпадают с тем, что реально делает код.
 
 ## 4. Rollback point
 
-После Slice 2 можно безопасно остановиться: config и wiring уже видны, но
-managed substrate controller ещё не влияет на внешние storage CR.
+После Slice 2 можно безопасно остановиться:
 
-После Slice 3 можно откатиться без поломки workload delivery: новый substrate
-plane уже существует, но runtime mount path всё ещё остаётся на текущем
-`materialize-artifact` fallback.
+- bundle уже канонически фиксирует цель;
+- словарь и boundaries вычищены;
+- текущий рабочий fallback path ещё не ломался;
+- быстрый путь ещё не частично внедрён.
 
-После Slice 5 можно откатиться без потери substrate plane: managed fallback
-volume injection поверх current workload delivery уже живёт отдельно от
-node-cache runtime service и не требует нового public `Model.spec`.
-
-После Slice 7 можно откатиться без потери current delivery UX: shared
-node-cache contract уже вынесен в reusable boundary, но cluster-level cache
-daemon/CSI mount service всё ещё не обязательны для текущего fallback path.
-
-После Slice 8 можно откатиться без ломки current delivery path: первый runtime
-plane уже существует, но workload-facing shared mount contract всё ещё не
-заменяет текущий init-container fallback.
-
-После Slice 9 можно откатиться без потери landed runtime plane: cleanup
-затронет только boundary names и internal split shared-store vs consumer-link
-surfaces.
-
-После Slice 10 можно откатиться без ломки substrate/fallback contract: сменится
-только форма node maintenance plane, а shared cache semantics и current
-workload fallback останутся прежними.
-
-После Slice 11 можно откатиться без ломки current workload delivery path:
-shared-store prefetch и runtime-side desired-set handoff уйдут, но substrate,
-stable runtime agent plane и current fallback volume contract останутся
-рабочими.
-
-После Slice 12 можно откатиться без ломки substrate/shared-store plane:
-изменится только workload-facing delivery contract surface поверх current
-fallback path.
-
-После Slice 13 можно откатиться без ломки current workload delivery path:
-runtime agent plane сменит только ownership shell shared cache storage, а
-workload-facing fallback contract и desired-set handoff останутся прежними.
+Это последняя безопасная точка перед изменением live runtime semantics.
 
 ## 5. Final validation
 
-- `cd images/controller && go test ./cmd/ai-models-controller ./internal/bootstrap ./internal/controllers/nodecachesubstrate ./internal/adapters/k8s/nodecachesubstrate`
-- `cd images/controller && go test ./cmd/ai-models-controller ./internal/bootstrap ./internal/controllers/nodecachesubstrate ./internal/adapters/k8s/nodecachesubstrate ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery`
-- `cd images/controller && go test ./cmd/ai-models-artifact-runtime ./internal/nodecache`
-- `cd images/controller && go test ./internal/nodecache ./cmd/ai-models-artifact-runtime ./internal/adapters/k8s/modeldelivery ./internal/adapters/modelpack/oci`
-- `cd images/controller && go test ./cmd/ai-models-controller ./internal/bootstrap ./internal/support/resourcenames`
-- `cd images/controller && go test ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery`
-- `cd images/controller && go test ./internal/adapters/k8s/nodecacheruntime ./internal/controllers/nodecacheruntime ./internal/support/resourcenames`
-- `python3 tools/helm-tests/validate_renders_test.py`
-- `make helm-template`
-- `python3 tools/helm-tests/validate-renders.py tools/kubeconform/renders`
-- `make kubeconform`
-- `make verify`
-- `git diff --check`
+- узкие `go test` по затронутым пакетам после каждого slice;
+- `make helm-template`;
+- `make kubeconform`;
+- `make verify`.

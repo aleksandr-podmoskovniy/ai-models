@@ -65,6 +65,8 @@ func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeld
 		modeldelivery.ResolvedDigestAnnotation,
 		modeldelivery.ResolvedArtifactURIAnnotation,
 		modeldelivery.ResolvedArtifactFamilyAnnotation,
+		modeldelivery.ResolvedDeliveryModeAnnotation,
+		modeldelivery.ResolvedDeliveryReasonAnnotation,
 	} {
 		var removed bool
 		template.Annotations, removed = removeAnnotation(template.Annotations, key)
@@ -96,7 +98,9 @@ func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldeli
 
 	if strings.TrimSpace(template.Annotations[modeldelivery.ResolvedDigestAnnotation]) != "" ||
 		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]) != "" ||
-		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedArtifactFamilyAnnotation]) != "" {
+		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedArtifactFamilyAnnotation]) != "" ||
+		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]) != "" ||
+		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]) != "" {
 		return true
 	}
 	if modeldelivery.HasManagedRuntimeEnv(template.Spec.Containers) {

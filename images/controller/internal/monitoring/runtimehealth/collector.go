@@ -84,6 +84,9 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	if err != nil {
 		c.logger.Error("failed to list selected nodes for runtime-health metrics collection", slog.Any("error", err))
 	}
+	if err := c.collectManagedWorkloadDelivery(ctx, ch); err != nil {
+		c.logger.Error("failed to list managed workloads for runtime-health metrics collection", slog.Any("error", err))
+	}
 
 	reportNodeCacheRuntimeSummary(ch, strings.TrimSpace(c.runtimeNamespace), selectedNodes, pods, pvcs)
 	for i := range pods {

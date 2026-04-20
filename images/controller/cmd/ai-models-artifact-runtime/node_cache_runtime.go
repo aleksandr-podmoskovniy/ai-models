@@ -70,7 +70,7 @@ func runNodeCacheRuntime(args []string) int {
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
 
-	intentClient, err := k8snodecacheruntime.NewInClusterClient()
+	desiredArtifactsClient, err := k8snodecacheruntime.NewInClusterDesiredArtifactsClient()
 	if err != nil {
 		return cmdsupport.CommandError(commandNodeCacheRuntime, err)
 	}
@@ -81,7 +81,7 @@ func runNodeCacheRuntime(args []string) int {
 			MaxUnusedAge:      config.MaxUnusedAge,
 			ScanInterval:      config.ScanInterval,
 		},
-	}, nodeDesiredArtifactLoader{client: intentClient, nodeName: config.NodeName}, nodeCachePrefetcher(cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv))); err != nil {
+	}, nodeDesiredArtifactLoader{client: desiredArtifactsClient, nodeName: config.NodeName}, nodeCachePrefetcher(cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv))); err != nil {
 		return cmdsupport.CommandError(commandNodeCacheRuntime, err)
 	}
 
@@ -102,7 +102,7 @@ func parseNodeCacheRuntimeConfig(args []string) (nodeCacheRuntimeConfig, int, er
 	flags.StringVar(&config.MaxTotalSize, "max-total-size", config.MaxTotalSize, "Maximum total cache size before size-pressure eviction.")
 	flags.DurationVar(&config.MaxUnusedAge, "max-unused-age", config.MaxUnusedAge, "Maximum age since last use before idle eviction.")
 	flags.DurationVar(&config.ScanInterval, "scan-interval", config.ScanInterval, "Maintenance scan interval.")
-	flags.StringVar(&config.NodeName, "node-name", config.NodeName, "Current node name used to resolve desired cache state.")
+	flags.StringVar(&config.NodeName, "node-name", config.NodeName, "Current node name used to resolve the required published artifacts for this node.")
 	if err := flags.Parse(args); err != nil {
 		return nodeCacheRuntimeConfig{}, 2, err
 	}

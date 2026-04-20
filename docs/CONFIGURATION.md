@@ -129,18 +129,26 @@ controller-owned `materialize-artifact` into `/data/modelcache`, but now:
   cache topology;
 - workloads now get one stable runtime-facing model delivery contract via
   `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`, and
-  `AI_MODELS_MODEL_FAMILY`; the projected model path is the stable
-  `/data/modelcache/model` entrypoint instead of the raw internal
-  `/data/modelcache/current` layout detail;
+  `AI_MODELS_MODEL_FAMILY`; per-pod delivery still projects the stable
+  `/data/modelcache/model` entrypoint, while direct shared-cache topology now
+  projects a digest-scoped path inside the shared store instead of relying on a
+  global cache-root `current` link;
+- the controller now also writes managed `PodTemplateSpec` annotations with the
+  selected delivery mode and the reason that mode was chosen, so fallback no
+  longer remains hidden runtime behavior;
+- `runtimehealth` metrics now aggregate managed top-level workloads by
+  namespace, kind, delivery mode, and delivery reason, so operators can see
+  where direct shared delivery is actually used and where fallback still
+  remains active without scraping ad-hoc object lists;
 - ai-models now keeps a separate per-node shared cache plane as a
   controller-owned stable runtime Pod plus stable PVC over the managed
   `LocalStorageClass`; the shared volume size is controlled by
   `nodeCache.sharedVolumeSize`, and storage identity no longer depends on the
   node-agent pod lifecycle;
-- `node-cache-runtime` derives the desired published-artifact set directly from
-  live managed Pods scheduled on the current node and prefetches immutable
-  artifacts from `DMCR` into the shared node-local digest store without a
-  mirrored `ConfigMap` contract or a new public API.
+- `node-cache-runtime` derives the set of published artifacts required by live
+  managed Pods scheduled on the current node and prefetches immutable artifacts
+  from `DMCR` into the shared node-local digest store without a mirrored
+  `ConfigMap` contract or a new public API.
 
 There is still no public cleanup or TTL knob yet: the workload-facing shared
 mount contract has not landed, so eviction policy remains internal runtime

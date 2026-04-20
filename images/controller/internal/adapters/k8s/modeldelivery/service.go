@@ -50,6 +50,8 @@ type ApplyResult struct {
 	RegistryAccess    ociregistry.Projection
 	ResolvedDigestKey string
 	TopologyKind      CacheTopologyKind
+	DeliveryMode      DeliveryMode
+	DeliveryReason    DeliveryReason
 }
 
 type Service struct {
@@ -99,7 +101,12 @@ func (s *Service) ApplyToPodTemplate(
 		return ApplyResult{}, err
 	}
 
-	topology, err := detectCacheTopology(template, request.Topology, s.options.Render.CacheMountPath)
+	topology, err := detectCacheTopology(
+		template,
+		request.Topology,
+		s.options.Render.CacheMountPath,
+		s.options.ManagedCache.VolumeName,
+	)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -132,13 +139,14 @@ func (s *Service) ApplyToPodTemplate(
 		ArtifactFamily: request.ArtifactFamily,
 		RegistryAccess: projection,
 		CacheMount:     topology.CacheMount,
+		TopologyKind:   topology.Kind,
 		Coordination:   coordination,
 	}, s.options.Render)
 	if err != nil {
 		return ApplyResult{}, err
 	}
 
-	if err := applyRendered(template, rendered, request.Artifact.Digest); err != nil {
+	if err := applyRendered(template, rendered, request.Artifact.Digest, topology.DeliveryMode, topology.DeliveryReason); err != nil {
 		return ApplyResult{}, err
 	}
 
@@ -148,6 +156,8 @@ func (s *Service) ApplyToPodTemplate(
 		RegistryAccess:    projection,
 		ResolvedDigestKey: ResolvedDigestAnnotation,
 		TopologyKind:      topology.Kind,
+		DeliveryMode:      topology.DeliveryMode,
+		DeliveryReason:    topology.DeliveryReason,
 	}, nil
 }
 

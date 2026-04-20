@@ -26,7 +26,7 @@ import (
 )
 
 type nodeDesiredArtifactLoader struct {
-	client   *k8snodecacheruntime.Client
+	client   *k8snodecacheruntime.DesiredArtifactsClient
 	nodeName string
 }
 
