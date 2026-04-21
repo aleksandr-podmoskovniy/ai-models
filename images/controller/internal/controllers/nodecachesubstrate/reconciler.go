@@ -44,6 +44,12 @@ type Reconciler struct {
 }
 
 func SetupWithManager(mgr ctrl.Manager, logger *slog.Logger, options Options) error {
+	if !options.Enabled {
+		return nil
+	}
+	if err := options.Validate(); err != nil {
+		return err
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}

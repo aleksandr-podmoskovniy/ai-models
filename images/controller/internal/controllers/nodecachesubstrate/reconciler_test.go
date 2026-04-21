@@ -30,6 +30,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+func TestSetupWithManagerSkipsDisabledController(t *testing.T) {
+	t.Parallel()
+
+	if err := SetupWithManager(nil, nil, Options{}); err != nil {
+		t.Fatalf("SetupWithManager() error = %v", err)
+	}
+}
+
+func TestSetupWithManagerRejectsInvalidEnabledOptions(t *testing.T) {
+	t.Parallel()
+
+	if err := SetupWithManager(nil, nil, Options{Enabled: true}); err == nil {
+		t.Fatal("SetupWithManager() error = nil, want validation error")
+	}
+}
+
 func TestReconcileDisabledPathIsNoOp(t *testing.T) {
 	t.Parallel()
 
