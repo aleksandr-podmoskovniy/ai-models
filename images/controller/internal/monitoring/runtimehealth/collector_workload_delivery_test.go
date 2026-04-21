@@ -33,25 +33,25 @@ func TestCollectorReportsManagedWorkloadDeliveryCounts(t *testing.T) {
 		newManagedDeliveryDeployment(
 			"team-a",
 			"deployment-a",
-			string(modeldelivery.DeliveryModePerPodFallback),
-			string(modeldelivery.DeliveryReasonManagedFallbackVolume),
+			string(modeldelivery.DeliveryModeMaterializeBridge),
+			string(modeldelivery.DeliveryReasonManagedBridgeVolume),
 		),
 		newManagedDeliveryDeployment(
 			"team-a",
 			"deployment-b",
-			string(modeldelivery.DeliveryModePerPodFallback),
-			string(modeldelivery.DeliveryReasonManagedFallbackVolume),
+			string(modeldelivery.DeliveryModeMaterializeBridge),
+			string(modeldelivery.DeliveryReasonManagedBridgeVolume),
 		),
 		newManagedDeliveryStatefulSet(
 			"team-b",
 			"statefulset-a",
-			string(modeldelivery.DeliveryModeSharedDirect),
-			string(modeldelivery.DeliveryReasonSharedPersistentVolume),
+			string(modeldelivery.DeliveryModeSharedPVCBridge),
+			string(modeldelivery.DeliveryReasonWorkloadSharedPersistentVolume),
 		),
 		newManagedDeliveryCronJob(
 			"team-c",
 			"cronjob-a",
-			string(modeldelivery.DeliveryModePerPodFallback),
+			string(modeldelivery.DeliveryModeMaterializeBridge),
 			string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
 		),
 		&appsv1.DaemonSet{
@@ -65,26 +65,26 @@ func TestCollectorReportsManagedWorkloadDeliveryCounts(t *testing.T) {
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_workloads_managed", map[string]string{
 		"namespace":       "team-a",
 		"kind":            "Deployment",
-		"delivery_mode":   string(modeldelivery.DeliveryModePerPodFallback),
-		"delivery_reason": string(modeldelivery.DeliveryReasonManagedFallbackVolume),
+		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(modeldelivery.DeliveryReasonManagedBridgeVolume),
 	}, 2)
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_workloads_managed", map[string]string{
 		"namespace":       "team-b",
 		"kind":            "StatefulSet",
-		"delivery_mode":   string(modeldelivery.DeliveryModeSharedDirect),
-		"delivery_reason": string(modeldelivery.DeliveryReasonSharedPersistentVolume),
+		"delivery_mode":   string(modeldelivery.DeliveryModeSharedPVCBridge),
+		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadSharedPersistentVolume),
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_workloads_managed", map[string]string{
 		"namespace":       "team-c",
 		"kind":            "CronJob",
-		"delivery_mode":   string(modeldelivery.DeliveryModePerPodFallback),
+		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
 		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
 	}, 1)
 	assertMetricAbsent(t, families, "d8_ai_models_workload_delivery_workloads_managed", map[string]string{
 		"namespace":       "team-a",
 		"kind":            "DaemonSet",
-		"delivery_mode":   string(modeldelivery.DeliveryModePerPodFallback),
-		"delivery_reason": string(modeldelivery.DeliveryReasonManagedFallbackVolume),
+		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(modeldelivery.DeliveryReasonManagedBridgeVolume),
 	})
 }
 
@@ -108,6 +108,118 @@ func TestCollectorGroupsIncompleteManagedWorkloadStateUnderUnknown(t *testing.T)
 		"delivery_mode":   unknownDeliveryMode,
 		"delivery_reason": unknownDeliveryReason,
 	}, 1)
+}
+
+func TestCollectorReportsManagedWorkloadPodState(t *testing.T) {
+	t.Parallel()
+
+	families := gatherMetrics(t, Options{},
+		newManagedDeliveryPod(
+			"team-a",
+			"runtime-ready",
+			string(modeldelivery.DeliveryModeMaterializeBridge),
+			string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+			true,
+			corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: 0,
+					Reason:   "Completed",
+				},
+			},
+		),
+		newManagedDeliveryPod(
+			"team-a",
+			"runtime-pulling",
+			string(modeldelivery.DeliveryModeMaterializeBridge),
+			string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+			false,
+			corev1.ContainerState{
+				Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff"},
+			},
+		),
+		newManagedDeliveryPod(
+			"team-a",
+			"runtime-copying",
+			string(modeldelivery.DeliveryModeMaterializeBridge),
+			string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+			false,
+			corev1.ContainerState{
+				Running: &corev1.ContainerStateRunning{},
+			},
+		),
+		newManagedDeliveryPod(
+			"team-a",
+			"runtime-failed",
+			string(modeldelivery.DeliveryModeMaterializeBridge),
+			string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+			false,
+			corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: 1,
+					Reason:   "Error",
+				},
+			},
+		),
+		newManagedDeliveryPod(
+			"team-b",
+			"runtime-shared-pvc",
+			string(modeldelivery.DeliveryModeSharedPVCBridge),
+			string(modeldelivery.DeliveryReasonWorkloadSharedPersistentVolume),
+			false,
+			corev1.ContainerState{},
+		),
+	)
+
+	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_pods_managed", map[string]string{
+		"namespace":       "team-a",
+		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+	}, 4)
+	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_pods_ready", map[string]string{
+		"namespace":       "team-a",
+		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+	}, 1)
+	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_init_state", map[string]string{
+		"namespace":       "team-a",
+		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+		"state":           "Succeeded",
+		"reason":          "Completed",
+	}, 1)
+	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_init_state", map[string]string{
+		"namespace":       "team-a",
+		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+		"state":           "Waiting",
+		"reason":          "ImagePullBackOff",
+	}, 1)
+	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_init_state", map[string]string{
+		"namespace":       "team-a",
+		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+		"state":           "Running",
+		"reason":          "",
+	}, 1)
+	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_init_state", map[string]string{
+		"namespace":       "team-a",
+		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+		"state":           "Failed",
+		"reason":          "Error",
+	}, 1)
+	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_pods_managed", map[string]string{
+		"namespace":       "team-b",
+		"delivery_mode":   string(modeldelivery.DeliveryModeSharedPVCBridge),
+		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadSharedPersistentVolume),
+	}, 1)
+	assertMetricAbsent(t, families, "d8_ai_models_workload_delivery_init_state", map[string]string{
+		"namespace":       "team-b",
+		"delivery_mode":   string(modeldelivery.DeliveryModeSharedPVCBridge),
+		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadSharedPersistentVolume),
+		"state":           "Waiting",
+		"reason":          "ImagePullBackOff",
+	})
 }
 
 func newManagedDeliveryDeployment(namespace, name, mode, reason string) *appsv1.Deployment {
@@ -178,4 +290,37 @@ func managedDeliveryPodTemplate(mode, reason string) corev1.PodTemplateSpec {
 			Annotations: annotations,
 		},
 	}
+}
+
+func newManagedDeliveryPod(
+	namespace,
+	name,
+	mode,
+	reason string,
+	ready bool,
+	initState corev1.ContainerState,
+) *corev1.Pod {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:   namespace,
+			Name:        name,
+			Annotations: managedDeliveryPodTemplate(mode, reason).Annotations,
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+	if ready {
+		pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
+			Type:   corev1.PodReady,
+			Status: corev1.ConditionTrue,
+		})
+	}
+	if initState.Waiting != nil || initState.Running != nil || initState.Terminated != nil {
+		pod.Status.InitContainerStatuses = append(pod.Status.InitContainerStatuses, corev1.ContainerStatus{
+			Name:  modeldelivery.DefaultInitContainerName,
+			State: initState,
+		})
+	}
+	return pod
 }

@@ -22,6 +22,7 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
+	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/client-go/tools/record"
@@ -127,6 +128,18 @@ func (r *baseReconciler) removeManagedDelivery(
 ) error {
 	changed := removeManagedTemplateState(template, r.options.Service)
 	if err := ociregistry.DeleteProjectedAccess(ctx, r.client, object.GetNamespace(), object.GetUID()); err != nil {
+		return err
+	}
+	runtimeImagePullSecretName, err := resourcenames.RuntimeImagePullSecretName(object.GetUID())
+	if err != nil {
+		return err
+	}
+	var removed bool
+	template.Spec.ImagePullSecrets, removed = removeImagePullSecretByName(template.Spec.ImagePullSecrets, runtimeImagePullSecretName)
+	if removed {
+		changed = true
+	}
+	if err := ociregistry.DeleteProjectedImagePullSecret(ctx, r.client, object.GetNamespace(), object.GetUID()); err != nil {
 		return err
 	}
 	if !changed {

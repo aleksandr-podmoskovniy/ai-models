@@ -28,6 +28,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsession"
 	"github.com/deckhouse/ai-models/controller/internal/ports/auditsink"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,6 +41,8 @@ type Options struct {
 	RuntimeLogLevel      string
 	MaxConcurrentWorkers int
 	UploadGateway        UploadGatewayOptions
+	UploadStagingBucket  string
+	UploadStagingClient  uploadstagingports.MultipartStager
 }
 
 type PublicationRuntimeOptions = sourceworker.RuntimeOptions
@@ -81,7 +84,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	if err != nil {
 		return err
 	}
-	uploadSessions, err := uploadsession.NewService(mgr.GetClient(), mgr.GetScheme(), uploadSessionOptions(options.Runtime, options.UploadGateway))
+	uploadSessions, err := uploadsession.NewService(mgr.GetClient(), mgr.GetScheme(), uploadSessionOptions(options))
 	if err != nil {
 		return err
 	}
@@ -134,6 +137,12 @@ func (o Options) Validate() error {
 	if o.MaxConcurrentWorkers <= 0 {
 		return errors.New("publication runtime max concurrent workers must be greater than zero")
 	}
+	if strings.TrimSpace(o.UploadStagingBucket) == "" {
+		return errors.New("publication runtime upload staging bucket must not be empty")
+	}
+	if o.UploadStagingClient == nil {
+		return errors.New("publication runtime upload staging client must not be nil")
+	}
 	return storageprojection.ValidateOptions("publication runtime", o.Runtime.ObjectStorage)
 }
 
@@ -146,12 +155,14 @@ func sourceWorkerOptions(runtime PublicationRuntimeOptions, maxConcurrentWorkers
 	}
 }
 
-func uploadSessionOptions(o PublicationRuntimeOptions, gateway uploadsession.GatewayOptions) uploadsession.Options {
+func uploadSessionOptions(options Options) uploadsession.Options {
 	return uploadsession.Options{
 		Runtime: uploadsession.RuntimeOptions{
-			Namespace:           o.Namespace,
-			OCIRepositoryPrefix: o.OCIRepositoryPrefix,
+			Namespace:           options.Runtime.Namespace,
+			OCIRepositoryPrefix: options.Runtime.OCIRepositoryPrefix,
 		},
-		Gateway: gateway,
+		Gateway:       options.UploadGateway,
+		StagingBucket: options.UploadStagingBucket,
+		StagingClient: options.UploadStagingClient,
 	}
 }

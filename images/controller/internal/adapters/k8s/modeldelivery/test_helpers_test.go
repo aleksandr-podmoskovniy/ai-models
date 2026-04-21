@@ -43,6 +43,15 @@ func projectedAuthSecretName(t *testing.T, ownerUID types.UID) string {
 	return name
 }
 
+func projectedRuntimeImagePullSecretName(t *testing.T, ownerUID types.UID) string {
+	t.Helper()
+	name, err := resourcenames.RuntimeImagePullSecretName(ownerUID)
+	if err != nil {
+		t.Fatalf("RuntimeImagePullSecretName() error = %v", err)
+	}
+	return name
+}
+
 func countVolumeByName(volumes []corev1.Volume, name string) int {
 	count := 0
 	for _, volume := range volumes {

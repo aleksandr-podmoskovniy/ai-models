@@ -58,11 +58,12 @@ func TestObserveUploadSession(t *testing.T) {
 		},
 		{
 			name: "running session projects upload wait status",
-			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodRunning, "", modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:  "https://ai-models.example.com/upload/token",
-				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:   "registry.example/upload",
-				ExpiresAt:    &expiresAt,
+			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodRunning, "", "17%", modelsv1alpha1.ModelUploadStatus{
+				ExternalURL:              "https://ai-models.example.com/upload/token",
+				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:               "registry.example/upload",
+				AuthorizationHeaderValue: "Bearer token-a",
+				ExpiresAt:                &expiresAt,
 			}, nil),
 			now: time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
@@ -73,6 +74,9 @@ func TestObserveUploadSession(t *testing.T) {
 				if got.Observation.Upload == nil || got.Observation.Upload.InClusterURL == "" {
 					t.Fatalf("unexpected upload observation %#v", got.Observation.Upload)
 				}
+				if got.Observation.Progress != "17%" {
+					t.Fatalf("unexpected progress %q", got.Observation.Progress)
+				}
 				if got.DeleteRuntime {
 					t.Fatal("did not expect delete for active upload session")
 				}
@@ -80,11 +84,12 @@ func TestObserveUploadSession(t *testing.T) {
 		},
 		{
 			name: "expired session fails closed and deletes runtime",
-			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodRunning, "", modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:  "https://ai-models.example.com/upload/token",
-				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:   "registry.example/upload",
-				ExpiresAt:    &expiresAt,
+			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodRunning, "", "17%", modelsv1alpha1.ModelUploadStatus{
+				ExternalURL:              "https://ai-models.example.com/upload/token",
+				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:               "registry.example/upload",
+				AuthorizationHeaderValue: "Bearer token-a",
+				ExpiresAt:                &expiresAt,
 			}, nil),
 			now: time.Date(2026, 4, 7, 13, 0, 0, 0, time.UTC),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
@@ -102,11 +107,12 @@ func TestObserveUploadSession(t *testing.T) {
 		},
 		{
 			name: "failed session uses default failure message",
-			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodFailed, "   ", modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:  "https://ai-models.example.com/upload/token",
-				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:   "registry.example/upload",
-				ExpiresAt:    &expiresAt,
+			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodFailed, "   ", "", modelsv1alpha1.ModelUploadStatus{
+				ExternalURL:              "https://ai-models.example.com/upload/token",
+				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:               "registry.example/upload",
+				AuthorizationHeaderValue: "Bearer token-a",
+				ExpiresAt:                &expiresAt,
 			}, nil),
 			now: time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
@@ -124,11 +130,12 @@ func TestObserveUploadSession(t *testing.T) {
 		},
 		{
 			name: "completed session without result fails closed",
-			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodSucceeded, " ", modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:  "https://ai-models.example.com/upload/token",
-				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:   "registry.example/upload",
-				ExpiresAt:    &expiresAt,
+			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodSucceeded, " ", "", modelsv1alpha1.ModelUploadStatus{
+				ExternalURL:              "https://ai-models.example.com/upload/token",
+				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:               "registry.example/upload",
+				AuthorizationHeaderValue: "Bearer token-a",
+				ExpiresAt:                &expiresAt,
 			}, nil),
 			now: time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
@@ -146,11 +153,12 @@ func TestObserveUploadSession(t *testing.T) {
 		},
 		{
 			name: "completed session decodes staging handle",
-			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodSucceeded, uploadStagingTerminationMessage(t), modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:  "https://ai-models.example.com/upload/token",
-				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:   "registry.example/upload",
-				ExpiresAt:    &expiresAt,
+			handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodSucceeded, uploadStagingTerminationMessage(t), "", modelsv1alpha1.ModelUploadStatus{
+				ExternalURL:              "https://ai-models.example.com/upload/token",
+				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:               "registry.example/upload",
+				AuthorizationHeaderValue: "Bearer token-a",
+				ExpiresAt:                &expiresAt,
 			}, nil),
 			now: time.Date(2026, 4, 7, 11, 0, 0, 0, time.UTC),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {

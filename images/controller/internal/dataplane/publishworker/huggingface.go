@@ -120,20 +120,13 @@ func fetchRemote(ctx context.Context, options Options) (sourcefetch.RemoteResult
 	return fetchRemoteAttempt(ctx, options)
 }
 
-func huggingFaceSupportsStreamingPublish(options Options) bool {
-	if remoteSourceMirror(options) != nil {
-		return sourceMirrorSupportsStreamingPublish(options)
-	}
-	return true
-}
-
 func fetchRemoteAttempt(ctx context.Context, options Options) (sourcefetch.RemoteResult, error) {
 	return fetchRemoteModelFunc(ctx, sourcefetch.RemoteOptions{
 		URL:                      huggingFaceSourceURL(options.HFModelID, options.Revision),
 		RequestedFormat:          options.InputFormat,
 		HFToken:                  options.HFToken,
 		SourceMirror:             remoteSourceMirror(options),
-		SkipLocalMaterialization: huggingFaceSupportsStreamingPublish(options),
+		SkipLocalMaterialization: true,
 	})
 }
 

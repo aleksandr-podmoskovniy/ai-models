@@ -20,6 +20,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 )
 
 const (
@@ -28,9 +30,11 @@ const (
 )
 
 type Options struct {
-	Runtime  RuntimeOptions
-	Gateway  GatewayOptions
-	TokenTTL time.Duration
+	Runtime       RuntimeOptions
+	Gateway       GatewayOptions
+	StagingBucket string
+	StagingClient uploadstagingports.MultipartStager
+	TokenTTL      time.Duration
 }
 
 type RuntimeOptions struct {
@@ -48,6 +52,7 @@ func normalizeOptions(options Options) Options {
 	options.Runtime.OCIRepositoryPrefix = strings.TrimSpace(options.Runtime.OCIRepositoryPrefix)
 	options.Gateway.ServiceName = strings.TrimSpace(options.Gateway.ServiceName)
 	options.Gateway.PublicHost = strings.TrimSpace(options.Gateway.PublicHost)
+	options.StagingBucket = strings.TrimSpace(options.StagingBucket)
 	if options.TokenTTL <= 0 {
 		options.TokenTTL = defaultTokenTTL
 	}
@@ -62,6 +67,10 @@ func (o Options) Validate() error {
 		return errors.New("upload session OCI repository prefix must not be empty")
 	case o.Gateway.ServiceName == "":
 		return errors.New("upload session gateway service name must not be empty")
+	case o.StagingBucket == "" && o.StagingClient != nil:
+		return errors.New("upload session staging bucket must not be empty when staging client is configured")
+	case o.StagingBucket != "" && o.StagingClient == nil:
+		return errors.New("upload session staging client must not be nil when staging bucket is configured")
 	case o.TokenTTL <= 0:
 		return errors.New("upload session token ttl must be positive")
 	default:

@@ -45,6 +45,7 @@ type objectMetric struct {
 	ready            bool
 	validated        bool
 	artifactSizeByte float64
+	conditions       []metav1.Condition
 }
 
 func newModelMetric(object *modelsv1alpha1.Model) *objectMetric {
@@ -99,6 +100,7 @@ func newObjectMetric(
 		ready:            conditionTrue(status.Conditions, modelsv1alpha1.ModelConditionReady),
 		validated:        conditionTrue(status.Conditions, modelsv1alpha1.ModelConditionValidated),
 		artifactSizeByte: artifactSize(status),
+		conditions:       status.Conditions,
 	}
 }
 

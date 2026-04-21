@@ -24,7 +24,7 @@ data:
 {{- end }}
       redirect:
         disable: true
-      s3:
+      sealeds3:
         region: {{ include "ai-models.artifactsRegion" . | quote }}
         bucket: {{ include "ai-models.artifactsBucket" . | quote }}
         regionendpoint: {{ include "ai-models.artifactsEndpointHost" . | quote }}

@@ -26,32 +26,26 @@ import (
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
 
-func pushLayerDirectToBackingStorage(
+type describedDirectUploadState struct {
+	session       directUploadSession
+	uploadedParts []uploadedDirectPart
+	current       modelpackports.DirectUploadCurrentLayer
+	offset        int64
+	partNumber    int
+}
+
+func pushDescribedLayerDirectToBackingStorage(
 	ctx context.Context,
 	_ *http.Client,
 	input modelpackports.PublishInput,
 	auth modelpackports.RegistryAuth,
 	layer modelpackports.PublishLayer,
 	descriptor publishLayerDescriptor,
+	checkpoint *directUploadCheckpoint,
 ) error {
-	parsedReference, err := parseOCIReference(input.ArtifactURI)
+	helperClient, state, err := prepareDescribedDirectUpload(ctx, input, auth, descriptor, checkpoint)
 	if err != nil {
 		return err
-	}
-	helperClient, err := newDirectUploadClient(input, auth)
-	if err != nil {
-		return err
-	}
-
-	session, err := helperClient.start(ctx, parsedReference.Repository, descriptor.Digest)
-	if err != nil {
-		return err
-	}
-	if session.Complete {
-		return nil
-	}
-	if session.PartSizeBytes <= 0 {
-		return errors.New("DMCR direct upload session returned non-positive part size")
 	}
 
 	completeStarted := false
@@ -60,58 +54,190 @@ func pushLayerDirectToBackingStorage(
 		if completed || completeStarted {
 			return
 		}
-		_ = helperClient.abort(ctx, session.SessionToken)
+		_ = helperClient.abort(ctx, state.session.SessionToken)
 	}()
 
-	uploadedParts, err := uploadDirectBlobParts(ctx, helperClient, layer, descriptor.Size, session)
-	if err != nil {
+	if err := uploadDescribedLayerParts(ctx, helperClient, layer, descriptor.Size, checkpoint, &state); err != nil {
 		return err
 	}
 
 	completeStarted = true
-	if err := helperClient.complete(ctx, session.SessionToken, uploadedParts); err != nil {
+	if err := finalizeDescribedDirectUpload(ctx, helperClient, descriptor, checkpoint, state); err != nil {
 		return err
 	}
 	completed = true
 	return nil
 }
 
-func uploadDirectBlobParts(
+func prepareDescribedDirectUpload(
+	ctx context.Context,
+	input modelpackports.PublishInput,
+	auth modelpackports.RegistryAuth,
+	descriptor publishLayerDescriptor,
+	checkpoint *directUploadCheckpoint,
+) (*directUploadClient, describedDirectUploadState, error) {
+	parsedReference, err := parseOCIReference(input.ArtifactURI)
+	if err != nil {
+		return nil, describedDirectUploadState{}, err
+	}
+	helperClient, err := newDirectUploadClient(input, auth)
+	if err != nil {
+		return nil, describedDirectUploadState{}, err
+	}
+
+	session, uploadedParts, current, offset, partNumber, err := openDescribedDirectUploadSession(
+		ctx,
+		helperClient,
+		parsedReference.Repository,
+		descriptor,
+		checkpoint,
+	)
+	if err != nil {
+		return nil, describedDirectUploadState{}, err
+	}
+	if session.PartSizeBytes <= 0 {
+		return nil, describedDirectUploadState{}, errors.New("DMCR direct upload session returned non-positive part size")
+	}
+
+	return helperClient, describedDirectUploadState{
+		session:       session,
+		uploadedParts: uploadedParts,
+		current:       current,
+		offset:        offset,
+		partNumber:    partNumber,
+	}, nil
+}
+
+func uploadDescribedLayerParts(
 	ctx context.Context,
 	helperClient *directUploadClient,
 	layer modelpackports.PublishLayer,
 	totalSize int64,
-	session directUploadSession,
-) ([]uploadedDirectPart, error) {
-	uploadedParts := make([]uploadedDirectPart, 0)
-	offset := int64(0)
-	partNumber := 1
+	checkpoint *directUploadCheckpoint,
+	state *describedDirectUploadState,
+) error {
 	recoveries := 0
-
-	for offset < totalSize {
-		uploadedPart, err := uploadDirectBlobPart(ctx, helperClient, session, layer, offset, partNumber, totalSize)
+	for state.offset < totalSize {
+		recovered, err := uploadNextDescribedLayerPart(ctx, helperClient, layer, totalSize, checkpoint, state)
 		if err == nil {
-			uploadedParts = append(uploadedParts, uploadedPart)
-			offset += uploadedPart.SizeBytes
-			partNumber++
 			recoveries = 0
 			continue
 		}
-
-		nextParts, nextOffset, nextPartNumber, recoveryErr := recoverDirectBlobUpload(ctx, helperClient, session.SessionToken, err)
-		if recoveryErr != nil {
-			return nil, recoveryErr
+		if !recovered {
+			return err
 		}
-		uploadedParts = nextParts
-		offset = nextOffset
-		partNumber = nextPartNumber
 		recoveries++
 		if recoveries > blobUploadRecoveryAttempts {
-			return nil, err
+			return err
+		}
+	}
+	return nil
+}
+
+func uploadNextDescribedLayerPart(
+	ctx context.Context,
+	helperClient *directUploadClient,
+	layer modelpackports.PublishLayer,
+	totalSize int64,
+	checkpoint *directUploadCheckpoint,
+	state *describedDirectUploadState,
+) (bool, error) {
+	uploadedPart, err := uploadDirectBlobPart(ctx, helperClient, state.session, layer, state.offset, state.partNumber, totalSize)
+	if err == nil {
+		state.uploadedParts = append(state.uploadedParts, uploadedPart)
+		state.offset += uploadedPart.SizeBytes
+		state.partNumber++
+		state.current.UploadedSizeBytes = state.offset
+		return false, checkpoint.saveRunningLayer(ctx, state.current, modelpackports.DirectUploadStateStageUploading)
+	}
+
+	nextParts, nextOffset, nextPartNumber, recoveryErr := recoverDirectBlobUpload(ctx, helperClient, state.session.SessionToken, err)
+	if recoveryErr != nil {
+		return false, recoveryErr
+	}
+	state.uploadedParts = nextParts
+	state.offset = nextOffset
+	state.partNumber = nextPartNumber
+	state.current.UploadedSizeBytes = state.offset
+	if saveErr := checkpoint.saveRunningLayer(ctx, state.current, modelpackports.DirectUploadStateStageUploading); saveErr != nil {
+		return false, saveErr
+	}
+	return true, err
+}
+
+func finalizeDescribedDirectUpload(
+	ctx context.Context,
+	helperClient *directUploadClient,
+	descriptor publishLayerDescriptor,
+	checkpoint *directUploadCheckpoint,
+	state describedDirectUploadState,
+) error {
+	if err := checkpoint.markSealing(ctx, state.current); err != nil {
+		return err
+	}
+	if err := helperClient.complete(ctx, state.session.SessionToken, descriptor.Digest, descriptor.Size, state.uploadedParts); err != nil {
+		return err
+	}
+	return checkpoint.markLayerCompleted(ctx, descriptor)
+}
+
+func openDescribedDirectUploadSession(
+	ctx context.Context,
+	helperClient *directUploadClient,
+	repository string,
+	descriptor publishLayerDescriptor,
+	checkpoint *directUploadCheckpoint,
+) (
+	directUploadSession,
+	[]uploadedDirectPart,
+	modelpackports.DirectUploadCurrentLayer,
+	int64,
+	int,
+	error,
+) {
+	if current := checkpoint.currentLayer(descriptor); current != nil {
+		if current.TotalSizeBytes != descriptor.Size {
+			return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, 0, 0, fmt.Errorf("persisted direct upload size %d does not match descriptor size %d", current.TotalSizeBytes, descriptor.Size)
+		}
+		uploadedParts, err := helperClient.listParts(ctx, current.SessionToken)
+		if err != nil {
+			if !isDirectUploadStatus(err, http.StatusNotFound) {
+				return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, 0, 0, err
+			}
+		} else {
+			offset, partNumber, err := nextDirectUploadPosition(uploadedParts)
+			if err != nil {
+				return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, 0, 0, err
+			}
+			if offset < current.UploadedSizeBytes {
+				return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, 0, 0, fmt.Errorf("remote direct upload offset %d is behind persisted offset %d", offset, current.UploadedSizeBytes)
+			}
+			current.UploadedSizeBytes = offset
+			if err := checkpoint.saveRunningLayer(ctx, *current, modelpackports.DirectUploadStateStageResumed); err != nil {
+				return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, 0, 0, err
+			}
+			return directUploadSession{
+				SessionToken:  current.SessionToken,
+				PartSizeBytes: current.PartSizeBytes,
+			}, uploadedParts, *current, offset, partNumber, nil
 		}
 	}
 
-	return uploadedParts, nil
+	session, err := helperClient.start(ctx, repository)
+	if err != nil {
+		return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, 0, 0, err
+	}
+	current := modelpackports.DirectUploadCurrentLayer{
+		Key:               directUploadLayerKey(descriptor),
+		SessionToken:      session.SessionToken,
+		PartSizeBytes:     session.PartSizeBytes,
+		TotalSizeBytes:    descriptor.Size,
+		UploadedSizeBytes: 0,
+	}
+	if err := checkpoint.saveRunningLayer(ctx, current, modelpackports.DirectUploadStateStageStarting); err != nil {
+		return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, 0, 0, err
+	}
+	return session, nil, current, 0, 1, nil
 }
 
 func uploadDirectBlobPart(

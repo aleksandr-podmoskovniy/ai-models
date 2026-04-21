@@ -27,7 +27,12 @@ func publishingStatus(
 	current modelsv1alpha1.ModelStatus,
 	generation int64,
 	sourceType modelsv1alpha1.ModelSourceType,
+	reason modelsv1alpha1.ModelConditionReason,
+	message string,
 ) modelsv1alpha1.ModelStatus {
+	if reason == "" {
+		reason = modelsv1alpha1.ModelConditionReasonPending
+	}
 	status := modelsv1alpha1.ModelStatus{
 		ObservedGeneration: generation,
 		Phase:              modelsv1alpha1.ModelPhasePublishing,
@@ -41,15 +46,15 @@ func publishingStatus(
 		&status.Conditions,
 		generation,
 		metav1.ConditionFalse,
-		modelsv1alpha1.ModelConditionReasonPending,
-		"controller is publishing the model artifact",
+		reason,
+		defaultRunningMessage(message, "controller is publishing the model artifact"),
 	)
 	setReadyCondition(
 		&status.Conditions,
 		generation,
 		metav1.ConditionFalse,
-		modelsv1alpha1.ModelConditionReasonPending,
-		"model publication is in progress",
+		reason,
+		defaultRunningMessage(message, "model publication is in progress"),
 	)
 	return status
 }
@@ -58,10 +63,13 @@ func pendingUploadStatus(
 	current modelsv1alpha1.ModelStatus,
 	generation int64,
 	sourceType modelsv1alpha1.ModelSourceType,
+	progress string,
+	message string,
 ) modelsv1alpha1.ModelStatus {
 	status := modelsv1alpha1.ModelStatus{
 		ObservedGeneration: generation,
 		Phase:              modelsv1alpha1.ModelPhasePending,
+		Progress:           defaultUploadProgress(progress),
 		Source: &modelsv1alpha1.ResolvedSourceStatus{
 			ResolvedType: sourceType,
 		},
@@ -73,14 +81,14 @@ func pendingUploadStatus(
 		generation,
 		metav1.ConditionFalse,
 		modelsv1alpha1.ModelConditionReasonPending,
-		"controller is preparing the upload publication flow",
+		defaultRunningMessage(message, "controller is preparing the upload publication flow"),
 	)
 	setReadyCondition(
 		&status.Conditions,
 		generation,
 		metav1.ConditionFalse,
 		modelsv1alpha1.ModelConditionReasonPending,
-		"model is not ready until the upload publication flow starts",
+		defaultRunningMessage(message, "model is not ready until the upload publication flow starts"),
 	)
 	return status
 }
@@ -90,10 +98,13 @@ func waitForUploadStatus(
 	generation int64,
 	sourceType modelsv1alpha1.ModelSourceType,
 	upload *modelsv1alpha1.ModelUploadStatus,
+	progress string,
+	message string,
 ) modelsv1alpha1.ModelStatus {
 	status := modelsv1alpha1.ModelStatus{
 		ObservedGeneration: generation,
 		Phase:              modelsv1alpha1.ModelPhaseWaitForUpload,
+		Progress:           defaultUploadProgress(progress),
 		Source: &modelsv1alpha1.ResolvedSourceStatus{
 			ResolvedType: sourceType,
 		},
@@ -106,17 +117,33 @@ func waitForUploadStatus(
 		generation,
 		metav1.ConditionFalse,
 		modelsv1alpha1.ModelConditionReasonWaitingForUserUpload,
-		"controller prepared an upload session and is waiting for the user upload",
+		defaultRunningMessage(message, "controller prepared an upload session and is waiting for the user upload"),
 	)
 	setReadyCondition(
 		&status.Conditions,
 		generation,
 		metav1.ConditionFalse,
 		modelsv1alpha1.ModelConditionReasonPending,
-		"model is waiting for a user upload before publication can continue",
+		defaultRunningMessage(message, "model is waiting for a user upload before publication can continue"),
 	)
 
 	return status
+}
+
+func defaultRunningMessage(message string, fallback string) string {
+	message = strings.TrimSpace(message)
+	if message != "" {
+		return message
+	}
+	return fallback
+}
+
+func defaultUploadProgress(progress string) string {
+	progress = strings.TrimSpace(progress)
+	if progress != "" {
+		return progress
+	}
+	return "0%"
 }
 
 func failedStatus(

@@ -60,7 +60,7 @@ func requestToken(request *http.Request) string {
 	if strings.HasPrefix(auth, "Bearer ") {
 		return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	}
-	return strings.TrimSpace(request.URL.Query().Get("token"))
+	return ""
 }
 
 func authorizeUploadRequest(request *http.Request, expectedTokenHash string) bool {

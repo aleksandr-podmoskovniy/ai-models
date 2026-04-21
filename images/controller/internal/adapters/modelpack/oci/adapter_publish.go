@@ -34,29 +34,37 @@ func uploadPublishLayers(
 	input modelpackports.PublishInput,
 	auth modelpackports.RegistryAuth,
 	layers []modelpackports.PublishLayer,
-	descriptors []publishLayerDescriptor,
+	plans []publishLayerDescriptor,
 	logger *slog.Logger,
-) error {
+) ([]publishLayerDescriptor, error) {
+	checkpoint, err := loadDirectUploadCheckpoint(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	descriptors := make([]publishLayerDescriptor, 0, len(layers))
 	for index, layer := range layers {
 		layerUploadStarted := time.Now()
 		logger.Info(
 			"native modelpack layer upload started",
 			slog.Int("layerIndex", index),
-			slog.String("layerTargetPath", descriptors[index].TargetPath),
-			slog.String("layerMediaType", descriptors[index].MediaType),
+			slog.String("layerTargetPath", plans[index].TargetPath),
+			slog.String("layerMediaType", plans[index].MediaType),
 		)
-		if err := uploadPublishLayer(ctx, client, input, auth, layer, descriptors[index]); err != nil {
-			return err
+		descriptor, err := uploadPublishLayer(ctx, client, input, auth, layer, plans[index], checkpoint)
+		if err != nil {
+			return nil, err
 		}
+		descriptors = append(descriptors, descriptor)
 		logger.Info(
 			"native modelpack layer upload completed",
 			slog.Int64("durationMs", time.Since(layerUploadStarted).Milliseconds()),
 			slog.Int("layerIndex", index),
-			slog.String("layerDigest", descriptors[index].Digest),
-			slog.Int64("layerSizeBytes", descriptors[index].Size),
+			slog.String("layerDigest", descriptor.Digest),
+			slog.Int64("layerSizeBytes", descriptor.Size),
 		)
 	}
-	return nil
+	return descriptors, nil
 }
 
 func uploadPublishLayer(
@@ -65,9 +73,29 @@ func uploadPublishLayer(
 	input modelpackports.PublishInput,
 	auth modelpackports.RegistryAuth,
 	layer modelpackports.PublishLayer,
-	descriptor publishLayerDescriptor,
-) error {
-	return pushLayerDirectToBackingStorage(ctx, client, input, auth, layer, descriptor)
+	plan publishLayerDescriptor,
+	checkpoint *directUploadCheckpoint,
+) (publishLayerDescriptor, error) {
+	if checkpoint != nil {
+		if completed, found, err := checkpoint.completedLayer(plan); err != nil {
+			return publishLayerDescriptor{}, err
+		} else if found {
+			return completed, nil
+		}
+	}
+
+	if canOnePassUploadRawLayer(layer) {
+		return pushRawLayerDirectToBackingStorage(ctx, client, input, auth, layer, plan, checkpoint)
+	}
+
+	descriptor, err := describePublishLayer(ctx, layer)
+	if err != nil {
+		return publishLayerDescriptor{}, err
+	}
+	if err := pushDescribedLayerDirectToBackingStorage(ctx, client, input, auth, layer, descriptor, checkpoint); err != nil {
+		return publishLayerDescriptor{}, err
+	}
+	return descriptor, nil
 }
 
 func uploadPublishConfig(
@@ -78,7 +106,7 @@ func uploadPublishConfig(
 	descriptors []publishLayerDescriptor,
 	logger *slog.Logger,
 ) (blobDescriptor, error) {
-	configBytes, err := buildConfigBlob(primaryModelPath(descriptors), descriptors)
+	configBytes, err := buildConfigBlob(publishedModelPath(descriptors), descriptors)
 	if err != nil {
 		return blobDescriptor{}, err
 	}

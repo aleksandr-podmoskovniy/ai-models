@@ -145,6 +145,27 @@ func NewSecret(spec SessionSpec) (*corev1.Secret, error) {
 	}, nil
 }
 
+func SaveMultipartSecret(secret *corev1.Secret, state uploadsessionruntime.SessionState) error {
+	if secret == nil {
+		return errors.New("upload session secret must not be nil")
+	}
+	if err := setMultipartState(secret, state); err != nil {
+		return err
+	}
+	ensureData(secret)
+	secret.Data[phaseKey] = []byte(string(PhaseUploading))
+	delete(secret.Data, failureMessageKey)
+	delete(secret.Data, stagedHandleKey)
+	return nil
+}
+
+func SetUploadedPartsSecret(secret *corev1.Secret, parts []uploadsessionruntime.UploadedPart) error {
+	if secret == nil {
+		return errors.New("upload session secret must not be nil")
+	}
+	return setUploadedParts(secret, parts)
+}
+
 func SessionFromSecret(secret *corev1.Secret) (*Session, error) {
 	if secret == nil {
 		return nil, errors.New("upload session secret must not be nil")

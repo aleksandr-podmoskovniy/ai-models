@@ -53,14 +53,18 @@ Current phase-2 slice implemented here:
 - `internal/ports/modelpack` for replaceable `ModelPack`
   publication/removal/materialization contract;
 - `internal/adapters/modelpack/oci` for the ai-models-owned native OCI
-  `ModelPack` implementation: controller-side publish/remove over direct
-  heavy-layer upload into `DMCR` backing storage plus shared published-artifact
-  inspection, semantic validation, standalone runtime materialization into a
-  local path from immutable `DMCR` artifacts, and one canonical internal
-  helper-owned transport for heavy layer blobs through the `DMCR` direct-upload
-  helper;
+  `ModelPack` implementation: controller-side publish/remove over `DMCR`
+  direct-upload v2 with late digest completion into backing storage, one-pass
+  raw publish for range-capable heavy layers, bounded companion-bundle plus
+  raw-layer publish for streamable multi-file object sources, raw publish for
+  single-file inputs, archive-source publish for streamable archives, shared
+  published-artifact inspection, semantic validation, and standalone runtime
+  materialization into a local path from immutable `DMCR` artifacts; when the
+  caller supplies direct-upload state, the adapter can continue interrupted
+  raw-layer upload from persisted session state while the helper session is
+  still alive, instead of depending only on one live worker process;
 - `internal/nodecache` for shared node-local cache contract reused by the
-  current `materialize-artifact` fallback and the new module-owned
+  current `materialize-artifact` bridge and the new module-owned
   node-cache runtime plane: digest-addressed shared store layout, ready marker
   parsing, separate consumer materialization plus internal current-link and
   stable workload-model-link helper contract, single-writer coordination,
@@ -70,20 +74,20 @@ Current phase-2 slice implemented here:
 - `internal/adapters/k8s/modeldelivery` for reusable consumer-side
   `PodTemplateSpec` mutation over `materialize-artifact`, fixed
   `/data/modelcache` cache-root contract over user-provided storage or
-  ai-models-managed local generic ephemeral fallback volume,
-  topology-aware per-pod versus direct shared PVC handling with RWX
+  ai-models-managed local generic ephemeral bridge volume,
+  topology-aware per-pod versus shared PVC bridge handling with RWX
   single-writer cache-root coordination, and cross-namespace read-only DMCR
   auth/CA projection into the runtime namespace plus one stable
   workload-facing runtime env contract
   (`AI_MODELS_MODEL_PATH` / `AI_MODELS_MODEL_DIGEST` /
   `AI_MODELS_MODEL_FAMILY`) that now projects either the stable
   `/data/modelcache/model` entrypoint for per-pod delivery or a digest-scoped
-  shared-store path for direct shared-cache topology instead of leaking raw
+  shared-store path for shared PVC bridge topology instead of leaking raw
   cache-root layout details into consumers;
 - `internal/adapters/k8s/nodecacheruntime` for stable per-node Pod/PVC shaping
   of the node-cache runtime plane plus runtime-side extraction of the
-  published artifacts required by live managed Pods on the same node only when
-  those Pods were resolved to direct shared delivery;
+  published artifacts required by live managed Pods on the same node only for
+  the future true shared-direct delivery mode;
 - `internal/adapters/k8s/nodecachesubstrate` for concrete
   `storage.deckhouse.io/v1alpha1` shaping of managed `LVMVolumeGroupSet`,
   ready managed `LVMVolumeGroup` filtering, and ai-models-owned
@@ -93,7 +97,7 @@ Current phase-2 slice implemented here:
   workloads: it resolves `Model` or `ClusterModel`, reuses the shared
   `k8s/modeldelivery` service, writes resolved artifact plus delivery
   mode/reason annotations onto `PodTemplateSpec`, auto-injects a managed local
-  fallback volume when
+  bridge volume when
   node-cache substrate is enabled and the workload did not bring a cache mount,
   fail-closes when user-provided `/data/modelcache` storage topology is invalid
   instead of inventing a second storage contract,
@@ -106,7 +110,7 @@ Current phase-2 slice implemented here:
   `LocalStorageClass` for node-local cache preparation and removes the need to
   hand-create local-storage resources before the later cache runtime slice
   lands; workload delivery can already reuse that storage class for managed
-  local fallback volumes, but node-shared cache semantics still remain outside
+  local bridge volumes, but node-shared cache semantics still remain outside
   this controller;
 - `internal/controllers/nodecacheruntime` for controller-owned stable per-node
   runtime Pod/PVC ownership: it reconciles the node-cache agent only for the
@@ -116,9 +120,11 @@ Current phase-2 slice implemented here:
   controller-owned stable per-node Pod plus stable PVC over the ai-models-
   managed `LocalStorageClass`; that shared-store volume is sized by
   `nodeCache.sharedVolumeSize`, reads the published artifacts required by live
-  managed Pods on the current node only for direct shared delivery, and
+  managed Pods on the current node only for the future true shared-direct
+  delivery mode, and
   prefetches immutable artifacts into the shared node-local digest store
-  without treating fallback workloads as hidden consumers of that plane, so
+  without treating materialize-bridge workloads as hidden consumers of that
+  plane, so
   maintenance and prefetch already run on a node-owned storage surface that
   can be reused by the next CSI-like slice without another ownership rewrite;
 - `internal/adapters/sourcefetch` for safe `HuggingFace` remote source fetch
@@ -171,17 +177,26 @@ Current phase-2 slice implemented here:
   through one direct `CreateOrUpdate` path instead of adapter-local CRUD;
   active publish-worker concurrency is now capped explicitly before Pod
   creation, and the worker Pod now carries only explicit CPU, memory and
-  ephemeral-storage requests/limits without a local publication workspace;
+  ephemeral-storage requests/limits without a local publication workspace; the
+  adapter also keeps one owner-scoped direct-upload state `Secret`, recreates a
+  failed worker Pod only when that state still says `Running`, and exposes a
+  bounded running progress message derived from the persisted checkpoint;
 - `internal/adapters/k8s/uploadsession` for controller-owned upload session
   supplements:
   one short-lived session `Secret` per upload plus user-facing upload URL
-  projection for `spec.source.upload`, while the shared gateway footprint now
-  lives in the controller deployment shell instead of per-upload runtime
-  objects; the package also implements the shared upload-session runtime port
-  directly, consumes the shared `publishop.Request` without local request
-  wrappers or a separate request-mapping file, and does not keep a
-  second runtime-proxy layer or constructor path over the same concrete
-  adapter;
+  projection and a separate Bearer authorization header value for
+  `spec.source.upload`, while the shared gateway footprint now lives in the
+  controller deployment shell instead of per-upload runtime objects; the
+  package also implements the shared upload-session runtime port directly,
+  consumes the shared `publishop.Request` without local request wrappers or a
+  separate request-mapping file, and does not keep a second runtime-proxy
+  layer or constructor path over the same concrete adapter; upload-session
+  handle shaping now also computes one virtualization-style public progress
+  value for local uploads from persisted `expectedSizeBytes` and multipart
+  uploaded-part sizes instead of scraping text messages, and the controller now
+  refreshes multipart uploaded-part state from staging directly before
+  projecting `status.progress`, so public progress does not depend on a
+  separate client poll against the gateway;
 - `internal/adapters/k8s/uploadsessionstate` for the secret-backed multipart
   session and lifecycle store used by the shared upload gateway; this keeps
   K8s Secret CRUD out of the dataplane use case and out of shared
@@ -189,6 +204,11 @@ Current phase-2 slice implemented here:
   `issued/probing/uploading/uploaded/failed/aborted/expired` phases, and the
   persisted multipart part manifest instead of keeping resumability only in
   `uploadID`;
+- `internal/adapters/k8s/directuploadstate` for the secret-backed direct-upload
+  checkpoint store reused by `sourceworker` and `publish-worker`:
+  owner-generation reset, current-layer session token plus digest-state
+  persistence, committed-layer journal, and terminal `completed/failed`
+  handoff without leaking K8s Secret CRUD into the OCI adapter or dataplane;
 - `internal/adapters/k8s/ociregistry` for shared OCI registry auth/CA env,
   volume rendering, and controller-owned write-auth / CA projection lifecycle
   used by worker/session/cleanup paths against the module-local DMCR-style
@@ -208,9 +228,10 @@ Current phase-2 slice implemented here:
 - `internal/dataplane/publishworker` for the controller-owned publication
   runtime that fetches sources, computes resolved metadata, publishes a
   `ModelPack`, and writes the final result into the worker Pod termination
-  message; canonical `HuggingFace`, direct-upload and streamable archive paths
-  now publish via object-source or archive-source streaming semantics and no
-  longer keep a successful `checkpointDir` fallback in the live worker shell;
+  message; canonical `HuggingFace`, staged-object and direct file paths now
+  publish streamable inputs as raw layers, archive inputs stay on the
+  archive-source path, and the live worker shell no longer keeps a successful
+  `checkpointDir` fallback;
 - `internal/dataplane/uploadsession` for the controller-owned upload session
   runtime; it now serves the shared `/v1/upload/<sessionID>` multipart
   session/control API, persists session state in the upload Secret, and marks
@@ -222,16 +243,22 @@ Current phase-2 slice implemented here:
   data or expiry timestamps; once controller takes ownership after upload
   handoff, the gateway now also treats `publishing/completed` as closed
   session phases and rejects any late multipart mutation attempts instead of
-  letting the preserved manifest imply a still-open upload;
+  letting the preserved manifest imply a still-open upload; user-facing upload
+  auth is Bearer-only, and token-bearing query URLs are no longer part of the
+  projected status contract;
 - `internal/dataplane/artifactcleanup` for the controller-owned published
   artifact removal runtime;
 - `internal/publishedsnapshot` for immutable published-artifact snapshots used
   as controller handoff between publish, cleanup, and delete steps;
 - `internal/ports/publishop` for shared publication operation runtime
   contracts and worker/session handles reused across adapters; the live handoff
-  is now one direct `publishop.Request`, not a wrapper over the same request;
+  is now one direct `publishop.Request`, not a wrapper over the same request,
+  and source-worker handles now also carry one bounded running progress
+  message instead of forcing status code to scrape raw Pod logs;
 - `internal/domain/publishstate` for publication lifecycle state, condition and
-  observation decisions;
+  observation decisions; upload-driven objects now project one top-level
+  `status.progress` percent string for the local upload path instead of
+  forcing operators to infer progress from `conditions[*].message`;
 - `internal/application/publishplan` for source-worker and upload-session
   planning use cases;
 - `internal/application/publishaudit` for append-only internal audit/event
@@ -245,14 +272,16 @@ Current phase-2 slice implemented here:
   `FinalizeDeleteDecision` payload shape in multiple branches;
 - `internal/monitoring/catalogmetrics` for module-owned Prometheus collectors
   over public `Model` / `ClusterModel` state: phase one-hot gauges,
-  ready/validated booleans, small info metrics, and artifact size from
-  public `spec/status` instead of runtime-local counters or log parsing;
+  ready/validated booleans, condition status/reason gauges, small info metrics,
+  and artifact size from public `spec/status` instead of runtime-local
+  counters or log parsing;
 - `internal/monitoring/runtimehealth` for module-owned Prometheus collectors
   over the managed node-cache runtime plane: stable per-node agent `Pod`
   phase/readiness, selector-scoped desired-vs-ready summary gauges, shared-
   cache `PVC` bind/requested-size signals, and aggregated top-level workload
-  delivery mode/reason counts from ai-models-owned runtime state instead of
-  ad-hoc `kubectl` inspection;
+  delivery mode/reason counts plus bridge init-container
+  `waiting/running/succeeded/failed` state signals from ai-models-owned
+  runtime state instead of ad-hoc `kubectl` inspection;
 - `internal/support/cleanuphandle` for controller-owned backend-specific delete
   state
   that must not leak into public status;

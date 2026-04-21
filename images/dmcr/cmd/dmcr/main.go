@@ -22,7 +22,7 @@ import (
 	"github.com/distribution/distribution/v3/registry"
 	_ "github.com/distribution/distribution/v3/registry/auth/htpasswd"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
-	_ "github.com/distribution/distribution/v3/registry/storage/driver/s3-aws"
+	_ "github.com/deckhouse/ai-models/dmcr/internal/registrydriver/sealeds3"
 )
 
 func main() {

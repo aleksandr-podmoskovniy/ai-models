@@ -27,21 +27,23 @@ import (
 )
 
 type Input struct {
-	Artifact       publication.PublishedArtifact
-	ArtifactFamily string
-	RegistryAccess ociregistry.Projection
-	CacheMount     CacheMount
-	TopologyKind   CacheTopologyKind
-	Coordination   Coordination
+	Artifact                   publication.PublishedArtifact
+	ArtifactFamily             string
+	RegistryAccess             ociregistry.Projection
+	RuntimeImagePullSecretName string
+	CacheMount                 CacheMount
+	TopologyKind               CacheTopologyKind
+	Coordination               Coordination
 }
 
 type Rendered struct {
-	InitContainer  corev1.Container
-	RuntimeEnv     []corev1.EnvVar
-	Volumes        []corev1.Volume
-	ModelPath      string
-	ArtifactURI    string
-	ArtifactFamily string
+	InitContainer    corev1.Container
+	RuntimeEnv       []corev1.EnvVar
+	Volumes          []corev1.Volume
+	ImagePullSecrets []corev1.LocalObjectReference
+	ModelPath        string
+	ArtifactURI      string
+	ArtifactFamily   string
 }
 
 func Render(input Input, options Options) (Rendered, error) {
@@ -71,7 +73,7 @@ func Render(input Input, options Options) (Rendered, error) {
 	}}, ociregistry.VolumeMounts(input.RegistryAccess.CASecretName)...)
 
 	modelPath := ModelPath(options)
-	if input.TopologyKind == CacheTopologySharedDirect {
+	if input.TopologyKind == CacheTopologySharedPVC {
 		modelPath = nodecache.SharedArtifactModelPath(options.CacheMountPath, input.Artifact.Digest)
 	}
 
@@ -84,12 +86,20 @@ func Render(input Input, options Options) (Rendered, error) {
 			Env:             buildInitEnv(input, options),
 			VolumeMounts:    initMounts,
 		},
-		RuntimeEnv:     buildRuntimeEnv(input, options, modelPath),
-		Volumes:        ociregistry.Volumes(input.RegistryAccess.CASecretName),
-		ModelPath:      modelPath,
-		ArtifactURI:    strings.TrimSpace(input.Artifact.URI),
-		ArtifactFamily: strings.TrimSpace(input.ArtifactFamily),
+		RuntimeEnv:       buildRuntimeEnv(input, options, modelPath),
+		Volumes:          ociregistry.Volumes(input.RegistryAccess.CASecretName),
+		ImagePullSecrets: buildImagePullSecrets(input.RuntimeImagePullSecretName),
+		ModelPath:        modelPath,
+		ArtifactURI:      strings.TrimSpace(input.Artifact.URI),
+		ArtifactFamily:   strings.TrimSpace(input.ArtifactFamily),
 	}, nil
+}
+
+func buildImagePullSecrets(secretName string) []corev1.LocalObjectReference {
+	if strings.TrimSpace(secretName) == "" {
+		return nil
+	}
+	return []corev1.LocalObjectReference{{Name: strings.TrimSpace(secretName)}}
 }
 
 func buildInitEnv(input Input, options Options) []corev1.EnvVar {
@@ -112,7 +122,7 @@ func buildInitEnv(input Input, options Options) []corev1.EnvVar {
 			},
 		)
 	}
-	if input.TopologyKind == CacheTopologySharedDirect {
+	if input.TopologyKind == CacheTopologySharedPVC {
 		env = append(env, corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_SHARED_STORE", Value: "true"})
 	}
 	if family := strings.TrimSpace(input.ArtifactFamily); family != "" {

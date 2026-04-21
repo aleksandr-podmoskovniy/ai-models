@@ -89,7 +89,7 @@ type SessionRecord struct {
 
 type SessionStore interface {
 	Load(ctx context.Context, sessionID string) (SessionRecord, bool, error)
-	SaveProbe(ctx context.Context, sessionID string, state ProbeState) error
+	SaveProbe(ctx context.Context, sessionID string, expectedSizeBytes int64, state ProbeState) error
 	SaveMultipart(ctx context.Context, sessionID string, state SessionState) error
 	SaveMultipartParts(ctx context.Context, sessionID string, parts []UploadedPart) error
 	ClearMultipart(ctx context.Context, sessionID string) error

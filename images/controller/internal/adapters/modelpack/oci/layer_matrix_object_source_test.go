@@ -38,13 +38,12 @@ func TestAdapterPublishAndMaterializeObjectSourceLayer(t *testing.T) {
 		ArtifactURI: reference,
 		Layers: []modelpackports.PublishLayer{
 			{
-				SourcePath:  "s3://artifacts/raw/1111-2222/source-url/.mirror/huggingface/owner/model/deadbeef",
-				TargetPath:  "model",
-				Base:        modelpackports.LayerBaseModel,
-				Format:      modelpackports.LayerFormatTar,
-				Compression: modelpackports.LayerCompressionNone,
+				SourcePath: "s3://artifacts/raw/1111-2222/source-url/.mirror/huggingface/owner/model/deadbeef",
+				TargetPath: "model",
+				Base:       modelpackports.LayerBaseModel,
+				Format:     modelpackports.LayerFormatTar,
 				ObjectSource: &modelpackports.PublishObjectSource{
-					Reader: fakeObjectReader{
+					Reader: &fakeObjectReader{
 						files: map[string]fakeObjectFile{
 							"mirror/config.json": {
 								payload: []byte("{\"arch\":\"tiny\"}\n"),
@@ -58,7 +57,29 @@ func TestAdapterPublishAndMaterializeObjectSourceLayer(t *testing.T) {
 					},
 					Files: []modelpackports.PublishObjectFile{
 						{SourcePath: "mirror/config.json", TargetPath: "config.json", SizeBytes: int64(len("{\"arch\":\"tiny\"}\n")), ETag: `"etag-config"`},
-						{SourcePath: "mirror/model.safetensors", TargetPath: "model.safetensors", SizeBytes: int64(len("weights")), ETag: `"etag-model"`},
+					},
+				},
+			},
+			{
+				SourcePath: "s3://artifacts/raw/1111-2222/source-url/.mirror/huggingface/owner/model/deadbeef",
+				TargetPath: "model/model.safetensors",
+				Base:       modelpackports.LayerBaseModel,
+				Format:     modelpackports.LayerFormatRaw,
+				ObjectSource: &modelpackports.PublishObjectSource{
+					Reader: &fakeObjectReader{
+						files: map[string]fakeObjectFile{
+							"mirror/config.json": {
+								payload: []byte("{\"arch\":\"tiny\"}\n"),
+								etag:    `"etag-config"`,
+							},
+							"mirror/model.safetensors": {
+								payload: []byte("weights"),
+								etag:    `"etag-model"`,
+							},
+						},
+					},
+					Files: []modelpackports.PublishObjectFile{
+						{SourcePath: "mirror/model.safetensors", TargetPath: "model/model.safetensors", SizeBytes: int64(len("weights")), ETag: `"etag-model"`},
 					},
 				},
 			},
@@ -82,15 +103,17 @@ func TestAdapterPublishAndMaterializeObjectSourceLayer(t *testing.T) {
 }
 
 type fakeObjectReader struct {
-	files      map[string]fakeObjectFile
-	rangeCalls int
+	files         map[string]fakeObjectFile
+	openReadCalls int
+	rangeCalls    int
 }
 
-func (f fakeObjectReader) OpenRead(_ context.Context, sourcePath string) (modelpackports.OpenReadResult, error) {
+func (f *fakeObjectReader) OpenRead(_ context.Context, sourcePath string) (modelpackports.OpenReadResult, error) {
 	file, found := f.files[sourcePath]
 	if !found {
 		return modelpackports.OpenReadResult{}, io.EOF
 	}
+	f.openReadCalls++
 	return modelpackports.OpenReadResult{
 		Body:      io.NopCloser(bytes.NewReader(file.payload)),
 		SizeBytes: int64(len(file.payload)),
@@ -150,15 +173,13 @@ func TestAdapterPublishObjectSourceUsesRangeReadsOnInterruptedUpload(t *testing.
 		ArtifactURI: reference,
 		Layers: []modelpackports.PublishLayer{
 			{
-				SourcePath:  "https://huggingface.co/owner/model?revision=deadbeef",
-				TargetPath:  "model",
-				Base:        modelpackports.LayerBaseModel,
-				Format:      modelpackports.LayerFormatTar,
-				Compression: modelpackports.LayerCompressionNone,
+				SourcePath: "https://huggingface.co/owner/model?revision=deadbeef",
+				TargetPath: "model.safetensors",
+				Base:       modelpackports.LayerBaseModel,
+				Format:     modelpackports.LayerFormatRaw,
 				ObjectSource: &modelpackports.PublishObjectSource{
 					Reader: reader,
 					Files: []modelpackports.PublishObjectFile{
-						{SourcePath: "mirror/config.json", TargetPath: "config.json", SizeBytes: int64(len("{\"arch\":\"tiny\"}\n")), ETag: `"etag-config"`},
 						{SourcePath: "mirror/model.safetensors", TargetPath: "model.safetensors", SizeBytes: int64(len(strings.Repeat("weights", 64))), ETag: `"etag-model"`},
 					},
 				},
@@ -170,5 +191,8 @@ func TestAdapterPublishObjectSourceUsesRangeReadsOnInterruptedUpload(t *testing.
 
 	if got := reader.rangeCalls; got == 0 {
 		t.Fatal("expected ranged object reads after interrupted upload")
+	}
+	if got := reader.openReadCalls; got != 0 {
+		t.Fatalf("OpenRead() calls = %d, want 0 on raw ranged late-digest path", got)
 	}
 }

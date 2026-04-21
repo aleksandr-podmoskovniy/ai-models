@@ -150,6 +150,15 @@ func TestPublishFromUploadAcceptsDirectGGUFFile(t *testing.T) {
 			if got, want := input.ModelDir, modelPath; got != want {
 				t.Fatalf("unexpected publish input path %q", got)
 			}
+			if got, want := len(input.Layers), 1; got != want {
+				t.Fatalf("unexpected layer count %d", got)
+			}
+			if got, want := input.Layers[0].Format, modelpackports.LayerFormatRaw; got != want {
+				t.Fatalf("unexpected layer format %q", got)
+			}
+			if got, want := input.Layers[0].TargetPath, filepath.Base(modelPath); got != want {
+				t.Fatalf("unexpected layer target path %q", got)
+			}
 			return nil
 		},
 	}

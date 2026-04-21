@@ -17,14 +17,18 @@ limitations under the License.
 package main
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	directuploadstate "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/directuploadstate"
 	modelpackoci "github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/oci"
 	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/dataplane/publishworker"
+	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
@@ -44,6 +48,8 @@ const (
 	publishInputFormatEnv         = "AI_MODELS_IMPORT_INPUT_FORMAT"
 	publishRevisionEnv            = "AI_MODELS_IMPORT_HF_REVISION"
 	publishTaskEnv                = "AI_MODELS_IMPORT_TASK"
+	publishDirectUploadStateNS    = "AI_MODELS_DIRECT_UPLOAD_STATE_NAMESPACE"
+	publishDirectUploadStateName  = "AI_MODELS_DIRECT_UPLOAD_STATE_SECRET_NAME"
 )
 
 func runPublishWorker(args []string) int {
@@ -63,6 +69,8 @@ func runPublishWorker(args []string) int {
 	var inputFormat string
 	var revision string
 	var task string
+	var directUploadStateNamespace string
+	var directUploadStateName string
 
 	flags.StringVar(&sourceType, "source-type", cmdsupport.EnvOr(publishSourceTypeEnv, string(modelsv1alpha1.ModelSourceTypeHuggingFace)), "Source type: HuggingFace or Upload.")
 	flags.StringVar(&artifactURI, "artifact-uri", "", "Controller-owned destination OCI reference.")
@@ -73,11 +81,13 @@ func runPublishWorker(args []string) int {
 	flags.StringVar(&uploadStageFileName, "upload-stage-file-name", cmdsupport.EnvOr(publishUploadStageFileNameEnv, ""), "Original staged upload file name.")
 	flags.StringVar(&rawStageBucket, "raw-stage-bucket", cmdsupport.EnvOr(publishRawStageBucketEnv, ""), "Bucket used for controller-owned raw staging of remote sources.")
 	flags.StringVar(&rawStageKeyPrefix, "raw-stage-key-prefix", cmdsupport.EnvOr(publishRawStageKeyPrefixEnv, ""), "Object key prefix used for controller-owned raw staging of remote sources.")
-	flags.StringVar(&ociDirectUploadEndpoint, "oci-direct-upload-endpoint", cmdsupport.EnvOr(publishOCIDirectUploadEnv, ""), "Internal DMCR direct-upload HTTPS endpoint for heavy layer blob uploads.")
+	flags.StringVar(&ociDirectUploadEndpoint, "oci-direct-upload-endpoint", cmdsupport.EnvOr(publishOCIDirectUploadEnv, ""), "Internal DMCR direct-upload HTTPS endpoint used to stream published blob payloads into backing storage.")
 	flags.StringVar(&sourceFetchMode, "source-fetch-mode", cmdsupport.EnvOr(publishSourceFetchEnv, string(publicationports.SourceFetchModeDirect)), "Remote source fetch mode: mirror or direct.")
 	flags.StringVar(&inputFormat, "input-format", cmdsupport.EnvOr(publishInputFormatEnv, ""), "Model input format. Leave empty for auto-detection.")
 	flags.StringVar(&revision, "revision", cmdsupport.EnvOr(publishRevisionEnv, ""), "Resolved source revision.")
 	flags.StringVar(&task, "task", cmdsupport.EnvOr(publishTaskEnv, ""), "Runtime task.")
+	flags.StringVar(&directUploadStateNamespace, "direct-upload-state-namespace", cmdsupport.EnvOr(publishDirectUploadStateNS, ""), "Namespace of the direct-upload state Secret.")
+	flags.StringVar(&directUploadStateName, "direct-upload-state-secret-name", cmdsupport.EnvOr(publishDirectUploadStateName, ""), "Name of the direct-upload state Secret.")
 
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -94,7 +104,7 @@ func runPublishWorker(args []string) int {
 		}
 	}
 	if uploadStage != nil || rawStageBucket != "" || rawStageKeyPrefix != "" {
-		uploadStagingClient, err = uploadstagings3.New(uploadStagingS3ConfigFromEnv())
+		uploadStagingClient, err = uploadstagings3.New(cmdsupport.UploadStagingS3ConfigFromEnv())
 		if err != nil {
 			cmdsupport.WriteTerminationFailure(err.Error())
 			return cmdsupport.CommandError(commandPublishWorker, err)
@@ -103,6 +113,15 @@ func runPublishWorker(args []string) int {
 
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
+
+	var directUploadStateStore modelpackports.DirectUploadStateStore
+	if strings.TrimSpace(directUploadStateName) != "" {
+		directUploadStateStore, err = directuploadstate.NewInCluster(directUploadStateNamespace, directUploadStateName)
+		if err != nil {
+			cmdsupport.WriteTerminationFailure(err.Error())
+			return cmdsupport.CommandError(commandPublishWorker, err)
+		}
+	}
 
 	logger := publishWorkerLogger(
 		modelsv1alpha1.ModelSourceType(sourceType),
@@ -139,10 +158,19 @@ func runPublishWorker(args []string) int {
 		UploadStaging:           uploadStagingClient,
 		ModelPackPublisher:      modelpackoci.New(),
 		RegistryAuth:            cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
+		DirectUploadState:       directUploadStateStore,
 	})
 	if err != nil {
+		if markErr := persistDirectUploadTerminalState(ctx, directUploadStateStore, modelpackports.DirectUploadStatePhaseFailed, err.Error()); markErr != nil {
+			err = errors.Join(err, markErr)
+		}
 		cmdsupport.WriteTerminationFailure(err.Error())
 		logger.Error("publication worker failed", slog.Any("error", err))
+		return 1
+	}
+	if err := persistDirectUploadTerminalState(ctx, directUploadStateStore, modelpackports.DirectUploadStatePhaseCompleted, ""); err != nil {
+		cmdsupport.WriteTerminationFailure(err.Error())
+		logger.Error("publication worker direct upload state finalization failed", slog.Any("error", err))
 		return 1
 	}
 	payload, err := publicationartifact.EncodeResult(result)
@@ -194,4 +222,26 @@ func publishWorkerLogger(
 	}
 
 	return logger
+}
+
+func persistDirectUploadTerminalState(
+	ctx context.Context,
+	store modelpackports.DirectUploadStateStore,
+	phase modelpackports.DirectUploadStatePhase,
+	message string,
+) error {
+	if store == nil {
+		return nil
+	}
+
+	state, found, err := store.Load(ctx)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	state.Phase = phase
+	state.FailureMessage = strings.TrimSpace(message)
+	return store.Save(ctx, state)
 }

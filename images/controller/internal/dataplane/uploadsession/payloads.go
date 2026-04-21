@@ -30,8 +30,9 @@ type sessionInfoResponse struct {
 }
 
 type probeUploadRequest struct {
-	FileName string `json:"fileName"`
-	Chunk    []byte `json:"chunk"`
+	FileName  string `json:"fileName"`
+	SizeBytes int64  `json:"sizeBytes,omitempty"`
+	Chunk     []byte `json:"chunk"`
 }
 
 type probeUploadResponse struct {

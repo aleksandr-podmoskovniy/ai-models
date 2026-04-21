@@ -85,28 +85,23 @@ func tryPublishUploadStageDirectObjectSource(
 	if err != nil {
 		return publicationartifact.Result{}, false, err
 	}
-	publishLayers := []modelpackports.PublishLayer{
-		{
-			SourcePath:  rawURI(options.UploadStage.Bucket, options.UploadStage.Key),
-			TargetPath:  modelpackports.MaterializedModelPathName,
-			Base:        modelpackports.LayerBaseModel,
-			Format:      modelpackports.LayerFormatTar,
-			Compression: modelpackports.LayerCompressionNone,
-			ObjectSource: &modelpackports.PublishObjectSource{
-				Reader: uploadStagingObjectReader{
-					bucket: strings.TrimSpace(options.UploadStage.Bucket),
-					reader: options.UploadStaging,
-				},
-				Files: []modelpackports.PublishObjectFile{
-					{
-						SourcePath: strings.TrimSpace(options.UploadStage.Key),
-						TargetPath: fileName,
-						SizeBytes:  stat.SizeBytes,
-						ETag:       strings.TrimSpace(stat.ETag),
-					},
-				},
+	publishLayers, err := buildObjectSourcePublishLayers(
+		rawURI(options.UploadStage.Bucket, options.UploadStage.Key),
+		uploadStagingObjectReader{
+			bucket: strings.TrimSpace(options.UploadStage.Bucket),
+			reader: options.UploadStaging,
+		},
+		[]modelpackports.PublishObjectFile{
+			{
+				SourcePath: strings.TrimSpace(options.UploadStage.Key),
+				TargetPath: fileName,
+				SizeBytes:  stat.SizeBytes,
+				ETag:       strings.TrimSpace(stat.ETag),
 			},
 		},
+	)
+	if err != nil {
+		return publicationartifact.Result{}, false, err
 	}
 
 	resolvedProfile, publishResult, err := resolveAndPublishWithLayers(

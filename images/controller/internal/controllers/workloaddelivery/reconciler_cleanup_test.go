@@ -85,7 +85,11 @@ func TestDeploymentReconcilerRemovesManagedStateWhenAnnotationDisappears(t *test
 	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]; found {
 		t.Fatal("did not expect resolved delivery reason annotation after annotation removal")
 	}
+	if got := len(cleaned.Spec.Template.Spec.ImagePullSecrets); got != 0 {
+		t.Fatalf("did not expect imagePullSecrets after annotation removal, got %#v", cleaned.Spec.Template.Spec.ImagePullSecrets)
+	}
 	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
+	assertProjectedRuntimeImagePullSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
 }
 
 func TestDeploymentReconcilerIgnoresUnmanagedWorkloadWithoutAnnotations(t *testing.T) {
@@ -109,6 +113,7 @@ func TestDeploymentReconcilerIgnoresUnmanagedWorkloadWithoutAnnotations(t *testi
 		t.Fatalf("did not expect init container %q", modeldelivery.DefaultInitContainerName)
 	}
 	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
+	assertProjectedRuntimeImagePullSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
 }
 
 func TestDeploymentReconcilerRemovesInjectedManagedCacheStateWhenAnnotationDisappears(t *testing.T) {
@@ -157,4 +162,5 @@ func TestDeploymentReconcilerRemovesInjectedManagedCacheStateWhenAnnotationDisap
 			t.Fatalf("did not expect managed cache volume %q after cleanup", modeldelivery.DefaultManagedCacheName)
 		}
 	}
+	assertProjectedRuntimeImagePullSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
 }

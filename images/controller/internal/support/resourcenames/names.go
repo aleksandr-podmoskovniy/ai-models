@@ -24,15 +24,17 @@ import (
 )
 
 const (
-	sourceWorkerPodPrefix        = "ai-model-publish-"
-	sourceWorkerAuthSecretPrefix = "ai-model-publish-auth-"
-	ociRegistryAuthSecretPrefix  = "ai-model-oci-auth-"
-	ociRegistryCASecretPrefix    = "ai-model-oci-ca-"
-	uploadSessionPodPrefix       = "ai-model-upload-"
-	uploadSessionServicePrefix   = "ai-model-upload-"
-	uploadSessionSecretPrefix    = "ai-model-upload-auth-"
-	cleanupJobPrefix             = "ai-model-cleanup-"
-	uploadStagingPrefix          = "raw"
+	sourceWorkerPodPrefix         = "ai-model-publish-"
+	sourceWorkerAuthSecretPrefix  = "ai-model-publish-auth-"
+	sourceWorkerStateSecretPrefix = "ai-model-publish-state-"
+	ociRegistryAuthSecretPrefix   = "ai-model-oci-auth-"
+	ociRegistryCASecretPrefix     = "ai-model-oci-ca-"
+	runtimeImagePullSecretPrefix  = "ai-model-runtime-pull-"
+	uploadSessionPodPrefix        = "ai-model-upload-"
+	uploadSessionServicePrefix    = "ai-model-upload-"
+	uploadSessionSecretPrefix     = "ai-model-upload-auth-"
+	cleanupJobPrefix              = "ai-model-cleanup-"
+	uploadStagingPrefix           = "raw"
 
 	AppNameLabelKey        = "app.kubernetes.io/name"
 	OwnerKindLabelKey      = "ai.deckhouse.io/owner-kind"
@@ -94,12 +96,20 @@ func SourceWorkerAuthSecretName(uid types.UID) (string, error) {
 	return PrefixedName(sourceWorkerAuthSecretPrefix, uid)
 }
 
+func SourceWorkerStateSecretName(uid types.UID) (string, error) {
+	return PrefixedName(sourceWorkerStateSecretPrefix, uid)
+}
+
 func OCIRegistryAuthSecretName(uid types.UID) (string, error) {
 	return PrefixedName(ociRegistryAuthSecretPrefix, uid)
 }
 
 func OCIRegistryCASecretName(uid types.UID) (string, error) {
 	return PrefixedName(ociRegistryCASecretPrefix, uid)
+}
+
+func RuntimeImagePullSecretName(uid types.UID) (string, error) {
+	return PrefixedName(runtimeImagePullSecretPrefix, uid)
 }
 
 func UploadSessionPodName(uid types.UID) (string, error) {

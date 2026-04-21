@@ -17,6 +17,7 @@ limitations under the License.
 package bootstrap
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"testing"
@@ -27,6 +28,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
+	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -80,6 +82,8 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 				},
 			},
 			MaxConcurrentWorkers: 1,
+			UploadStagingBucket:  "ai-models",
+			UploadStagingClient:  fakeBootstrapMultipartStager{},
 		},
 	})
 	if err != nil {
@@ -89,6 +93,32 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 	if !application.publicationRuntime.Enabled() {
 		t.Fatal("expected publication runtime to be configured")
 	}
+}
+
+type fakeBootstrapMultipartStager struct{}
+
+func (fakeBootstrapMultipartStager) StartMultipartUpload(context.Context, uploadstagingports.StartMultipartUploadInput) (uploadstagingports.StartMultipartUploadOutput, error) {
+	return uploadstagingports.StartMultipartUploadOutput{}, nil
+}
+
+func (fakeBootstrapMultipartStager) PresignUploadPart(context.Context, uploadstagingports.PresignUploadPartInput) (uploadstagingports.PresignUploadPartOutput, error) {
+	return uploadstagingports.PresignUploadPartOutput{}, nil
+}
+
+func (fakeBootstrapMultipartStager) ListMultipartUploadParts(context.Context, uploadstagingports.ListMultipartUploadPartsInput) ([]uploadstagingports.UploadedPart, error) {
+	return nil, nil
+}
+
+func (fakeBootstrapMultipartStager) CompleteMultipartUpload(context.Context, uploadstagingports.CompleteMultipartUploadInput) error {
+	return nil
+}
+
+func (fakeBootstrapMultipartStager) AbortMultipartUpload(context.Context, uploadstagingports.AbortMultipartUploadInput) error {
+	return nil
+}
+
+func (fakeBootstrapMultipartStager) Stat(context.Context, uploadstagingports.StatInput) (uploadstagingports.ObjectStat, error) {
+	return uploadstagingports.ObjectStat{}, nil
 }
 
 func TestNewAllowsCleanupOnlyRuntimeWithoutPublicationPlaneConfiguration(t *testing.T) {

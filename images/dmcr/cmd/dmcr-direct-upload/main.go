@@ -43,6 +43,7 @@ const (
 	secretKeyEnv       = "REGISTRY_STORAGE_S3_SECRETKEY"
 	partSizeBytesEnv   = "DMCR_DIRECT_UPLOAD_PART_SIZE_BYTES"
 	presignExpiryEnv   = "DMCR_DIRECT_UPLOAD_PRESIGN_EXPIRY"
+	sessionTTLEnv      = "DMCR_DIRECT_UPLOAD_SESSION_TTL"
 	defaultListenAddr  = ":5002"
 	defaultPresignLife = 15 * time.Minute
 )
@@ -69,6 +70,7 @@ func main() {
 		env(tokenSecretEnv),
 		env(rootDirectoryEnv),
 		envInt64(partSizeBytesEnv, directupload.DefaultBlobPartSizeBytes),
+		envDuration(sessionTTLEnv, directupload.DefaultSessionTTL),
 	)
 	if err != nil {
 		log.Fatal(err)

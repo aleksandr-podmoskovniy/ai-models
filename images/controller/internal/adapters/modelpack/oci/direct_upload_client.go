@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,7 +31,6 @@ import (
 )
 
 type directUploadSession struct {
-	Complete      bool
 	SessionToken  string
 	PartSizeBytes int64
 }
@@ -50,11 +50,9 @@ type directUploadClient struct {
 
 type startDirectUploadRequest struct {
 	Repository string `json:"repository"`
-	Digest     string `json:"digest"`
 }
 
 type startDirectUploadResponse struct {
-	Complete      bool   `json:"complete"`
 	SessionToken  string `json:"sessionToken"`
 	PartSizeBytes int64  `json:"partSizeBytes"`
 }
@@ -74,11 +72,30 @@ type listDirectUploadPartsResponse struct {
 
 type completeDirectUploadRequest struct {
 	SessionToken string               `json:"sessionToken"`
+	Digest       string               `json:"digest"`
+	SizeBytes    int64                `json:"sizeBytes"`
 	Parts        []uploadedDirectPart `json:"parts"`
 }
 
 type abortDirectUploadRequest struct {
 	SessionToken string `json:"sessionToken"`
+}
+
+type directUploadAPIError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *directUploadAPIError) Error() string {
+	if e == nil {
+		return "DMCR direct upload API error"
+	}
+	return fmt.Sprintf("DMCR direct upload API returned status %d: %s", e.StatusCode, strings.TrimSpace(e.Message))
+}
+
+func isDirectUploadStatus(err error, statusCode int) bool {
+	var apiErr *directUploadAPIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == statusCode
 }
 
 func newDirectUploadClient(
@@ -104,17 +121,14 @@ func newDirectUploadClient(
 func (c *directUploadClient) start(
 	ctx context.Context,
 	repository string,
-	digest string,
 ) (directUploadSession, error) {
 	var response startDirectUploadResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/v1/blob-uploads", startDirectUploadRequest{
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/blob-uploads", startDirectUploadRequest{
 		Repository: strings.TrimSpace(repository),
-		Digest:     strings.TrimSpace(digest),
 	}, &response); err != nil {
 		return directUploadSession{}, err
 	}
 	return directUploadSession{
-		Complete:      response.Complete,
 		SessionToken:  strings.TrimSpace(response.SessionToken),
 		PartSizeBytes: response.PartSizeBytes,
 	}, nil
@@ -126,7 +140,7 @@ func (c *directUploadClient) presignPart(
 	partNumber int,
 ) (string, error) {
 	var response presignDirectUploadPartResponse
-	if err := c.doJSON(ctx, http.MethodPost, "/v1/blob-uploads/presign-part", presignDirectUploadPartRequest{
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/blob-uploads/presign-part", presignDirectUploadPartRequest{
 		SessionToken: strings.TrimSpace(sessionToken),
 		PartNumber:   partNumber,
 	}, &response); err != nil {
@@ -139,7 +153,7 @@ func (c *directUploadClient) presignPart(
 }
 
 func (c *directUploadClient) listParts(ctx context.Context, sessionToken string) ([]uploadedDirectPart, error) {
-	requestPath := "/v1/blob-uploads/parts?sessionToken=" + url.QueryEscape(strings.TrimSpace(sessionToken))
+	requestPath := "/v2/blob-uploads/parts?sessionToken=" + url.QueryEscape(strings.TrimSpace(sessionToken))
 	var response listDirectUploadPartsResponse
 	if err := c.doJSON(ctx, http.MethodGet, requestPath, nil, &response); err != nil {
 		return nil, err
@@ -150,16 +164,20 @@ func (c *directUploadClient) listParts(ctx context.Context, sessionToken string)
 func (c *directUploadClient) complete(
 	ctx context.Context,
 	sessionToken string,
+	digest string,
+	sizeBytes int64,
 	parts []uploadedDirectPart,
 ) error {
-	return c.doJSON(ctx, http.MethodPost, "/v1/blob-uploads/complete", completeDirectUploadRequest{
+	return c.doJSON(ctx, http.MethodPost, "/v2/blob-uploads/complete", completeDirectUploadRequest{
 		SessionToken: strings.TrimSpace(sessionToken),
+		Digest:       strings.TrimSpace(digest),
+		SizeBytes:    sizeBytes,
 		Parts:        parts,
 	}, nil)
 }
 
 func (c *directUploadClient) abort(ctx context.Context, sessionToken string) error {
-	return c.doJSON(ctx, http.MethodPost, "/v1/blob-uploads/abort", abortDirectUploadRequest{
+	return c.doJSON(ctx, http.MethodPost, "/v2/blob-uploads/abort", abortDirectUploadRequest{
 		SessionToken: strings.TrimSpace(sessionToken),
 	}, nil)
 }
@@ -231,7 +249,10 @@ func (c *directUploadClient) doJSON(
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		responsePayload, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("DMCR direct upload API returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(responsePayload)))
+		return &directUploadAPIError{
+			StatusCode: resp.StatusCode,
+			Message:    strings.TrimSpace(string(responsePayload)),
+		}
 	}
 	if responseBody == nil {
 		return nil

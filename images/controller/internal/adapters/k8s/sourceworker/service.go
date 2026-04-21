@@ -19,9 +19,14 @@ package sourceworker
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/directuploadstate"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
+	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -69,42 +74,22 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 	if err != nil {
 		return nil, false, err
 	}
-	if err := s.preflight(ctx, request, plan); err != nil {
-		return nil, false, err
-	}
-	if existingPod, found, err := s.lookupPod(ctx, request.Owner.UID); err != nil {
-		return nil, false, err
-	} else if found {
-		return s.handleFromPod(existingPod), false, nil
-	}
-	if blocked, err := s.publishConcurrencyBlocked(ctx); err != nil {
-		return nil, false, err
-	} else if blocked {
-		return queuedHandle(request.Owner.UID)
-	}
-
-	projectedAuthSecretName, err := s.ensureProjectedAuthSecret(ctx, owner, request.Owner, plan)
+	directUploadStateSecret, directUploadState, err := s.prepareRequestState(ctx, owner, request, plan)
 	if err != nil {
 		return nil, false, err
 	}
-	projection, err := ociregistry.EnsureProjectedAccess(
-		ctx,
-		s.client,
-		s.scheme,
-		owner,
-		s.options.Namespace,
-		request.Owner.UID,
-		s.options.OCIRegistrySecretName,
-		s.options.OCIRegistryCASecretName,
-	)
+	if handle, done, err := s.existingOrQueuedHandle(ctx, request.Owner.UID, directUploadState); err != nil {
+		return nil, false, err
+	} else if done {
+		return handle, false, nil
+	}
+
+	options, projectedAuthSecretName, err := s.prepareProjectedDependencies(ctx, owner, request.Owner, plan)
 	if err != nil {
 		return nil, false, err
 	}
-	options := s.options
-	options.OCIRegistrySecretName = projection.AuthSecretName
-	options.OCIRegistryCASecretName = projection.CASecretName
 
-	pod, err := buildWithPlan(request, plan, options, projectedAuthSecretName)
+	pod, err := buildWithPlan(request, plan, options, projectedAuthSecretName, directUploadStateSecret.Name)
 	if err != nil {
 		return nil, false, err
 	}
@@ -114,14 +99,24 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 		return nil, false, err
 	}
 
-	return s.handleFromPod(pod), created, nil
+	return s.handleFromPod(pod, directUploadState), created, nil
 }
 
-func (s *Service) handleFromPod(pod *corev1.Pod) *publicationports.SourceWorkerHandle {
+func (s *Service) handleFromPod(
+	pod *corev1.Pod,
+	directUploadState modelpackports.DirectUploadState,
+) *publicationports.SourceWorkerHandle {
+	message := terminationMessage(pod, "publish")
+	if message == "" && directUploadState.Phase == modelpackports.DirectUploadStatePhaseFailed {
+		message = strings.TrimSpace(directUploadState.FailureMessage)
+	}
+	reason, progressMessage := directUploadProgress(directUploadState)
 	return publicationports.NewSourceWorkerHandle(
 		pod.Name,
 		pod.Status.Phase,
-		terminationMessage(pod, "publish"),
+		message,
+		reason,
+		progressMessage,
 		func(ctx context.Context) error {
 			return s.deleteResources(ctx, pod)
 		},
@@ -186,16 +181,7 @@ func queuedHandle(ownerUID types.UID) (*publicationports.SourceWorkerHandle, boo
 	if err != nil {
 		return nil, false, err
 	}
-	return publicationports.NewSourceWorkerHandle(name, corev1.PodPending, "", nil), false, nil
-}
-
-func isActiveWorkerPhase(phase corev1.PodPhase) bool {
-	switch phase {
-	case corev1.PodSucceeded, corev1.PodFailed:
-		return false
-	default:
-		return true
-	}
+	return publicationports.NewSourceWorkerHandle(name, corev1.PodPending, "", modelsv1alpha1.ModelConditionReasonPending, "", nil), false, nil
 }
 
 func (s *Service) projectedAuthSecretForPod(pod *corev1.Pod) (*corev1.Secret, error) {
@@ -215,4 +201,137 @@ func (s *Service) projectedAuthSecretForPod(pod *corev1.Pod) (*corev1.Secret, er
 			Namespace: s.options.Namespace,
 		},
 	}, nil
+}
+
+func (s *Service) ensureDirectUploadStateSecret(
+	ctx context.Context,
+	owner client.Object,
+	requestOwner publicationports.Owner,
+) (*corev1.Secret, error) {
+	ownerGeneration := normalizedOwnerGeneration(owner.GetGeneration())
+	name, err := resourcenames.SourceWorkerStateSecretName(requestOwner.UID)
+	if err != nil {
+		return nil, err
+	}
+
+	secret, err := directuploadstate.NewSecret(directuploadstate.SecretSpec{
+		Name:            name,
+		Namespace:       s.options.Namespace,
+		OwnerGeneration: ownerGeneration,
+	})
+	if err != nil {
+		return nil, err
+	}
+	secret.Labels = mergeStringMaps(
+		secret.Labels,
+		resourcenames.OwnerLabels("ai-models-publication-state", requestOwner.Kind, requestOwner.Name, requestOwner.UID, requestOwner.Namespace),
+	)
+	secret.Annotations = mergeStringMaps(
+		secret.Annotations,
+		resourcenames.OwnerAnnotations(requestOwner.Kind, requestOwner.Name, requestOwner.Namespace),
+	)
+
+	created, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, owner, secret)
+	if err != nil {
+		return nil, err
+	}
+	if created {
+		return secret, nil
+	}
+
+	recordedGeneration, err := directuploadstate.OwnerGenerationFromSecret(secret)
+	if err != nil {
+		return nil, err
+	}
+	if recordedGeneration == normalizedOwnerGeneration(owner.GetGeneration()) {
+		return secret, nil
+	}
+
+	if err := ownedresource.DeleteAll(ctx, s.client, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: secret.Name, Namespace: secret.Namespace},
+	}); err != nil {
+		return nil, err
+	}
+
+	recreated, err := directuploadstate.NewSecret(directuploadstate.SecretSpec{
+		Name:            name,
+		Namespace:       s.options.Namespace,
+		OwnerGeneration: normalizedOwnerGeneration(owner.GetGeneration()),
+	})
+	if err != nil {
+		return nil, err
+	}
+	recreated.Labels = mergeStringMaps(
+		recreated.Labels,
+		resourcenames.OwnerLabels("ai-models-publication-state", requestOwner.Kind, requestOwner.Name, requestOwner.UID, requestOwner.Namespace),
+	)
+	recreated.Annotations = mergeStringMaps(
+		recreated.Annotations,
+		resourcenames.OwnerAnnotations(requestOwner.Kind, requestOwner.Name, requestOwner.Namespace),
+	)
+	if _, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, owner, recreated); err != nil {
+		return nil, err
+	}
+	return recreated, nil
+}
+
+func mergeStringMaps(base map[string]string, extra map[string]string) map[string]string {
+	if len(extra) == 0 {
+		return base
+	}
+	if base == nil {
+		base = make(map[string]string, len(extra))
+	}
+	for key, value := range extra {
+		base[key] = value
+	}
+	return base
+}
+
+func normalizedOwnerGeneration(generation int64) int64 {
+	if generation > 0 {
+		return generation
+	}
+	return 1
+}
+
+func directUploadProgress(state modelpackports.DirectUploadState) (modelsv1alpha1.ModelConditionReason, string) {
+	if state.Phase != modelpackports.DirectUploadStatePhaseRunning {
+		return "", ""
+	}
+	if state.CurrentLayer != nil {
+		switch state.Stage {
+		case modelpackports.DirectUploadStateStageStarting:
+			return modelsv1alpha1.ModelConditionReasonPublicationStarted, fmt.Sprintf(
+				"controller started model artifact upload into the internal registry: %d/%d bytes uploaded",
+				state.CurrentLayer.UploadedSizeBytes,
+				state.CurrentLayer.TotalSizeBytes,
+			)
+		case modelpackports.DirectUploadStateStageResumed:
+			return modelsv1alpha1.ModelConditionReasonPublicationResumed, fmt.Sprintf(
+				"controller resumed model artifact upload into the internal registry: %d/%d bytes uploaded",
+				state.CurrentLayer.UploadedSizeBytes,
+				state.CurrentLayer.TotalSizeBytes,
+			)
+		case modelpackports.DirectUploadStateStageSealing:
+			return modelsv1alpha1.ModelConditionReasonPublicationSealing, fmt.Sprintf(
+				"controller is sealing the current model artifact layer in the internal registry after %d/%d uploaded bytes",
+				state.CurrentLayer.UploadedSizeBytes,
+				state.CurrentLayer.TotalSizeBytes,
+			)
+		default:
+			return modelsv1alpha1.ModelConditionReasonPublicationUploading, fmt.Sprintf(
+				"controller is publishing the model artifact: %d/%d bytes uploaded into the internal registry",
+				state.CurrentLayer.UploadedSizeBytes,
+				state.CurrentLayer.TotalSizeBytes,
+			)
+		}
+	}
+	if len(state.CompletedLayers) > 0 {
+		return modelsv1alpha1.ModelConditionReasonPublicationCommitted, fmt.Sprintf(
+			"controller is publishing the model artifact: %d layer(s) already committed into the internal registry",
+			len(state.CompletedLayers),
+		)
+	}
+	return modelsv1alpha1.ModelConditionReasonPending, ""
 }

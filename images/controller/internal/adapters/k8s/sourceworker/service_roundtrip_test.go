@@ -33,6 +33,7 @@ func TestServiceRoundTripGetOrCreateAndDelete(t *testing.T) {
 
 	scheme := testkit.NewScheme(t)
 	owner := testkit.NewModel()
+	request := testOperationRequest()
 
 	kubeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -47,7 +48,7 @@ func TestServiceRoundTripGetOrCreateAndDelete(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	handle, created, err := runtime.GetOrCreate(context.Background(), owner, testOperationRequest())
+	handle, created, err := runtime.GetOrCreate(context.Background(), owner, request)
 	if err != nil {
 		t.Fatalf("GetOrCreate() error = %v", err)
 	}
@@ -66,11 +67,18 @@ func TestServiceRoundTripGetOrCreateAndDelete(t *testing.T) {
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(&pod), &pod); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected pod to be deleted, got err=%v", err)
 	}
-	registrySecretName, err := resourcenames.OCIRegistryAuthSecretName(owner.UID)
+	registrySecretName, err := resourcenames.OCIRegistryAuthSecretName(request.Owner.UID)
 	if err != nil {
 		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
 	}
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: registrySecretName, Namespace: "d8-ai-models"}, &corev1.Secret{}); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected projected OCI auth secret to be deleted, got err=%v", err)
+	}
+	stateSecretName, err := resourcenames.SourceWorkerStateSecretName(request.Owner.UID)
+	if err != nil {
+		t.Fatalf("SourceWorkerStateSecretName() error = %v", err)
+	}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: stateSecretName, Namespace: "d8-ai-models"}, &corev1.Secret{}); err != nil {
+		t.Fatalf("expected direct upload state secret to survive pod deletion, got err=%v", err)
 	}
 }

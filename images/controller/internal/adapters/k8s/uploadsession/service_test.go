@@ -56,9 +56,10 @@ func mustUploadSessionSecret(t *testing.T, ownerUID types.UID) *corev1.Secret {
 func testUploadStatus() modelsv1alpha1.ModelUploadStatus {
 	expiresAt := metav1.NewTime(time.Date(2030, 4, 10, 13, 0, 0, 0, time.UTC))
 	return modelsv1alpha1.ModelUploadStatus{
-		ExpiresAt:    &expiresAt,
-		Repository:   "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/1111-2222:published",
-		ExternalURL:  "https://ai-models.example.com/v1/upload/ai-model-upload-auth-1111-2222?token=existing-token",
-		InClusterURL: "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222?token=existing-token",
+		ExpiresAt:                &expiresAt,
+		Repository:               "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/1111-2222:published",
+		ExternalURL:              "https://ai-models.example.com/v1/upload/ai-model-upload-auth-1111-2222",
+		InClusterURL:             "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222",
+		AuthorizationHeaderValue: "Bearer existing-token",
 	}
 }

@@ -49,7 +49,6 @@ type directUploadTestServer struct {
 
 type directUploadSessionState struct {
 	repository string
-	digest     string
 	parts      map[int]uploadedDirectPart
 	payloads   map[int][]byte
 }
@@ -113,15 +112,15 @@ func (s *directUploadTestServer) partAttemptCount(partNumber int) int {
 
 func (s *directUploadTestServer) serve(writer http.ResponseWriter, request *http.Request) {
 	switch {
-	case request.URL.Path == "/v1/blob-uploads":
+	case request.URL.Path == "/v2/blob-uploads":
 		s.handleStart(writer, request)
-	case request.URL.Path == "/v1/blob-uploads/presign-part":
+	case request.URL.Path == "/v2/blob-uploads/presign-part":
 		s.handlePresignPart(writer, request)
-	case request.URL.Path == "/v1/blob-uploads/parts":
+	case request.URL.Path == "/v2/blob-uploads/parts":
 		s.handleListParts(writer, request)
-	case request.URL.Path == "/v1/blob-uploads/complete":
+	case request.URL.Path == "/v2/blob-uploads/complete":
 		s.handleComplete(writer, request)
-	case request.URL.Path == "/v1/blob-uploads/abort":
+	case request.URL.Path == "/v2/blob-uploads/abort":
 		s.handleAbort(writer, request)
 	case strings.HasPrefix(request.URL.Path, "/upload/"):
 		s.handleUploadPart(writer, request)

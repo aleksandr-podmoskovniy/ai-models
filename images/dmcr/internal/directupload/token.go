@@ -23,12 +23,14 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 )
 
 type sessionTokenClaims struct {
-	Repository string `json:"repository"`
-	Digest     string `json:"digest"`
-	UploadID   string `json:"uploadID"`
+	Repository  string `json:"repository"`
+	ObjectKey   string `json:"objectKey"`
+	UploadID    string `json:"uploadID"`
+	ExpiresUnix int64  `json:"expiresUnix"`
 }
 
 func encodeSessionToken(secret []byte, claims sessionTokenClaims) (string, error) {
@@ -61,7 +63,14 @@ func decodeSessionToken(secret []byte, token string) (sessionTokenClaims, error)
 	if err := json.Unmarshal(payload, &claims); err != nil {
 		return sessionTokenClaims{}, err
 	}
+	if claims.ExpiresUnix <= 0 {
+		return sessionTokenClaims{}, errors.New("direct upload session token is missing expiry")
+	}
 	return claims, nil
+}
+
+func (c sessionTokenClaims) expiredAt(now time.Time) bool {
+	return !now.Before(time.Unix(c.ExpiresUnix, 0))
 }
 
 func tokenSignature(secret, payload []byte) []byte {

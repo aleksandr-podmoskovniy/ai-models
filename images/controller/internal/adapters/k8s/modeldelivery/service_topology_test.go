@@ -64,7 +64,7 @@ func TestServiceSupportsStatefulSetClaimTemplateTopology(t *testing.T) {
 	if got, want := result.TopologyKind, CacheTopologyPerPod; got != want {
 		t.Fatalf("topology kind = %q, want %q", got, want)
 	}
-	if got, want := result.DeliveryMode, DeliveryModePerPodFallback; got != want {
+	if got, want := result.DeliveryMode, DeliveryModeMaterializeBridge; got != want {
 		t.Fatalf("delivery mode = %q, want %q", got, want)
 	}
 	if got, want := result.DeliveryReason, DeliveryReasonStatefulSetClaimTemplate; got != want {
@@ -72,7 +72,7 @@ func TestServiceSupportsStatefulSetClaimTemplateTopology(t *testing.T) {
 	}
 }
 
-func TestServiceEnablesSharedCacheCoordinationForSharedRWXPVC(t *testing.T) {
+func TestServiceEnablesSharedCacheCoordinationForSharedWorkloadPVC(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
@@ -112,13 +112,13 @@ func TestServiceEnablesSharedCacheCoordinationForSharedRWXPVC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
-	if got, want := result.TopologyKind, CacheTopologySharedDirect; got != want {
+	if got, want := result.TopologyKind, CacheTopologySharedPVC; got != want {
 		t.Fatalf("topology kind = %q, want %q", got, want)
 	}
-	if got, want := result.DeliveryMode, DeliveryModeSharedDirect; got != want {
+	if got, want := result.DeliveryMode, DeliveryModeSharedPVCBridge; got != want {
 		t.Fatalf("delivery mode = %q, want %q", got, want)
 	}
-	if got, want := result.DeliveryReason, DeliveryReasonSharedPersistentVolume; got != want {
+	if got, want := result.DeliveryReason, DeliveryReasonWorkloadSharedPersistentVolume; got != want {
 		t.Fatalf("delivery reason = %q, want %q", got, want)
 	}
 	if got, want := result.ModelPath, nodecache.SharedArtifactModelPath(DefaultCacheMountPath, publishedArtifact().Digest); got != want {
@@ -135,7 +135,7 @@ func TestServiceEnablesSharedCacheCoordinationForSharedRWXPVC(t *testing.T) {
 	}
 }
 
-func TestServiceProjectsDigestScopedPathForSingleReplicaSharedPVC(t *testing.T) {
+func TestServiceProjectsDigestScopedPathForSingleReplicaSharedWorkloadPVC(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
@@ -175,13 +175,13 @@ func TestServiceProjectsDigestScopedPathForSingleReplicaSharedPVC(t *testing.T) 
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
-	if got, want := result.TopologyKind, CacheTopologySharedDirect; got != want {
+	if got, want := result.TopologyKind, CacheTopologySharedPVC; got != want {
 		t.Fatalf("topology kind = %q, want %q", got, want)
 	}
-	if got, want := result.DeliveryMode, DeliveryModeSharedDirect; got != want {
+	if got, want := result.DeliveryMode, DeliveryModeSharedPVCBridge; got != want {
 		t.Fatalf("delivery mode = %q, want %q", got, want)
 	}
-	if got, want := result.DeliveryReason, DeliveryReasonSharedPersistentVolume; got != want {
+	if got, want := result.DeliveryReason, DeliveryReasonWorkloadSharedPersistentVolume; got != want {
 		t.Fatalf("delivery reason = %q, want %q", got, want)
 	}
 	if got, want := result.ModelPath, nodecache.SharedArtifactModelPath(DefaultCacheMountPath, publishedArtifact().Digest); got != want {
@@ -198,7 +198,7 @@ func TestServiceProjectsDigestScopedPathForSingleReplicaSharedPVC(t *testing.T) 
 	}
 }
 
-func TestServiceRejectsSharedDirectPVCWithoutRWX(t *testing.T) {
+func TestServiceRejectsSharedWorkloadPVCWithoutRWX(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)

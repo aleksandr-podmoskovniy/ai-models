@@ -183,3 +183,19 @@ func removeVolumeByName(volumes []corev1.Volume, name string) ([]corev1.Volume, 
 	}
 	return filtered, removed
 }
+
+func removeImagePullSecretByName(
+	secrets []corev1.LocalObjectReference,
+	name string,
+) ([]corev1.LocalObjectReference, bool) {
+	removed := false
+	filtered := secrets[:0]
+	for _, secret := range secrets {
+		if secret.Name == name {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, secret)
+	}
+	return filtered, removed
+}

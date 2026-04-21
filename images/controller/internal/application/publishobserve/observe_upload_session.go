@@ -90,6 +90,7 @@ func ObserveUploadSession(
 			Observation: publicationdomain.Observation{
 				Phase:       publicationdomain.OperationPhaseRunning,
 				RuntimeKind: publicationdomain.RuntimeKindUploadSession,
+				Progress:    handle.Progress,
 				Upload:      decision.UploadStatus,
 			},
 		}, nil

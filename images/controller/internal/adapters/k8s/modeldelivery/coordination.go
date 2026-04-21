@@ -43,7 +43,7 @@ func (s *Service) resolveCoordination(
 	digest string,
 ) (Coordination, error) {
 	hints = normalizeTopologyHints(hints)
-	if topology.Kind != CacheTopologySharedDirect || hints.ReplicaCount <= 1 {
+	if topology.Kind != CacheTopologySharedPVC || hints.ReplicaCount <= 1 {
 		return Coordination{}, nil
 	}
 

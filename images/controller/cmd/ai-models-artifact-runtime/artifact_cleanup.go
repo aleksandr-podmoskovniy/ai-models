@@ -55,7 +55,7 @@ func runArtifactCleanup(args []string) int {
 
 	var objectStorageRemover *uploadstagings3.Adapter
 	if handle.Kind == cleanuphandle.KindUploadStaging || handle.Kind == cleanuphandle.KindBackendArtifact {
-		objectStorageRemover, err = uploadstagings3.New(uploadStagingS3ConfigFromEnv())
+		objectStorageRemover, err = uploadstagings3.New(cmdsupport.UploadStagingS3ConfigFromEnv())
 		if err != nil {
 			return cmdsupport.CommandError(commandArtifactCleanup, err)
 		}

@@ -117,7 +117,7 @@ func managedCacheVolume(options ManagedCacheOptions) (corev1.Volume, error) {
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							"ai.deckhouse.io/managed-by": "ai-models",
-							"ai.deckhouse.io/node-cache": "fallback",
+							"ai.deckhouse.io/node-cache": "bridge",
 						},
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{

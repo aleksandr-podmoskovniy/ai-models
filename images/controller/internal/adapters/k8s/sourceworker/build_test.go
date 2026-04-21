@@ -34,7 +34,7 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	options := testOptions()
 	options.OCIRegistryCASecretName = "ai-models-dmcr-ca"
 
-	pod, err := Build(request, options, "")
+	pod, err := Build(request, options, "", "")
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
@@ -95,7 +95,7 @@ func TestBuildDirectHuggingFacePublicationOmitsMirrorArgsAndArtifactsProjection(
 	options := testOptions()
 	options.SourceFetch = publicationports.SourceFetchModeDirect
 
-	pod, err := Build(request, options, "")
+	pod, err := Build(request, options, "", "")
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
@@ -122,7 +122,7 @@ func TestBuildProjectsOnlyArtifactsCAForDirectLayerUpload(t *testing.T) {
 	options.OCIDirectUploadEndpoint = "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443"
 	options.ObjectStorage.CASecretName = "ai-models-artifacts-ca"
 
-	pod, err := Build(request, options, "")
+	pod, err := Build(request, options, "", "")
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
@@ -156,7 +156,7 @@ func TestBuildIncludesHuggingFaceAuthTokenEnvFromProjectedSecret(t *testing.T) {
 	request.Identity.Name = "deepseek-r1-hf-auth"
 	request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
 
-	pod, err := Build(request, testOptions(), "ai-model-publish-auth-1111-3334")
+	pod, err := Build(request, testOptions(), "ai-model-publish-auth-1111-3334", "")
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
@@ -185,7 +185,7 @@ func TestBuildRejectsMissingProjectedAuthSecretName(t *testing.T) {
 	request.Identity.Name = "deepseek-r1-hf-auth"
 	request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
 
-	if _, err := Build(request, testOptions(), ""); err == nil {
+	if _, err := Build(request, testOptions(), "", ""); err == nil {
 		t.Fatal("expected missing projected auth secret name to fail")
 	}
 }
@@ -199,7 +199,7 @@ func TestBuildTruncatesOwnerLabelsToKubernetesLimit(t *testing.T) {
 	request.Owner.Name = longName
 	request.Identity.Name = longName
 
-	pod, err := Build(request, testOptions(), "")
+	pod, err := Build(request, testOptions(), "", "")
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
@@ -212,7 +212,7 @@ func TestBuildTruncatesOwnerLabelsToKubernetesLimit(t *testing.T) {
 func TestBuildDoesNotMountLegacyWorkVolume(t *testing.T) {
 	t.Parallel()
 
-	pod, err := Build(testOperationRequest(), testOptions(), "")
+	pod, err := Build(testOperationRequest(), testOptions(), "", "")
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}

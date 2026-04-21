@@ -69,10 +69,20 @@ var (
 		"Whether the Model passed publication-time policy validation.",
 		modelLabels()...,
 	)
+	modelConditionMetric = newMetricInfo(
+		"model_condition",
+		"The current Model condition status and reason projected from status.conditions.",
+		modelLabels("type", "status", "reason")...,
+	)
 	clusterModelValidatedMetric = newMetricInfo(
 		"clustermodel_validated",
 		"Whether the ClusterModel passed publication-time policy validation.",
 		clusterModelLabels()...,
+	)
+	clusterModelConditionMetric = newMetricInfo(
+		"clustermodel_condition",
+		"The current ClusterModel condition status and reason projected from status.conditions.",
+		clusterModelLabels("type", "status", "reason")...,
 	)
 	modelInfoMetric = newMetricInfo(
 		"model_info",

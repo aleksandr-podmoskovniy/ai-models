@@ -47,6 +47,7 @@ type Options struct {
 	UploadStaging           uploadStagingClient
 	ModelPackPublisher      modelpackports.Publisher
 	RegistryAuth            modelpackports.RegistryAuth
+	DirectUploadState       modelpackports.DirectUploadStateStore
 }
 
 func Run(ctx context.Context, options Options) (publicationartifact.Result, error) {

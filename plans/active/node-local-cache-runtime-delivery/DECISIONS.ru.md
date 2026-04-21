@@ -46,6 +46,15 @@
 
 - workload-facing shared mount service ещё не считается доведённым только
   потому, что уже есть per-node runtime pod, shared PVC и prefetch;
+- текущий `shared PVC + materialize-artifact` путь не должен называться
+  `SharedDirect`: это всё ещё bridge-контракт поверх пользовательского тома, а
+  не node-owned shared delivery;
+- `node-cache-runtime` не должен воспринимать такой shared PVC bridge как
+  сигнал для узлового `prefetch`, потому что workload ещё не потребляет
+  per-node shared plane напрямую;
+- future `SharedDirect` считается валидным только вместе с отдельной причиной
+  `NodeSharedRuntimePlane`, чтобы случайные или ручные аннотации не включали
+  ложный `prefetch` в узловой общий store;
 - наличие узлового digest store само по себе ещё не означает, что быстрый путь
   доставки до прикладного объекта уже закончен;
 - запасной путь через `materialize-artifact` остаётся текущим рабочим путём до

@@ -114,7 +114,9 @@ func DesiredArtifactFromPod(pod *corev1.Pod) (nodecache.DesiredArtifact, bool, e
 	}
 	annotations := pod.GetAnnotations()
 	deliveryMode := strings.TrimSpace(annotations[modeldelivery.ResolvedDeliveryModeAnnotation])
-	if deliveryMode != string(modeldelivery.DeliveryModeSharedDirect) {
+	deliveryReason := strings.TrimSpace(annotations[modeldelivery.ResolvedDeliveryReasonAnnotation])
+	if deliveryMode != string(modeldelivery.DeliveryModeSharedDirect) ||
+		deliveryReason != string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane) {
 		return nodecache.DesiredArtifact{}, false, nil
 	}
 	digest := strings.TrimSpace(annotations[modeldelivery.ResolvedDigestAnnotation])

@@ -30,6 +30,7 @@ func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest s
 	template.Spec.InitContainers = upsertContainer(template.Spec.InitContainers, rendered.InitContainer)
 	template.Spec.Containers = upsertRuntimeEnv(template.Spec.Containers, rendered.RuntimeEnv)
 	template.Spec.Volumes = upsertVolumes(template.Spec.Volumes, rendered.Volumes)
+	template.Spec.ImagePullSecrets = upsertImagePullSecrets(template.Spec.ImagePullSecrets, rendered.ImagePullSecrets)
 	template.Annotations = upsertAnnotations(template.Annotations, map[string]string{
 		ResolvedDigestAnnotation:         digest,
 		ResolvedArtifactURIAnnotation:    rendered.ArtifactURI,
@@ -78,6 +79,23 @@ func upsertVolumes(existing []corev1.Volume, desired []corev1.Volume) []corev1.V
 }
 
 func upsertEnv(existing []corev1.EnvVar, desired []corev1.EnvVar) []corev1.EnvVar {
+	for _, item := range desired {
+		replaced := false
+		for index := range existing {
+			if existing[index].Name == item.Name {
+				existing[index] = item
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			existing = append(existing, item)
+		}
+	}
+	return existing
+}
+
+func upsertImagePullSecrets(existing []corev1.LocalObjectReference, desired []corev1.LocalObjectReference) []corev1.LocalObjectReference {
 	for _, item := range desired {
 		replaced := false
 		for index := range existing {

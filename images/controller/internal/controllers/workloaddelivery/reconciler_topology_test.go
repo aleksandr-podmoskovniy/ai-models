@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestDeploymentReconcilerRejectsSharedPersistentVolumeClaimWithoutRWX(t *testing.T) {
+func TestDeploymentReconcilerRejectsSharedWorkloadPersistentVolumeClaimWithoutRWX(t *testing.T) {
 	t.Parallel()
 
 	model := readyModel()

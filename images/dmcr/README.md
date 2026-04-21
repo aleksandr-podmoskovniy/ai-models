@@ -33,3 +33,21 @@ only for controller-driven garbage-collection flow:
 
 The command package stays intentionally thin. The actual garbage-collection
 lifecycle implementation now lives under `images/dmcr/internal/garbagecollection`.
+
+The same image also carries `dmcr-direct-upload`, the repo-owned helper for
+trusted internal publication into backing storage:
+
+- it serves the `direct-upload v2` API under `/v2/blob-uploads`;
+- it stores multipart uploads as physical objects under
+  `_ai_models/direct-upload/objects/<session-id>/data`;
+- session tokens are signed and time-bounded via
+  `DMCR_DIRECT_UPLOAD_SESSION_TTL`;
+- after multipart completion the helper re-reads the physical object from
+  backing storage, computes the trusted `sha256` and size, and rejects client
+  mismatches;
+- successful publication writes the repository link plus a tiny
+  `.dmcr-sealed` sidecar near the canonical digest-addressed blob path; the
+  heavy bytes stay in the physical upload object and are resolved by the
+  repo-owned `sealeds3` storage driver;
+- failed finalization cleans up the physical upload object and the sidecar, so
+  the registry does not keep half-published blobs.

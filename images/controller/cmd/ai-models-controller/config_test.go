@@ -28,28 +28,30 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	t.Parallel()
 
 	config := managerConfig{
-		LogFormat:                          "json",
-		LogLevel:                           "debug",
-		CleanupJobImage:                    "example.com/controller-runtime:dev",
-		CleanupJobNamespace:                "d8-ai-models",
-		PublicationWorkerNamespace:         "d8-ai-models",
-		PublicationOCICASecretName:         "ai-models-dmcr-ca",
-		PublicationOCIInsecure:             false,
-		PublicationOCIDirectUploadEndpoint: "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443",
-		PublicationSourceFetchMode:         publicationports.SourceFetchModeDirect,
-		ArtifactsBucket:                    "models",
-		ArtifactsS3Endpoint:                "https://s3.example.test",
-		ArtifactsS3Region:                  "test",
-		ArtifactsCredentialsSecretName:     "artifacts-credentials",
-		NodeCacheEnabled:                   true,
-		NodeCacheMaxSize:                   "200Gi",
-		NodeCacheFallbackVolumeSize:        "32Gi",
-		NodeCacheStorageClassName:          "ai-models-node-cache",
-		NodeCacheVolumeGroupSetName:        "ai-models-node-cache",
-		NodeCacheVolumeGroupNameOnNode:     "ai-models-cache",
-		NodeCacheThinPoolName:              "model-cache",
-		NodeCacheNodeSelectorJSON:          `{"node-role.kubernetes.io/worker":""}`,
-		NodeCacheBlockDeviceJSON:           `{"status.blockdevice.storage.deckhouse.io/model":"nvme"}`,
+		LogFormat:                     "json",
+		LogLevel:                      "debug",
+		CleanupJobImage:               "example.com/controller-runtime:dev",
+		CleanupJobImagePullSecretName: "module-registry",
+		CleanupJobNamespace:           "d8-ai-models",
+		PublicationWorkerNamespace:    "d8-ai-models",
+		WorkloadDeliveryRuntimeImagePullSecretName: "workload-runtime-pull",
+		PublicationOCICASecretName:                 "ai-models-dmcr-ca",
+		PublicationOCIInsecure:                     false,
+		PublicationOCIDirectUploadEndpoint:         "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443",
+		PublicationSourceFetchMode:                 publicationports.SourceFetchModeDirect,
+		ArtifactsBucket:                            "models",
+		ArtifactsS3Endpoint:                        "https://s3.example.test",
+		ArtifactsS3Region:                          "test",
+		ArtifactsCredentialsSecretName:             "artifacts-credentials",
+		NodeCacheEnabled:                           true,
+		NodeCacheMaxSize:                           "200Gi",
+		NodeCacheFallbackVolumeSize:                "32Gi",
+		NodeCacheStorageClassName:                  "ai-models-node-cache",
+		NodeCacheVolumeGroupSetName:                "ai-models-node-cache",
+		NodeCacheVolumeGroupNameOnNode:             "ai-models-cache",
+		NodeCacheThinPoolName:                      "model-cache",
+		NodeCacheNodeSelectorJSON:                  `{"node-role.kubernetes.io/worker":""}`,
+		NodeCacheBlockDeviceJSON:                   `{"status.blockdevice.storage.deckhouse.io/model":"nvme"}`,
 	}
 
 	options := config.bootstrapOptions(corev1.ResourceRequirements{})
@@ -80,6 +82,9 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	}
 	if got, want := options.WorkloadDelivery.Service.RegistrySourceCASecretName, config.PublicationOCICASecretName; got != want {
 		t.Fatalf("delivery source CA secret = %q, want %q", got, want)
+	}
+	if got, want := options.WorkloadDelivery.Service.RuntimeImagePullSecretName, config.WorkloadDeliveryRuntimeImagePullSecretName; got != want {
+		t.Fatalf("delivery runtime image pull secret = %q, want %q", got, want)
 	}
 	if got, want := options.PublicationRuntime.RuntimeLogLevel, config.LogLevel; got != want {
 		t.Fatalf("publication runtime log level = %q, want %q", got, want)

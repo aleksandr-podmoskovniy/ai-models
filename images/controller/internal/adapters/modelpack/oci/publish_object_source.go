@@ -38,7 +38,50 @@ func describeObjectSourcePublishLayer(
 	if err := validateObjectSourceLayer(layer); err != nil {
 		return publishLayerDescriptor{}, err
 	}
+	if layer.Format == modelpackports.LayerFormatRaw {
+		return describeRawObjectSourcePublishLayer(ctx, layer, mediaType)
+	}
+	return describeArchiveObjectSourcePublishLayer(ctx, layer, mediaType)
+}
 
+func describeRawObjectSourcePublishLayer(
+	ctx context.Context,
+	layer modelpackports.PublishLayer,
+	mediaType string,
+) (publishLayerDescriptor, error) {
+	file := layer.ObjectSource.Files[0]
+	object, err := layer.ObjectSource.Reader.OpenRead(ctx, file.SourcePath)
+	if err != nil {
+		return publishLayerDescriptor{}, err
+	}
+	defer object.Body.Close()
+	if err := validateOpenedObjectSource(file, object); err != nil {
+		return publishLayerDescriptor{}, err
+	}
+
+	hasher := sha256.New()
+	counter := &countWriter{}
+	if _, err := io.Copy(io.MultiWriter(hasher, counter), object.Body); err != nil {
+		return publishLayerDescriptor{}, err
+	}
+	digest := "sha256:" + hex.EncodeToString(hasher.Sum(nil))
+	return publishLayerDescriptor{
+		Digest:      digest,
+		DiffID:      digest,
+		Size:        counter.n,
+		MediaType:   mediaType,
+		TargetPath:  filepath.ToSlash(strings.TrimSpace(layer.TargetPath)),
+		Base:        layer.Base,
+		Format:      layer.Format,
+		Compression: modelpackports.LayerCompressionNone,
+	}, nil
+}
+
+func describeArchiveObjectSourcePublishLayer(
+	ctx context.Context,
+	layer modelpackports.PublishLayer,
+	mediaType string,
+) (publishLayerDescriptor, error) {
 	diffHasher := sha256.New()
 	blobHasher := sha256.New()
 	counter := &countWriter{}
@@ -74,6 +117,12 @@ func openObjectSourceLayerRange(
 	layer modelpackports.PublishLayer,
 	offset, length int64,
 ) (io.ReadCloser, error) {
+	if err := validateObjectSourceLayer(layer); err != nil {
+		return nil, err
+	}
+	if layer.Format == modelpackports.LayerFormatRaw {
+		return openRawObjectSourceLayerRange(ctx, layer, offset, length)
+	}
 	if reader, ok := layer.ObjectSource.Reader.(modelpackports.PublishObjectRangeReader); ok &&
 		normalizedArchiveCompression(layer.Compression) == modelpackports.LayerCompressionNone {
 		return openRangedObjectSourceLayer(ctx, layer, reader, offset, length)
@@ -107,6 +156,52 @@ func openObjectSourceLayerRange(
 	return &archiveRangeReader{body: body, stream: stream}, nil
 }
 
+func openRawObjectSourceLayerRange(
+	ctx context.Context,
+	layer modelpackports.PublishLayer,
+	offset, length int64,
+) (io.ReadCloser, error) {
+	file := layer.ObjectSource.Files[0]
+	if reader, ok := layer.ObjectSource.Reader.(modelpackports.PublishObjectRangeReader); ok {
+		object, err := reader.OpenReadRange(ctx, file.SourcePath, offset, length)
+		if err != nil {
+			return nil, err
+		}
+		return object.Body, nil
+	}
+
+	object, err := layer.ObjectSource.Reader.OpenRead(ctx, file.SourcePath)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateOpenedObjectSource(file, object); err != nil {
+		_ = object.Body.Close()
+		return nil, err
+	}
+
+	body := io.Reader(object.Body)
+	if offset > 0 {
+		body = &offsetReader{reader: body, offset: offset}
+	}
+	if length >= 0 {
+		body = io.LimitReader(body, length)
+	}
+	return &wrappedReadCloser{body: body, closer: object.Body}, nil
+}
+
+type wrappedReadCloser struct {
+	body   io.Reader
+	closer io.Closer
+}
+
+func (r *wrappedReadCloser) Read(p []byte) (int, error) {
+	return r.body.Read(p)
+}
+
+func (r *wrappedReadCloser) Close() error {
+	return r.closer.Close()
+}
+
 func validateObjectSourceLayer(layer modelpackports.PublishLayer) error {
 	if layer.ObjectSource == nil {
 		return errors.New("object source metadata must not be nil")
@@ -114,14 +209,17 @@ func validateObjectSourceLayer(layer modelpackports.PublishLayer) error {
 	if layer.Archive != nil {
 		return errors.New("object source layer must not also declare archive source metadata")
 	}
-	if layer.Format != modelpackports.LayerFormatTar {
-		return fmt.Errorf("object source layer %q must publish as tar", layer.SourcePath)
-	}
 	if layer.ObjectSource.Reader == nil {
 		return errors.New("object source reader must not be nil")
 	}
 	if len(layer.ObjectSource.Files) == 0 {
 		return errors.New("object source files must not be empty")
+	}
+	if layer.Format == modelpackports.LayerFormatRaw {
+		return validateRawObjectSourceLayer(layer)
+	}
+	if layer.Format != modelpackports.LayerFormatTar {
+		return fmt.Errorf("object source layer %q must publish as raw or tar", layer.SourcePath)
 	}
 
 	seen := make(map[string]struct{}, len(layer.ObjectSource.Files))
@@ -144,6 +242,34 @@ func validateObjectSourceLayer(layer modelpackports.PublishLayer) error {
 			return fmt.Errorf("object source duplicates target path %q", normalizedTarget)
 		}
 		seen[normalizedTarget] = struct{}{}
+	}
+	return nil
+}
+
+func validateRawObjectSourceLayer(layer modelpackports.PublishLayer) error {
+	if layer.Compression != "" && layer.Compression != modelpackports.LayerCompressionNone {
+		return fmt.Errorf("raw object source layer %q must not declare compression", layer.SourcePath)
+	}
+	if len(layer.ObjectSource.Files) != 1 {
+		return fmt.Errorf("raw object source layer %q must contain exactly one file", layer.SourcePath)
+	}
+
+	file := layer.ObjectSource.Files[0]
+	if strings.TrimSpace(file.SourcePath) == "" {
+		return errors.New("object source files[0] source path must not be empty")
+	}
+	if file.SizeBytes < 0 {
+		return errors.New("object source files[0] size must not be negative")
+	}
+	normalizedTarget, err := archiveRelativePath(file.TargetPath)
+	if err != nil {
+		return fmt.Errorf("object source files[0] target path is invalid: %w", err)
+	}
+	if normalizedTarget == "." {
+		return errors.New("object source files[0] target path must not be empty")
+	}
+	if got, want := filepath.ToSlash(strings.TrimSpace(layer.TargetPath)), filepath.ToSlash(strings.TrimSpace(normalizedTarget)); got != want {
+		return fmt.Errorf("raw object source layer target path %q must match file target path %q", layer.TargetPath, normalizedTarget)
 	}
 	return nil
 }

@@ -55,7 +55,14 @@ Custom trust для S3-compatible endpoint задаётся через `artifact
     remote `source.url` идёт напрямую из canonical remote source boundary;
 - `spec.source.upload` использует controller-owned upload-session path и
   остаётся на своей отдельной staged object boundary;
-- все пути публикуют OCI `ModelPack` артефакты во внутренний `DMCR`.
+- все пути публикуют OCI `ModelPack` артефакты во внутренний `DMCR`;
+- потоковые multi-file remote входы публикуются как одна ограниченная bundle-
+  упаковка для мелких companion-файлов плюс отдельные raw-слои для крупных
+  model payload, без монолитной перепаковки всей модели в один tar-слой;
+- single-file direct и staged-object входы по-прежнему публикуются одним
+  raw-слоем;
+- archive-входы остаются на archive-source streaming path и не создают
+  распакованное success-only дерево checkpoint'а.
 
 Default — `artifacts.sourceFetchMode=Direct`.
 
@@ -68,23 +75,70 @@ Trade-off между режимами такой:
   object, поэтому режим не создаёт вторую промежуточную копию поверх upload
   staging.
 
-Для публикации тяжёлых layer blobs внутрь `DMCR` отдельного выбора больше нет.
+Отдельного выбора транспорта для публикуемых слоёв больше нет.
 Канонический byte path теперь один:
 
-- `publish-worker -> DMCR direct-upload helper -> backing storage DMCR`.
+- `publish-worker -> DMCR direct-upload v2 session -> physical multipart object -> trusted DMCR seal -> canonical digest metadata/link`.
 
 `DMCR` остаётся владельцем аутентификации, финализации blob/link и итогового
 артефактного контракта, но толстый поток байтов больше не идёт через registry
 `PATCH` path. Это убирает сам `DMCR` из роли сетевого узкого места на
-тяжёлом upload path.
+пути публикации крупных байтов.
 
-Текущий bounded scope прямого транспорта касается тяжёлых layer blobs. `config`
-blob, `manifest` publish и финальный remote inspect остаются на обычном
-registry path, чтобы контракт менялся по одному слою ответственности за раз.
+Прямой helper теперь работает в late-digest режиме: контроллер открывает
+сессию без итогового digest, отгружает части payload, а финализирует слой
+только на `complete(session, digest, size, parts)`. Для range-capable raw
+слоёв это убирает старое полное предварительное чтение на стороне
+контроллера, поэтому тяжёлые remote model bytes на publish-worker читаются
+один раз.
+
+При этом `DMCR` больше не принимает клиентский `digest` как источник истины.
+После завершения multipart upload helper один раз перечитывает уже собранный
+физический объект из backing storage, сам считает trusted `sha256` и размер и
+только затем сопоставляет их с тем, что прислал клиент. Клиентские `digest`
+и `size` теперь используются только как проверка согласованности, а не как
+команда для именования канонического blob.
+
+Маленькие `config`/`manifest` записи и финальный remote inspect по-прежнему
+идут через обычный registry API, чтобы внутренний контракт менялся по одному
+слою ответственности за раз.
+
+Текущая helper-реализация всё ещё делает один внутренний seal step, но больше
+не переписывает второй раз весь тяжёлый объект под новый digest-addressed key.
+Multipart upload сначала собирается в физический object key под
+`_ai_models/direct-upload/objects/<session-id>/data`, затем helper
+перечитывает этот объект и пишет маленький `.dmcr-sealed` sidecar под
+каноническим blob path. Published OCI contract снаружи остаётся digest-based:
+repository link указывает на канонический digest, а внутренний `sealeds3`
+driver уже прозрачно разворачивает этот digest в физический object key.
+Полной второй записи тех же байтов в storage больше нет, но один полный
+внутренний read на этапе seal остаётся.
+
+На стороне контроллера direct-upload теперь также ведёт один компактный
+owner-scoped checkpoint `Secret`. В фазе `Running` в нём лежат ключ текущего
+слоя, session token, размер части, уже загруженные байты, продолжение
+хэш-состояния и журнал уже зафиксированных слоёв. Если `sourceworker` Pod
+падает, пока это состояние ещё находится в `Running`, контроллер пересоздаёт
+Pod, а `publish-worker` может продолжить работу из сохранённого checkpoint
+плюс `listParts()`, пока жива сама helper-сессия, вместо зависимости от одного
+живого процесса. Публичный running-status теперь даёт не только bounded
+progress, но и машинно-читаемые running-reason в conditions:
+`PublicationStarted`, `PublicationUploading`, `PublicationResumed`,
+`PublicationSealing`, `PublicationCommitted`. В `message` при этом по-прежнему
+лежат байты текущего слоя, если они доступны, либо количество уже
+зафиксированных слоёв.
+
+Для потоковых multi-file источников внутренняя OCI-раскладка теперь смешанная:
+мелкие companion-файлы могут укладываться в один ограниченный tar-layer под
+стабильным корнем `model/`, а крупные model payload остаются отдельными
+raw-слоями. Это только внутреннее решение publisher/materializer.
+Потребительский materialized contract остаётся стабильным: multi-file модель
+по-прежнему приходит под корнем `model/`, а single-file direct input сохраняет
+свой single-file entrypoint.
 
 Успешный publication worker path больше не использует локальный workspace/PVC.
 `HuggingFace` в обоих режимах и staged upload публикуются через
-object-source/archive-source streaming semantics. Локальный bounded storage
+raw object-source или archive-source streaming semantics. Локальный bounded storage
 contract для publish-worker теперь только один: `ephemeral-storage` requests и
 limits контейнера для writable layer и логов.
 
@@ -94,7 +148,7 @@ limits контейнера для writable layer и логов.
 
 `nodeCache` — это первый landed slice для node-local cache workstream. В
 текущем состоянии он владеет managed local-storage substrate и current local
-fallback volume contract:
+materialize-bridge volume contract:
 
 - ai-models может держать один managed `LVMVolumeGroupSet` поверх
   `sds-node-configurator`;
@@ -109,7 +163,8 @@ fallback volume contract:
 - `nodeCache.maxSize` становится per-node thin-pool budget;
 - `nodeCache.fallbackVolumeSize` задаёт размер managed local ephemeral volume,
   который current workload delivery автоматически подкладывает на
-  `/data/modelcache`, если annotated workload не принёс свой cache volume сам;
+  `/data/modelcache` для переходного materialize-пути, если annotated workload
+  не принёс свой cache volume сам;
 - `nodeCache.sharedVolumeSize` задаёт размер per-node shared cache volume,
   который controller-owned stable runtime Pod/PVC запрашивает поверх managed
   `LocalStorageClass`;
@@ -125,29 +180,37 @@ controller-owned `materialize-artifact` в `/data/modelcache`, но теперь
 
 - ai-models может сам inject'ить local generic ephemeral volume поверх managed
   `LocalStorageClass`, если workload не принёс свою cache topology;
+- вместе с OCI read auth/CA контроллер теперь также проецирует в namespace
+  workload'а `imagePullSecret` для самого bridge runtime, поэтому
+  `materialize-artifact` больше не зависит от ручного создания отдельного
+  pull-secret рядом с каждым consumer workload'ом;
 - workload теперь получает один стабильный runtime-facing contract через
   `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST` и
   `AI_MODELS_MODEL_FAMILY`; при этом per-pod доставка по-прежнему проецирует
-  стабильный путь `/data/modelcache/model`, а direct shared-cache topology
+  стабильный путь `/data/modelcache/model`, а shared PVC bridge topology
   теперь проецирует digest-специфичный путь внутри общего store вместо
   глобальной ссылки `current` в корне кэша;
 - контроллер теперь дополнительно пишет в `PodTemplateSpec` управляемые
   аннотации с выбранным режимом доставки и причиной этого выбора, поэтому
-  fallback больше не остаётся скрытым поведением;
+  переходный materialize-путь больше не остаётся скрытым поведением;
 - метрики `runtimehealth` теперь также агрегируют управляемые прикладные
   объекты по namespace, виду, режиму доставки и причине выбора, поэтому
-  оператор видит, где реально работает direct shared delivery, а где система
-  всё ещё живёт на fallback, без ручного обхода объектов;
+  оператор видит, где workload ещё живёт на переходном materialize-пути, а где
+  уже используется shared PVC bridge, без ручного обхода объектов;
+- `runtimehealth` теперь также публикует число managed Pod'ов, число ready
+  Pod'ов и причины ожидания `init`-контейнера `materialize-artifact`, поэтому
+  `ImagePullBackOff` и похожие сбои bridge path становятся видны машинно, без
+  ручного разбора Pod events;
 - ai-models теперь держит отдельный per-node shared cache plane как
   controller-owned stable runtime Pod плюс stable PVC поверх managed
   `LocalStorageClass`; размер этого shared volume задаётся через
   `nodeCache.sharedVolumeSize`, а storage identity больше не теряется при
   restart node-agent pod'а;
 - `node-cache-runtime` сам получает набор опубликованных артефактов, реально
-  нужных live managed Pod'ам на текущей ноде только при выбранном direct
-  shared delivery, и заранее подтягивает неизменяемые артефакты из `DMCR` в
-  общий узловой digest store без отдельного зеркального `ConfigMap`-
-  контракта и без нового публичного API.
+  нужных live managed Pod'ам на текущей ноде только для будущего true
+  shared-direct режима; current shared PVC bridge этот per-node plane ещё не
+  потребляет, поэтому `prefetch` в узловой общий store пока не считается
+  workload-facing delivery path.
 
 При этом публичного cleanup/TTL knob пока нет: workload-facing shared mount
 contract ещё не landed, поэтому eviction policy остаётся internal runtime

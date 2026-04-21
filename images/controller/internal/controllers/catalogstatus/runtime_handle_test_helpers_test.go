@@ -79,16 +79,16 @@ func succeededTerminationMessage(t *testing.T) string {
 }
 
 func runningSourceWorkerHandle() *publicationports.SourceWorkerHandle {
-	return publicationports.NewSourceWorkerHandle("publish-worker", corev1.PodRunning, "", nil)
+	return publicationports.NewSourceWorkerHandle("publish-worker", corev1.PodRunning, "", "", "", nil)
 }
 
 func failedSourceWorkerHandle(message string) *publicationports.SourceWorkerHandle {
-	return publicationports.NewSourceWorkerHandle("publish-worker", corev1.PodFailed, message, nil)
+	return publicationports.NewSourceWorkerHandle("publish-worker", corev1.PodFailed, message, "", "", nil)
 }
 
 func succeededSourceWorkerHandle(t *testing.T, deleted *bool) *publicationports.SourceWorkerHandle {
 	t.Helper()
-	return publicationports.NewSourceWorkerHandle("publish-worker", corev1.PodSucceeded, succeededTerminationMessage(t), func(context.Context) error {
+	return publicationports.NewSourceWorkerHandle("publish-worker", corev1.PodSucceeded, succeededTerminationMessage(t), "", "", func(context.Context) error {
 		if deleted != nil {
 			*deleted = true
 		}
@@ -102,11 +102,13 @@ func runningUploadSessionHandle() *publicationports.UploadSessionHandle {
 		"upload-worker",
 		corev1.PodRunning,
 		"",
+		"17%",
 		modelsv1alpha1.ModelUploadStatus{
-			ExpiresAt:    &metav1.Time{Time: expiresAt},
-			Repository:   "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/550e8400-e29b-41d4-a716-446655440111:published",
-			ExternalURL:  "https://ai-models.example.com/upload/token",
-			InClusterURL: "http://upload-worker.d8-ai-models.svc:8444/upload/token",
+			ExpiresAt:                &metav1.Time{Time: expiresAt},
+			Repository:               "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/550e8400-e29b-41d4-a716-446655440111:published",
+			ExternalURL:              "https://ai-models.example.com/upload/token",
+			InClusterURL:             "http://upload-worker.d8-ai-models.svc:8444/upload/token",
+			AuthorizationHeaderValue: "Bearer token-a",
 		},
 		nil,
 	)
@@ -133,6 +135,7 @@ func succeededUploadSessionHandle(t *testing.T, deleted *bool) *publicationports
 		"upload-worker",
 		corev1.PodSucceeded,
 		encoded,
+		"",
 		modelsv1alpha1.ModelUploadStatus{},
 		func(context.Context) error {
 			if deleted != nil {

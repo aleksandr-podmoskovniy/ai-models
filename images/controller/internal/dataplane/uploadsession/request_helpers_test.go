@@ -16,7 +16,11 @@ limitations under the License.
 
 package uploadsession
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestSanitizedUploadFileName(t *testing.T) {
 	t.Parallel()
@@ -53,5 +57,26 @@ func TestNormalizePortDefaults(t *testing.T) {
 	}
 	if got, want := normalizePort(18080), 18080; got != want {
 		t.Fatalf("normalizePort(18080) = %d, want %d", got, want)
+	}
+}
+
+func TestRequestTokenAcceptsBearerHeaderOnly(t *testing.T) {
+	t.Parallel()
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/upload/session-a?token=query-token", nil)
+	request.Header.Set("Authorization", "Bearer header-token")
+
+	if got, want := requestToken(request), "header-token"; got != want {
+		t.Fatalf("requestToken() = %q, want %q", got, want)
+	}
+}
+
+func TestRequestTokenRejectsQueryTokenWithoutBearerHeader(t *testing.T) {
+	t.Parallel()
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/upload/session-a?token=query-token", nil)
+
+	if got := requestToken(request); got != "" {
+		t.Fatalf("requestToken() = %q, want empty token", got)
 	}
 }

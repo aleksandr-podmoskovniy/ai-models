@@ -28,12 +28,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func Build(request publicationports.Request, options Options, projectedAuthSecretName string) (*corev1.Pod, error) {
+func Build(
+	request publicationports.Request,
+	options Options,
+	projectedAuthSecretName string,
+	directUploadStateSecretName string,
+) (*corev1.Pod, error) {
 	sourcePlan, err := sourcePlan(request)
 	if err != nil {
 		return nil, err
 	}
-	return buildWithPlan(request, sourcePlan, options, projectedAuthSecretName)
+	return buildWithPlan(request, sourcePlan, options, projectedAuthSecretName, directUploadStateSecretName)
 }
 
 func buildWithPlan(
@@ -41,6 +46,7 @@ func buildWithPlan(
 	sourcePlan publicationapp.SourceWorkerPlan,
 	options Options,
 	projectedAuthSecretName string,
+	directUploadStateSecretName string,
 ) (*corev1.Pod, error) {
 	options = normalizeOptions(options)
 	if err := validateOptions(sourcePlan, options); err != nil {
@@ -59,7 +65,7 @@ func buildWithPlan(
 		return nil, err
 	}
 
-	container := buildContainer(request, sourcePlan, artifactURI, options, projectedAuthSecretName)
+	container := buildContainer(request, sourcePlan, artifactURI, options, projectedAuthSecretName, directUploadStateSecretName)
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

@@ -19,33 +19,42 @@ package directupload
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/deckhouse/ai-models/dmcr/internal/sealedblob"
 )
 
 type fakeBackend struct {
-	existing map[string]bool
-	uploads  map[string]string
-	links    map[string]string
-	parts    map[string][]UploadedPart
+	objects          map[string][]byte
+	uploads          map[string]string
+	parts            map[string][]UploadedPart
+	deleted          []string
+	putErr           error
+	putErrPathSuffix string
 }
 
 func newFakeBackend() *fakeBackend {
 	return &fakeBackend{
-		existing: make(map[string]bool),
-		uploads:  make(map[string]string),
-		links:    make(map[string]string),
-		parts:    make(map[string][]UploadedPart),
+		objects: make(map[string][]byte),
+		uploads: make(map[string]string),
+		parts:   make(map[string][]UploadedPart),
 	}
 }
 
-func (b *fakeBackend) BlobExists(_ context.Context, objectKey string) (bool, error) {
-	return b.existing[objectKey], nil
+func (b *fakeBackend) ObjectExists(_ context.Context, objectKey string) (bool, error) {
+	_, exists := b.objects[strings.TrimSpace(objectKey)]
+	return exists, nil
 }
 
 func (b *fakeBackend) StartMultipartUpload(_ context.Context, objectKey string) (string, error) {
@@ -64,42 +73,58 @@ func (b *fakeBackend) ListUploadedParts(_ context.Context, objectKey, uploadID s
 }
 
 func (b *fakeBackend) CompleteMultipartUpload(_ context.Context, objectKey, uploadID string, parts []UploadedPart) error {
-	b.existing[objectKey] = true
 	b.parts[uploadID] = append([]UploadedPart(nil), parts...)
+	b.objects[strings.TrimSpace(objectKey)] = payloadForParts(parts)
 	return nil
 }
 
 func (b *fakeBackend) AbortMultipartUpload(_ context.Context, objectKey, uploadID string) error {
 	delete(b.uploads, uploadID)
 	delete(b.parts, uploadID)
-	delete(b.existing, objectKey)
+	delete(b.objects, strings.TrimSpace(objectKey))
+	return nil
+}
+
+func (b *fakeBackend) Reader(_ context.Context, objectKey string, offset int64) (io.ReadCloser, error) {
+	payload, exists := b.objects[strings.TrimSpace(objectKey)]
+	if !exists {
+		return nil, errors.New("object not found")
+	}
+	if offset > int64(len(payload)) {
+		offset = int64(len(payload))
+	}
+	return io.NopCloser(bytes.NewReader(payload[offset:])), nil
+}
+
+func (b *fakeBackend) DeleteObject(_ context.Context, objectKey string) error {
+	trimmed := strings.TrimSpace(objectKey)
+	delete(b.objects, trimmed)
+	b.deleted = append(b.deleted, trimmed)
 	return nil
 }
 
 func (b *fakeBackend) PutContent(_ context.Context, objectKey string, payload []byte) error {
-	b.links[objectKey] = string(payload)
+	trimmed := strings.TrimSpace(objectKey)
+	if b.putErr != nil && (b.putErrPathSuffix == "" || strings.HasSuffix(trimmed, b.putErrPathSuffix)) {
+		return b.putErr
+	}
+	b.objects[trimmed] = append([]byte(nil), payload...)
 	return nil
 }
 
-func TestServiceExistingBlobCompletesImmediatelyAndWritesLink(t *testing.T) {
+func TestServiceStartReturnsSessionToken(t *testing.T) {
 	t.Parallel()
 
 	backend := newFakeBackend()
-	blobKey, err := BlobDataObjectKey("/dmcr", "sha256:"+strings.Repeat("a", 64))
-	if err != nil {
-		t.Fatalf("BlobDataObjectKey() error = %v", err)
-	}
-	backend.existing[blobKey] = true
-	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20)
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	server := httptest.NewServer(service.Handler())
 	defer server.Close()
 
-	response := postJSON(t, server.URL+"/v1/blob-uploads", "writer", "secret", startRequest{
+	response := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
 		Repository: "ai-models/catalog/model",
-		Digest:     "sha256:" + strings.Repeat("a", 64),
 	})
 	if got, want := response.StatusCode, http.StatusOK; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
@@ -108,57 +133,127 @@ func TestServiceExistingBlobCompletesImmediatelyAndWritesLink(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 		t.Fatalf("Decode(startResponse) error = %v", err)
 	}
-	if !payload.Complete {
-		t.Fatal("Complete = false, want true")
-	}
-	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", "sha256:"+strings.Repeat("a", 64))
-	if err != nil {
-		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
-	}
-	if got, want := backend.links[linkKey], "sha256:"+strings.Repeat("a", 64); got != want {
-		t.Fatalf("link payload = %q, want %q", got, want)
+	if payload.SessionToken == "" {
+		t.Fatal("SessionToken = empty, want non-empty token")
 	}
 }
 
-func TestServiceCompleteWritesRepositoryLink(t *testing.T) {
+func TestServiceCompleteWritesRepositoryLinkAndSealedMetadata(t *testing.T) {
 	t.Parallel()
 
 	backend := newFakeBackend()
-	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20)
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	server := httptest.NewServer(service.Handler())
 	defer server.Close()
 
-	startResp := postJSON(t, server.URL+"/v1/blob-uploads", "writer", "secret", startRequest{
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
 		Repository: "ai-models/catalog/model",
-		Digest:     "sha256:" + strings.Repeat("b", 64),
 	})
 	var startPayload startResponse
 	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
 		t.Fatalf("Decode(startResponse) error = %v", err)
 	}
-	if startPayload.SessionToken == "" {
-		t.Fatal("SessionToken = empty, want non-empty token")
+	claims, err := decodeSessionToken([]byte("salt"), startPayload.SessionToken)
+	if err != nil {
+		t.Fatalf("decodeSessionToken() error = %v", err)
 	}
 
-	completeResp := postJSON(t, server.URL+"/v1/blob-uploads/complete", "writer", "secret", completeRequest{
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+		{PartNumber: 2, ETag: "etag-2", SizeBytes: 4},
+	}
+	digest := digestForParts(parts)
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
 		SessionToken: startPayload.SessionToken,
-		Parts: []UploadedPart{
-			{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
-			{PartNumber: 2, ETag: "etag-2", SizeBytes: 4},
-		},
+		Digest:       digest,
+		SizeBytes:    12,
+		Parts:        parts,
 	})
 	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
 	}
-	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", "sha256:"+strings.Repeat("b", 64))
+
+	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", digest)
 	if err != nil {
 		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
 	}
-	if got, want := backend.links[linkKey], "sha256:"+strings.Repeat("b", 64); got != want {
+	if got, want := string(backend.objects[linkKey]), digest; got != want {
 		t.Fatalf("link payload = %q, want %q", got, want)
+	}
+
+	blobKey, err := BlobDataObjectKey("/dmcr", digest)
+	if err != nil {
+		t.Fatalf("BlobDataObjectKey() error = %v", err)
+	}
+	if _, exists := backend.objects[blobKey]; exists {
+		t.Fatalf("canonical blob object %q exists, want sealed metadata only", blobKey)
+	}
+
+	metadataPayload, exists := backend.objects[sealedblob.MetadataPath(blobKey)]
+	if !exists {
+		t.Fatalf("sealed metadata %q was not written", sealedblob.MetadataPath(blobKey))
+	}
+	metadata, err := sealedblob.Unmarshal(metadataPayload)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if metadata.Digest != digest {
+		t.Fatalf("metadata.Digest = %q, want %q", metadata.Digest, digest)
+	}
+	if metadata.PhysicalPath != claims.ObjectKey {
+		t.Fatalf("metadata.PhysicalPath = %q, want %q", metadata.PhysicalPath, claims.ObjectKey)
+	}
+	if metadata.SizeBytes != 12 {
+		t.Fatalf("metadata.SizeBytes = %d, want %d", metadata.SizeBytes, 12)
+	}
+	if _, exists := backend.objects[claims.ObjectKey]; !exists {
+		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
+	}
+}
+
+func TestServiceCompleteRejectsDigestMismatchAndDeletesUploadedObject(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+	claims, err := decodeSessionToken([]byte("salt"), startPayload.SessionToken)
+	if err != nil {
+		t.Fatalf("decodeSessionToken() error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+	}
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		Digest:       "sha256:" + strings.Repeat("f", 64),
+		SizeBytes:    8,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusConflict; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if _, exists := backend.objects[claims.ObjectKey]; exists {
+		t.Fatalf("physical upload object %q still exists after digest mismatch", claims.ObjectKey)
+	}
+	if !slices.Contains(backend.deleted, claims.ObjectKey) {
+		t.Fatalf("DeleteObject() did not remove %q, deleted = %#v", claims.ObjectKey, backend.deleted)
 	}
 }
 
@@ -166,19 +261,112 @@ func TestServiceRejectsWrongAuth(t *testing.T) {
 	t.Parallel()
 
 	backend := newFakeBackend()
-	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20)
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	server := httptest.NewServer(service.Handler())
 	defer server.Close()
 
-	response := postJSON(t, server.URL+"/v1/blob-uploads", "writer", "wrong", startRequest{
+	response := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "wrong", startRequest{
 		Repository: "ai-models/catalog/model",
-		Digest:     "sha256:" + strings.Repeat("c", 64),
 	})
 	if got, want := response.StatusCode, http.StatusUnauthorized; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
+	}
+}
+
+func TestServiceRejectsExpiredSessionToken(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	startedAt := time.Unix(1_700_000_000, 0)
+	service.now = func() time.Time { return startedAt }
+
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+
+	service.now = func() time.Time { return startedAt.Add(2 * time.Hour) }
+
+	request, err := http.NewRequest(http.MethodGet, server.URL+"/v2/blob-uploads/parts?sessionToken="+startPayload.SessionToken, nil)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	request.SetBasicAuth("writer", "secret")
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	defer response.Body.Close()
+	if got, want := response.StatusCode, http.StatusBadRequest; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+}
+
+func TestServiceCompleteCleansUpSealedObjectsWhenLinkWriteFails(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	backend.putErr = errors.New("link write failed")
+	backend.putErrPathSuffix = "/link"
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+	claims, err := decodeSessionToken([]byte("salt"), startPayload.SessionToken)
+	if err != nil {
+		t.Fatalf("decodeSessionToken() error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+	}
+	digest := digestForParts(parts)
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		Digest:       digest,
+		SizeBytes:    8,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusInternalServerError; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+
+	blobKey, err := BlobDataObjectKey("/dmcr", digest)
+	if err != nil {
+		t.Fatalf("BlobDataObjectKey() error = %v", err)
+	}
+	expectedDeleted := []string{claims.ObjectKey, sealedblob.MetadataPath(blobKey)}
+	for _, expectedPath := range expectedDeleted {
+		if !slices.Contains(backend.deleted, expectedPath) {
+			t.Fatalf("DeleteObject() did not remove %q, deleted = %#v", expectedPath, backend.deleted)
+		}
+		if _, exists := backend.objects[expectedPath]; exists {
+			t.Fatalf("object %q still exists after cleanup", expectedPath)
+		}
 	}
 }
 
@@ -205,4 +393,17 @@ func postJSON(t *testing.T, url, username, password string, payload any) *http.R
 		_ = response.Body.Close()
 	})
 	return response
+}
+
+func payloadForParts(parts []UploadedPart) []byte {
+	payload := make([]byte, 0, int(totalUploadedSize(parts)))
+	for _, part := range parts {
+		payload = append(payload, bytes.Repeat([]byte{byte('a' + part.PartNumber - 1)}, int(part.SizeBytes))...)
+	}
+	return payload
+}
+
+func digestForParts(parts []UploadedPart) string {
+	sum := sha256.Sum256(payloadForParts(parts))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }

@@ -33,6 +33,9 @@ func TestInitialStatusUploadStartsPending(t *testing.T) {
 	if got, want := status.Phase, modelsv1alpha1.ModelPhasePending; got != want {
 		t.Fatalf("unexpected phase %q", got)
 	}
+	if got, want := status.Progress, "0%"; got != want {
+		t.Fatalf("unexpected progress %q", got)
+	}
 }
 
 func TestProjectStatusRunningNonUploadStaysPublishing(t *testing.T) {
@@ -50,6 +53,34 @@ func TestProjectStatusRunningNonUploadStaysPublishing(t *testing.T) {
 	}
 	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhasePublishing; got != want {
 		t.Fatalf("unexpected phase %q", got)
+	}
+}
+
+func TestProjectStatusRunningUsesObservationMessage(t *testing.T) {
+	t.Parallel()
+
+	projection, err := ProjectStatus(
+		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{},
+		5,
+		modelsv1alpha1.ModelSourceTypeHuggingFace,
+		Observation{
+			Phase:           OperationPhaseRunning,
+			ConditionReason: modelsv1alpha1.ModelConditionReasonPublicationUploading,
+			Message:         "123/456 bytes uploaded into the internal registry",
+		},
+	)
+	if err != nil {
+		t.Fatalf("ProjectStatus() error = %v", err)
+	}
+
+	artifactResolved := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactResolved))
+	if artifactResolved == nil || artifactResolved.Message != "123/456 bytes uploaded into the internal registry" || artifactResolved.Reason != string(modelsv1alpha1.ModelConditionReasonPublicationUploading) {
+		t.Fatalf("unexpected artifact resolved condition %#v", artifactResolved)
+	}
+	ready := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionReady))
+	if ready == nil || ready.Message != "123/456 bytes uploaded into the internal registry" || ready.Reason != string(modelsv1alpha1.ModelConditionReasonPublicationUploading) {
+		t.Fatalf("unexpected ready condition %#v", ready)
 	}
 }
 
@@ -84,12 +115,14 @@ func TestProjectStatusRunningUploadWithSession(t *testing.T) {
 		5,
 		modelsv1alpha1.ModelSourceTypeUpload,
 		Observation{
-			Phase: OperationPhaseRunning,
+			Phase:    OperationPhaseRunning,
+			Progress: "17%",
 			Upload: &modelsv1alpha1.ModelUploadStatus{
-				ExpiresAt:    &expiresAt,
-				Repository:   "registry.example/upload",
-				ExternalURL:  "https://ai-models.example.com/upload/token",
-				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				ExpiresAt:                &expiresAt,
+				Repository:               "registry.example/upload",
+				ExternalURL:              "https://ai-models.example.com/upload/token",
+				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				AuthorizationHeaderValue: "Bearer token-a",
 			},
 		},
 	)
@@ -99,8 +132,11 @@ func TestProjectStatusRunningUploadWithSession(t *testing.T) {
 	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhaseWaitForUpload; got != want {
 		t.Fatalf("unexpected phase %q", got)
 	}
-	if projection.Status.Upload == nil || projection.Status.Upload.InClusterURL != "http://upload-a.d8-ai-models.svc:8444/upload/token" {
+	if projection.Status.Upload == nil || projection.Status.Upload.InClusterURL != "http://upload-a.d8-ai-models.svc:8444/upload/token" || projection.Status.Upload.AuthorizationHeaderValue != "Bearer token-a" {
 		t.Fatalf("unexpected upload status %#v", projection.Status.Upload)
+	}
+	if got, want := projection.Status.Progress, "17%"; got != want {
+		t.Fatalf("unexpected progress %q", got)
 	}
 	artifactResolved := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactResolved))
 	if artifactResolved == nil || artifactResolved.Reason != string(modelsv1alpha1.ModelConditionReasonWaitingForUserUpload) {

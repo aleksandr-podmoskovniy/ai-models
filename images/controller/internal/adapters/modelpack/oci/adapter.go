@@ -73,18 +73,19 @@ func (a *Adapter) Publish(ctx context.Context, input modelpackports.PublishInput
 		return modelpackports.PublishResult{}, err
 	}
 
-	layerDescribeStarted := time.Now()
-	logger.Info("native modelpack layer descriptor precompute started")
-	layerDescriptors, err := describePublishLayers(ctx, layers)
+	layerPlanStarted := time.Now()
+	logger.Info("native modelpack layer plan validation started")
+	layerPlans, err := planPublishLayers(layers)
 	if err != nil {
 		return modelpackports.PublishResult{}, err
 	}
 	logger.Info(
-		"native modelpack layer descriptor precompute completed",
-		slog.Int64("durationMs", time.Since(layerDescribeStarted).Milliseconds()),
-		slog.Int("layerCount", len(layerDescriptors)),
+		"native modelpack layer plan validation completed",
+		slog.Int64("durationMs", time.Since(layerPlanStarted).Milliseconds()),
+		slog.Int("layerCount", len(layerPlans)),
 	)
-	if err := uploadPublishLayers(ctx, client, input, auth, layers, layerDescriptors, logger); err != nil {
+	layerDescriptors, err := uploadPublishLayers(ctx, client, input, auth, layers, layerPlans, logger)
+	if err != nil {
 		return modelpackports.PublishResult{}, err
 	}
 

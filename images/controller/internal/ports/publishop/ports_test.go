@@ -28,7 +28,7 @@ func TestSourceWorkerHandleHelpers(t *testing.T) {
 	t.Parallel()
 
 	deleted := false
-	handle := NewSourceWorkerHandle("worker", corev1.PodSucceeded, `{"artifact":{"kind":"OCI","uri":"registry.example/model@sha256:deadbeef","digest":"sha256:deadbeef","mediaType":"application/vnd.cncf.model.manifest.v1+json"},"resolved":{"task":"text-generation"},"source":{"type":"HuggingFace","externalReference":"https://huggingface.co/test/model"},"cleanupHandle":{"kind":"BackendArtifact","artifact":{"kind":"OCI","uri":"registry.example/model@sha256:deadbeef"},"backend":{"reference":"registry.example/model@sha256:deadbeef"}}}`, func(context.Context) error {
+	handle := NewSourceWorkerHandle("worker", corev1.PodSucceeded, `{"artifact":{"kind":"OCI","uri":"registry.example/model@sha256:deadbeef","digest":"sha256:deadbeef","mediaType":"application/vnd.cncf.model.manifest.v1+json"},"resolved":{"task":"text-generation"},"source":{"type":"HuggingFace","externalReference":"https://huggingface.co/test/model"},"cleanupHandle":{"kind":"BackendArtifact","artifact":{"kind":"OCI","uri":"registry.example/model@sha256:deadbeef"},"backend":{"reference":"registry.example/model@sha256:deadbeef"}}}`, "", "", func(context.Context) error {
 		deleted = true
 		return nil
 	})
@@ -51,10 +51,11 @@ func TestUploadSessionHandleHelpers(t *testing.T) {
 	t.Parallel()
 
 	deleted := false
-	handle := NewUploadSessionHandle("upload-worker", corev1.PodFailed, "upload failed", modelsv1alpha1.ModelUploadStatus{
-		ExternalURL:  "https://ai-models.example.com/upload/token",
-		InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
-		Repository:   "registry.example/upload",
+	handle := NewUploadSessionHandle("upload-worker", corev1.PodFailed, "upload failed", "37%", modelsv1alpha1.ModelUploadStatus{
+		ExternalURL:              "https://ai-models.example.com/upload/token",
+		InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
+		Repository:               "registry.example/upload",
+		AuthorizationHeaderValue: "Bearer token-a",
 	}, func(context.Context) error {
 		deleted = true
 		return nil
@@ -65,6 +66,9 @@ func TestUploadSessionHandleHelpers(t *testing.T) {
 	}
 	if !handle.IsFailed() {
 		t.Fatal("expected failed upload session handle")
+	}
+	if got, want := handle.Progress, "37%"; got != want {
+		t.Fatalf("unexpected progress %q", got)
 	}
 	if err := handle.Delete(context.Background()); err != nil {
 		t.Fatalf("Delete() error = %v", err)

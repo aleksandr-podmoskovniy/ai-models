@@ -27,8 +27,8 @@ import (
 type CacheTopologyKind string
 
 const (
-	CacheTopologyPerPod       CacheTopologyKind = "PerPod"
-	CacheTopologySharedDirect CacheTopologyKind = "SharedDirectPVC"
+	CacheTopologyPerPod    CacheTopologyKind = "PerPod"
+	CacheTopologySharedPVC CacheTopologyKind = "SharedPVC"
 )
 
 type TopologyHints struct {
@@ -56,7 +56,7 @@ func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, 
 			Kind:           CacheTopologyPerPod,
 			CacheMount:     cacheMount,
 			ClaimName:      cacheMount.VolumeName,
-			DeliveryMode:   DeliveryModePerPodFallback,
+			DeliveryMode:   DeliveryModeMaterializeBridge,
 			DeliveryReason: DeliveryReasonStatefulSetClaimTemplate,
 		}, nil
 	}
@@ -73,21 +73,21 @@ func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, 
 			return CacheTopology{}, fmt.Errorf("runtime delivery cache volume %q must reference a non-empty persistentVolumeClaim name", cacheMount.VolumeName)
 		}
 		return CacheTopology{
-			Kind:           CacheTopologySharedDirect,
+			Kind:           CacheTopologySharedPVC,
 			CacheMount:     cacheMount,
 			ClaimName:      claimName,
-			DeliveryMode:   DeliveryModeSharedDirect,
-			DeliveryReason: DeliveryReasonSharedPersistentVolume,
+			DeliveryMode:   DeliveryModeSharedPVCBridge,
+			DeliveryReason: DeliveryReasonWorkloadSharedPersistentVolume,
 		}, nil
 	case volume.EmptyDir != nil || volume.Ephemeral != nil:
 		reason := DeliveryReasonWorkloadCacheVolume
 		if strings.TrimSpace(managedVolumeName) != "" && volume.Name == strings.TrimSpace(managedVolumeName) {
-			reason = DeliveryReasonManagedFallbackVolume
+			reason = DeliveryReasonManagedBridgeVolume
 		}
 		return CacheTopology{
 			Kind:           CacheTopologyPerPod,
 			CacheMount:     cacheMount,
-			DeliveryMode:   DeliveryModePerPodFallback,
+			DeliveryMode:   DeliveryModeMaterializeBridge,
 			DeliveryReason: reason,
 		}, nil
 	default:

@@ -138,6 +138,61 @@ func DeleteProjectedAccess(ctx context.Context, kubeClient client.Client, namesp
 	)
 }
 
+func EnsureProjectedImagePullSecretFromSourceNamespace(
+	ctx context.Context,
+	kubeClient client.Client,
+	scheme *runtime.Scheme,
+	owner client.Object,
+	targetNamespace string,
+	ownerUID types.UID,
+	sourceNamespace string,
+	sourceSecretName string,
+) (string, error) {
+	switch {
+	case kubeClient == nil:
+		return "", errors.New("image pull secret projection client must not be nil")
+	case scheme == nil:
+		return "", errors.New("image pull secret projection scheme must not be nil")
+	case owner == nil:
+		return "", errors.New("image pull secret projection owner must not be nil")
+	case strings.TrimSpace(targetNamespace) == "":
+		return "", errors.New("image pull secret projection namespace must not be empty")
+	case strings.TrimSpace(sourceSecretName) == "":
+		return "", errors.New("image pull secret projection source secret name must not be empty")
+	}
+	if strings.TrimSpace(sourceNamespace) == "" {
+		sourceNamespace = targetNamespace
+	}
+
+	projectedSecretName, err := resourcenames.RuntimeImagePullSecretName(ownerUID)
+	if err != nil {
+		return "", err
+	}
+	if err := ensureProjectedImagePullSecret(ctx, kubeClient, scheme, owner, targetNamespace, projectedSecretName, sourceNamespace, sourceSecretName); err != nil {
+		return "", err
+	}
+	return projectedSecretName, nil
+}
+
+func DeleteProjectedImagePullSecret(ctx context.Context, kubeClient client.Client, namespace string, ownerUID types.UID) error {
+	switch {
+	case kubeClient == nil:
+		return errors.New("image pull secret projection client must not be nil")
+	case strings.TrimSpace(namespace) == "":
+		return errors.New("image pull secret projection namespace must not be empty")
+	}
+
+	name, err := resourcenames.RuntimeImagePullSecretName(ownerUID)
+	if err != nil {
+		return err
+	}
+	return ownedresource.DeleteAll(
+		ctx,
+		kubeClient,
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}},
+	)
+}
+
 func ensureProjectedAuthSecret(
 	ctx context.Context,
 	kubeClient client.Client,
@@ -204,6 +259,43 @@ func ensureProjectedCASecret(
 		projectedSecret.Type = corev1.SecretTypeOpaque
 		projectedSecret.Data = map[string][]byte{
 			"ca.crt": cert,
+		}
+		return ownedresource.MaybeSetControllerReference(owner, projectedSecret, scheme)
+	})
+	return err
+}
+
+func ensureProjectedImagePullSecret(
+	ctx context.Context,
+	kubeClient client.Client,
+	scheme *runtime.Scheme,
+	owner client.Object,
+	targetNamespace string,
+	projectedSecretName string,
+	sourceNamespace string,
+	sourceSecretName string,
+) error {
+	sourceSecret := &corev1.Secret{}
+	sourceKey := client.ObjectKey{Name: sourceSecretName, Namespace: sourceNamespace}
+	if err := kubeClient.Get(ctx, sourceKey, sourceSecret); err != nil {
+		return err
+	}
+
+	dockerConfig := bytes.TrimSpace(sourceSecret.Data[corev1.DockerConfigJsonKey])
+	if len(dockerConfig) == 0 {
+		return fmt.Errorf("image pull secret %s/%s must contain %s", sourceNamespace, sourceSecretName, corev1.DockerConfigJsonKey)
+	}
+
+	projectedSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      projectedSecretName,
+			Namespace: targetNamespace,
+		},
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, kubeClient, projectedSecret, func() error {
+		projectedSecret.Type = corev1.SecretTypeDockerConfigJson
+		projectedSecret.Data = map[string][]byte{
+			corev1.DockerConfigJsonKey: dockerConfig,
 		}
 		return ownedresource.MaybeSetControllerReference(owner, projectedSecret, scheme)
 	})

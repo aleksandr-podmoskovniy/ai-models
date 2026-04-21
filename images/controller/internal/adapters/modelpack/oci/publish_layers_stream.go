@@ -29,11 +29,11 @@ import (
 )
 
 func openPublishLayerRange(ctx context.Context, layer modelpackports.PublishLayer, offset, length int64) (io.ReadCloser, error) {
-	if layer.Format == modelpackports.LayerFormatRaw {
-		return openRawLayerRange(layer.SourcePath, offset, length)
-	}
 	if layer.ObjectSource != nil {
 		return openObjectSourceLayerRange(ctx, layer, offset, length)
+	}
+	if layer.Format == modelpackports.LayerFormatRaw {
+		return openRawLayerRange(layer.SourcePath, offset, length)
 	}
 	if layer.Archive != nil {
 		return openArchiveSourceLayerRange(ctx, layer, offset, length)

@@ -128,15 +128,17 @@ func ModelPath(options Options) string {
 type DeliveryMode string
 
 const (
-	DeliveryModePerPodFallback DeliveryMode = "PerPodFallback"
-	DeliveryModeSharedDirect   DeliveryMode = "SharedDirect"
+	DeliveryModeMaterializeBridge DeliveryMode = "MaterializeBridge"
+	DeliveryModeSharedPVCBridge   DeliveryMode = "SharedPVCBridge"
+	DeliveryModeSharedDirect      DeliveryMode = "SharedDirect"
 )
 
 type DeliveryReason string
 
 const (
-	DeliveryReasonWorkloadCacheVolume      DeliveryReason = "WorkloadCacheVolume"
-	DeliveryReasonManagedFallbackVolume    DeliveryReason = "ManagedFallbackVolume"
-	DeliveryReasonStatefulSetClaimTemplate DeliveryReason = "StatefulSetClaimTemplate"
-	DeliveryReasonSharedPersistentVolume   DeliveryReason = "SharedPersistentVolumeClaim"
+	DeliveryReasonWorkloadCacheVolume            DeliveryReason = "WorkloadCacheVolume"
+	DeliveryReasonManagedBridgeVolume            DeliveryReason = "ManagedBridgeVolume"
+	DeliveryReasonStatefulSetClaimTemplate       DeliveryReason = "StatefulSetClaimTemplate"
+	DeliveryReasonWorkloadSharedPersistentVolume DeliveryReason = "WorkloadSharedPersistentVolumeClaim"
+	DeliveryReasonNodeSharedRuntimePlane         DeliveryReason = "NodeSharedRuntimePlane"
 )

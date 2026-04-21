@@ -27,6 +27,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -44,14 +45,40 @@ func (r *baseReconciler) ensureCleanupHandle(ctx context.Context, object client.
 	if found && apiequality.Semantic.DeepEqual(existing, handle) {
 		return false, nil
 	}
-	if err := cleanuphandle.SetOnObject(object, handle); err != nil {
-		return false, err
-	}
-	if err := r.client.Update(ctx, object); err != nil {
+
+	updated := false
+	key := client.ObjectKeyFromObject(object)
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := object.DeepCopyObject().(client.Object)
+		if err := r.client.Get(ctx, key, latest); err != nil {
+			return err
+		}
+
+		currentHandle, currentFound, err := cleanuphandle.FromObject(latest)
+		if err != nil {
+			return err
+		}
+		if currentFound && apiequality.Semantic.DeepEqual(currentHandle, handle) {
+			object.SetAnnotations(latest.GetAnnotations())
+			object.SetResourceVersion(latest.GetResourceVersion())
+			return nil
+		}
+		if err := cleanuphandle.SetOnObject(latest, handle); err != nil {
+			return err
+		}
+		if err := r.client.Update(ctx, latest); err != nil {
+			return err
+		}
+
+		object.SetAnnotations(latest.GetAnnotations())
+		object.SetResourceVersion(latest.GetResourceVersion())
+		updated = true
+		return nil
+	}); err != nil {
 		return false, err
 	}
 
-	return true, nil
+	return updated, nil
 }
 
 func (r *baseReconciler) updateStatus(
@@ -64,10 +91,39 @@ func (r *baseReconciler) updateStatus(
 		return nil
 	}
 
-	if err := modelobject.SetStatus(object, desired); err != nil {
-		return err
-	}
-	return r.client.Status().Update(ctx, object)
+	key := client.ObjectKeyFromObject(object)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := object.DeepCopyObject().(client.Object)
+		if err := r.client.Get(ctx, key, latest); err != nil {
+			return err
+		}
+
+		latestStatus, err := modelobject.GetStatus(latest)
+		if err != nil {
+			return err
+		}
+		if apiequality.Semantic.DeepEqual(latestStatus, desired) {
+			if err := modelobject.SetStatus(object, desired); err != nil {
+				return err
+			}
+			object.SetResourceVersion(latest.GetResourceVersion())
+			*current = desired
+			return nil
+		}
+		if err := modelobject.SetStatus(latest, desired); err != nil {
+			return err
+		}
+		if err := r.client.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+
+		if err := modelobject.SetStatus(object, desired); err != nil {
+			return err
+		}
+		object.SetResourceVersion(latest.GetResourceVersion())
+		*current = desired
+		return nil
+	})
 }
 
 func (r *baseReconciler) applyMutationPlan(

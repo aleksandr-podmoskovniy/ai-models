@@ -21,18 +21,20 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // ModelSpec is the shared desired state for both Model and ClusterModel.
 // +kubebuilder:validation:XValidation:rule="self.source == oldSelf.source",message="spec.source is immutable"
 type ModelSpec struct {
-	Source      ModelSourceSpec `json:"source"`
+	Source ModelSourceSpec `json:"source"`
 }
 
 // ModelStatus is the shared observed state for both Model and ClusterModel.
 // It intentionally exposes only public-contract-facing state.
 type ModelStatus struct {
-	ObservedGeneration int64                 `json:"observedGeneration,omitempty"`
-	Phase              ModelPhase            `json:"phase,omitempty"`
-	Source             *ResolvedSourceStatus `json:"source,omitempty"`
-	Upload             *ModelUploadStatus    `json:"upload,omitempty"`
-	Artifact           *ModelArtifactStatus  `json:"artifact,omitempty"`
-	Resolved           *ModelResolvedStatus  `json:"resolved,omitempty"`
+	ObservedGeneration int64      `json:"observedGeneration,omitempty"`
+	Phase              ModelPhase `json:"phase,omitempty"`
+	// Progress reports local upload completion percentage for source.upload flows.
+	Progress string                `json:"progress,omitempty"`
+	Source   *ResolvedSourceStatus `json:"source,omitempty"`
+	Upload   *ModelUploadStatus    `json:"upload,omitempty"`
+	Artifact *ModelArtifactStatus  `json:"artifact,omitempty"`
+	Resolved *ModelResolvedStatus  `json:"resolved,omitempty"`
 	// +patchMergeKey=type
 	// +patchStrategy=merge
 	// +listType=map
@@ -68,10 +70,11 @@ type ResolvedSourceStatus struct {
 }
 
 type ModelUploadStatus struct {
-	ExpiresAt    *metav1.Time `json:"expiresAt,omitempty"`
-	Repository   string       `json:"repository,omitempty"`
-	ExternalURL  string       `json:"externalURL,omitempty"`
-	InClusterURL string       `json:"inClusterURL,omitempty"`
+	ExpiresAt                *metav1.Time `json:"expiresAt,omitempty"`
+	Repository               string       `json:"repository,omitempty"`
+	ExternalURL              string       `json:"externalURL,omitempty"`
+	InClusterURL             string       `json:"inClusterURL,omitempty"`
+	AuthorizationHeaderValue string       `json:"authorizationHeaderValue,omitempty"`
 }
 
 type ModelArtifactStatus struct {

@@ -37,9 +37,10 @@ func TestHandlerProbeValidatesAndPersistsState(t *testing.T) {
 		Sessions:      store,
 	})
 
-	request := httptest.NewRequest(http.MethodPost, "/v1/upload/session-a/probe?token=token-a", jsonBody(t, probeUploadRequest{
-		FileName: "model.gguf",
-		Chunk:    []byte("GGUFpayload"),
+	request := authorizedRequest(http.MethodPost, "/v1/upload/session-a/probe", "token-a", jsonBody(t, probeUploadRequest{
+		FileName:  "model.gguf",
+		SizeBytes: 128,
+		Chunk:     []byte("GGUFpayload"),
 	}))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -54,6 +55,9 @@ func TestHandlerProbeValidatesAndPersistsState(t *testing.T) {
 	if session.Phase != SessionPhaseProbing {
 		t.Fatalf("expected probing phase, got %#v", session)
 	}
+	if session.ExpectedSizeBytes != 128 {
+		t.Fatalf("expected persisted sizeBytes, got %#v", session)
+	}
 }
 
 func TestHandlerInitRequiresSuccessfulProbe(t *testing.T) {
@@ -67,7 +71,7 @@ func TestHandlerInitRequiresSuccessfulProbe(t *testing.T) {
 		},
 	})
 
-	request := httptest.NewRequest(http.MethodPost, "/v1/upload/session-a/init?token=token-a", jsonBody(t, initUploadRequest{
+	request := authorizedRequest(http.MethodPost, "/v1/upload/session-a/init", "token-a", jsonBody(t, initUploadRequest{
 		FileName: "model.gguf",
 	}))
 	response := httptest.NewRecorder()
@@ -101,7 +105,7 @@ func TestHandlerInitStartsMultipartUpload(t *testing.T) {
 		Sessions:      store,
 	})
 
-	request := httptest.NewRequest(http.MethodPost, "/v1/upload/session-a/init?token=token-a", jsonBody(t, initUploadRequest{
+	request := authorizedRequest(http.MethodPost, "/v1/upload/session-a/init", "token-a", jsonBody(t, initUploadRequest{
 		FileName: "model.gguf",
 	}))
 	response := httptest.NewRecorder()

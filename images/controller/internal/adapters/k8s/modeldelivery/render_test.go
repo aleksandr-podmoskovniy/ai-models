@@ -87,7 +87,7 @@ func TestRenderBuildsMaterializerAgainstExistingCacheMount(t *testing.T) {
 	}
 }
 
-func TestRenderBuildsDigestScopedModelPathForSharedTopology(t *testing.T) {
+func TestRenderBuildsDigestScopedModelPathForSharedPVCTopology(t *testing.T) {
 	t.Parallel()
 
 	rendered, err := Render(Input{
@@ -104,7 +104,7 @@ func TestRenderBuildsDigestScopedModelPathForSharedTopology(t *testing.T) {
 			VolumeName: "model-cache",
 			MountPath:  DefaultCacheMountPath,
 		},
-		TopologyKind: CacheTopologySharedDirect,
+		TopologyKind: CacheTopologySharedPVC,
 	}, Options{
 		RuntimeImage: "example.com/ai-models:latest",
 	})
@@ -120,6 +120,39 @@ func TestRenderBuildsDigestScopedModelPathForSharedTopology(t *testing.T) {
 	}
 	if got := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_SHARED_STORE"); got != "true" {
 		t.Fatalf("shared store env = %q, want true", got)
+	}
+}
+
+func TestRenderBuildsRuntimeImagePullSecretReference(t *testing.T) {
+	t.Parallel()
+
+	rendered, err := Render(Input{
+		Artifact: publication.PublishedArtifact{
+			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
+			URI:       "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
+			Digest:    "sha256:deadbeef",
+			MediaType: "application/vnd.cncf.model.manifest.v1+json",
+		},
+		RegistryAccess: ociregistry.Projection{
+			AuthSecretName: "projected-registry-auth",
+		},
+		RuntimeImagePullSecretName: "projected-runtime-pull",
+		CacheMount: CacheMount{
+			VolumeName: "model-cache",
+			MountPath:  DefaultCacheMountPath,
+		},
+	}, Options{
+		RuntimeImage: "example.com/ai-models:latest",
+	})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	if got, want := len(rendered.ImagePullSecrets), 1; got != want {
+		t.Fatalf("image pull secrets count = %d, want %d", got, want)
+	}
+	if got, want := rendered.ImagePullSecrets[0].Name, "projected-runtime-pull"; got != want {
+		t.Fatalf("image pull secret name = %q, want %q", got, want)
 	}
 }
 
@@ -140,7 +173,7 @@ func TestRenderBuildsSharedCacheCoordinationEnv(t *testing.T) {
 			VolumeName: "model-cache",
 			MountPath:  DefaultCacheMountPath,
 		},
-		TopologyKind: CacheTopologySharedDirect,
+		TopologyKind: CacheTopologySharedPVC,
 		Coordination: Coordination{
 			Mode: CoordinationModeShared,
 		},

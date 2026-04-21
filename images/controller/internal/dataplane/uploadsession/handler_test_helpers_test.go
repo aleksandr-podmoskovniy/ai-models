@@ -19,7 +19,9 @@ package uploadsession
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -74,6 +76,12 @@ func decodeResponse(t testingT, body []byte, destination any) {
 	if err := json.Unmarshal(body, destination); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
+}
+
+func authorizedRequest(method, path, token string, body io.Reader) *http.Request {
+	request := httptest.NewRequest(method, path, body)
+	request.Header.Set("Authorization", "Bearer "+token)
+	return request
 }
 
 type testingT interface {

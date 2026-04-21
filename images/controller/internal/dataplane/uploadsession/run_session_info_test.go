@@ -70,7 +70,7 @@ func TestHandlerRejectsInvalidToken(t *testing.T) {
 		},
 	})
 
-	request := httptest.NewRequest(http.MethodGet, "/v1/upload/session-a?token=wrong", nil)
+	request := authorizedRequest(http.MethodGet, "/v1/upload/session-a", "wrong", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 
@@ -110,7 +110,7 @@ func TestHandlerReturnsSessionInfo(t *testing.T) {
 		},
 	})
 
-	request := httptest.NewRequest(http.MethodGet, "/v1/upload/session-a?token=token-a", nil)
+	request := authorizedRequest(http.MethodGet, "/v1/upload/session-a", "token-a", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 

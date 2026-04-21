@@ -38,10 +38,11 @@ func TestEnsureRuntimeObservationUploadMode(t *testing.T) {
 	deleted := false
 	sourceWorkers := &fakeSourceWorkerRuntime{}
 	uploadSessions := &fakeUploadSessionRuntime{
-		handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodRunning, "", modelsv1alpha1.ModelUploadStatus{
-			ExternalURL:  "https://ai-models.example.com/upload/token",
-			InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
-			Repository:   "registry.example/upload",
+		handle: publicationports.NewUploadSessionHandle("upload-a", corev1.PodRunning, "", "23%", modelsv1alpha1.ModelUploadStatus{
+			ExternalURL:              "https://ai-models.example.com/upload/token",
+			InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
+			Repository:               "registry.example/upload",
+			AuthorizationHeaderValue: "Bearer token-a",
 		}, func(context.Context) error {
 			deleted = true
 			return nil
@@ -68,6 +69,9 @@ func TestEnsureRuntimeObservationUploadMode(t *testing.T) {
 	}
 	if got.Decision.Observation.Upload == nil || got.Decision.Observation.Upload.InClusterURL == "" {
 		t.Fatalf("unexpected upload observation %#v", got.Decision.Observation.Upload)
+	}
+	if got.Decision.Observation.Progress != "23%" {
+		t.Fatalf("unexpected progress %q", got.Decision.Observation.Progress)
 	}
 	if got.DeleteFn == nil {
 		t.Fatal("expected delete function for upload session handle")

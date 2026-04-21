@@ -16,7 +16,10 @@ limitations under the License.
 
 package directupload
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 type UploadedPart struct {
 	PartNumber int    `json:"partNumber"`
@@ -25,11 +28,13 @@ type UploadedPart struct {
 }
 
 type Backend interface {
-	BlobExists(ctx context.Context, objectKey string) (bool, error)
+	ObjectExists(ctx context.Context, objectKey string) (bool, error)
 	StartMultipartUpload(ctx context.Context, objectKey string) (string, error)
 	PresignUploadPart(ctx context.Context, objectKey, uploadID string, partNumber int) (string, error)
 	ListUploadedParts(ctx context.Context, objectKey, uploadID string) ([]UploadedPart, error)
 	CompleteMultipartUpload(ctx context.Context, objectKey, uploadID string, parts []UploadedPart) error
 	AbortMultipartUpload(ctx context.Context, objectKey, uploadID string) error
+	Reader(ctx context.Context, objectKey string, offset int64) (io.ReadCloser, error)
+	DeleteObject(ctx context.Context, objectKey string) error
 	PutContent(ctx context.Context, objectKey string, payload []byte) error
 }

@@ -48,13 +48,14 @@ func buildContainer(
 	artifactURI string,
 	options Options,
 	projectedAuthSecretName string,
+	directUploadStateSecretName string,
 ) corev1.Container {
 	return corev1.Container{
 		Name:            "publish",
 		Image:           options.Image,
 		ImagePullPolicy: imagePullPolicyFor(options),
 		Args:            append([]string{"publish-worker"}, buildArgs(request, sourcePlan, artifactURI, options)...),
-		Env:             buildEnv(options, sourcePlan, projectedAuthSecretName),
+		Env:             buildEnv(options, sourcePlan, projectedAuthSecretName, directUploadStateSecretName),
 		VolumeMounts:    buildVolumeMounts(options, sourcePlan),
 		Resources:       options.Resources,
 	}
@@ -82,6 +83,7 @@ func buildEnv(
 	options Options,
 	plan publicationapp.SourceWorkerPlan,
 	projectedAuthSecretName string,
+	directUploadStateSecretName string,
 ) []corev1.EnvVar {
 	env := ociregistry.Env(options.OCIInsecure, options.OCIRegistrySecretName, options.OCIRegistryCASecretName)
 	env = append(env,
@@ -103,6 +105,12 @@ func buildEnv(
 				},
 			},
 		})
+	}
+	if strings.TrimSpace(directUploadStateSecretName) != "" {
+		env = append(env,
+			corev1.EnvVar{Name: "AI_MODELS_DIRECT_UPLOAD_STATE_NAMESPACE", Value: options.Namespace},
+			corev1.EnvVar{Name: "AI_MODELS_DIRECT_UPLOAD_STATE_SECRET_NAME", Value: strings.TrimSpace(directUploadStateSecretName)},
+		)
 	}
 	return env
 }

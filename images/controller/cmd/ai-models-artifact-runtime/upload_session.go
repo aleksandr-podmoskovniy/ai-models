@@ -54,7 +54,7 @@ func runUploadSession(args []string) int {
 		slog.String("stagingBucket", strings.TrimSpace(stagingBucket)),
 	)
 
-	stagingClient, err := s3.New(uploadStagingS3ConfigFromEnv())
+	stagingClient, err := s3.New(cmdsupport.UploadStagingS3ConfigFromEnv())
 	if err != nil {
 		return cmdsupport.CommandError(commandUploadGateway, err)
 	}
@@ -143,8 +143,8 @@ func (s sessionStoreAdapter) Load(ctx context.Context, sessionID string) (upload
 	return record, true, nil
 }
 
-func (s sessionStoreAdapter) SaveProbe(ctx context.Context, sessionID string, state uploadsessionruntime.ProbeState) error {
-	return s.client.SaveProbe(ctx, sessionID, state)
+func (s sessionStoreAdapter) SaveProbe(ctx context.Context, sessionID string, expectedSizeBytes int64, state uploadsessionruntime.ProbeState) error {
+	return s.client.SaveProbe(ctx, sessionID, expectedSizeBytes, state)
 }
 
 func (s sessionStoreAdapter) SaveMultipart(ctx context.Context, sessionID string, state uploadsessionruntime.SessionState) error {

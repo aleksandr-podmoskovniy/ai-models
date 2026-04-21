@@ -42,6 +42,23 @@ func BlobDataObjectKey(rootDirectory string, dgst string) (string, error) {
 	), nil
 }
 
+func UploadSessionObjectKey(rootDirectory, sessionID string) (string, error) {
+	cleanSessionID := strings.TrimSpace(sessionID)
+	if cleanSessionID == "" {
+		return "", fmt.Errorf("session ID must not be empty")
+	}
+	return withRootDirectory(
+		rootDirectory,
+		path.Join(
+			"_ai_models",
+			"direct-upload",
+			"objects",
+			cleanSessionID,
+			"data",
+		),
+	), nil
+}
+
 func RepositoryBlobLinkObjectKey(rootDirectory, repository, dgst string) (string, error) {
 	cleanRepository := strings.Trim(strings.TrimSpace(repository), "/")
 	if cleanRepository == "" {

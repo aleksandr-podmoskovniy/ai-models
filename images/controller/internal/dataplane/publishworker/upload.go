@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -143,8 +144,16 @@ func tryPublishDirectUpload(
 	if err := modelformat.ValidatePath(uploadPath, directInputFormat); err != nil {
 		return publicationartifact.Result{}, false, err
 	}
-	resolvedProfile, publishResult, err := resolveAndPublish(ctx, options, uploadPath, directInputFormat, sourceProfileInput{
+	resolvedProfile, publishResult, err := resolveAndPublishWithLayers(ctx, options, uploadPath, directInputFormat, sourceProfileInput{
 		Task: options.Task,
+	}, []modelpackports.PublishLayer{
+		{
+			SourcePath:  uploadPath,
+			TargetPath:  filepath.Base(uploadPath),
+			Base:        modelpackports.LayerBaseModel,
+			Format:      modelpackports.LayerFormatRaw,
+			Compression: modelpackports.LayerCompressionNone,
+		},
 	}, nil)
 	if err != nil {
 		return publicationartifact.Result{}, false, err

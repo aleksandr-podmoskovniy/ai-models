@@ -40,14 +40,25 @@ type SourceWorkerHandle struct {
 	Name               string
 	Phase              corev1.PodPhase
 	TerminationMessage string
+	ProgressReason     modelsv1alpha1.ModelConditionReason
+	ProgressMessage    string
 	deleteFn           func(context.Context) error
 }
 
-func NewSourceWorkerHandle(name string, phase corev1.PodPhase, terminationMessage string, deleteFn func(context.Context) error) *SourceWorkerHandle {
+func NewSourceWorkerHandle(
+	name string,
+	phase corev1.PodPhase,
+	terminationMessage string,
+	progressReason modelsv1alpha1.ModelConditionReason,
+	progressMessage string,
+	deleteFn func(context.Context) error,
+) *SourceWorkerHandle {
 	return &SourceWorkerHandle{
 		Name:               name,
 		Phase:              phase,
 		TerminationMessage: terminationMessage,
+		ProgressReason:     progressReason,
+		ProgressMessage:    progressMessage,
 		deleteFn:           deleteFn,
 	}
 }
@@ -71,6 +82,7 @@ type UploadSessionHandle struct {
 	WorkerName         string
 	Phase              corev1.PodPhase
 	TerminationMessage string
+	Progress           string
 	UploadStatus       modelsv1alpha1.ModelUploadStatus
 	deleteFn           func(context.Context) error
 }
@@ -79,6 +91,7 @@ func NewUploadSessionHandle(
 	workerName string,
 	phase corev1.PodPhase,
 	terminationMessage string,
+	progress string,
 	uploadStatus modelsv1alpha1.ModelUploadStatus,
 	deleteFn func(context.Context) error,
 ) *UploadSessionHandle {
@@ -86,6 +99,7 @@ func NewUploadSessionHandle(
 		WorkerName:         workerName,
 		Phase:              phase,
 		TerminationMessage: terminationMessage,
+		Progress:           progress,
 		UploadStatus:       uploadStatus,
 		deleteFn:           deleteFn,
 	}

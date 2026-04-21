@@ -43,7 +43,7 @@ func TestHandlerMarksExpiredSessionState(t *testing.T) {
 		Sessions:      store,
 	})
 
-	request := httptest.NewRequest(http.MethodGet, "/v1/upload/session-a?token=token-a", nil)
+	request := authorizedRequest(http.MethodGet, "/v1/upload/session-a", "token-a", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 
@@ -74,7 +74,7 @@ func TestHandlerDoesNotRewritePublishingSessionToExpired(t *testing.T) {
 		Sessions:      store,
 	})
 
-	request := httptest.NewRequest(http.MethodGet, "/v1/upload/session-a?token=token-a", nil)
+	request := authorizedRequest(http.MethodGet, "/v1/upload/session-a", "token-a", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 
@@ -112,7 +112,7 @@ func TestHandlerAbortMarksAbortedSession(t *testing.T) {
 		Sessions:      store,
 	})
 
-	request := httptest.NewRequest(http.MethodPost, "/v1/upload/session-a/abort?token=token-a", http.NoBody)
+	request := authorizedRequest(http.MethodPost, "/v1/upload/session-a/abort", "token-a", http.NoBody)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 

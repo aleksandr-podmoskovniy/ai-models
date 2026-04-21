@@ -29,29 +29,17 @@ import (
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 )
 
-func sourceMirrorSupportsStreamingPublish(options Options) bool {
-	return remoteSourceMirror(options) != nil
-}
-
 func buildHuggingFacePublishLayers(
 	ctx context.Context,
 	options Options,
 	remote sourcefetch.RemoteResult,
 ) ([]modelpackports.PublishLayer, error) {
 	if remote.ObjectSource != nil {
-		return []modelpackports.PublishLayer{
-			{
-				SourcePath:  huggingFaceArtifactURI(remote),
-				TargetPath:  modelpackports.MaterializedModelPathName,
-				Base:        modelpackports.LayerBaseModel,
-				Format:      modelpackports.LayerFormatTar,
-				Compression: modelpackports.LayerCompressionNone,
-				ObjectSource: &modelpackports.PublishObjectSource{
-					Reader: remoteObjectReader{reader: remote.ObjectSource.Reader},
-					Files:  mapRemoteObjectFiles(remote.ObjectSource.Files),
-				},
-			},
-		}, nil
+		return buildObjectSourcePublishLayers(
+			huggingFaceArtifactURI(remote),
+			remoteObjectReader{reader: remote.ObjectSource.Reader},
+			mapRemoteObjectFiles(remote.ObjectSource.Files),
+		)
 	}
 	if strings.TrimSpace(remote.ModelDir) != "" || remote.SourceMirror == nil {
 		return nil, nil
@@ -61,22 +49,14 @@ func buildHuggingFacePublishLayers(
 	if err != nil {
 		return nil, err
 	}
-	return []modelpackports.PublishLayer{
-		{
-			SourcePath:  sourceMirrorArtifactURI(options, remote.SourceMirror),
-			TargetPath:  modelpackports.MaterializedModelPathName,
-			Base:        modelpackports.LayerBaseModel,
-			Format:      modelpackports.LayerFormatTar,
-			Compression: modelpackports.LayerCompressionNone,
-			ObjectSource: &modelpackports.PublishObjectSource{
-				Reader: uploadStagingObjectReader{
-					bucket: strings.TrimSpace(options.RawStageBucket),
-					reader: options.UploadStaging,
-				},
-				Files: files,
-			},
+	return buildObjectSourcePublishLayers(
+		sourceMirrorArtifactURI(options, remote.SourceMirror),
+		uploadStagingObjectReader{
+			bucket: strings.TrimSpace(options.RawStageBucket),
+			reader: options.UploadStaging,
 		},
-	}, nil
+		files,
+	)
 }
 
 func mapRemoteObjectFiles(files []sourcefetch.RemoteObjectFile) []modelpackports.PublishObjectFile {

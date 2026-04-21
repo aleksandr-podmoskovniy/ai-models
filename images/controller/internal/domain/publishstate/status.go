@@ -29,6 +29,7 @@ type Observation struct {
 	RuntimeKind     RuntimeKind
 	ConditionReason modelsv1alpha1.ModelConditionReason
 	Message         string
+	Progress        string
 	Upload          *modelsv1alpha1.ModelUploadStatus
 	Snapshot        *publicationdata.Snapshot
 	CleanupHandle   *cleanuphandle.Handle
@@ -46,9 +47,9 @@ func InitialStatus(
 	sourceType modelsv1alpha1.ModelSourceType,
 ) modelsv1alpha1.ModelStatus {
 	if sourceType == modelsv1alpha1.ModelSourceTypeUpload {
-		return pendingUploadStatus(current, generation, sourceType)
+		return pendingUploadStatus(current, generation, sourceType, "0%", "")
 	}
-	return publishingStatus(current, generation, sourceType)
+	return publishingStatus(current, generation, sourceType, modelsv1alpha1.ModelConditionReasonPending, "")
 }
 
 func ProjectStatus(
@@ -61,7 +62,7 @@ func ProjectStatus(
 	switch observation.Phase {
 	case OperationPhasePending, OperationPhaseRunning:
 		return Projection{
-			Status:  runningStatus(current, generation, sourceType, observation.RuntimeKind, observation.Upload),
+			Status:  runningStatus(current, generation, sourceType, observation.RuntimeKind, observation.Upload, observation.ConditionReason, observation.Message, observation.Progress),
 			Requeue: true,
 		}, nil
 	case OperationPhaseStaged:
@@ -69,7 +70,7 @@ func ProjectStatus(
 			return Projection{}, errors.New("upload staging cleanup handle must not be empty")
 		}
 		return Projection{
-			Status:        publishingStatus(current, generation, sourceType),
+			Status:        publishingStatus(current, generation, sourceType, modelsv1alpha1.ModelConditionReasonPending, ""),
 			CleanupHandle: observation.CleanupHandle,
 			Requeue:       true,
 		}, nil
@@ -99,15 +100,18 @@ func runningStatus(
 	sourceType modelsv1alpha1.ModelSourceType,
 	runtimeKind RuntimeKind,
 	upload *modelsv1alpha1.ModelUploadStatus,
+	reason modelsv1alpha1.ModelConditionReason,
+	message string,
+	progress string,
 ) modelsv1alpha1.ModelStatus {
 	if sourceType != modelsv1alpha1.ModelSourceTypeUpload {
-		return publishingStatus(current, generation, sourceType)
+		return publishingStatus(current, generation, sourceType, reason, message)
 	}
 	if upload != nil {
-		return waitForUploadStatus(current, generation, sourceType, upload)
+		return waitForUploadStatus(current, generation, sourceType, upload, progress, message)
 	}
 	if runtimeKind == RuntimeKindUploadSession {
-		return pendingUploadStatus(current, generation, sourceType)
+		return pendingUploadStatus(current, generation, sourceType, progress, message)
 	}
-	return publishingStatus(current, generation, sourceType)
+	return publishingStatus(current, generation, sourceType, reason, message)
 }

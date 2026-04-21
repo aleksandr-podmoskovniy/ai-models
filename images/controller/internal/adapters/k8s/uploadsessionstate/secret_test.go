@@ -182,7 +182,7 @@ func TestClientSaveProbeMarksProbingPhase(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	if err := client.SaveProbe(t.Context(), "ai-model-upload-auth-1111-2222", uploadsessionruntime.ProbeState{
+	if err := client.SaveProbe(t.Context(), "ai-model-upload-auth-1111-2222", 256, uploadsessionruntime.ProbeState{
 		FileName:            "model.gguf",
 		ResolvedInputFormat: "GGUF",
 	}); err != nil {
@@ -195,6 +195,9 @@ func TestClientSaveProbeMarksProbingPhase(t *testing.T) {
 	}
 	if !found || session.Phase != PhaseProbing {
 		t.Fatalf("unexpected session %#v found=%v", session, found)
+	}
+	if session.ExpectedSizeBytes != 256 {
+		t.Fatalf("unexpected expected size %d", session.ExpectedSizeBytes)
 	}
 }
 

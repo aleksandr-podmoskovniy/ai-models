@@ -25,7 +25,7 @@ paths и test surfaces.
 ### Direct `HuggingFace`
 
 - Byte path:
-  - `resolved HF objects -> native OCI publish`
+  - `resolved HF objects -> bounded companion bundle + raw OCI publish`
 - Runtime selection:
   - `artifacts.sourceFetchMode=Direct`
 - Full-size local copies during successful publish:
@@ -37,16 +37,20 @@ paths и test surfaces.
   - `internal/dataplane/publishworker/huggingface_streaming_test.go`
   - `internal/adapters/k8s/sourceworker/build_test.go`
   - `internal/adapters/modelpack/oci/layer_matrix_object_source_test.go`
+  - `internal/adapters/modelpack/oci/layer_matrix_mixed_layout_test.go`
+  - `internal/adapters/modelpack/oci/published_model_path_test.go`
 - Proved properties:
   - worker no longer allocates local `workspace/model`;
   - remote profile summary/object-source planning is mandatory;
   - planning failure is explicit and no longer degrades to local materialization;
+  - multi-file object source can publish as bounded companion bundle plus raw
+    weight layers without breaking the stable materialized model contract;
   - controller/sourceworker wiring can disable raw-stage mirror args entirely.
 
 ### Mirrored `HuggingFace`
 
 - Byte path:
-  - `HF objects -> source mirror objects -> native OCI publish`
+  - `HF objects -> source mirror objects -> bounded companion bundle + raw OCI publish`
 - Runtime selection:
   - `artifacts.sourceFetchMode=Mirror`
 - Full-size local copies during successful publish:
@@ -58,9 +62,12 @@ paths и test surfaces.
   - `internal/dataplane/publishworker/rawstage_test.go`
   - `internal/adapters/k8s/sourceworker/build_test.go`
   - `internal/adapters/modelpack/oci/layer_matrix_object_source_test.go`
+  - `internal/adapters/modelpack/oci/layer_matrix_mixed_layout_test.go`
 - Proved properties:
   - publish continues from mirrored objects, not from local rematerialization;
   - mirror resume/TLS edges stay covered on the source fetch boundary;
+  - companion files can stay in bounded bundle layers while heavy model payloads
+    remain standalone raw blobs for reuse and resume;
   - mirror state/manifest JSON now decodes through `OpenRead`, not temp-file
     download.
 
@@ -69,14 +76,31 @@ paths и test surfaces.
 - Primary evidence:
   - `internal/adapters/modelpack/oci/publish_test.go`
   - `internal/adapters/modelpack/oci/direct_upload_test.go`
+  - `internal/adapters/modelpack/oci/direct_upload_resume_test.go`
   - `internal/adapters/modelpack/oci/direct_upload_server_test_helpers_test.go`
   - `internal/adapters/modelpack/oci/direct_upload_protocol_test_helpers_test.go`
   - `internal/adapters/k8s/sourceworker/build_test.go`
   - `internal/adapters/k8s/sourceworker/validation_test.go`
+  - `internal/adapters/k8s/sourceworker/service_progress_test.go`
   - `cmd/ai-models-controller/config_test.go`
 - Proved properties:
-  - heavy layer blobs no longer have a runtime transport toggle and always
-    upload through the `DMCR`-owned direct-upload helper into backing storage;
+  - published model blobs no longer have a runtime transport toggle and always
+    upload through the `DMCR`-owned direct-upload v2 helper into backing
+    storage;
+  - streamable multi-file object-source inputs now keep large payload files as
+    dedicated raw layers while bundling small companion files into one bounded
+    tar layer;
+  - range-capable raw layers no longer require a controller-side full
+    descriptor pre-read before upload; the helper receives final digest/size
+    only at session completion;
+  - raw object-source retry/recovery stays on ranged reads and no longer falls
+    back to whole-object `OpenRead()` on the hot publish path;
+  - interrupted raw-layer upload can continue from persisted controller-side
+    checkpoint state plus helper `listParts()` while the direct-upload session
+    is still alive;
+  - running publication status now carries machine-readable progress reasons
+    for started / uploading / resumed / sealing / committed edges instead of
+    exposing only one opaque message string;
   - direct transport still preserves final remote inspect and consumer-side
     materialization correctness;
   - interrupted direct part upload recovers through helper `listParts()` instead
@@ -85,7 +109,7 @@ paths и test surfaces.
 ### Local direct upload
 
 - Byte path:
-  - direct `GGUF`: `local file -> native OCI publish`
+  - direct `GGUF`: `local file -> native OCI raw publish`
 - Full-size local copies during successful publish:
   - `1`, only the original input file
 - Primary evidence:
@@ -126,7 +150,7 @@ paths и test surfaces.
 ### Staged upload
 
 - Byte path:
-  - `staged object -> object-read / range-read streaming publish`
+  - `staged object -> raw object-read / range-read streaming publish`
 - Full-size local copies during successful publish:
   - `0`
 - Primary evidence:
@@ -136,7 +160,9 @@ paths и test surfaces.
 - Proved properties:
   - staged publish requires streaming-capable object reads;
   - `Download`-only successful fallback is gone;
-  - staged valid uploads no longer route through `checkpointDir`.
+  - staged valid uploads no longer route through `checkpointDir`;
+  - single-file staged inputs now publish as one raw layer instead of a
+    synthetic tar layer.
 
 ### Consumer-side materialization
 
@@ -157,7 +183,7 @@ paths и test surfaces.
   - workload-facing runtime contract is stable through
     `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`, and
     `AI_MODELS_MODEL_FAMILY`; per-pod delivery now reads the stable
-    `/data/modelcache/model` projection, while direct shared-cache topology
+    `/data/modelcache/model` projection, while shared PVC bridge topology
     reads a digest-scoped path inside the shared store instead of depending on
     a global `/data/modelcache/current` link.
 
@@ -353,28 +379,46 @@ paths и test surfaces.
   - auth supplements
   - bounded resource contract
   - source-worker runtime result handoff
+  - restart-safe worker recreation from persisted direct-upload state
+  - bounded running progress handoff from persisted direct-upload checkpoint
 - Primary evidence:
   - `auth_secret_test.go`
   - `build_test.go`
+  - `service_progress_test.go`
   - `service_identity_test.go`
   - `service_auth_projection_test.go`
   - `service_concurrency_test.go`
+  - `service_resume_test.go`
   - `service_roundtrip_test.go`
   - `validation_test.go`
+
+### `internal/adapters/k8s/directuploadstate`
+
+- Decision surface:
+  - secret-backed direct-upload checkpoint normalization
+  - owner-generation scoping and reset
+  - current-layer, committed-layer, running-stage and terminal-phase payload validation
+- Primary evidence:
+  - `internal/adapters/k8s/directuploadstate/secret_test.go`
 
 ### `internal/adapters/k8s/uploadsession` and `uploadsessionstate`
 
 - Decision surface:
   - controller-owned session issuance/reuse
+  - top-level local-upload progress shaping
+  - bearer-only status projection and token reuse
   - secret-backed phase persistence
+  - persisted expected-size and multipart uploaded-part accounting
   - controller phase sync for `publishing/completed/failed`
   - multipart state persistence
 - Primary evidence:
   - `service_test.go`
   - `service_get_or_create_test.go`
+  - `progress_test.go`
   - `service_projection_test.go`
   - `service_delete_test.go`
   - `service_phase_sync_test.go`
+  - controller-side multipart refresh from staging before progress projection
   - `internal/adapters/k8s/uploadsessionstate/secret_test.go`
 
 ### `internal/adapters/k8s/modeldelivery`
@@ -382,7 +426,7 @@ paths и test surfaces.
 - Decision surface:
   - workload mutation for runtime delivery
   - storage topology checks
-  - managed local fallback volume injection
+  - managed local bridge volume injection
   - cache-root, digest, delivery-mode and delivery-reason annotations
   - stable workload-facing runtime env projection and cleanup
 - Primary evidence:
@@ -428,7 +472,7 @@ paths и test surfaces.
 - Decision surface:
   - stable per-node runtime Pod/PVC shaping
   - immutable published-artifact extraction from already-managed Pods on the
-    current node only for direct shared delivery
+    current node only for future true shared-direct delivery
   - runtime-side loading of required published artifacts from live cluster
     truth without a dedicated mirror contract
 - Primary evidence:
@@ -495,6 +539,8 @@ paths и test surfaces.
 ### `internal/dataplane/uploadsession`
 
 - Decision surface:
+  - bearer-only request authentication
+  - probe-time expected-size capture
   - session info and liveness
   - upload probe / multipart init
   - multipart completion and controller handoff rejection

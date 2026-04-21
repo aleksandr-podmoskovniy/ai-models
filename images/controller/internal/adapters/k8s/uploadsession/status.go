@@ -33,27 +33,28 @@ func buildUploadStatus(
 	expiresAt metav1.Time,
 ) modelsv1alpha1.ModelUploadStatus {
 	return modelsv1alpha1.ModelUploadStatus{
-		ExpiresAt:    &expiresAt,
-		Repository:   strings.TrimSpace(artifactURI),
-		ExternalURL:  buildExternalUploadURL(options.Gateway.PublicHost, sessionID, token),
-		InClusterURL: buildInClusterUploadURL(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID, token),
+		ExpiresAt:                &expiresAt,
+		Repository:               strings.TrimSpace(artifactURI),
+		ExternalURL:              buildExternalUploadURL(options.Gateway.PublicHost, sessionID),
+		InClusterURL:             buildInClusterUploadURL(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID),
+		AuthorizationHeaderValue: buildAuthorizationHeaderValue(token),
 	}
 }
 
-func buildInClusterUploadURL(serviceName, namespace, sessionID, token string) string {
-	base := buildInClusterUploadURLBase(serviceName, namespace, sessionID)
-	if base == "" {
+func buildAuthorizationHeaderValue(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
 		return ""
 	}
-	return base + "?token=" + url.QueryEscape(strings.TrimSpace(token))
+	return "Bearer " + token
 }
 
-func buildExternalUploadURL(publicHost, sessionID, token string) string {
-	base := buildExternalUploadURLBase(publicHost, sessionID)
-	if base == "" {
-		return ""
-	}
-	return base + "?token=" + url.QueryEscape(strings.TrimSpace(token))
+func buildInClusterUploadURL(serviceName, namespace, sessionID string) string {
+	return buildInClusterUploadURLBase(serviceName, namespace, sessionID)
+}
+
+func buildExternalUploadURL(publicHost, sessionID string) string {
+	return buildExternalUploadURLBase(publicHost, sessionID)
 }
 
 func sessionPath(sessionID string) string {
@@ -98,17 +99,33 @@ func tokenFromPersistedUploadStatus(
 		return "", false
 	}
 
-	if token, ok := tokenFromUploadURL(status.InClusterURL, buildInClusterUploadURLBase(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID)); ok {
+	if token, ok := tokenFromAuthorizationHeaderValue(status.AuthorizationHeaderValue); ok {
 		return token, true
 	}
-	if token, ok := tokenFromUploadURL(status.ExternalURL, buildExternalUploadURLBase(options.Gateway.PublicHost, sessionID)); ok {
+
+	if token, ok := tokenFromLegacyUploadURL(status.InClusterURL, buildInClusterUploadURLBase(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID)); ok {
+		return token, true
+	}
+	if token, ok := tokenFromLegacyUploadURL(status.ExternalURL, buildExternalUploadURLBase(options.Gateway.PublicHost, sessionID)); ok {
 		return token, true
 	}
 
 	return "", false
 }
 
-func tokenFromUploadURL(rawURL, expectedBase string) (string, bool) {
+func tokenFromAuthorizationHeaderValue(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "Bearer ") {
+		return "", false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(value, "Bearer "))
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
+func tokenFromLegacyUploadURL(rawURL, expectedBase string) (string, bool) {
 	rawURL = strings.TrimSpace(rawURL)
 	expectedBase = strings.TrimSpace(expectedBase)
 	if rawURL == "" || expectedBase == "" {

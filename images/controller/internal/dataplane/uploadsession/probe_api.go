@@ -77,6 +77,17 @@ func (api *sessionAPI) handleProbe(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
+	expectedSizeBytes := session.ExpectedSizeBytes
+	switch {
+	case body.SizeBytes < 0:
+		expectedSizeBytes = body.SizeBytes
+	case body.SizeBytes > 0 && expectedSizeBytes > 0 && body.SizeBytes != expectedSizeBytes:
+		http.Error(writer, "upload probe sizeBytes conflicts with the active session", http.StatusConflict)
+		return
+	case body.SizeBytes > 0:
+		expectedSizeBytes = body.SizeBytes
+	}
+
 	result, err := ingestadmission.ValidateUploadProbe(ingestadmission.UploadSession{
 		Owner: ingestadmission.OwnerBinding{
 			Kind:       session.OwnerKind,
@@ -87,7 +98,7 @@ func (api *sessionAPI) handleProbe(writer http.ResponseWriter, request *http.Req
 		},
 		Identity:            publicationIdentity(session),
 		DeclaredInputFormat: session.DeclaredInputFormat,
-		ExpectedSizeBytes:   session.ExpectedSizeBytes,
+		ExpectedSizeBytes:   expectedSizeBytes,
 	}, ingestadmission.UploadProbeInput{
 		FileName: body.FileName,
 		Chunk:    body.Chunk,
@@ -101,7 +112,7 @@ func (api *sessionAPI) handleProbe(writer http.ResponseWriter, request *http.Req
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := api.options.Sessions.SaveProbe(request.Context(), session.SessionID, ProbeState{
+	if err := api.options.Sessions.SaveProbe(request.Context(), session.SessionID, expectedSizeBytes, ProbeState{
 		FileName:            result.FileName,
 		ResolvedInputFormat: result.ResolvedInputFormat,
 	}); err != nil {

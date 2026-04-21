@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	uploadsessionruntime "github.com/deckhouse/ai-models/controller/internal/dataplane/uploadsession"
@@ -91,14 +92,22 @@ func (c *Client) SaveMultipartParts(ctx context.Context, name string, parts []up
 	})
 }
 
-func (c *Client) SaveProbe(ctx context.Context, name string, state uploadsessionruntime.ProbeState) error {
+func (c *Client) SaveProbe(ctx context.Context, name string, expectedSizeBytes int64, state uploadsessionruntime.ProbeState) error {
 	fileName := strings.TrimSpace(state.FileName)
 	if fileName == "" {
 		return errors.New("upload session probe file name must not be empty")
 	}
+	if expectedSizeBytes < 0 {
+		return errors.New("upload session expected size bytes must not be negative")
+	}
 	return c.update(ctx, name, func(secret *corev1.Secret) error {
 		ensureData(secret)
 		secret.Data[stateProbeFileNameKey] = []byte(fileName)
+		if expectedSizeBytes > 0 {
+			secret.Data[expectedSizeBytesKey] = []byte(strconv.FormatInt(expectedSizeBytes, 10))
+		} else {
+			delete(secret.Data, expectedSizeBytesKey)
+		}
 		if resolved := strings.TrimSpace(string(state.ResolvedInputFormat)); resolved != "" {
 			secret.Data[stateProbeFormatKey] = []byte(resolved)
 		} else {

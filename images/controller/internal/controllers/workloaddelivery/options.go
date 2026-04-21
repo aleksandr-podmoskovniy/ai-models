@@ -62,6 +62,7 @@ func normalizeOptions(options Options) Options {
 		RegistrySourceNamespace:      options.Service.RegistrySourceNamespace,
 		RegistrySourceAuthSecretName: options.Service.RegistrySourceAuthSecretName,
 		RegistrySourceCASecretName:   options.Service.RegistrySourceCASecretName,
+		RuntimeImagePullSecretName:   options.Service.RuntimeImagePullSecretName,
 	}
 	return options
 }

@@ -17,10 +17,12 @@ limitations under the License.
 package uploadsession
 
 import (
+	"context"
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -58,4 +60,35 @@ func testUploadOptions() Options {
 		},
 		TokenTTL: 15 * time.Minute,
 	}
+}
+
+type fakeMultipartStager struct {
+	listMultipartUploadParts func(context.Context, uploadstagingports.ListMultipartUploadPartsInput) ([]uploadstagingports.UploadedPart, error)
+}
+
+func (f *fakeMultipartStager) StartMultipartUpload(context.Context, uploadstagingports.StartMultipartUploadInput) (uploadstagingports.StartMultipartUploadOutput, error) {
+	return uploadstagingports.StartMultipartUploadOutput{}, nil
+}
+
+func (f *fakeMultipartStager) PresignUploadPart(context.Context, uploadstagingports.PresignUploadPartInput) (uploadstagingports.PresignUploadPartOutput, error) {
+	return uploadstagingports.PresignUploadPartOutput{}, nil
+}
+
+func (f *fakeMultipartStager) ListMultipartUploadParts(ctx context.Context, input uploadstagingports.ListMultipartUploadPartsInput) ([]uploadstagingports.UploadedPart, error) {
+	if f != nil && f.listMultipartUploadParts != nil {
+		return f.listMultipartUploadParts(ctx, input)
+	}
+	return nil, nil
+}
+
+func (f *fakeMultipartStager) CompleteMultipartUpload(context.Context, uploadstagingports.CompleteMultipartUploadInput) error {
+	return nil
+}
+
+func (f *fakeMultipartStager) AbortMultipartUpload(context.Context, uploadstagingports.AbortMultipartUploadInput) error {
+	return nil
+}
+
+func (f *fakeMultipartStager) Stat(context.Context, uploadstagingports.StatInput) (uploadstagingports.ObjectStat, error) {
+	return uploadstagingports.ObjectStat{}, nil
 }

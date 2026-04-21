@@ -40,7 +40,7 @@ func TestHandlerRejectsMultipartMutationAfterControllerHandoff(t *testing.T) {
 		{
 			name:   "presign after uploaded",
 			method: http.MethodPost,
-			path:   "/v1/upload/session-a/parts?token=token-a",
+			path:   "/v1/upload/session-a/parts",
 			body: presignPartsRequest{
 				PartNumbers: []int32{1},
 			},
@@ -49,7 +49,7 @@ func TestHandlerRejectsMultipartMutationAfterControllerHandoff(t *testing.T) {
 		{
 			name:   "complete after publishing",
 			method: http.MethodPost,
-			path:   "/v1/upload/session-a/complete?token=token-a",
+			path:   "/v1/upload/session-a/complete",
 			body: completeUploadRequest{
 				Parts: []completedPartRequest{{PartNumber: 1, ETag: "etag-1"}},
 			},
@@ -58,7 +58,7 @@ func TestHandlerRejectsMultipartMutationAfterControllerHandoff(t *testing.T) {
 		{
 			name:   "abort after completed",
 			method: http.MethodPost,
-			path:   "/v1/upload/session-a/abort?token=token-a",
+			path:   "/v1/upload/session-a/abort",
 			body:   nil,
 			phase:  SessionPhaseCompleted,
 		},
@@ -102,7 +102,7 @@ func TestHandlerRejectsMultipartMutationAfterControllerHandoff(t *testing.T) {
 				bodyReader = bytes.NewReader(payload)
 			}
 
-			request := httptest.NewRequest(tc.method, tc.path, bodyReader)
+			request := authorizedRequest(tc.method, tc.path, "token-a", bodyReader)
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
 

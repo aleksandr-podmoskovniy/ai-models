@@ -95,8 +95,42 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: AI_MODELS_S3_ENDPOINT_URL
+              value: {{ include "ai-models.artifactsEndpoint" . | quote }}
+            - name: AI_MODELS_S3_REGION
+              value: {{ include "ai-models.artifactsRegion" . | quote }}
+            - name: AI_MODELS_S3_USE_PATH_STYLE
+              value: {{ include "ai-models.artifactsUsePathStyleBool" . | quote }}
+            - name: AI_MODELS_S3_IGNORE_TLS
+              value: {{ include "ai-models.artifactsIgnoreTLS" . | quote }}
+            - name: AWS_REGION
+              value: {{ include "ai-models.artifactsRegion" . | quote }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ include "ai-models.artifactsRegion" . | quote }}
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
+                  key: accessKey
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
+                  key: secretKey
+            {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+            - name: AI_MODELS_S3_CA_FILE
+              value: /etc/ai-models/artifacts-ca/ca.crt
+            {{- end }}
             - name: LOG_FORMAT
               value: json
+          {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+          volumeMounts:
+            - name: artifacts-ca
+              mountPath: /etc/ai-models/artifacts-ca
+              readOnly: true
+          {{- end }}
           ports:
             - name: metrics
               containerPort: {{ include "ai-models.controllerMetricsPort" . | int }}

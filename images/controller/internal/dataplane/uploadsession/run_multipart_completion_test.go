@@ -55,7 +55,7 @@ func TestHandlerPresignsUploadParts(t *testing.T) {
 		Sessions:      store,
 	})
 
-	request := httptest.NewRequest(http.MethodPost, "/v1/upload/session-a/parts?token=token-a", jsonBody(t, presignPartsRequest{
+	request := authorizedRequest(http.MethodPost, "/v1/upload/session-a/parts", "token-a", jsonBody(t, presignPartsRequest{
 		PartNumbers: []int32{1, 2},
 	}))
 	response := httptest.NewRecorder()
@@ -101,7 +101,7 @@ func TestHandlerCompleteMarksUploadedSession(t *testing.T) {
 		Sessions:      store,
 	})
 
-	request := httptest.NewRequest(http.MethodPost, "/v1/upload/session-a/complete?token=token-a", jsonBody(t, completeUploadRequest{
+	request := authorizedRequest(http.MethodPost, "/v1/upload/session-a/complete", "token-a", jsonBody(t, completeUploadRequest{
 		Parts: []completedPartRequest{{PartNumber: 1, ETag: "etag-1"}},
 	}))
 	response := httptest.NewRecorder()
@@ -151,7 +151,7 @@ func TestHandlerCompleteMarksFailedOnSizeMismatch(t *testing.T) {
 		Sessions:      store,
 	})
 
-	request := httptest.NewRequest(http.MethodPost, "/v1/upload/session-a/complete?token=token-a", jsonBody(t, completeUploadRequest{
+	request := authorizedRequest(http.MethodPost, "/v1/upload/session-a/complete", "token-a", jsonBody(t, completeUploadRequest{
 		Parts: []completedPartRequest{{PartNumber: 1, ETag: "etag-1"}},
 	}))
 	response := httptest.NewRecorder()

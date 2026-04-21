@@ -20,7 +20,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -99,7 +101,7 @@ func NewS3Backend(config S3BackendConfig) (Backend, error) {
 	}, nil
 }
 
-func (b *s3Backend) BlobExists(ctx context.Context, objectKey string) (bool, error) {
+func (b *s3Backend) ObjectExists(ctx context.Context, objectKey string) (bool, error) {
 	_, err := b.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(b.bucket),
 		Key:    aws.String(strings.TrimSpace(objectKey)),
@@ -182,6 +184,29 @@ func (b *s3Backend) AbortMultipartUpload(ctx context.Context, objectKey, uploadI
 		Bucket:   aws.String(b.bucket),
 		Key:      aws.String(strings.TrimSpace(objectKey)),
 		UploadId: aws.String(strings.TrimSpace(uploadID)),
+	})
+	return err
+}
+
+func (b *s3Backend) Reader(ctx context.Context, objectKey string, offset int64) (io.ReadCloser, error) {
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(b.bucket),
+		Key:    aws.String(strings.TrimSpace(objectKey)),
+	}
+	if offset > 0 {
+		input.Range = aws.String("bytes=" + strconv.FormatInt(offset, 10) + "-")
+	}
+	output, err := b.client.GetObject(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	return output.Body, nil
+}
+
+func (b *s3Backend) DeleteObject(ctx context.Context, objectKey string) error {
+	_, err := b.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(b.bucket),
+		Key:    aws.String(strings.TrimSpace(objectKey)),
 	})
 	return err
 }

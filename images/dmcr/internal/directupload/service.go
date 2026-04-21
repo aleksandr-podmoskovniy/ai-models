@@ -18,15 +18,23 @@ package directupload
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/deckhouse/ai-models/dmcr/internal/sealedblob"
 )
 
 const DefaultBlobPartSizeBytes int64 = 8 << 20
+const DefaultSessionTTL = 24 * time.Hour
 
 type Service struct {
 	backend       Backend
@@ -35,17 +43,17 @@ type Service struct {
 	tokenSecret   []byte
 	rootDirectory string
 	partSizeBytes int64
+	sessionTTL    time.Duration
+	now           func() time.Time
 }
 
 type startRequest struct {
 	Repository string `json:"repository"`
-	Digest     string `json:"digest"`
 }
 
 type startResponse struct {
-	Complete      bool   `json:"complete"`
-	SessionToken  string `json:"sessionToken,omitempty"`
-	PartSizeBytes int64  `json:"partSizeBytes,omitempty"`
+	SessionToken  string `json:"sessionToken"`
+	PartSizeBytes int64  `json:"partSizeBytes"`
 }
 
 type presignPartRequest struct {
@@ -63,6 +71,8 @@ type listPartsResponse struct {
 
 type completeRequest struct {
 	SessionToken string         `json:"sessionToken"`
+	Digest       string         `json:"digest"`
+	SizeBytes    int64          `json:"sizeBytes"`
 	Parts        []UploadedPart `json:"parts"`
 }
 
@@ -70,7 +80,12 @@ type abortRequest struct {
 	SessionToken string `json:"sessionToken"`
 }
 
-func NewService(backend Backend, authUsername, authPassword, tokenSecret, rootDirectory string, partSizeBytes int64) (*Service, error) {
+type sealedUpload struct {
+	Digest    string
+	SizeBytes int64
+}
+
+func NewService(backend Backend, authUsername, authPassword, tokenSecret, rootDirectory string, partSizeBytes int64, sessionTTL time.Duration) (*Service, error) {
 	switch {
 	case backend == nil:
 		return nil, errors.New("direct upload backend must not be nil")
@@ -84,6 +99,9 @@ func NewService(backend Backend, authUsername, authPassword, tokenSecret, rootDi
 	if partSizeBytes <= 0 {
 		partSizeBytes = DefaultBlobPartSizeBytes
 	}
+	if sessionTTL <= 0 {
+		sessionTTL = DefaultSessionTTL
+	}
 	return &Service{
 		backend:       backend,
 		authUsername:  strings.TrimSpace(authUsername),
@@ -91,16 +109,18 @@ func NewService(backend Backend, authUsername, authPassword, tokenSecret, rootDi
 		tokenSecret:   []byte(strings.TrimSpace(tokenSecret)),
 		rootDirectory: strings.TrimSpace(rootDirectory),
 		partSizeBytes: partSizeBytes,
+		sessionTTL:    sessionTTL,
+		now:           time.Now,
 	}, nil
 }
 
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/blob-uploads", s.handleStart)
-	mux.HandleFunc("/v1/blob-uploads/presign-part", s.handlePresignPart)
-	mux.HandleFunc("/v1/blob-uploads/parts", s.handleListParts)
-	mux.HandleFunc("/v1/blob-uploads/complete", s.handleComplete)
-	mux.HandleFunc("/v1/blob-uploads/abort", s.handleAbort)
+	mux.HandleFunc("/v2/blob-uploads", s.handleStart)
+	mux.HandleFunc("/v2/blob-uploads/presign-part", s.handlePresignPart)
+	mux.HandleFunc("/v2/blob-uploads/parts", s.handleListParts)
+	mux.HandleFunc("/v2/blob-uploads/complete", s.handleComplete)
+	mux.HandleFunc("/v2/blob-uploads/abort", s.handleAbort)
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if err := s.authorize(request); err != nil {
 			http.Error(writer, err.Error(), http.StatusUnauthorized)
@@ -128,36 +148,31 @@ func (s *Service) handleStart(writer http.ResponseWriter, request *http.Request)
 		http.Error(writer, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	blobKey, err := BlobDataObjectKey(s.rootDirectory, payload.Digest)
-	if err != nil {
-		http.Error(writer, err.Error(), http.StatusBadRequest)
+	repository := strings.Trim(strings.TrimSpace(payload.Repository), "/")
+	if repository == "" {
+		http.Error(writer, "repository must not be empty", http.StatusBadRequest)
 		return
 	}
-	linkKey, err := RepositoryBlobLinkObjectKey(s.rootDirectory, payload.Repository, payload.Digest)
+	sessionID, err := newUploadSessionID()
 	if err != nil {
-		http.Error(writer, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if exists, err := s.backend.BlobExists(request.Context(), blobKey); err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
-	} else if exists {
-		if err := s.backend.PutContent(request.Context(), linkKey, []byte(strings.TrimSpace(payload.Digest))); err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		writeJSON(writer, startResponse{Complete: true})
+	}
+	objectKey, err := UploadSessionObjectKey(s.rootDirectory, sessionID)
+	if err != nil {
+		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
-	uploadID, err := s.backend.StartMultipartUpload(request.Context(), blobKey)
+	uploadID, err := s.backend.StartMultipartUpload(request.Context(), objectKey)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	token, err := encodeSessionToken(s.tokenSecret, sessionTokenClaims{
-		Repository: strings.Trim(strings.TrimSpace(payload.Repository), "/"),
-		Digest:     strings.TrimSpace(payload.Digest),
-		UploadID:   strings.TrimSpace(uploadID),
+		Repository:  repository,
+		ObjectKey:   objectKey,
+		UploadID:    strings.TrimSpace(uploadID),
+		ExpiresUnix: s.now().Add(s.sessionTTL).Unix(),
 	})
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
@@ -179,7 +194,7 @@ func (s *Service) handlePresignPart(writer http.ResponseWriter, request *http.Re
 		http.Error(writer, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	claims, blobKey, err := s.claimsAndBlobKey(payload.SessionToken)
+	claims, err := s.claims(payload.SessionToken)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
@@ -188,7 +203,7 @@ func (s *Service) handlePresignPart(writer http.ResponseWriter, request *http.Re
 		http.Error(writer, "part number must be positive", http.StatusBadRequest)
 		return
 	}
-	url, err := s.backend.PresignUploadPart(request.Context(), blobKey, claims.UploadID, payload.PartNumber)
+	url, err := s.backend.PresignUploadPart(request.Context(), claims.ObjectKey, claims.UploadID, payload.PartNumber)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
@@ -202,12 +217,12 @@ func (s *Service) handleListParts(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 	sessionToken := strings.TrimSpace(request.URL.Query().Get("sessionToken"))
-	claims, blobKey, err := s.claimsAndBlobKey(sessionToken)
+	claims, err := s.claims(sessionToken)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
-	parts, err := s.backend.ListUploadedParts(request.Context(), blobKey, claims.UploadID)
+	parts, err := s.backend.ListUploadedParts(request.Context(), claims.ObjectKey, claims.UploadID)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
@@ -228,12 +243,7 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		http.Error(writer, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	claims, blobKey, err := s.claimsAndBlobKey(payload.SessionToken)
-	if err != nil {
-		http.Error(writer, err.Error(), http.StatusBadRequest)
-		return
-	}
-	linkKey, err := RepositoryBlobLinkObjectKey(s.rootDirectory, claims.Repository, claims.Digest)
+	claims, err := s.claims(payload.SessionToken)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
@@ -243,11 +253,73 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.backend.CompleteMultipartUpload(request.Context(), blobKey, claims.UploadID, parts); err != nil {
+	claimedSizeBytes := totalUploadedSize(parts)
+	if payload.SizeBytes <= 0 {
+		http.Error(writer, "sizeBytes must be positive", http.StatusBadRequest)
+		return
+	}
+	if payload.SizeBytes != claimedSizeBytes {
+		http.Error(writer, "sizeBytes must match uploaded parts", http.StatusBadRequest)
+		return
+	}
+	if err := s.backend.CompleteMultipartUpload(request.Context(), claims.ObjectKey, claims.UploadID, parts); err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.backend.PutContent(request.Context(), linkKey, []byte(claims.Digest)); err != nil {
+
+	sealed, err := s.sealUploadedObject(request.Context(), claims.ObjectKey)
+	if err != nil {
+		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	clientDigest := strings.TrimSpace(payload.Digest)
+	if clientDigest != "" && clientDigest != sealed.Digest {
+		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		http.Error(writer, "digest must match trusted sealed object digest", http.StatusConflict)
+		return
+	}
+	if payload.SizeBytes != sealed.SizeBytes {
+		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		http.Error(writer, "sizeBytes must match trusted sealed object size", http.StatusConflict)
+		return
+	}
+
+	blobKey, err := BlobDataObjectKey(s.rootDirectory, sealed.Digest)
+	if err != nil {
+		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+	linkKey, err := RepositoryBlobLinkObjectKey(s.rootDirectory, claims.Repository, sealed.Digest)
+	if err != nil {
+		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		http.Error(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if exists, err := s.sealedBlobExists(request.Context(), blobKey); err != nil {
+		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	} else if exists {
+		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		if err := s.backend.PutContent(request.Context(), linkKey, []byte(sealed.Digest)); err != nil {
+			http.Error(writer, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(writer, map[string]bool{"ok": true})
+		return
+	}
+	if err := s.writeSealedBlobMetadata(request.Context(), blobKey, sealed, claims.ObjectKey); err != nil {
+		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.backend.PutContent(request.Context(), linkKey, []byte(sealed.Digest)); err != nil {
+		if cleanupErr := s.cleanupSealedUpload(request.Context(), blobKey, claims.ObjectKey); cleanupErr != nil {
+			http.Error(writer, fmt.Sprintf("%s; cleanup failed: %v", err.Error(), cleanupErr), http.StatusInternalServerError)
+			return
+		}
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -264,28 +336,30 @@ func (s *Service) handleAbort(writer http.ResponseWriter, request *http.Request)
 		http.Error(writer, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	claims, blobKey, err := s.claimsAndBlobKey(payload.SessionToken)
+	claims, err := s.claims(payload.SessionToken)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.backend.AbortMultipartUpload(request.Context(), blobKey, claims.UploadID); err != nil {
+	if err := s.backend.AbortMultipartUpload(request.Context(), claims.ObjectKey, claims.UploadID); err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(writer, map[string]bool{"ok": true})
 }
 
-func (s *Service) claimsAndBlobKey(sessionToken string) (sessionTokenClaims, string, error) {
+func (s *Service) claims(sessionToken string) (sessionTokenClaims, error) {
 	claims, err := decodeSessionToken(s.tokenSecret, sessionToken)
 	if err != nil {
-		return sessionTokenClaims{}, "", err
+		return sessionTokenClaims{}, err
 	}
-	blobKey, err := BlobDataObjectKey(s.rootDirectory, claims.Digest)
-	if err != nil {
-		return sessionTokenClaims{}, "", err
+	if strings.TrimSpace(claims.ObjectKey) == "" {
+		return sessionTokenClaims{}, errors.New("direct upload session token is missing object key")
 	}
-	return claims, blobKey, nil
+	if claims.expiredAt(s.now()) {
+		return sessionTokenClaims{}, errors.New("direct upload session token expired")
+	}
+	return claims, nil
 }
 
 func writeJSON(writer http.ResponseWriter, payload any) {
@@ -321,6 +395,71 @@ func normalizeParts(parts []UploadedPart) ([]UploadedPart, error) {
 		}
 	}
 	return normalized, nil
+}
+
+func (s *Service) sealUploadedObject(ctx context.Context, objectKey string) (sealedUpload, error) {
+	reader, err := s.backend.Reader(ctx, objectKey, 0)
+	if err != nil {
+		return sealedUpload{}, err
+	}
+	defer reader.Close()
+
+	hasher := sha256.New()
+	sizeBytes, err := io.Copy(hasher, reader)
+	if err != nil {
+		return sealedUpload{}, err
+	}
+	return sealedUpload{
+		Digest:    "sha256:" + hex.EncodeToString(hasher.Sum(nil)),
+		SizeBytes: sizeBytes,
+	}, nil
+}
+
+func (s *Service) sealedBlobExists(ctx context.Context, blobKey string) (bool, error) {
+	if exists, err := s.backend.ObjectExists(ctx, blobKey); err != nil || exists {
+		return exists, err
+	}
+	return s.backend.ObjectExists(ctx, sealedblob.MetadataPath(blobKey))
+}
+
+func (s *Service) writeSealedBlobMetadata(ctx context.Context, blobKey string, sealed sealedUpload, physicalPath string) error {
+	payload, err := sealedblob.Marshal(sealedblob.Metadata{
+		Version:      sealedblob.MetadataVersion,
+		Digest:       sealed.Digest,
+		PhysicalPath: strings.TrimSpace(physicalPath),
+		SizeBytes:    sealed.SizeBytes,
+	})
+	if err != nil {
+		return err
+	}
+	return s.backend.PutContent(ctx, sealedblob.MetadataPath(blobKey), payload)
+}
+
+func (s *Service) cleanupSealedUpload(ctx context.Context, blobKey, physicalPath string) error {
+	var cleanupErrs []error
+	if err := s.backend.DeleteObject(ctx, strings.TrimSpace(physicalPath)); err != nil {
+		cleanupErrs = append(cleanupErrs, err)
+	}
+	if err := s.backend.DeleteObject(ctx, sealedblob.MetadataPath(blobKey)); err != nil {
+		cleanupErrs = append(cleanupErrs, err)
+	}
+	return errors.Join(cleanupErrs...)
+}
+
+func totalUploadedSize(parts []UploadedPart) int64 {
+	total := int64(0)
+	for _, part := range parts {
+		total += part.SizeBytes
+	}
+	return total
+}
+
+func newUploadSessionID() (string, error) {
+	var randomBytes [16]byte
+	if _, err := rand.Read(randomBytes[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(randomBytes[:]), nil
 }
 
 type Server struct {

@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"os"
 
+	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/deckhouse/ai-models/controller/internal/bootstrap"
@@ -54,7 +55,18 @@ func runManager(args []string) int {
 		return 1
 	}
 
-	application, err := bootstrap.New(logger, config.bootstrapOptions(resources))
+	options := config.bootstrapOptions(resources)
+	if options.PublicationRuntime.Enabled() {
+		stagingClient, err := uploadstagings3.New(cmdsupport.UploadStagingS3ConfigFromEnv())
+		if err != nil {
+			logger.Error("unable to initialize upload staging client", slog.Any("error", err))
+			return 1
+		}
+		options.PublicationRuntime.UploadStagingBucket = config.ArtifactsBucket
+		options.PublicationRuntime.UploadStagingClient = stagingClient
+	}
+
+	application, err := bootstrap.New(logger, options)
 	if err != nil {
 		logger.Error("unable to initialize controller app", slog.Any("error", err))
 		return 1

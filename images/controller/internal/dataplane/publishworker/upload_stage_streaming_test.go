@@ -50,6 +50,12 @@ func TestPublishFromUploadStageStreamsDirectGGUFWithoutDownload(t *testing.T) {
 			if got, want := layer.SourcePath, "s3://artifacts/uploads/model.bin"; got != want {
 				t.Fatalf("unexpected layer source path %q", got)
 			}
+			if got, want := layer.Format, modelpackports.LayerFormatRaw; got != want {
+				t.Fatalf("unexpected layer format %q", got)
+			}
+			if got, want := layer.TargetPath, "model.bin"; got != want {
+				t.Fatalf("unexpected layer target path %q", got)
+			}
 			if got, want := len(layer.ObjectSource.Files), 1; got != want {
 				t.Fatalf("unexpected object source file count %d", got)
 			}

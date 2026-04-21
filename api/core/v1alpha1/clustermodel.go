@@ -33,6 +33,7 @@ const (
 // +kubebuilder:resource:categories={ai-models},scope=Cluster,singular=clustermodel
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Progress",type=string,JSONPath=`.status.progress`,priority=1
 // +kubebuilder:printcolumn:name="Source",type=string,JSONPath=`.status.source.resolvedType`
 // +kubebuilder:printcolumn:name="ArtifactURI",type=string,JSONPath=`.status.artifact.uri`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

@@ -52,26 +52,34 @@ func TestBuildHuggingFacePublishLayersUsesSourceMirrorObjectSource(t *testing.T)
 	if err != nil {
 		t.Fatalf("buildHuggingFacePublishLayers() error = %v", err)
 	}
-	if got, want := len(layers), 1; got != want {
+	if got, want := len(layers), 2; got != want {
 		t.Fatalf("unexpected layer count %d", got)
 	}
-	layer := layers[0]
-	if layer.ObjectSource == nil {
-		t.Fatal("expected object source layer")
+	if layers[0].ObjectSource == nil || layers[1].ObjectSource == nil {
+		t.Fatal("expected object source layers")
 	}
-	if got, want := layer.Base, modelpackports.LayerBaseModel; got != want {
-		t.Fatalf("unexpected layer base %q", got)
+	if got, want := layers[0].Base, modelpackports.LayerBaseModel; got != want {
+		t.Fatalf("unexpected first layer base %q", got)
 	}
-	if got, want := layer.TargetPath, modelpackports.MaterializedModelPathName; got != want {
-		t.Fatalf("unexpected target path %q", got)
+	if got, want := layers[0].Format, modelpackports.LayerFormatTar; got != want {
+		t.Fatalf("unexpected first layer format %q", got)
 	}
-	if got, want := len(layer.ObjectSource.Files), 2; got != want {
-		t.Fatalf("unexpected object source file count %d", got)
-	}
-	if got, want := layer.ObjectSource.Files[0].TargetPath, "config.json"; got != want {
+	if got, want := layers[0].TargetPath, modelpackports.MaterializedModelPathName; got != want {
 		t.Fatalf("unexpected first target path %q", got)
 	}
-	if got, want := layer.ObjectSource.Files[1].SizeBytes, int64(len("weights")); got != want {
+	if got, want := len(layers[0].ObjectSource.Files), 1; got != want {
+		t.Fatalf("unexpected first object source file count %d", got)
+	}
+	if got, want := layers[0].ObjectSource.Files[0].TargetPath, "config.json"; got != want {
+		t.Fatalf("unexpected bundled target path %q", got)
+	}
+	if got, want := layers[1].Format, modelpackports.LayerFormatRaw; got != want {
+		t.Fatalf("unexpected second layer format %q", got)
+	}
+	if got, want := layers[1].TargetPath, "model/model.safetensors"; got != want {
+		t.Fatalf("unexpected second target path %q", got)
+	}
+	if got, want := layers[1].ObjectSource.Files[0].SizeBytes, int64(len("weights")); got != want {
 		t.Fatalf("unexpected second file size %d", got)
 	}
 }
@@ -107,23 +115,31 @@ func TestBuildHuggingFacePublishLayersUsesDirectRemoteObjectSource(t *testing.T)
 	if err != nil {
 		t.Fatalf("buildHuggingFacePublishLayers() error = %v", err)
 	}
-	if got, want := len(layers), 1; got != want {
+	if got, want := len(layers), 2; got != want {
 		t.Fatalf("unexpected layer count %d", got)
 	}
-	layer := layers[0]
-	if layer.ObjectSource == nil {
-		t.Fatal("expected object source layer")
+	if layers[0].ObjectSource == nil || layers[1].ObjectSource == nil {
+		t.Fatal("expected object source layers")
 	}
-	if got, want := layer.SourcePath, "https://huggingface.co/owner/model?revision=deadbeef"; got != want {
-		t.Fatalf("unexpected source path %q", got)
+	if got, want := layers[0].SourcePath, "https://huggingface.co/owner/model?revision=deadbeef"; got != want {
+		t.Fatalf("unexpected first source path %q", got)
 	}
-	if got, want := len(layer.ObjectSource.Files), 2; got != want {
-		t.Fatalf("unexpected object source file count %d", got)
+	if got, want := layers[0].Format, modelpackports.LayerFormatTar; got != want {
+		t.Fatalf("unexpected first layer format %q", got)
 	}
-	if got, want := layer.ObjectSource.Files[0].ETag, `"etag-config"`; got != want {
+	if got, want := layers[0].TargetPath, modelpackports.MaterializedModelPathName; got != want {
+		t.Fatalf("unexpected first target path %q", got)
+	}
+	if got, want := layers[0].ObjectSource.Files[0].ETag, `"etag-config"`; got != want {
 		t.Fatalf("unexpected first file etag %q", got)
 	}
-	if got, want := layer.ObjectSource.Files[1].TargetPath, "model.safetensors"; got != want {
+	if got, want := layers[0].ObjectSource.Files[0].TargetPath, "config.json"; got != want {
+		t.Fatalf("unexpected bundled target path %q", got)
+	}
+	if got, want := layers[1].Format, modelpackports.LayerFormatRaw; got != want {
+		t.Fatalf("unexpected second layer format %q", got)
+	}
+	if got, want := layers[1].TargetPath, "model/model.safetensors"; got != want {
 		t.Fatalf("unexpected second target path %q", got)
 	}
 }

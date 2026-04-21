@@ -101,6 +101,60 @@ type PublishObjectSource struct {
 	Files  []PublishObjectFile
 }
 
+type DirectUploadStatePhase string
+
+const (
+	DirectUploadStatePhaseIdle      DirectUploadStatePhase = "Idle"
+	DirectUploadStatePhaseRunning   DirectUploadStatePhase = "Running"
+	DirectUploadStatePhaseCompleted DirectUploadStatePhase = "Completed"
+	DirectUploadStatePhaseFailed    DirectUploadStatePhase = "Failed"
+)
+
+type DirectUploadStateStage string
+
+const (
+	DirectUploadStateStageIdle      DirectUploadStateStage = "Idle"
+	DirectUploadStateStageStarting  DirectUploadStateStage = "Starting"
+	DirectUploadStateStageUploading DirectUploadStateStage = "Uploading"
+	DirectUploadStateStageResumed   DirectUploadStateStage = "Resumed"
+	DirectUploadStateStageSealing   DirectUploadStateStage = "Sealing"
+	DirectUploadStateStageCommitted DirectUploadStateStage = "Committed"
+)
+
+type DirectUploadLayerDescriptor struct {
+	Key         string           `json:"key"`
+	Digest      string           `json:"digest"`
+	DiffID      string           `json:"diffID"`
+	SizeBytes   int64            `json:"sizeBytes"`
+	MediaType   string           `json:"mediaType"`
+	TargetPath  string           `json:"targetPath"`
+	Base        LayerBase        `json:"base"`
+	Format      LayerFormat      `json:"format"`
+	Compression LayerCompression `json:"compression"`
+}
+
+type DirectUploadCurrentLayer struct {
+	Key               string `json:"key"`
+	SessionToken      string `json:"sessionToken"`
+	PartSizeBytes     int64  `json:"partSizeBytes"`
+	TotalSizeBytes    int64  `json:"totalSizeBytes"`
+	UploadedSizeBytes int64  `json:"uploadedSizeBytes"`
+	DigestState       []byte `json:"digestState,omitempty"`
+}
+
+type DirectUploadState struct {
+	Phase           DirectUploadStatePhase        `json:"phase"`
+	Stage           DirectUploadStateStage        `json:"stage,omitempty"`
+	CompletedLayers []DirectUploadLayerDescriptor `json:"completedLayers,omitempty"`
+	CurrentLayer    *DirectUploadCurrentLayer     `json:"currentLayer,omitempty"`
+	FailureMessage  string                        `json:"failureMessage,omitempty"`
+}
+
+type DirectUploadStateStore interface {
+	Load(ctx context.Context) (DirectUploadState, bool, error)
+	Save(ctx context.Context, state DirectUploadState) error
+}
+
 type PublishInput struct {
 	ModelDir             string
 	Layers               []PublishLayer
@@ -108,6 +162,7 @@ type PublishInput struct {
 	DirectUploadEndpoint string
 	DirectUploadCAFile   string
 	DirectUploadInsecure bool
+	DirectUploadState    DirectUploadStateStore
 }
 
 type PublishResult struct {

@@ -19,6 +19,7 @@ package catalogmetrics
 import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/prometheus/client_golang/prometheus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var phaseValues = []modelsv1alpha1.ModelPhase{
@@ -30,6 +31,13 @@ var phaseValues = []modelsv1alpha1.ModelPhase{
 	modelsv1alpha1.ModelPhaseDeleting,
 }
 
+var conditionTypes = []modelsv1alpha1.ModelConditionType{
+	modelsv1alpha1.ModelConditionArtifactResolved,
+	modelsv1alpha1.ModelConditionMetadataResolved,
+	modelsv1alpha1.ModelConditionValidated,
+	modelsv1alpha1.ModelConditionReady,
+}
+
 func collectorDescs() []*prometheus.Desc {
 	return []*prometheus.Desc{
 		modelStatusPhaseMetric.desc,
@@ -38,6 +46,8 @@ func collectorDescs() []*prometheus.Desc {
 		clusterModelReadyMetric.desc,
 		modelValidatedMetric.desc,
 		clusterModelValidatedMetric.desc,
+		modelConditionMetric.desc,
+		clusterModelConditionMetric.desc,
 		modelInfoMetric.desc,
 		clusterModelInfoMetric.desc,
 		modelArtifactSizeMetric.desc,
@@ -51,6 +61,7 @@ func (c *Collector) report(ch chan<- prometheus.Metric, metric *objectMetric) {
 	}
 
 	c.reportPhaseMetrics(ch, metric)
+	c.reportConditionMetrics(ch, metric)
 	c.reportObjectMetrics(ch, metric)
 }
 
@@ -160,10 +171,51 @@ func (c *Collector) reportObjectMetrics(ch chan<- prometheus.Metric, metric *obj
 	}
 }
 
+func (c *Collector) reportConditionMetrics(ch chan<- prometheus.Metric, metric *objectMetric) {
+	for _, conditionType := range conditionTypes {
+		status, reason := conditionStatusReason(metric.conditions, conditionType)
+		switch metric.kind {
+		case modelObjectKind:
+			ch <- prometheus.MustNewConstMetric(
+				modelConditionMetric.desc,
+				prometheus.GaugeValue,
+				1,
+				metric.name,
+				metric.namespace,
+				metric.uid,
+				string(conditionType),
+				status,
+				reason,
+			)
+		case clusterModelObjectKind:
+			ch <- prometheus.MustNewConstMetric(
+				clusterModelConditionMetric.desc,
+				prometheus.GaugeValue,
+				1,
+				metric.name,
+				metric.uid,
+				string(conditionType),
+				status,
+				reason,
+			)
+		}
+	}
+}
+
 func boolFloat64(value bool) float64 {
 	if value {
 		return 1
 	}
 
 	return 0
+}
+
+func conditionStatusReason(conditions []metav1.Condition, conditionType modelsv1alpha1.ModelConditionType) (string, string) {
+	for _, condition := range conditions {
+		if condition.Type != string(conditionType) {
+			continue
+		}
+		return string(condition.Status), condition.Reason
+	}
+	return string(metav1.ConditionUnknown), ""
 }

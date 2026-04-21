@@ -52,7 +52,7 @@ func TestDeploymentReconcilerAppliesRuntimeDelivery(t *testing.T) {
 	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]; got != testArtifactURI {
 		t.Fatalf("resolved artifact URI annotation = %q, want %q", got, testArtifactURI)
 	}
-	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]; got != string(modeldelivery.DeliveryModePerPodFallback) {
+	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]; got != string(modeldelivery.DeliveryModeMaterializeBridge) {
 		t.Fatalf("resolved delivery mode annotation = %q", got)
 	}
 	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]; got != string(modeldelivery.DeliveryReasonWorkloadCacheVolume) {
@@ -73,7 +73,11 @@ func TestDeploymentReconcilerAppliesRuntimeDelivery(t *testing.T) {
 	if !hasRuntimeEnv(updated.Spec.Template.Spec.Containers, modeldelivery.ModelFamilyEnv) {
 		t.Fatalf("expected runtime env %q", modeldelivery.ModelFamilyEnv)
 	}
+	if got, want := len(updated.Spec.Template.Spec.ImagePullSecrets), 1; got != want {
+		t.Fatalf("image pull secrets count = %d, want %d", got, want)
+	}
 	assertProjectedAuthSecretExists(t, kubeClient, workload.Namespace, workload.UID)
+	assertProjectedRuntimeImagePullSecretExists(t, kubeClient, workload.Namespace, workload.UID)
 }
 
 func TestDeploymentReconcilerClearsStaleManagedStateWhileReferencedModelIsPending(t *testing.T) {
@@ -118,6 +122,7 @@ func TestDeploymentReconcilerClearsStaleManagedStateWhileReferencedModelIsPendin
 		t.Fatal("did not expect resolved delivery reason annotation while model is pending")
 	}
 	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
+	assertProjectedRuntimeImagePullSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
 }
 
 func TestDeploymentReconcilerInjectsManagedLocalCacheWhenWorkloadHasNoMount(t *testing.T) {
@@ -139,10 +144,10 @@ func TestDeploymentReconcilerInjectsManagedLocalCacheWhenWorkloadHasNoMount(t *t
 	if !hasInitContainer(updated.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
 		t.Fatalf("expected init container %q", modeldelivery.DefaultInitContainerName)
 	}
-	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]; got != string(modeldelivery.DeliveryModePerPodFallback) {
+	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]; got != string(modeldelivery.DeliveryModeMaterializeBridge) {
 		t.Fatalf("resolved delivery mode annotation = %q", got)
 	}
-	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]; got != string(modeldelivery.DeliveryReasonManagedFallbackVolume) {
+	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]; got != string(modeldelivery.DeliveryReasonManagedBridgeVolume) {
 		t.Fatalf("resolved delivery reason annotation = %q", got)
 	}
 	if len(updated.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 {

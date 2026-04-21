@@ -50,23 +50,24 @@ type managerConfig struct {
 	CleanupJobServiceAccount      string
 	CleanupJobEnvPassThrough      string
 
-	PublicationWorkerImage               string
-	PublicationWorkerImagePullSecretName string
-	PublicationWorkerNamespace           string
-	PublicationWorkerServiceAccount      string
-	PublicationOCIRepositoryPrefix       string
-	PublicationOCIInsecure               bool
-	PublicationOCISecretName             string
-	PublicationOCICASecretName           string
-	PublicationOCIDirectUploadEndpoint   string
-	PublicationSourceFetchMode           publicationports.SourceFetchMode
-	PublicationMaxConcurrentWorkers      int
-	PublicationWorkerCPURequest          string
-	PublicationWorkerCPULimit            string
-	PublicationWorkerMemoryRequest       string
-	PublicationWorkerMemoryLimit         string
-	PublicationWorkerEphemeralRequest    string
-	PublicationWorkerEphemeralLimit      string
+	PublicationWorkerImage                     string
+	PublicationWorkerImagePullSecretName       string
+	WorkloadDeliveryRuntimeImagePullSecretName string
+	PublicationWorkerNamespace                 string
+	PublicationWorkerServiceAccount            string
+	PublicationOCIRepositoryPrefix             string
+	PublicationOCIInsecure                     bool
+	PublicationOCISecretName                   string
+	PublicationOCICASecretName                 string
+	PublicationOCIDirectUploadEndpoint         string
+	PublicationSourceFetchMode                 publicationports.SourceFetchMode
+	PublicationMaxConcurrentWorkers            int
+	PublicationWorkerCPURequest                string
+	PublicationWorkerCPULimit                  string
+	PublicationWorkerMemoryRequest             string
+	PublicationWorkerMemoryLimit               string
+	PublicationWorkerEphemeralRequest          string
+	PublicationWorkerEphemeralLimit            string
 
 	ArtifactsBucket                string
 	ArtifactsS3Endpoint            string
@@ -108,45 +109,49 @@ func defaultManagerConfig() managerConfig {
 		CleanupJobEnvPassThrough:             cmdsupport.EnvOr(cleanupJobEnvPassThroughEnv, defaultCleanupPassThrough),
 		PublicationWorkerImage:               cmdsupport.EnvOr(publicationWorkerImageEnv, cmdsupport.EnvOr(cleanupJobImageEnv, "")),
 		PublicationWorkerImagePullSecretName: cmdsupport.EnvOr(publicationWorkerImagePullSecretEnv, cmdsupport.EnvOr(cleanupJobImagePullSecretEnv, "")),
-		PublicationWorkerNamespace:           cmdsupport.EnvOr(publicationWorkerNamespaceEnv, cmdsupport.EnvOr(cleanupJobNamespaceEnv, cmdsupport.EnvOr("POD_NAMESPACE", "d8-ai-models"))),
-		PublicationWorkerServiceAccount:      cmdsupport.EnvOr(publicationWorkerServiceAccountEnv, cmdsupport.EnvOr(cleanupJobServiceAccountEnv, "")),
-		PublicationOCIRepositoryPrefix:       cmdsupport.EnvOr(publicationOCIRepositoryPrefixEnv, ""),
-		PublicationOCIInsecure:               cmdsupport.EnvOrBool(publicationOCIInsecureEnv, false),
-		PublicationOCISecretName:             cmdsupport.EnvOr(publicationOCISecretEnv, ""),
-		PublicationOCICASecretName:           cmdsupport.EnvOr(publicationOCICASecretEnv, ""),
-		PublicationOCIDirectUploadEndpoint:   cmdsupport.EnvOr(publicationOCIDirectUploadEndpointEnv, ""),
-		PublicationSourceFetchMode:           publicationports.NormalizeSourceFetchMode(publicationports.SourceFetchMode(cmdsupport.EnvOr(publicationSourceFetchModeEnv, ""))),
-		PublicationMaxConcurrentWorkers:      cmdsupport.EnvOrInt(publicationMaxConcurrentWorkersEnv, defaultPublicationMaxConcurrentWorkers),
-		PublicationWorkerCPURequest:          cmdsupport.EnvOr(publicationWorkerCPURequestEnv, defaultPublicationWorkerCPURequest),
-		PublicationWorkerCPULimit:            cmdsupport.EnvOr(publicationWorkerCPULimitEnv, defaultPublicationWorkerCPULimit),
-		PublicationWorkerMemoryRequest:       cmdsupport.EnvOr(publicationWorkerMemoryRequestEnv, defaultPublicationWorkerMemoryRequest),
-		PublicationWorkerMemoryLimit:         cmdsupport.EnvOr(publicationWorkerMemoryLimitEnv, defaultPublicationWorkerMemoryLimit),
-		PublicationWorkerEphemeralRequest:    cmdsupport.EnvOr(publicationWorkerEphemeralReqEnv, defaultPublicationWorkerEphemeralReq),
-		PublicationWorkerEphemeralLimit:      cmdsupport.EnvOr(publicationWorkerEphemeralLimitEnv, defaultPublicationWorkerEphemeralLimit),
-		ArtifactsBucket:                      cmdsupport.EnvOr(artifactsBucketEnv, ""),
-		ArtifactsS3Endpoint:                  cmdsupport.EnvOr(artifactsS3EndpointEnv, ""),
-		ArtifactsS3Region:                    cmdsupport.EnvOr(artifactsS3RegionEnv, ""),
-		ArtifactsS3UsePathStyle:              cmdsupport.EnvOrBool(artifactsS3UsePathStyleEnv, false),
-		ArtifactsS3IgnoreTLS:                 cmdsupport.EnvOrBool(artifactsS3IgnoreTLSEnv, false),
-		ArtifactsCredentialsSecretName:       cmdsupport.EnvOr(artifactsCredentialsSecretEnv, ""),
-		ArtifactsCASecretName:                cmdsupport.EnvOr(artifactsCASecretEnv, ""),
-		NodeCacheEnabled:                     cmdsupport.EnvOrBool(nodeCacheEnabledEnv, false),
-		NodeCacheMaxSize:                     cmdsupport.EnvOr(nodeCacheMaxSizeEnv, "200Gi"),
-		NodeCacheSharedVolumeSize:            cmdsupport.EnvOr(nodeCacheSharedVolumeSizeEnv, nodecache.DefaultSharedVolumeSize),
-		NodeCacheFallbackVolumeSize:          cmdsupport.EnvOr(nodeCacheFallbackVolumeSizeEnv, "32Gi"),
-		NodeCacheStorageClassName:            cmdsupport.EnvOr(nodeCacheStorageClassNameEnv, "ai-models-node-cache"),
-		NodeCacheVolumeGroupSetName:          cmdsupport.EnvOr(nodeCacheVolumeGroupSetNameEnv, "ai-models-node-cache"),
-		NodeCacheVolumeGroupNameOnNode:       cmdsupport.EnvOr(nodeCacheVGNameOnNodeEnv, "ai-models-cache"),
-		NodeCacheThinPoolName:                cmdsupport.EnvOr(nodeCacheThinPoolNameEnv, "model-cache"),
-		NodeCacheNodeSelectorJSON:            cmdsupport.EnvOr(nodeCacheNodeSelectorEnv, "{}"),
-		NodeCacheBlockDeviceJSON:             cmdsupport.EnvOr(nodeCacheBlockDeviceSelectorEnv, "{}"),
-		UploadServiceName:                    cmdsupport.EnvOr(uploadServiceNameEnv, "ai-models-controller"),
-		UploadPublicHost:                     cmdsupport.EnvOr(uploadPublicHostEnv, ""),
-		MetricsBindAddress:                   cmdsupport.EnvOr(metricsBindAddressEnv, ":8080"),
-		HealthProbeBindAddress:               cmdsupport.EnvOr(healthProbeBindAddressEnv, ":8081"),
-		LeaderElect:                          cmdsupport.EnvOrBool(leaderElectEnv, true),
-		LeaderElectionID:                     cmdsupport.EnvOr(leaderElectionIDEnv, "ai-models-controller.deckhouse.io"),
-		LeaderElectionNamespace:              cmdsupport.EnvOr(leaderElectionNamespaceEnv, cmdsupport.EnvOr("POD_NAMESPACE", "d8-ai-models")),
+		WorkloadDeliveryRuntimeImagePullSecretName: cmdsupport.EnvOr(
+			workloadDeliveryRuntimeImagePullSecretEnv,
+			cmdsupport.EnvOr(publicationWorkerImagePullSecretEnv, cmdsupport.EnvOr(cleanupJobImagePullSecretEnv, "")),
+		),
+		PublicationWorkerNamespace:         cmdsupport.EnvOr(publicationWorkerNamespaceEnv, cmdsupport.EnvOr(cleanupJobNamespaceEnv, cmdsupport.EnvOr("POD_NAMESPACE", "d8-ai-models"))),
+		PublicationWorkerServiceAccount:    cmdsupport.EnvOr(publicationWorkerServiceAccountEnv, cmdsupport.EnvOr(cleanupJobServiceAccountEnv, "")),
+		PublicationOCIRepositoryPrefix:     cmdsupport.EnvOr(publicationOCIRepositoryPrefixEnv, ""),
+		PublicationOCIInsecure:             cmdsupport.EnvOrBool(publicationOCIInsecureEnv, false),
+		PublicationOCISecretName:           cmdsupport.EnvOr(publicationOCISecretEnv, ""),
+		PublicationOCICASecretName:         cmdsupport.EnvOr(publicationOCICASecretEnv, ""),
+		PublicationOCIDirectUploadEndpoint: cmdsupport.EnvOr(publicationOCIDirectUploadEndpointEnv, ""),
+		PublicationSourceFetchMode:         publicationports.NormalizeSourceFetchMode(publicationports.SourceFetchMode(cmdsupport.EnvOr(publicationSourceFetchModeEnv, ""))),
+		PublicationMaxConcurrentWorkers:    cmdsupport.EnvOrInt(publicationMaxConcurrentWorkersEnv, defaultPublicationMaxConcurrentWorkers),
+		PublicationWorkerCPURequest:        cmdsupport.EnvOr(publicationWorkerCPURequestEnv, defaultPublicationWorkerCPURequest),
+		PublicationWorkerCPULimit:          cmdsupport.EnvOr(publicationWorkerCPULimitEnv, defaultPublicationWorkerCPULimit),
+		PublicationWorkerMemoryRequest:     cmdsupport.EnvOr(publicationWorkerMemoryRequestEnv, defaultPublicationWorkerMemoryRequest),
+		PublicationWorkerMemoryLimit:       cmdsupport.EnvOr(publicationWorkerMemoryLimitEnv, defaultPublicationWorkerMemoryLimit),
+		PublicationWorkerEphemeralRequest:  cmdsupport.EnvOr(publicationWorkerEphemeralReqEnv, defaultPublicationWorkerEphemeralReq),
+		PublicationWorkerEphemeralLimit:    cmdsupport.EnvOr(publicationWorkerEphemeralLimitEnv, defaultPublicationWorkerEphemeralLimit),
+		ArtifactsBucket:                    cmdsupport.EnvOr(artifactsBucketEnv, ""),
+		ArtifactsS3Endpoint:                cmdsupport.EnvOr(artifactsS3EndpointEnv, ""),
+		ArtifactsS3Region:                  cmdsupport.EnvOr(artifactsS3RegionEnv, ""),
+		ArtifactsS3UsePathStyle:            cmdsupport.EnvOrBool(artifactsS3UsePathStyleEnv, false),
+		ArtifactsS3IgnoreTLS:               cmdsupport.EnvOrBool(artifactsS3IgnoreTLSEnv, false),
+		ArtifactsCredentialsSecretName:     cmdsupport.EnvOr(artifactsCredentialsSecretEnv, ""),
+		ArtifactsCASecretName:              cmdsupport.EnvOr(artifactsCASecretEnv, ""),
+		NodeCacheEnabled:                   cmdsupport.EnvOrBool(nodeCacheEnabledEnv, false),
+		NodeCacheMaxSize:                   cmdsupport.EnvOr(nodeCacheMaxSizeEnv, "200Gi"),
+		NodeCacheSharedVolumeSize:          cmdsupport.EnvOr(nodeCacheSharedVolumeSizeEnv, nodecache.DefaultSharedVolumeSize),
+		NodeCacheFallbackVolumeSize:        cmdsupport.EnvOr(nodeCacheFallbackVolumeSizeEnv, "32Gi"),
+		NodeCacheStorageClassName:          cmdsupport.EnvOr(nodeCacheStorageClassNameEnv, "ai-models-node-cache"),
+		NodeCacheVolumeGroupSetName:        cmdsupport.EnvOr(nodeCacheVolumeGroupSetNameEnv, "ai-models-node-cache"),
+		NodeCacheVolumeGroupNameOnNode:     cmdsupport.EnvOr(nodeCacheVGNameOnNodeEnv, "ai-models-cache"),
+		NodeCacheThinPoolName:              cmdsupport.EnvOr(nodeCacheThinPoolNameEnv, "model-cache"),
+		NodeCacheNodeSelectorJSON:          cmdsupport.EnvOr(nodeCacheNodeSelectorEnv, "{}"),
+		NodeCacheBlockDeviceJSON:           cmdsupport.EnvOr(nodeCacheBlockDeviceSelectorEnv, "{}"),
+		UploadServiceName:                  cmdsupport.EnvOr(uploadServiceNameEnv, "ai-models-controller"),
+		UploadPublicHost:                   cmdsupport.EnvOr(uploadPublicHostEnv, ""),
+		MetricsBindAddress:                 cmdsupport.EnvOr(metricsBindAddressEnv, ":8080"),
+		HealthProbeBindAddress:             cmdsupport.EnvOr(healthProbeBindAddressEnv, ":8081"),
+		LeaderElect:                        cmdsupport.EnvOrBool(leaderElectEnv, true),
+		LeaderElectionID:                   cmdsupport.EnvOr(leaderElectionIDEnv, "ai-models-controller.deckhouse.io"),
+		LeaderElectionNamespace:            cmdsupport.EnvOr(leaderElectionNamespaceEnv, cmdsupport.EnvOr("POD_NAMESPACE", "d8-ai-models")),
 	}
 }
 
@@ -163,13 +168,14 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.StringVar(&config.CleanupJobEnvPassThrough, "cleanup-job-env-pass-through", config.CleanupJobEnvPassThrough, "Comma-separated list of controller env vars copied into cleanup Jobs.")
 	flags.StringVar(&config.PublicationWorkerImage, "publication-worker-image", config.PublicationWorkerImage, "Runtime image used for publication worker Pods.")
 	flags.StringVar(&config.PublicationWorkerImagePullSecretName, "publication-worker-image-pull-secret-name", config.PublicationWorkerImagePullSecretName, "Optional imagePullSecret name used by publication worker Pods.")
+	flags.StringVar(&config.WorkloadDeliveryRuntimeImagePullSecretName, "workload-delivery-runtime-image-pull-secret-name", config.WorkloadDeliveryRuntimeImagePullSecretName, "Optional imagePullSecret name projected into managed workloads so the materialize bridge init container can pull the runtime image.")
 	flags.StringVar(&config.PublicationWorkerNamespace, "publication-worker-namespace", config.PublicationWorkerNamespace, "Namespace where publication worker Pods are created.")
 	flags.StringVar(&config.PublicationWorkerServiceAccount, "publication-worker-service-account", config.PublicationWorkerServiceAccount, "ServiceAccountName used by publication worker Pods.")
 	flags.StringVar(&config.PublicationOCIRepositoryPrefix, "publication-oci-repository-prefix", config.PublicationOCIRepositoryPrefix, "OCI repository prefix used by publication workers.")
 	flags.BoolVar(&config.PublicationOCIInsecure, "publication-oci-insecure", config.PublicationOCIInsecure, "Disable TLS verification for publication worker OCI registry access.")
 	flags.StringVar(&config.PublicationOCISecretName, "publication-oci-credentials-secret-name", config.PublicationOCISecretName, "Secret with OCI registry username/password for publication workers.")
 	flags.StringVar(&config.PublicationOCICASecretName, "publication-oci-ca-secret-name", config.PublicationOCICASecretName, "Optional Secret with ca.crt for publication worker OCI registry trust.")
-	flags.StringVar(&config.PublicationOCIDirectUploadEndpoint, "publication-oci-direct-upload-endpoint", config.PublicationOCIDirectUploadEndpoint, "Internal DMCR direct-upload HTTPS endpoint used for heavy layer blob uploads.")
+	flags.StringVar(&config.PublicationOCIDirectUploadEndpoint, "publication-oci-direct-upload-endpoint", config.PublicationOCIDirectUploadEndpoint, "Internal DMCR direct-upload HTTPS endpoint used to stream published blob payloads into backing storage.")
 	flags.StringVar((*string)(&config.PublicationSourceFetchMode), "publication-source-fetch-mode", string(config.PublicationSourceFetchMode), "Remote source fetch mode for publication workers: mirror or direct.")
 	flags.IntVar(&config.PublicationMaxConcurrentWorkers, "publication-max-concurrent-workers", config.PublicationMaxConcurrentWorkers, "Maximum number of active publication worker Pods.")
 	flags.StringVar(&config.PublicationWorkerCPURequest, "publication-worker-cpu-request", config.PublicationWorkerCPURequest, "CPU request for publication worker Pods.")
@@ -188,7 +194,7 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.BoolVar(&config.NodeCacheEnabled, "node-cache-enabled", config.NodeCacheEnabled, "Enable ai-models-managed node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheMaxSize, "node-cache-max-size", config.NodeCacheMaxSize, "Per-node thin-pool size budget for managed node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheSharedVolumeSize, "node-cache-shared-volume-size", config.NodeCacheSharedVolumeSize, "Stable per-node shared cache PVC size used by the managed node-cache runtime plane.")
-	flags.StringVar(&config.NodeCacheFallbackVolumeSize, "node-cache-fallback-volume-size", config.NodeCacheFallbackVolumeSize, "Managed local ephemeral volume size injected into workloads for the current runtime delivery fallback path.")
+	flags.StringVar(&config.NodeCacheFallbackVolumeSize, "node-cache-fallback-volume-size", config.NodeCacheFallbackVolumeSize, "Managed local ephemeral volume size injected into workloads for the current runtime delivery materialize-bridge path.")
 	flags.StringVar(&config.NodeCacheStorageClassName, "node-cache-storage-class-name", config.NodeCacheStorageClassName, "Managed LocalStorageClass name for node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheVolumeGroupSetName, "node-cache-volume-group-set-name", config.NodeCacheVolumeGroupSetName, "Managed LVMVolumeGroupSet name for node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheVolumeGroupNameOnNode, "node-cache-volume-group-name-on-node", config.NodeCacheVolumeGroupNameOnNode, "Actual VG name created on nodes for node-local cache substrate.")
@@ -314,6 +320,10 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 				RegistrySourceNamespace:      cmdsupport.FallbackString(c.PublicationWorkerNamespace, c.CleanupJobNamespace),
 				RegistrySourceAuthSecretName: defaultDMCRReadAuthSecretName,
 				RegistrySourceCASecretName:   c.PublicationOCICASecretName,
+				RuntimeImagePullSecretName: cmdsupport.FallbackString(
+					c.WorkloadDeliveryRuntimeImagePullSecretName,
+					cmdsupport.FallbackString(c.PublicationWorkerImagePullSecretName, c.CleanupJobImagePullSecretName),
+				),
 			},
 		},
 		Runtime: bootstrap.RuntimeOptions{

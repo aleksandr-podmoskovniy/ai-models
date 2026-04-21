@@ -43,6 +43,10 @@ func (s *Service) buildHandle(
 	if session == nil {
 		return nil, errors.New("upload session must not be nil")
 	}
+	secret, session, err := s.syncMultipartProgress(ctx, secret, session)
+	if err != nil {
+		return nil, err
+	}
 	artifactURI, err := publicationartifact.BuildOCIArtifactReference(
 		s.options.Runtime.OCIRepositoryPrefix,
 		request.Identity,
@@ -69,18 +73,21 @@ func (s *Service) buildHandle(
 	}
 
 	uploadStatus := modelsv1alpha1.ModelUploadStatus{}
+	progress := ""
 	if phase == corev1.PodRunning {
 		rawToken, err = s.resolveActiveSessionToken(ctx, owner, secret, artifactURI, session, rawToken)
 		if err != nil {
 			return nil, err
 		}
 		uploadStatus = buildUploadStatus(artifactURI, s.options, session.Name, rawToken, session.ExpiresAt)
+		progress = localUploadProgress(session)
 	}
 
 	return publicationports.NewUploadSessionHandle(
 		session.Name,
 		phase,
 		message,
+		progress,
 		uploadStatus,
 		func(ctx context.Context) error {
 			return ownedresource.DeleteAll(ctx, s.client, &corev1.Secret{

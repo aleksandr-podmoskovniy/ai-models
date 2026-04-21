@@ -48,21 +48,15 @@ func (s *directUploadTestServer) handleStart(writer http.ResponseWriter, request
 	if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
 		s.registry.state.t.Fatalf("Decode(startDirectUploadRequest) error = %v", err)
 	}
-	if _, ok := s.registry.state.blobs[payload.Digest]; ok {
-		writeJSON(writer, startDirectUploadResponse{Complete: true})
-		return
-	}
 
 	s.nextSessionID++
 	sessionToken := "session-" + strconv.Itoa(s.nextSessionID)
 	s.sessions[sessionToken] = &directUploadSessionState{
 		repository: payload.Repository,
-		digest:     payload.Digest,
 		parts:      make(map[int]uploadedDirectPart),
 		payloads:   make(map[int][]byte),
 	}
 	writeJSON(writer, startDirectUploadResponse{
-		Complete:      false,
 		SessionToken:  sessionToken,
 		PartSizeBytes: s.partSizeBytes,
 	})
@@ -136,7 +130,10 @@ func (s *directUploadTestServer) handleComplete(writer http.ResponseWriter, requ
 	for _, part := range parts {
 		assembled = append(assembled, session.payloads[part.PartNumber]...)
 	}
-	s.registry.state.blobs[session.digest] = assembled
+	if got, want := int64(len(assembled)), payload.SizeBytes; got != want {
+		s.registry.state.t.Fatalf("complete sizeBytes = %d, want %d", got, want)
+	}
+	s.registry.state.blobs[payload.Digest] = assembled
 	s.completeCalls++
 	delete(s.sessions, payload.SessionToken)
 	writer.WriteHeader(http.StatusOK)

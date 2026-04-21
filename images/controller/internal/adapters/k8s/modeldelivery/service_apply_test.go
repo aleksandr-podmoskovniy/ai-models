@@ -35,6 +35,7 @@ func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
 	kubeClient := testkit.NewFakeClient(t, scheme, nil,
 		owner,
 		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
+		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-runtime-pull"),
 		testkit.NewOCIRegistryCASecret("d8-ai-models", "ai-models-dmcr-ca"),
 	)
 
@@ -45,6 +46,7 @@ func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
 		RegistrySourceNamespace:      "d8-ai-models",
 		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
 		RegistrySourceCASecretName:   "ai-models-dmcr-ca",
+		RuntimeImagePullSecretName:   "ai-models-runtime-pull",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -89,11 +91,17 @@ func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
 	if got, want := template.Annotations[ResolvedArtifactURIAnnotation], publishedArtifact().URI; got != want {
 		t.Fatalf("resolved artifact URI annotation = %q, want %q", got, want)
 	}
-	if got, want := template.Annotations[ResolvedDeliveryModeAnnotation], string(DeliveryModePerPodFallback); got != want {
+	if got, want := template.Annotations[ResolvedDeliveryModeAnnotation], string(DeliveryModeMaterializeBridge); got != want {
 		t.Fatalf("resolved delivery mode annotation = %q, want %q", got, want)
 	}
 	if got, want := template.Annotations[ResolvedDeliveryReasonAnnotation], string(DeliveryReasonWorkloadCacheVolume); got != want {
 		t.Fatalf("resolved delivery reason annotation = %q, want %q", got, want)
+	}
+	if got, want := len(template.Spec.ImagePullSecrets), 1; got != want {
+		t.Fatalf("image pull secrets count = %d, want %d", got, want)
+	}
+	if got, want := template.Spec.ImagePullSecrets[0].Name, projectedRuntimeImagePullSecretName(t, owner.GetUID()); got != want {
+		t.Fatalf("image pull secret name = %q, want %q", got, want)
 	}
 
 	authSecretName := projectedAuthSecretName(t, owner.GetUID())
@@ -103,6 +111,15 @@ func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
 	}
 	if got, want := string(projectedAuth.Data["username"]), "ai-models"; got != want {
 		t.Fatalf("unexpected projected username %q", got)
+	}
+
+	runtimePullSecretName := projectedRuntimeImagePullSecretName(t, owner.GetUID())
+	projectedRuntimePull := &corev1.Secret{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: runtimePullSecretName, Namespace: "team-a"}, projectedRuntimePull); err != nil {
+		t.Fatalf("Get(projected runtime pull secret) error = %v", err)
+	}
+	if got := string(projectedRuntimePull.Data[corev1.DockerConfigJsonKey]); got == "" {
+		t.Fatal("expected projected runtime pull secret to contain .dockerconfigjson")
 	}
 }
 
@@ -114,6 +131,7 @@ func TestServiceApplyIsIdempotent(t *testing.T) {
 	kubeClient := testkit.NewFakeClient(t, scheme, nil,
 		owner,
 		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
+		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-runtime-pull"),
 		testkit.NewOCIRegistryCASecret("d8-ai-models", "ai-models-dmcr-ca"),
 	)
 
@@ -124,6 +142,7 @@ func TestServiceApplyIsIdempotent(t *testing.T) {
 		RegistrySourceNamespace:      "d8-ai-models",
 		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
 		RegistrySourceCASecretName:   "ai-models-dmcr-ca",
+		RuntimeImagePullSecretName:   "ai-models-runtime-pull",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -149,6 +168,9 @@ func TestServiceApplyIsIdempotent(t *testing.T) {
 	}
 	if got := countVolumeByName(template.Spec.Volumes, "registry-ca"); got != 1 {
 		t.Fatalf("expected single CA volume, got %d", got)
+	}
+	if got := len(template.Spec.ImagePullSecrets); got != 1 {
+		t.Fatalf("expected single imagePullSecret, got %d", got)
 	}
 }
 
@@ -230,10 +252,10 @@ func TestServiceInjectsManagedCacheVolumeWhenWorkloadDoesNotProvideMount(t *test
 	if got, want := result.TopologyKind, CacheTopologyPerPod; got != want {
 		t.Fatalf("topology kind = %q, want %q", got, want)
 	}
-	if got, want := template.Annotations[ResolvedDeliveryModeAnnotation], string(DeliveryModePerPodFallback); got != want {
+	if got, want := template.Annotations[ResolvedDeliveryModeAnnotation], string(DeliveryModeMaterializeBridge); got != want {
 		t.Fatalf("resolved delivery mode annotation = %q, want %q", got, want)
 	}
-	if got, want := template.Annotations[ResolvedDeliveryReasonAnnotation], string(DeliveryReasonManagedFallbackVolume); got != want {
+	if got, want := template.Annotations[ResolvedDeliveryReasonAnnotation], string(DeliveryReasonManagedBridgeVolume); got != want {
 		t.Fatalf("resolved delivery reason annotation = %q, want %q", got, want)
 	}
 	if got, want := template.Spec.Containers[0].VolumeMounts[0].MountPath, DefaultCacheMountPath; got != want {

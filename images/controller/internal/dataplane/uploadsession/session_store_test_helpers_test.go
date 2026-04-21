@@ -61,12 +61,13 @@ func (s *fakeSessionStore) SaveMultipartParts(_ context.Context, sessionID strin
 	return nil
 }
 
-func (s *fakeSessionStore) SaveProbe(_ context.Context, sessionID string, state ProbeState) error {
+func (s *fakeSessionStore) SaveProbe(_ context.Context, sessionID string, expectedSizeBytes int64, state ProbeState) error {
 	if s.saveErr != nil {
 		return s.saveErr
 	}
 	session := s.sessions[sessionID]
 	session.Phase = SessionPhaseProbing
+	session.ExpectedSizeBytes = expectedSizeBytes
 	session.Probe = &state
 	s.sessions[sessionID] = session
 	return nil

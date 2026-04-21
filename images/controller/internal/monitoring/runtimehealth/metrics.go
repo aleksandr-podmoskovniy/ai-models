@@ -86,6 +86,21 @@ var (
 		"Number of top-level workloads with applied managed runtime delivery grouped by namespace, kind, delivery mode, and delivery reason.",
 		"namespace", "kind", "delivery_mode", "delivery_reason",
 	)
+	workloadDeliveryPodsManagedMetric = newMetricInfo(
+		"workload_delivery_pods_managed",
+		"Number of workload Pods carrying managed runtime delivery annotations grouped by namespace, delivery mode, and delivery reason.",
+		"namespace", "delivery_mode", "delivery_reason",
+	)
+	workloadDeliveryPodsReadyMetric = newMetricInfo(
+		"workload_delivery_pods_ready",
+		"Number of ready workload Pods carrying managed runtime delivery annotations grouped by namespace, delivery mode, and delivery reason.",
+		"namespace", "delivery_mode", "delivery_reason",
+	)
+	workloadDeliveryInitStateMetric = newMetricInfo(
+		"workload_delivery_init_state",
+		"Number of workload Pods whose managed materialize bridge init container is in the reported state, grouped by namespace, delivery mode, delivery reason, state, and reason.",
+		"namespace", "delivery_mode", "delivery_reason", "state", "reason",
+	)
 )
 
 func collectorDescs() []*prometheus.Desc {
@@ -100,5 +115,8 @@ func collectorDescs() []*prometheus.Desc {
 		nodeCacheRuntimePVCBoundMetric.desc,
 		nodeCacheRuntimePVCRequestedBytesMetric.desc,
 		workloadDeliveryWorkloadsManagedMetric.desc,
+		workloadDeliveryPodsManagedMetric.desc,
+		workloadDeliveryPodsReadyMetric.desc,
+		workloadDeliveryInitStateMetric.desc,
 	}
 }

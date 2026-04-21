@@ -69,6 +69,7 @@ images/controller/
     adapters/
       k8s/
         auditevent/
+        directuploadstate/
         modeldelivery/
         nodecacheruntime/
         nodecachesubstrate/
@@ -195,6 +196,7 @@ package без нового owner — patchwork.
 `internal/adapters/k8s/*` держит concrete Kubernetes shaping и CRUD:
 
 - `sourceworker/`
+- `directuploadstate/`
 - `modeldelivery/`
 - `nodecacheruntime/`
 - `nodecachesubstrate/`
@@ -223,9 +225,11 @@ Non-K8s adapters:
   bounded scan/eviction planning не должны жить внутри
   `cmd/ai-models-artifact-runtime` как скрытый mini cache-manager;
 - `modelpack/oci/` остаётся controller-owned OCI adapter boundary:
-  native publish/remove over registry HTTP, manifest/config validation,
-  inspect/materialize and layer/media-type handling не должны утекать в
-  `publicationartifact/` или в worker shell;
+  native publish/remove over `DMCR` direct-upload v2 с поздним digest и
+  one-pass raw publish для range-capable тяжёлых слоёв плюс registry metadata
+  path, mixed bundle/raw object-source и archive-source layer handling,
+  manifest/config validation, inspect/materialize и layer/media-type handling
+  не должны утекать в `publicationartifact/` или в worker shell;
 - `sourcefetch/` остаётся boundary для remote source fetch, archive inspection,
   remote summary extraction и object-source planning;
 - `k8s/nodecachesubstrate/` держит только shaping и live-state extraction для
@@ -235,17 +239,23 @@ Non-K8s adapters:
   runtime Pod/PVC и bounded runtime-side вычитку набора опубликованных
   артефактов, реально нужных live Pod'ам на текущей ноде; cache maintenance
   policy и public workload semantics не должны утекать туда;
+- `k8s/directuploadstate/` держит только secret-backed checkpoint для
+  direct-upload: owner-generation reset, persisted current-layer session state,
+  committed-layer journal и terminal phase handoff; public progress/status
+  policy не должна утекать туда;
 - `k8s/modeldelivery/` остаётся boundary для workload mutation и теперь держит
-  module-managed local fallback volume injection отдельно от storage substrate
+  module-managed local bridge volume injection отдельно от storage substrate
   CR shaping, плюс стабильный workload-facing env contract
   (`AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`,
   `AI_MODELS_MODEL_FAMILY`) через stable per-pod `/data/modelcache/model`
-  projection или digest-специфичный shared-store path для direct shared-cache
+  projection или digest-специфичный shared-store path для shared PVC bridge
   topology, отдельно от raw cache-root/current internals и отдельно от будущего
   workload-facing node-shared cache mount service;
 - live `HuggingFace` publish path больше не держит локальный
   `workspace/model` fallback: canonical path — direct or mirrored object source,
-  cluster-level default теперь `Direct`, а planning failure explicit;
+  cluster-level default теперь `Direct`, planning failure explicit, а
+  потоковые multi-file источники публикуются как ограниченный bundle для
+  мелких companion-файлов плюс отдельные raw-слои для крупных payload-файлов;
 - `uploadstaging/s3/` и `sourcemirror/objectstore/` не должны сталкиваться по
   семантике: staging — upload/session surface, mirror — persisted source ingest.
 

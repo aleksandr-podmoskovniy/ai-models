@@ -20,6 +20,7 @@ import (
 	"errors"
 	"strings"
 
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 )
@@ -40,6 +41,8 @@ func ObserveSourceWorker(
 	}
 
 	input := publicationdomain.SourceWorkerObservation{}
+	runningReason := handle.ProgressReason
+	runningMessage := strings.TrimSpace(handle.ProgressMessage)
 	switch {
 	case handle.IsComplete():
 		rawResult := strings.TrimSpace(handle.TerminationMessage)
@@ -67,11 +70,13 @@ func ObserveSourceWorker(
 	if err != nil {
 		return RuntimeObservationDecision{}, err
 	}
-	return mapSourceWorkerDecision(decision)
+	return mapSourceWorkerDecision(decision, runningReason, runningMessage)
 }
 
 func mapSourceWorkerDecision(
 	decision publicationdomain.SourceWorkerDecision,
+	runningReason modelsv1alpha1.ModelConditionReason,
+	runningMessage string,
 ) (RuntimeObservationDecision, error) {
 	switch {
 	case decision.Success != nil:
@@ -94,8 +99,10 @@ func mapSourceWorkerDecision(
 	case decision.PersistRunning || decision.RequeueAfter > 0:
 		return RuntimeObservationDecision{
 			Observation: publicationdomain.Observation{
-				Phase:       publicationdomain.OperationPhaseRunning,
-				RuntimeKind: publicationdomain.RuntimeKindSourceWorker,
+				Phase:           publicationdomain.OperationPhaseRunning,
+				RuntimeKind:     publicationdomain.RuntimeKindSourceWorker,
+				ConditionReason: runningReason,
+				Message:         strings.TrimSpace(runningMessage),
 			},
 		}, nil
 	default:

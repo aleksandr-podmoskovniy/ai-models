@@ -1,8 +1,8 @@
 ## 1. Current phase
 
 Этап 2. Каноническая публикация в `DMCR` уже зафиксирована. Текущий workstream
-закрывает именно runtime topology: быстрый узловой путь доставки модели и
-запасной путь через том прикладного объекта.
+закрывает именно runtime topology: единственный целевой узловой путь доставки
+модели и уход от текущего per-workload materialize bridge.
 
 ## 2. Orchestration
 
@@ -14,8 +14,8 @@
   controller wiring, values/OpenAPI, эксплуатационные сигналы и документацию;
 - здесь легко снова размыть границы между публикацией, узловым кэшем и
   доставкой модели в прикладной объект;
-- финальная форма должна быть defendable как production-ready contract, а не
-  как ещё один временный обходной слой.
+- финальная форма должна быть defendable как production-ready единая topology,
+  а не как семейство переходных materialize-режимов.
 
 Read-only reviews, обязательные перед большими implementation slices:
 
@@ -31,13 +31,13 @@ Read-only reviews, обязательные перед большими implemen
 
 ## 3. Slices
 
-### Slice 1. Перефиксировать workstream и заморозить целевую схему
+### Slice 1. Перефиксировать workstream и заморозить единственную целевую схему
 
 Цель:
 
 - оставить один канонический active bundle, который ясно описывает:
   - текущее состояние;
-  - целевую двурежимную схему;
+  - единственную целевую схему;
   - инварианты, которые нельзя потом размыть в коде.
 
 Файлы/каталоги:
@@ -55,8 +55,8 @@ Read-only reviews, обязательные перед большими implemen
 
 Артефакт результата:
 
-- compact bundle с одной целевой картиной и без смешения fast path и fallback
-  path.
+- compact bundle с одной целевой картиной, где текущий materialize path
+  описан только как временный bridge.
 
 ### Slice 2. Вычистить vocabulary drift и остаточные ложные seams
 
@@ -64,8 +64,8 @@ Read-only reviews, обязательные перед большими implemen
 
 - привести код, docs и bundle к одному словарю:
   - `узловой общий кэш`;
-  - `запасной том прикладного объекта`;
   - `стабильный workload-facing runtime-контракт`;
+  - `переходный materialize bridge`;
 - удалить или локализовать surfaces, которые больше не участвуют в живом пути
   и только создают архитектурный шум.
 
@@ -82,7 +82,7 @@ Read-only reviews, обязательные перед большими implemen
 
 Проверки:
 
-- `rg -n "materialize-artifact|nodecacheintent|shared mount|AI_MODELS_MODEL_PATH|fallback" images/controller docs/CONFIGURATION.ru.md`
+- `rg -n "materialize-artifact|nodecacheintent|shared mount|AI_MODELS_MODEL_PATH|bridge|fallback" images/controller docs/CONFIGURATION.ru.md`
 - `cd images/controller && go test ./internal/controllers/workloaddelivery ./internal/controllers/nodecacheruntime ./internal/nodecache`
 
 Артефакт результата:
@@ -90,7 +90,7 @@ Read-only reviews, обязательные перед большими implemen
 - один словарь и один объяснимый contract surface без старых полумёртвых
   narrative seams.
 
-### Slice 3. Довести быстрый режим через узловой общий кэш
+### Slice 3. Довести единственную целевую topology через узловой общий кэш
 
 Цель:
 
@@ -117,13 +117,13 @@ Read-only reviews, обязательные перед большими implemen
   модель на ноде и не требует per-workload full materialization при готовом
   узловом кэше.
 
-### Slice 4. Упростить и стабилизировать запасной путь
+### Slice 4. Подготовить cutover и удаление долгоживущего bridge narrative
 
 Цель:
 
-- сохранить рабочий fallback path и сделать его строго детерминированным:
-  когда именно он выбирается, что именно контроллер инжектит и как снимает
-  эту мутацию, когда быстрый путь недоступен.
+- убрать из target surface представление о per-workload materialization как о
+  втором supported mode и подготовить controlled cutover к единственной
+  topology.
 
 Файлы/каталоги:
 
@@ -142,18 +142,17 @@ Read-only reviews, обязательные перед большими implemen
 
 Артефакт результата:
 
-- запасной путь остаётся рабочим, понятным и не маскируется под основную
-  целевую схему.
+- target docs, values и controller surfaces больше не описывают переходный
+  materialize bridge как равноправную product topology.
 
 ### Slice 5. Дотянуть сигналы наблюдаемости и эксплуатационный контур
 
 Цель:
 
 - дать оператору ясный ответ:
-  - какой режим выбран;
-  - почему включился fallback;
   - в каком состоянии узловой runtime plane;
-  - можно ли считать быстрый путь реально готовым на конкретной ноде.
+  - можно ли считать целевую topology реально готовой на конкретной ноде;
+  - остались ли ещё workload'и, живущие на временном materialize bridge.
 
 Файлы/каталоги:
 
@@ -170,14 +169,15 @@ Read-only reviews, обязательные перед большими implemen
 
 Артефакт результата:
 
-- production-readable signals по режиму доставки и состоянию узлового слоя.
+- production-readable signals по состоянию узлового слоя и cutover readiness.
 
 ### Slice 6. Синхронизировать docs, values и repo surface с итоговой схемой
 
 Цель:
 
 - привести values, OpenAPI, docs и controller structure к одному финальному
-  описанию без обещаний того, чего ещё нет, и без legacy wording drift.
+  описанию без обещаний того, чего ещё нет, без legacy wording drift и без
+  narrative про постоянный переходный режим.
 
 Файлы/каталоги:
 
@@ -206,8 +206,23 @@ Read-only reviews, обязательные перед большими implemen
 
 - bundle уже канонически фиксирует цель;
 - словарь и boundaries вычищены;
-- текущий рабочий fallback path ещё не ломался;
+- текущий живой materialize bridge ещё не ломался;
 - быстрый путь ещё не частично внедрён.
+
+Текущий landed шаг по Slice 2:
+
+- live delivery mode/reason переименованы из `PerPodFallback` /
+  `ManagedFallbackVolume` в `MaterializeBridge` / `ManagedBridgeVolume`;
+- current shared PVC path больше не притворяется настоящим `SharedDirect`:
+  live controller теперь держит его как отдельный `SharedPVCBridge`, а
+  будущий `SharedDirect` остаётся зарезервированным для node-owned shared
+  delivery;
+- `node-cache-runtime` больше не должен трактовать current shared PVC bridge
+  как workload-facing shared plane для `prefetch`;
+- managed ephemeral volume и docs теперь описываются как переходный
+  materialize bridge, а не как полноценный fallback-режим;
+- live runtime semantics при этом не менялись: per-workload
+  `materialize-artifact` остаётся текущим bridge до следующего cutover slice.
 
 Это последняя безопасная точка перед изменением live runtime semantics.
 

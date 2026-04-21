@@ -41,17 +41,6 @@ type sourceProfileProvenance struct {
 	SourceRepoID string
 }
 
-func resolveAndPublish(
-	ctx context.Context,
-	options Options,
-	modelInputPath string,
-	inputFormat modelsv1alpha1.ModelInputFormat,
-	input sourceProfileInput,
-	preResolved *publicationdata.ResolvedProfile,
-) (publicationdata.ResolvedProfile, modelpackports.PublishResult, error) {
-	return resolveAndPublishWithLayers(ctx, options, modelInputPath, inputFormat, input, nil, preResolved)
-}
-
 func resolveAndPublishWithLayers(
 	ctx context.Context,
 	options Options,
@@ -101,6 +90,7 @@ func resolveAndPublishWithLayers(
 		DirectUploadEndpoint: options.OCIDirectUploadEndpoint,
 		DirectUploadCAFile:   options.DirectUploadCAFile,
 		DirectUploadInsecure: options.DirectUploadInsecure,
+		DirectUploadState:    options.DirectUploadState,
 	}
 	publishResult, err := options.ModelPackPublisher.Publish(ctx, publishInput, options.RegistryAuth)
 	if err != nil {

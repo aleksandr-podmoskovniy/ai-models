@@ -35,6 +35,7 @@ type ServiceOptions struct {
 	RegistrySourceNamespace      string
 	RegistrySourceAuthSecretName string
 	RegistrySourceCASecretName   string
+	RuntimeImagePullSecretName   string
 }
 
 type ApplyRequest struct {
@@ -134,13 +135,31 @@ func (s *Service) ApplyToPodTemplate(
 		return ApplyResult{}, err
 	}
 
+	runtimeImagePullSecretName := ""
+	if strings.TrimSpace(s.options.RuntimeImagePullSecretName) != "" {
+		runtimeImagePullSecretName, err = ociregistry.EnsureProjectedImagePullSecretFromSourceNamespace(
+			ctx,
+			s.client,
+			s.scheme,
+			owner,
+			targetNamespace,
+			owner.GetUID(),
+			s.options.RegistrySourceNamespace,
+			s.options.RuntimeImagePullSecretName,
+		)
+		if err != nil {
+			return ApplyResult{}, err
+		}
+	}
+
 	rendered, err := Render(Input{
-		Artifact:       request.Artifact,
-		ArtifactFamily: request.ArtifactFamily,
-		RegistryAccess: projection,
-		CacheMount:     topology.CacheMount,
-		TopologyKind:   topology.Kind,
-		Coordination:   coordination,
+		Artifact:                   request.Artifact,
+		ArtifactFamily:             request.ArtifactFamily,
+		RegistryAccess:             projection,
+		RuntimeImagePullSecretName: runtimeImagePullSecretName,
+		CacheMount:                 topology.CacheMount,
+		TopologyKind:               topology.Kind,
+		Coordination:               coordination,
 	}, s.options.Render)
 	if err != nil {
 		return ApplyResult{}, err
