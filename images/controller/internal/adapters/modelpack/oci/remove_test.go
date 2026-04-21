@@ -72,3 +72,53 @@ func TestAdapterRemoveFailsWhenRegistryKeepsManifestVisibleAfterDelete(t *testin
 		t.Fatalf("Remove() error = %v, want post-delete visibility failure", err)
 	}
 }
+
+func TestAdapterRemoveFailsWhenDeleteVerificationDeadlineExpiresDuringVisibilityCheck(t *testing.T) {
+	t.Parallel()
+
+	const digest = "sha256:deadbeef"
+	manifestPayload := []byte(`{"schemaVersion":2}`)
+	getCalls := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		user, pass, ok := request.BasicAuth()
+		if !ok || user != "writer" || pass != "secret" {
+			t.Fatalf("unexpected auth %q/%q", user, pass)
+		}
+		if got, want := request.Header.Get("Accept"), ManifestAcceptHeader; got != want {
+			t.Fatalf("unexpected Accept header %q", got)
+		}
+		switch {
+		case request.Method == http.MethodDelete && request.URL.Path == "/v2/ai-models/catalog/model/manifests/"+digest:
+			writer.WriteHeader(http.StatusAccepted)
+		case request.Method == http.MethodGet && request.URL.Path == "/v2/ai-models/catalog/model/manifests/"+digest:
+			getCalls++
+			if getCalls == 2 {
+				time.Sleep(150 * time.Millisecond)
+			}
+			writer.Header().Set("Content-Type", ManifestMediaType)
+			writer.Header().Set("Docker-Content-Digest", digest)
+			writer.WriteHeader(http.StatusOK)
+			_, _ = writer.Write(manifestPayload)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	auth := modelpackports.RegistryAuth{
+		Username: "writer",
+		Password: "secret",
+		CAFile: writeTempFile(t, pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: server.Certificate().Raw,
+		})),
+	}
+	adapter := New()
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	err := adapter.Remove(ctx, immutableOCIReference(serverReference(server, "published"), digest), auth)
+	if err == nil || !strings.Contains(err.Error(), "still exists after delete acknowledgement") {
+		t.Fatalf("Remove() error = %v, want post-delete visibility failure after verification deadline", err)
+	}
+}

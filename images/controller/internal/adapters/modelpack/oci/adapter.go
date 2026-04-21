@@ -170,22 +170,31 @@ func waitForRemoteManifestDeletion(
 
 	ticker := time.NewTicker(deleteVerificationInterval)
 	defer ticker.Stop()
+	manifestObserved := false
 
 	for {
 		exists, err := remoteManifestExists(verifyCtx, client, reference, digest, auth)
 		if err != nil {
+			if manifestObserved && errors.Is(verifyCtx.Err(), context.DeadlineExceeded) {
+				return remoteManifestStillVisibleError(digest)
+			}
 			return err
 		}
 		if !exists {
 			return nil
 		}
+		manifestObserved = true
 
 		select {
 		case <-verifyCtx.Done():
-			return fmt.Errorf("remote ModelPack manifest %q still exists after delete acknowledgement", digest)
+			return remoteManifestStillVisibleError(digest)
 		case <-ticker.C:
 		}
 	}
+}
+
+func remoteManifestStillVisibleError(digest string) error {
+	return fmt.Errorf("remote ModelPack manifest %q still exists after delete acknowledgement", digest)
 }
 
 func remoteManifestExists(
