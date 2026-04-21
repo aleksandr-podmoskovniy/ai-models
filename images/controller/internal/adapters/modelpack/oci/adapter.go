@@ -31,6 +31,11 @@ import (
 
 const ManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
 
+const (
+	deleteVerificationTimeout  = 5 * time.Second
+	deleteVerificationInterval = 200 * time.Millisecond
+)
+
 type Adapter struct{}
 
 type blobDescriptor struct {
@@ -127,6 +132,7 @@ func (a *Adapter) Remove(ctx context.Context, reference string, auth modelpackpo
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Accept", ManifestAcceptHeader)
 	req.SetBasicAuth(auth.Username, auth.Password)
 
 	resp, err := client.Do(req)
@@ -137,9 +143,82 @@ func (a *Adapter) Remove(ctx context.Context, reference string, auth modelpackpo
 
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusAccepted, http.StatusNotFound:
-		return nil
+		if resp.StatusCode == http.StatusNotFound {
+			return nil
+		}
+		return waitForRemoteManifestDeletion(ctx, client, parsed, digest, auth)
 	default:
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("failed to delete remote ModelPack manifest: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+}
+
+func waitForRemoteManifestDeletion(
+	ctx context.Context,
+	client *http.Client,
+	reference registryReference,
+	digest string,
+	auth modelpackports.RegistryAuth,
+) error {
+	verifyCtx := ctx
+	cancel := func() {}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		verifyCtx, cancel = context.WithTimeout(ctx, deleteVerificationTimeout)
+	}
+	defer cancel()
+
+	ticker := time.NewTicker(deleteVerificationInterval)
+	defer ticker.Stop()
+
+	for {
+		exists, err := remoteManifestExists(verifyCtx, client, reference, digest, auth)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
+
+		select {
+		case <-verifyCtx.Done():
+			return fmt.Errorf("remote ModelPack manifest %q still exists after delete acknowledgement", digest)
+		case <-ticker.C:
+		}
+	}
+}
+
+func remoteManifestExists(
+	ctx context.Context,
+	client *http.Client,
+	reference registryReference,
+	digest string,
+	auth modelpackports.RegistryAuth,
+) (bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reference.manifestURL(digest), nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Accept", ManifestAcceptHeader)
+	req.SetBasicAuth(auth.Username, auth.Password)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to verify remote ModelPack deletion: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		return false, nil
+	case http.StatusOK:
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return true, nil
+	default:
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return false, fmt.Errorf(
+			"failed to verify remote ModelPack deletion: status %d: %s",
+			resp.StatusCode,
+			strings.TrimSpace(string(body)),
+		)
 	}
 }

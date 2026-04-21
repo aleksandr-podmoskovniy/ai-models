@@ -18,6 +18,7 @@ package sourcefetch
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -162,5 +163,130 @@ func TestFetchRemoteModelHuggingFaceGGUFPlansDirectObjectSourceWithoutMirror(t *
 	}
 	if got, want := result.ProfileSummary.ModelSizeBytes, int64(42); got != want {
 		t.Fatalf("unexpected model size %d", got)
+	}
+}
+
+func TestHuggingFaceObjectSourceReaderUsesIdentityEncodingAndToleratesMissingContentLengthOnGet(t *testing.T) {
+	previousInfoFetcher := fetchHuggingFaceInfoFunc
+	previousBaseURL := huggingFaceBaseURL
+	t.Cleanup(func() {
+		fetchHuggingFaceInfoFunc = previousInfoFetcher
+		huggingFaceBaseURL = previousBaseURL
+	})
+
+	configPayload := []byte(`{"architectures":["TinyModel"]}`)
+	modelPayload := []byte("safetensors-body")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if got, want := request.Header.Get("Authorization"), "Bearer hf-token"; got != want {
+			t.Fatalf("unexpected authorization header %q", got)
+		}
+		if got, want := request.Header.Get("Accept-Encoding"), "identity"; got != want {
+			t.Fatalf("unexpected Accept-Encoding header %q", got)
+		}
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/owner/model/resolve/deadbeef/config.json":
+			writer.Header().Set("Content-Type", "application/json")
+			writer.Header().Set("Content-Length", strconv.Itoa(len(configPayload)))
+			writer.Header().Set("ETag", `"etag-config"`)
+			_, _ = writer.Write(configPayload)
+		case request.Method == http.MethodHead && request.URL.Path == "/owner/model/resolve/deadbeef/config.json":
+			writer.Header().Set("Content-Length", strconv.Itoa(len(configPayload)))
+			writer.Header().Set("ETag", `"etag-config"`)
+			writer.WriteHeader(http.StatusOK)
+		case request.Method == http.MethodHead && request.URL.Path == "/owner/model/resolve/deadbeef/model.safetensors":
+			writer.Header().Set("Content-Length", strconv.Itoa(len(modelPayload)))
+			writer.Header().Set("ETag", `"etag-model"`)
+			writer.WriteHeader(http.StatusOK)
+		case request.Method == http.MethodGet && request.URL.Path == "/owner/model/resolve/deadbeef/model.safetensors":
+			writer.Header().Set("ETag", `"etag-model"`)
+			_, _ = writer.Write(modelPayload[:4])
+			if flusher, ok := writer.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			_, _ = writer.Write(modelPayload[4:])
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	fetchHuggingFaceInfoFunc = func(context.Context, string, string, string) (HuggingFaceInfo, error) {
+		return HuggingFaceInfo{
+			ID:          "owner/model",
+			SHA:         "deadbeef",
+			PipelineTag: "text-generation",
+			License:     "apache-2.0",
+			Files:       []string{"config.json", "model.safetensors"},
+		}, nil
+	}
+	huggingFaceBaseURL = server.URL
+
+	result, err := FetchRemoteModel(t.Context(), RemoteOptions{
+		URL:                      "https://huggingface.co/owner/model?revision=main",
+		HFToken:                  "hf-token",
+		SkipLocalMaterialization: true,
+	})
+	if err != nil {
+		t.Fatalf("FetchRemoteModel() error = %v", err)
+	}
+	if result.ObjectSource == nil {
+		t.Fatal("expected direct object source")
+	}
+
+	object, err := result.ObjectSource.Reader.OpenRead(t.Context(), result.ObjectSource.Files[1].SourcePath)
+	if err != nil {
+		t.Fatalf("OpenRead() error = %v", err)
+	}
+	defer object.Body.Close()
+
+	payload, err := io.ReadAll(object.Body)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if got, want := string(payload), string(modelPayload); got != want {
+		t.Fatalf("unexpected object payload %q, want %q", got, want)
+	}
+	if got := object.SizeBytes; got != 0 {
+		t.Fatalf("OpenRead().SizeBytes = %d, want 0 when GET omits Content-Length", got)
+	}
+}
+
+func TestHuggingFaceObjectSourceReaderOpenReadRangeUsesContentRangeLength(t *testing.T) {
+	reader := huggingFaceHTTPObjectReader{
+		httpClient: http.DefaultClient,
+		token:      "hf-token",
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if got, want := request.Header.Get("Authorization"), "Bearer hf-token"; got != want {
+			t.Fatalf("unexpected authorization header %q", got)
+		}
+		if got, want := request.Header.Get("Accept-Encoding"), "identity"; got != want {
+			t.Fatalf("unexpected Accept-Encoding header %q", got)
+		}
+		if got, want := request.Header.Get("Range"), "bytes=4-7"; got != want {
+			t.Fatalf("unexpected Range header %q", got)
+		}
+		writer.Header().Set("Content-Range", "bytes 4-7/16")
+		writer.Header().Set("ETag", `"etag-range"`)
+		writer.WriteHeader(http.StatusPartialContent)
+		_, _ = writer.Write([]byte("4567"))
+	}))
+	defer server.Close()
+
+	object, err := reader.OpenReadRange(t.Context(), server.URL+"/owner/model/resolve/deadbeef/model.safetensors", 4, 4)
+	if err != nil {
+		t.Fatalf("OpenReadRange() error = %v", err)
+	}
+	defer object.Body.Close()
+
+	payload, err := io.ReadAll(object.Body)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if got, want := string(payload), "4567"; got != want {
+		t.Fatalf("unexpected range payload %q, want %q", got, want)
+	}
+	if got, want := object.SizeBytes, int64(4); got != want {
+		t.Fatalf("OpenReadRange().SizeBytes = %d, want %d", got, want)
 	}
 }

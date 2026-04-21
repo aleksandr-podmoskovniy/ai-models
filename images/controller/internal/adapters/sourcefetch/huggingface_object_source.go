@@ -96,6 +96,58 @@ func responseContentLength(response *http.Response) (int64, error) {
 	return sizeBytes, nil
 }
 
+func responseBodyLength(response *http.Response) (int64, error) {
+	if response == nil {
+		return 0, fmt.Errorf("response must not be nil")
+	}
+	if response.ContentLength >= 0 {
+		return response.ContentLength, nil
+	}
+	if rawLength := strings.TrimSpace(response.Header.Get("Content-Length")); rawLength != "" {
+		sizeBytes, err := strconv.ParseInt(rawLength, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("response has invalid Content-Length %q: %w", rawLength, err)
+		}
+		return sizeBytes, nil
+	}
+	if segmentLength, ok, err := contentRangeLength(response.Header.Get("Content-Range")); err != nil {
+		return 0, err
+	} else if ok {
+		return segmentLength, nil
+	}
+	return 0, nil
+}
+
+func contentRangeLength(raw string) (int64, bool, error) {
+	contentRange := strings.TrimSpace(raw)
+	if contentRange == "" {
+		return 0, false, nil
+	}
+	if !strings.HasPrefix(contentRange, "bytes ") {
+		return 0, false, fmt.Errorf("response has invalid Content-Range %q", raw)
+	}
+	rangeSpec, _, found := strings.Cut(strings.TrimPrefix(contentRange, "bytes "), "/")
+	if !found {
+		return 0, false, fmt.Errorf("response has invalid Content-Range %q", raw)
+	}
+	startRaw, endRaw, found := strings.Cut(strings.TrimSpace(rangeSpec), "-")
+	if !found {
+		return 0, false, fmt.Errorf("response has invalid Content-Range %q", raw)
+	}
+	start, err := strconv.ParseInt(strings.TrimSpace(startRaw), 10, 64)
+	if err != nil {
+		return 0, false, fmt.Errorf("response has invalid Content-Range start %q: %w", startRaw, err)
+	}
+	end, err := strconv.ParseInt(strings.TrimSpace(endRaw), 10, 64)
+	if err != nil {
+		return 0, false, fmt.Errorf("response has invalid Content-Range end %q: %w", endRaw, err)
+	}
+	if end < start {
+		return 0, false, fmt.Errorf("response has invalid Content-Range %q", raw)
+	}
+	return end - start + 1, true, nil
+}
+
 type huggingFaceHTTPObjectReader struct {
 	httpClient *http.Client
 	token      string
@@ -122,7 +174,7 @@ func (r huggingFaceHTTPObjectReader) openRead(ctx context.Context, sourcePath st
 		defer response.Body.Close()
 		return RemoteOpenReadResult{}, unexpectedStatusError(response, "huggingface object-source GET request")
 	}
-	sizeBytes, err := responseContentLength(response)
+	sizeBytes, err := responseBodyLength(response)
 	if err != nil {
 		_ = response.Body.Close()
 		return RemoteOpenReadResult{}, err

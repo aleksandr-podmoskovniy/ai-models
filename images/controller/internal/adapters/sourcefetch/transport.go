@@ -25,6 +25,8 @@ import (
 	"strings"
 )
 
+const acceptEncodingHeader = "Accept-Encoding"
+
 func doGET(
 	ctx context.Context,
 	httpClient *http.Client,
@@ -54,6 +56,9 @@ func doRequest(
 	request, err := http.NewRequestWithContext(ctx, method, rawURL, body)
 	if err != nil {
 		return nil, err
+	}
+	if _, exists := headers[acceptEncodingHeader]; !exists {
+		request.Header.Set(acceptEncodingHeader, "identity")
 	}
 	for key, value := range headers {
 		request.Header.Set(key, value)
