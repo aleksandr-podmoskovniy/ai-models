@@ -32,10 +32,17 @@ import (
 
 type baseReconciler struct {
 	client   client.Client
+	reader   client.Reader
 	delivery *modeldelivery.Service
 	options  Options
 	logger   *slog.Logger
 	recorder record.EventRecorder
+}
+
+type deliveryPatchResult struct {
+	currentState deliverySignalState
+	desiredState deliverySignalState
+	patched      bool
 }
 
 func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Object) (ctrl.Result, error) {
@@ -47,36 +54,11 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 	}
 	managed := hasManagedTemplateState(template, r.options.Service)
 
-	reference, found, err := parseReference(object.GetAnnotations())
-	if err != nil {
-		if managed {
-			if err := r.removeManagedDelivery(ctx, object, original, template); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-		r.recorder.Event(object, "Warning", "InvalidModelReference", err.Error())
-		return ctrl.Result{}, nil
-	}
-	if !found {
-		if !managed {
-			return ctrl.Result{}, nil
-		}
-		if err := r.removeManagedDelivery(ctx, object, original, template); err != nil {
-			return ctrl.Result{}, err
-		}
-		r.recorder.Event(object, "Normal", "ModelDeliveryRemoved", "Removed managed runtime delivery mutation")
-		return ctrl.Result{}, nil
-	}
-
-	resolution, err := r.resolveReference(ctx, object.GetNamespace(), reference)
+	resolution, proceed, err := r.prepareDeliveryResolution(ctx, object, original, template, managed)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !resolution.Ready {
-		if err := r.removeManagedDelivery(ctx, object, original, template); err != nil {
-			return ctrl.Result{}, err
-		}
-		r.recorder.Event(object, "Normal", "ModelDeliveryPending", resolution.Message)
+	if !proceed {
 		return ctrl.Result{}, nil
 	}
 
@@ -91,21 +73,31 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 		return ctrl.Result{}, err
 	}
 
-	if equality.Semantic.DeepEqual(original, object) {
-		return ctrl.Result{}, nil
-	}
-	if err := r.client.Patch(ctx, object, client.MergeFrom(original)); err != nil {
+	patchResult, err := r.patchAppliedWorkload(ctx, object, original, template)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
+	if !patchResult.patched || patchResult.currentState == patchResult.desiredState {
+		return ctrl.Result{}, nil
+	}
+
+	message := "runtime delivery changed"
+	if patchResult.currentState.empty() {
+		message = "runtime delivery applied"
+	}
 	r.logger.Info(
-		"runtime delivery applied",
+		message,
 		slog.String("namespace", object.GetNamespace()),
 		slog.String("name", object.GetName()),
 		slog.String("digest", resolution.Artifact.Digest),
+		slog.String("previousDigest", patchResult.currentState.Digest),
 		slog.String("modelPath", result.ModelPath),
+		slog.String("previousModelPath", patchResult.currentState.ModelPath),
 		slog.String("topologyKind", string(result.TopologyKind)),
 		slog.String("deliveryMode", string(result.DeliveryMode)),
+		slog.String("previousDeliveryMode", patchResult.currentState.DeliveryMode),
 		slog.String("deliveryReason", string(result.DeliveryReason)),
+		slog.String("previousDeliveryReason", patchResult.currentState.DeliveryReason),
 	)
 	r.recorder.Eventf(
 		object,
@@ -118,6 +110,98 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 	)
 
 	return ctrl.Result{}, nil
+}
+
+func (r *baseReconciler) currentWorkload(ctx context.Context, object client.Object) (client.Object, error) {
+	reader := r.reader
+	if reader == nil {
+		reader = r.client
+	}
+
+	current, err := newWorkloadObjectLike(object)
+	if err != nil {
+		return nil, err
+	}
+	if err := reader.Get(ctx, client.ObjectKeyFromObject(object), current); err != nil {
+		return nil, err
+	}
+	return current, nil
+}
+
+func (r *baseReconciler) prepareDeliveryResolution(
+	ctx context.Context,
+	object client.Object,
+	original client.Object,
+	template *corev1.PodTemplateSpec,
+	managed bool,
+) (Resolution, bool, error) {
+	reference, found, err := parseReference(object.GetAnnotations())
+	if err != nil {
+		if managed {
+			if err := r.removeManagedDelivery(ctx, object, original, template); err != nil {
+				return Resolution{}, false, err
+			}
+		}
+		r.recorder.Event(object, "Warning", "InvalidModelReference", err.Error())
+		return Resolution{}, false, nil
+	}
+	if !found {
+		if !managed {
+			return Resolution{}, false, nil
+		}
+		if err := r.removeManagedDelivery(ctx, object, original, template); err != nil {
+			return Resolution{}, false, err
+		}
+		r.recorder.Event(object, "Normal", "ModelDeliveryRemoved", "Removed managed runtime delivery mutation")
+		return Resolution{}, false, nil
+	}
+
+	resolution, err := r.resolveReference(ctx, object.GetNamespace(), reference)
+	if err != nil {
+		return Resolution{}, false, err
+	}
+	if resolution.Ready {
+		return resolution, true, nil
+	}
+
+	if err := r.removeManagedDelivery(ctx, object, original, template); err != nil {
+		return Resolution{}, false, err
+	}
+	r.recorder.Event(object, "Normal", "ModelDeliveryPending", resolution.Message)
+	return Resolution{}, false, nil
+}
+
+func (r *baseReconciler) patchAppliedWorkload(
+	ctx context.Context,
+	object client.Object,
+	original client.Object,
+	template *corev1.PodTemplateSpec,
+) (deliveryPatchResult, error) {
+	if equality.Semantic.DeepEqual(original, object) {
+		return deliveryPatchResult{}, nil
+	}
+
+	current, err := r.currentWorkload(ctx, object)
+	if err != nil {
+		return deliveryPatchResult{}, client.IgnoreNotFound(err)
+	}
+	currentTemplate, _, err := podTemplateAndHints(current)
+	if err != nil {
+		return deliveryPatchResult{}, err
+	}
+	if equality.Semantic.DeepEqual(currentTemplate, template) {
+		return deliveryPatchResult{}, nil
+	}
+
+	result := deliveryPatchResult{
+		currentState: deliverySignalStateFromTemplate(currentTemplate),
+		desiredState: deliverySignalStateFromTemplate(template),
+	}
+	if err := r.client.Patch(ctx, object, client.MergeFrom(original)); err != nil {
+		return deliveryPatchResult{}, err
+	}
+	result.patched = true
+	return result, nil
 }
 
 func (r *baseReconciler) removeManagedDelivery(

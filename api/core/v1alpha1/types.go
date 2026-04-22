@@ -29,7 +29,8 @@ type ModelSpec struct {
 type ModelStatus struct {
 	ObservedGeneration int64      `json:"observedGeneration,omitempty"`
 	Phase              ModelPhase `json:"phase,omitempty"`
-	// Progress reports local upload completion percentage for source.upload flows.
+	// Progress reports bounded controller-computed completion percentage for upload
+	// and publication flows when runtime progress is available.
 	Progress string                `json:"progress,omitempty"`
 	Source   *ResolvedSourceStatus `json:"source,omitempty"`
 	Upload   *ModelUploadStatus    `json:"upload,omitempty"`

@@ -37,7 +37,7 @@ func TestEnsureRuntimeObservationSourceWorkerMode(t *testing.T) {
 
 	deleted := false
 	sourceWorkers := &fakeSourceWorkerRuntime{
-		handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodRunning, "", "", "", func(context.Context) error {
+		handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodRunning, "", "", "", "", func(context.Context) error {
 			deleted = true
 			return nil
 		}),

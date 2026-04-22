@@ -97,10 +97,28 @@ func (d *storageDriver) Writer(ctx context.Context, path string, append bool) (s
 
 func (d *storageDriver) Stat(ctx context.Context, path string) (storagedriver.FileInfo, error) {
 	fileInfo, err := d.delegate.Stat(ctx, path)
-	if err == nil || !isBlobResolutionCandidate(path) || !isPathNotFound(err) {
+	if !isBlobResolutionCandidate(path) {
 		return fileInfo, err
 	}
 
+	if err == nil && !fileInfo.IsDir() {
+		return fileInfo, nil
+	}
+	if err != nil && !isPathNotFound(err) {
+		return nil, err
+	}
+
+	resolvedInfo, err := d.resolvedStat(ctx, path)
+	if err == nil {
+		return resolvedInfo, nil
+	}
+	if fileInfo != nil && fileInfo.IsDir() && isPathNotFound(err) {
+		return fileInfo, nil
+	}
+	return nil, err
+}
+
+func (d *storageDriver) resolvedStat(ctx context.Context, path string) (storagedriver.FileInfo, error) {
 	metadata, _, err := d.loadMetadata(ctx, path)
 	if err != nil {
 		return nil, err

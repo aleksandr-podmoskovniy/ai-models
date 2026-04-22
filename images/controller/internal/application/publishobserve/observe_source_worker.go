@@ -42,6 +42,7 @@ func ObserveSourceWorker(
 
 	input := publicationdomain.SourceWorkerObservation{}
 	runningReason := handle.ProgressReason
+	runningProgress := strings.TrimSpace(handle.Progress)
 	runningMessage := strings.TrimSpace(handle.ProgressMessage)
 	switch {
 	case handle.IsComplete():
@@ -70,12 +71,13 @@ func ObserveSourceWorker(
 	if err != nil {
 		return RuntimeObservationDecision{}, err
 	}
-	return mapSourceWorkerDecision(decision, runningReason, runningMessage)
+	return mapSourceWorkerDecision(decision, runningReason, runningProgress, runningMessage)
 }
 
 func mapSourceWorkerDecision(
 	decision publicationdomain.SourceWorkerDecision,
 	runningReason modelsv1alpha1.ModelConditionReason,
+	runningProgress string,
 	runningMessage string,
 ) (RuntimeObservationDecision, error) {
 	switch {
@@ -102,6 +104,7 @@ func mapSourceWorkerDecision(
 				Phase:           publicationdomain.OperationPhaseRunning,
 				RuntimeKind:     publicationdomain.RuntimeKindSourceWorker,
 				ConditionReason: runningReason,
+				Progress:        runningProgress,
 				Message:         strings.TrimSpace(runningMessage),
 			},
 		}, nil

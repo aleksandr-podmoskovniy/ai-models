@@ -54,7 +54,7 @@ func TestObserveSourceWorker(t *testing.T) {
 		},
 		{
 			name:   "running worker projects running observation",
-			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodRunning, "", modelsv1alpha1.ModelConditionReasonPublicationUploading, "123/456 bytes uploaded", nil),
+			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodRunning, "", modelsv1alpha1.ModelConditionReasonPublicationUploading, "27%", "123/456 bytes uploaded", nil),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
 				t.Helper()
 				if got.Observation.Phase != publicationdomain.OperationPhaseRunning {
@@ -62,6 +62,9 @@ func TestObserveSourceWorker(t *testing.T) {
 				}
 				if got.Observation.ConditionReason != modelsv1alpha1.ModelConditionReasonPublicationUploading {
 					t.Fatalf("unexpected running reason %q", got.Observation.ConditionReason)
+				}
+				if got.Observation.Progress != "27%" {
+					t.Fatalf("unexpected running progress %q", got.Observation.Progress)
 				}
 				if got.Observation.Message != "123/456 bytes uploaded" {
 					t.Fatalf("unexpected running message %q", got.Observation.Message)
@@ -73,7 +76,7 @@ func TestObserveSourceWorker(t *testing.T) {
 		},
 		{
 			name:   "succeeded worker decodes publication result",
-			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodSucceeded, succeededTerminationMessage(t), "", "", nil),
+			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodSucceeded, succeededTerminationMessage(t), "", "", "", nil),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
 				t.Helper()
 				if got.Observation.Phase != publicationdomain.OperationPhaseSucceeded {
@@ -92,7 +95,7 @@ func TestObserveSourceWorker(t *testing.T) {
 		},
 		{
 			name:   "succeeded worker without result fails closed",
-			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodSucceeded, "   ", "", "", nil),
+			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodSucceeded, "   ", "", "", "", nil),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
 				t.Helper()
 				if got.Observation.Phase != publicationdomain.OperationPhaseFailed {
@@ -108,7 +111,7 @@ func TestObserveSourceWorker(t *testing.T) {
 		},
 		{
 			name:   "succeeded worker with malformed result fails closed",
-			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodSucceeded, "not-json", "", "", nil),
+			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodSucceeded, "not-json", "", "", "", nil),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
 				t.Helper()
 				if got.Observation.Phase != publicationdomain.OperationPhaseFailed {
@@ -124,7 +127,7 @@ func TestObserveSourceWorker(t *testing.T) {
 		},
 		{
 			name:   "failed worker keeps terminal message",
-			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodFailed, "hf import failed", "", "", nil),
+			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodFailed, "hf import failed", "", "", "", nil),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
 				t.Helper()
 				if got.Observation.Phase != publicationdomain.OperationPhaseFailed {

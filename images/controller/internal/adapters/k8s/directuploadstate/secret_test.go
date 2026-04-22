@@ -36,8 +36,10 @@ func TestSecretRoundTrip(t *testing.T) {
 	}
 
 	state := modelpackports.DirectUploadState{
-		Phase: modelpackports.DirectUploadStatePhaseRunning,
-		Stage: modelpackports.DirectUploadStateStageUploading,
+		PlannedLayerCount: 2,
+		PlannedSizeBytes:  384,
+		Phase:             modelpackports.DirectUploadStatePhaseRunning,
+		Stage:             modelpackports.DirectUploadStateStageUploading,
 		CompletedLayers: []modelpackports.DirectUploadLayerDescriptor{
 			{
 				Key:         "model|application/test",
@@ -76,6 +78,9 @@ func TestSecretRoundTrip(t *testing.T) {
 	}
 	if got.Stage != modelpackports.DirectUploadStateStageUploading {
 		t.Fatalf("unexpected stage %q", got.Stage)
+	}
+	if got.PlannedLayerCount != 2 || got.PlannedSizeBytes != 384 {
+		t.Fatalf("unexpected planned progress state %#v", got)
 	}
 	if len(got.CompletedLayers) != 1 {
 		t.Fatalf("unexpected completed layer count %d", len(got.CompletedLayers))
@@ -158,5 +163,52 @@ func TestStateFromSecretInfersRunningStageForLegacyPayload(t *testing.T) {
 	}
 	if got.Stage != modelpackports.DirectUploadStateStageUploading {
 		t.Fatalf("unexpected inferred stage %q", got.Stage)
+	}
+}
+
+func TestStateFromSecretRejectsUploadedBytesAbovePlannedTotal(t *testing.T) {
+	t.Parallel()
+
+	secret, err := NewSecret(SecretSpec{
+		Name:            "state-a",
+		Namespace:       "d8-ai-models",
+		OwnerGeneration: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewSecret() error = %v", err)
+	}
+
+	payload, err := json.Marshal(modelpackports.DirectUploadState{
+		PlannedLayerCount: 2,
+		PlannedSizeBytes:  100,
+		Phase:             modelpackports.DirectUploadStatePhaseRunning,
+		CompletedLayers: []modelpackports.DirectUploadLayerDescriptor{
+			{
+				Key:         "model|application/test",
+				Digest:      "sha256:111",
+				DiffID:      "sha256:111",
+				SizeBytes:   80,
+				MediaType:   "application/test",
+				TargetPath:  "model",
+				Base:        modelpackports.LayerBaseModel,
+				Format:      modelpackports.LayerFormatRaw,
+				Compression: modelpackports.LayerCompressionNone,
+			},
+		},
+		CurrentLayer: &modelpackports.DirectUploadCurrentLayer{
+			Key:               "config|application/test",
+			SessionToken:      "session-1",
+			PartSizeBytes:     64,
+			TotalSizeBytes:    64,
+			UploadedSizeBytes: 32,
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	secret.Data[stateKey] = payload
+
+	if _, err := StateFromSecret(secret); err == nil {
+		t.Fatal("expected StateFromSecret() to reject uploaded bytes above planned total")
 	}
 }

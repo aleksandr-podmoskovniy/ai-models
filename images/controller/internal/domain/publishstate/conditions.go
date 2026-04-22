@@ -29,6 +29,7 @@ func publishingStatus(
 	sourceType modelsv1alpha1.ModelSourceType,
 	reason modelsv1alpha1.ModelConditionReason,
 	message string,
+	progress string,
 ) modelsv1alpha1.ModelStatus {
 	if reason == "" {
 		reason = modelsv1alpha1.ModelConditionReasonPending
@@ -40,6 +41,9 @@ func publishingStatus(
 			ResolvedType: sourceType,
 		},
 		Conditions: keepNonPublishConditions(current.Conditions),
+	}
+	if strings.TrimSpace(progress) != "" {
+		status.Progress = strings.TrimSpace(progress)
 	}
 
 	setArtifactResolvedCondition(

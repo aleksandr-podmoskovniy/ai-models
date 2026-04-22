@@ -143,11 +143,13 @@ type DirectUploadCurrentLayer struct {
 }
 
 type DirectUploadState struct {
-	Phase           DirectUploadStatePhase        `json:"phase"`
-	Stage           DirectUploadStateStage        `json:"stage,omitempty"`
-	CompletedLayers []DirectUploadLayerDescriptor `json:"completedLayers,omitempty"`
-	CurrentLayer    *DirectUploadCurrentLayer     `json:"currentLayer,omitempty"`
-	FailureMessage  string                        `json:"failureMessage,omitempty"`
+	PlannedLayerCount int                           `json:"plannedLayerCount,omitempty"`
+	PlannedSizeBytes  int64                         `json:"plannedSizeBytes,omitempty"`
+	Phase             DirectUploadStatePhase        `json:"phase"`
+	Stage             DirectUploadStateStage        `json:"stage,omitempty"`
+	CompletedLayers   []DirectUploadLayerDescriptor `json:"completedLayers,omitempty"`
+	CurrentLayer      *DirectUploadCurrentLayer     `json:"currentLayer,omitempty"`
+	FailureMessage    string                        `json:"failureMessage,omitempty"`
 }
 
 type DirectUploadStateStore interface {

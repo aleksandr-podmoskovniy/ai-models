@@ -34,8 +34,9 @@ const (
 )
 
 type Options struct {
-	CleanupJob   CleanupJobOptions
-	RequeueAfter time.Duration
+	CleanupJob       CleanupJobOptions
+	RuntimeNamespace string
+	RequeueAfter     time.Duration
 }
 
 type baseReconciler struct {

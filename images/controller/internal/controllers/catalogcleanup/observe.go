@@ -57,6 +57,11 @@ func (r *baseReconciler) observeDelete(
 		return cleanuphandle.Handle{}, observation, nil
 	}
 	if !found {
+		runtimeResources, err := r.observePublicationRuntimeResources(ctx, object.GetUID())
+		if err != nil {
+			return cleanuphandle.Handle{}, deletionapp.FinalizeDeleteInput{}, err
+		}
+		observation.RuntimeResourcePresent = runtimeResources.Present()
 		return cleanuphandle.Handle{}, observation, nil
 	}
 	observation.HandleFound = true

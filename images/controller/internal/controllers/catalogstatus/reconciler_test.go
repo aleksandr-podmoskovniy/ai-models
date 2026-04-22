@@ -55,6 +55,9 @@ func TestModelReconcilerProjectsPublishingStatusFromRunningSourceWorker(t *testi
 	if updated.Status.Source == nil || updated.Status.Source.ResolvedType != modelsv1alpha1.ModelSourceTypeHuggingFace {
 		t.Fatalf("unexpected source status %#v", updated.Status.Source)
 	}
+	if got, want := updated.Status.Progress, "37%"; got != want {
+		t.Fatalf("unexpected progress %q", got)
+	}
 }
 
 func TestClusterModelReconcilerProjectsClusterScopedRunningStatus(t *testing.T) {

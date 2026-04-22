@@ -38,23 +38,23 @@ func TestEnsureCleanupFinalizer(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:  "missing handle without finalizer is noop",
+			name:  "missing handle without finalizer still adds finalizer",
 			input: EnsureCleanupFinalizerInput{},
 			assert: func(t *testing.T, got EnsureCleanupFinalizerDecision) {
 				t.Helper()
-				if got.AddFinalizer || got.RemoveFinalizer {
+				if !got.AddFinalizer || got.RemoveFinalizer {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
 		},
 		{
-			name: "missing handle removes stale finalizer",
+			name: "missing handle with finalizer is noop",
 			input: EnsureCleanupFinalizerInput{
 				HasFinalizer: true,
 			},
 			assert: func(t *testing.T, got EnsureCleanupFinalizerDecision) {
 				t.Helper()
-				if !got.RemoveFinalizer || got.AddFinalizer {
+				if got.RemoveFinalizer || got.AddFinalizer {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},

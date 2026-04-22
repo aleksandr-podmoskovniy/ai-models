@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -40,6 +41,7 @@ func pushRawLayerDirectToBackingStorage(
 	layer modelpackports.PublishLayer,
 	plan publishLayerDescriptor,
 	checkpoint *directUploadCheckpoint,
+	logger *slog.Logger,
 ) (publishLayerDescriptor, error) {
 	helperClient, state, err := prepareRawDirectUpload(ctx, input, auth, layer, plan, checkpoint)
 	if err != nil {
@@ -60,7 +62,7 @@ func pushRawLayerDirectToBackingStorage(
 	}
 
 	completeStarted = true
-	descriptor, err := finalizeRawDirectUpload(ctx, helperClient, plan, checkpoint, state)
+	descriptor, err := finalizeRawDirectUpload(ctx, helperClient, plan, checkpoint, state, logger)
 	if err != nil {
 		return publishLayerDescriptor{}, err
 	}

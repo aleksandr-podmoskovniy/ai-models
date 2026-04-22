@@ -101,6 +101,9 @@ paths и test surfaces.
   - running publication status now carries machine-readable progress reasons
     for started / uploading / resumed / sealing / committed edges instead of
     exposing only one opaque message string;
+  - top-level `status.progress` for sourceworker-driven publication now comes
+    from explicit checkpoint totals, stays independent from condition-message
+    scraping, and remains capped below `100%` until terminal `Ready`;
   - direct transport still preserves final remote inspect and consumer-side
     materialization correctness;
   - interrupted direct part upload recovers through helper `listParts()` instead

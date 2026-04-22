@@ -41,6 +41,7 @@ type SourceWorkerHandle struct {
 	Phase              corev1.PodPhase
 	TerminationMessage string
 	ProgressReason     modelsv1alpha1.ModelConditionReason
+	Progress           string
 	ProgressMessage    string
 	deleteFn           func(context.Context) error
 }
@@ -50,6 +51,7 @@ func NewSourceWorkerHandle(
 	phase corev1.PodPhase,
 	terminationMessage string,
 	progressReason modelsv1alpha1.ModelConditionReason,
+	progress string,
 	progressMessage string,
 	deleteFn func(context.Context) error,
 ) *SourceWorkerHandle {
@@ -58,6 +60,7 @@ func NewSourceWorkerHandle(
 		Phase:              phase,
 		TerminationMessage: terminationMessage,
 		ProgressReason:     progressReason,
+		Progress:           progress,
 		ProgressMessage:    progressMessage,
 		deleteFn:           deleteFn,
 	}

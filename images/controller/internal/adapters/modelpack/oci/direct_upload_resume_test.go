@@ -118,6 +118,7 @@ func TestPushRawLayerDirectToBackingStorageResumesPersistedSession(t *testing.T)
 		layer,
 		plan,
 		&directUploadCheckpoint{store: store, state: store.state},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("pushRawLayerDirectToBackingStorage() error = %v", err)
@@ -137,5 +138,35 @@ func TestPushRawLayerDirectToBackingStorageResumesPersistedSession(t *testing.T)
 	}
 	if len(store.state.CompletedLayers) != 1 || store.state.CurrentLayer != nil {
 		t.Fatalf("unexpected persisted state %#v", store.state)
+	}
+}
+
+func TestDirectUploadCheckpointEnsureProgressPlanPersistsAndReusesPlan(t *testing.T) {
+	t.Parallel()
+
+	store := &directUploadMemoryStore{
+		found: true,
+		state: modelpackports.DirectUploadState{
+			Phase: modelpackports.DirectUploadStatePhaseIdle,
+			Stage: modelpackports.DirectUploadStateStageIdle,
+		},
+	}
+	checkpoint := &directUploadCheckpoint{store: store, state: store.state}
+
+	if err := checkpoint.ensureProgressPlan(context.Background(), 3, 1024); err != nil {
+		t.Fatalf("ensureProgressPlan() first call error = %v", err)
+	}
+	if checkpoint.state.PlannedLayerCount != 3 || checkpoint.state.PlannedSizeBytes != 1024 {
+		t.Fatalf("unexpected checkpoint state %#v", checkpoint.state)
+	}
+	if store.state.PlannedLayerCount != 3 || store.state.PlannedSizeBytes != 1024 {
+		t.Fatalf("unexpected persisted state %#v", store.state)
+	}
+
+	if err := checkpoint.ensureProgressPlan(context.Background(), 3, 1024); err != nil {
+		t.Fatalf("ensureProgressPlan() second call error = %v", err)
+	}
+	if err := checkpoint.ensureProgressPlan(context.Background(), 4, 1024); err == nil {
+		t.Fatal("expected ensureProgressPlan() to reject mismatched layer count")
 	}
 }

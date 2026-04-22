@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-func TestModelReconcilerDoesNotAddFinalizerWithoutCleanupHandle(t *testing.T) {
+func TestModelReconcilerAddsFinalizerWithoutCleanupHandle(t *testing.T) {
 	t.Parallel()
 
 	model := testModel()
@@ -41,8 +41,8 @@ func TestModelReconcilerDoesNotAddFinalizerWithoutCleanupHandle(t *testing.T) {
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &updated); err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	if controllerutil.ContainsFinalizer(&updated, Finalizer) {
-		t.Fatal("did not expect cleanup finalizer without cleanup handle")
+	if !controllerutil.ContainsFinalizer(&updated, Finalizer) {
+		t.Fatal("expected cleanup finalizer even before cleanup handle exists")
 	}
 }
 

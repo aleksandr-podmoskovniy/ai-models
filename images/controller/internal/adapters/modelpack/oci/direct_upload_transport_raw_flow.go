@@ -21,6 +21,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"hash"
+	"log/slog"
+	"time"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
@@ -146,6 +148,7 @@ func finalizeRawDirectUpload(
 	plan publishLayerDescriptor,
 	checkpoint *directUploadCheckpoint,
 	state rawDirectUploadState,
+	logger *slog.Logger,
 ) (publishLayerDescriptor, error) {
 	digest := "sha256:" + hex.EncodeToString(state.hasher.Sum(nil))
 	descriptor := publishLayerDescriptor{
@@ -162,8 +165,26 @@ func finalizeRawDirectUpload(
 	if err := checkpoint.markSealing(ctx, state.current); err != nil {
 		return publishLayerDescriptor{}, err
 	}
+	completeStarted := time.Now()
+	if logger != nil {
+		logger.Info(
+			"native modelpack direct upload sealing started",
+			slog.String("layerTargetPath", descriptor.TargetPath),
+			slog.String("layerDigest", descriptor.Digest),
+			slog.Int64("layerSizeBytes", descriptor.Size),
+			slog.Int("uploadedPartCount", len(state.uploadedParts)),
+		)
+	}
 	if err := helperClient.complete(ctx, state.session.SessionToken, digest, state.totalSize, state.uploadedParts); err != nil {
 		return publishLayerDescriptor{}, err
+	}
+	if logger != nil {
+		logger.Info(
+			"native modelpack direct upload sealing completed",
+			slog.String("layerTargetPath", descriptor.TargetPath),
+			slog.String("layerDigest", descriptor.Digest),
+			slog.Int64("durationMs", time.Since(completeStarted).Milliseconds()),
+		)
 	}
 	if err := checkpoint.markLayerCompleted(ctx, descriptor); err != nil {
 		return publishLayerDescriptor{}, err

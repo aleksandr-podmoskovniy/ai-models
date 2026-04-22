@@ -41,17 +41,24 @@ func uploadPublishLayers(
 	if err != nil {
 		return nil, err
 	}
+	preparedLayers, totalSizeBytes, err := preparePublishLayerUploads(ctx, layers, plans)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkpoint.ensureProgressPlan(ctx, len(preparedLayers), totalSizeBytes); err != nil {
+		return nil, err
+	}
 
 	descriptors := make([]publishLayerDescriptor, 0, len(layers))
-	for index, layer := range layers {
+	for index, prepared := range preparedLayers {
 		layerUploadStarted := time.Now()
 		logger.Info(
 			"native modelpack layer upload started",
 			slog.Int("layerIndex", index),
-			slog.String("layerTargetPath", plans[index].TargetPath),
-			slog.String("layerMediaType", plans[index].MediaType),
+			slog.String("layerTargetPath", prepared.Plan.TargetPath),
+			slog.String("layerMediaType", prepared.Plan.MediaType),
 		)
-		descriptor, err := uploadPublishLayer(ctx, client, input, auth, layer, plans[index], checkpoint)
+		descriptor, err := uploadPublishLayer(ctx, client, input, auth, prepared, checkpoint, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -72,10 +79,11 @@ func uploadPublishLayer(
 	client *http.Client,
 	input modelpackports.PublishInput,
 	auth modelpackports.RegistryAuth,
-	layer modelpackports.PublishLayer,
-	plan publishLayerDescriptor,
+	prepared preparedPublishLayer,
 	checkpoint *directUploadCheckpoint,
+	logger *slog.Logger,
 ) (publishLayerDescriptor, error) {
+	plan := prepared.Plan
 	if checkpoint != nil {
 		if completed, found, err := checkpoint.completedLayer(plan); err != nil {
 			return publishLayerDescriptor{}, err
@@ -84,18 +92,15 @@ func uploadPublishLayer(
 		}
 	}
 
-	if canOnePassUploadRawLayer(layer) {
-		return pushRawLayerDirectToBackingStorage(ctx, client, input, auth, layer, plan, checkpoint)
+	if prepared.Descriptor != nil {
+		descriptor := *prepared.Descriptor
+		if err := pushDescribedLayerDirectToBackingStorage(ctx, client, input, auth, prepared.Layer, descriptor, checkpoint, logger); err != nil {
+			return publishLayerDescriptor{}, err
+		}
+		return descriptor, nil
 	}
 
-	descriptor, err := describePublishLayer(ctx, layer)
-	if err != nil {
-		return publishLayerDescriptor{}, err
-	}
-	if err := pushDescribedLayerDirectToBackingStorage(ctx, client, input, auth, layer, descriptor, checkpoint); err != nil {
-		return publishLayerDescriptor{}, err
-	}
-	return descriptor, nil
+	return pushRawLayerDirectToBackingStorage(ctx, client, input, auth, prepared.Layer, plan, checkpoint, logger)
 }
 
 func uploadPublishConfig(

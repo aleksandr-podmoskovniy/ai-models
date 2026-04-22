@@ -84,6 +84,32 @@ func TestProjectStatusRunningUsesObservationMessage(t *testing.T) {
 	}
 }
 
+func TestProjectStatusRunningNonUploadProjectsPublicProgress(t *testing.T) {
+	t.Parallel()
+
+	projection, err := ProjectStatus(
+		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{},
+		5,
+		modelsv1alpha1.ModelSourceTypeHuggingFace,
+		Observation{
+			Phase:           OperationPhaseRunning,
+			ConditionReason: modelsv1alpha1.ModelConditionReasonPublicationUploading,
+			Progress:        "37%",
+			Message:         "384/1024 bytes uploaded into the internal registry",
+		},
+	)
+	if err != nil {
+		t.Fatalf("ProjectStatus() error = %v", err)
+	}
+	if got, want := projection.Status.Progress, "37%"; got != want {
+		t.Fatalf("unexpected progress %q", got)
+	}
+	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhasePublishing; got != want {
+		t.Fatalf("unexpected phase %q", got)
+	}
+}
+
 func TestProjectStatusRunningUploadWithoutSessionShowsPublishing(t *testing.T) {
 	t.Parallel()
 

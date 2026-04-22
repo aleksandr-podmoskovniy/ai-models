@@ -20,8 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
+	"time"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
@@ -42,6 +44,7 @@ func pushDescribedLayerDirectToBackingStorage(
 	layer modelpackports.PublishLayer,
 	descriptor publishLayerDescriptor,
 	checkpoint *directUploadCheckpoint,
+	logger *slog.Logger,
 ) error {
 	helperClient, state, err := prepareDescribedDirectUpload(ctx, input, auth, descriptor, checkpoint)
 	if err != nil {
@@ -62,7 +65,7 @@ func pushDescribedLayerDirectToBackingStorage(
 	}
 
 	completeStarted = true
-	if err := finalizeDescribedDirectUpload(ctx, helperClient, descriptor, checkpoint, state); err != nil {
+	if err := finalizeDescribedDirectUpload(ctx, helperClient, descriptor, checkpoint, state, logger); err != nil {
 		return err
 	}
 	completed = true
@@ -171,12 +174,31 @@ func finalizeDescribedDirectUpload(
 	descriptor publishLayerDescriptor,
 	checkpoint *directUploadCheckpoint,
 	state describedDirectUploadState,
+	logger *slog.Logger,
 ) error {
 	if err := checkpoint.markSealing(ctx, state.current); err != nil {
 		return err
 	}
+	completeStarted := time.Now()
+	if logger != nil {
+		logger.Info(
+			"native modelpack direct upload sealing started",
+			slog.String("layerTargetPath", descriptor.TargetPath),
+			slog.String("layerDigest", descriptor.Digest),
+			slog.Int64("layerSizeBytes", descriptor.Size),
+			slog.Int("uploadedPartCount", len(state.uploadedParts)),
+		)
+	}
 	if err := helperClient.complete(ctx, state.session.SessionToken, descriptor.Digest, descriptor.Size, state.uploadedParts); err != nil {
 		return err
+	}
+	if logger != nil {
+		logger.Info(
+			"native modelpack direct upload sealing completed",
+			slog.String("layerTargetPath", descriptor.TargetPath),
+			slog.String("layerDigest", descriptor.Digest),
+			slog.Int64("durationMs", time.Since(completeStarted).Milliseconds()),
+		)
 	}
 	return checkpoint.markLayerCompleted(ctx, descriptor)
 }

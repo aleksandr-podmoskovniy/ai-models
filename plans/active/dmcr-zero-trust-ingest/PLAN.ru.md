@@ -20,7 +20,11 @@ production-ready guarantees для zero-trust, resume и large-object economics.
 
 Следующий открытый срез:
 
-- финально дочистить documentation/review surface вокруг нового ingest flow.
+- финально довести public progress/status contract вокруг нового ingest flow:
+  - отдельный runtime progress field для sourceworker;
+  - честный top-level `status.progress` для publication path;
+  - docs/review surface без drift между upload-progress и publish-progress
+    narratives.
 
 ## 2. Orchestration
 
@@ -140,6 +144,8 @@ production-ready guarantees для zero-trust, resume и large-object economics.
 - bounded progress/state signal по ingest:
   - started / resumed / sealing / committed / failed / aborted;
   - byte or part progress where technically available.
+- top-level `status.progress` для sourceworker-driven publication path
+  проецируется из machine-readable runtime field, а не из message scraping.
 
 ### Slice 5. Удалить старые хвосты и синхронизировать документацию
 

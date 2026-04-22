@@ -251,7 +251,8 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 				ObjectStorage:           artifactsObjectStorage,
 				Env:                     cleanupJobEnv(c.CleanupJobEnvPassThrough, c.LogFormat, c.LogLevel),
 			},
-			RequeueAfter: 5 * time.Second,
+			RuntimeNamespace: c.PublicationWorkerNamespace,
+			RequeueAfter:     5 * time.Second,
 		},
 		PublicationRuntime: catalogstatus.Options{
 			RuntimeLogFormat: c.LogFormat,

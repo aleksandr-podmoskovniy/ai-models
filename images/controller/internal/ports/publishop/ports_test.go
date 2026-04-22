@@ -28,7 +28,7 @@ func TestSourceWorkerHandleHelpers(t *testing.T) {
 	t.Parallel()
 
 	deleted := false
-	handle := NewSourceWorkerHandle("worker", corev1.PodSucceeded, `{"artifact":{"kind":"OCI","uri":"registry.example/model@sha256:deadbeef","digest":"sha256:deadbeef","mediaType":"application/vnd.cncf.model.manifest.v1+json"},"resolved":{"task":"text-generation"},"source":{"type":"HuggingFace","externalReference":"https://huggingface.co/test/model"},"cleanupHandle":{"kind":"BackendArtifact","artifact":{"kind":"OCI","uri":"registry.example/model@sha256:deadbeef"},"backend":{"reference":"registry.example/model@sha256:deadbeef"}}}`, "", "", func(context.Context) error {
+	handle := NewSourceWorkerHandle("worker", corev1.PodSucceeded, `{"artifact":{"kind":"OCI","uri":"registry.example/model@sha256:deadbeef","digest":"sha256:deadbeef","mediaType":"application/vnd.cncf.model.manifest.v1+json"},"resolved":{"task":"text-generation"},"source":{"type":"HuggingFace","externalReference":"https://huggingface.co/test/model"},"cleanupHandle":{"kind":"BackendArtifact","artifact":{"kind":"OCI","uri":"registry.example/model@sha256:deadbeef"},"backend":{"reference":"registry.example/model@sha256:deadbeef"}}}`, "", "63%", "", func(context.Context) error {
 		deleted = true
 		return nil
 	})
@@ -38,6 +38,9 @@ func TestSourceWorkerHandleHelpers(t *testing.T) {
 	}
 	if handle.IsFailed() {
 		t.Fatal("did not expect failed source worker handle")
+	}
+	if got, want := handle.Progress, "63%"; got != want {
+		t.Fatalf("unexpected progress %q", got)
 	}
 	if err := handle.Delete(context.Background()); err != nil {
 		t.Fatalf("Delete() error = %v", err)

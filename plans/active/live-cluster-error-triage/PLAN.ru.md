@@ -1,0 +1,111 @@
+## 1. Current phase
+
+Этап 1, corrective operational hardening и baseline verification внутри
+publication/runtime path.
+
+## 2. Orchestration
+
+`solo`
+
+Причина:
+
+- нужен быстрый read-write operational loop по живому кластеру без
+  архитектурного распараллеливания;
+- сравнительный анализ с `virtualization` здесь read-only и не требует
+  delegation сам по себе;
+- если baseline verification вскроет multi-boundary redesign, это станет уже
+  следующим bundle или continuation slice.
+
+## 3. Slices
+
+### Slice 1. Снять живое состояние baseline
+
+Цель:
+
+- получить текущее состояние controller, `DMCR`, smoke objects и runtime path,
+  а не общий рассказ про ошибки.
+
+Проверки:
+
+- `kubectl get pods,events,model,clustermodel,...`
+- `kubectl logs ...`
+- при наличии smoke workload проверить delivery signal
+
+Артефакт результата:
+
+- зафиксирован текущий live baseline status и конкретные рабочие/нерабочие
+  точки.
+
+### Slice 2. Проверить стандартный кейс `gemma 4`
+
+Цель:
+
+- подтвердить publication/runtime path на стандартном кейсе и понять, где
+  именно разрыв, если end-to-end smoke не замыкается.
+
+Проверки:
+
+- `kubectl get/describe/logs` по relevant `Model`/`ClusterModel`/workload
+- inspect `DMCR` state и artifact references
+
+Артефакт результата:
+
+- зафиксирован либо working smoke path, либо точный failing step.
+
+### Slice 3. Проверить GC path для registry/S3
+
+Цель:
+
+- понять, что именно у нас сегодня делает cleanup, когда он запускается и
+  проверяет ли модуль лишние объекты после старта.
+
+Проверки:
+
+- read-only code inspection `images/dmcr/**`, `images/controller/**`,
+  `templates/**`, docs
+- при наличии live signal проверить соответствующие логи/cronhook/job paths
+
+Артефакт результата:
+
+- GC contract описан по фактическому коду и live behavior.
+
+### Slice 4. Сопоставить паттерны с `virtualization`
+
+Цель:
+
+- понять, где `ai-models` уже следует DKP module patterns, а где остаются
+  несогласованные или ещё сыроватые поверхности.
+
+Проверки:
+
+- read-only comparison against `/Users/myskat_90/flant/aleksandr-podmoskovniy/virtualization`
+- зафиксировать только concrete reusable patterns и deviations
+
+Артефакт результата:
+
+- список соответствий, расхождений и pragmatic next fixes.
+
+### Slice 5. Собрать actionable gaps
+
+Цель:
+
+- превратить расследование в короткий список следующих implementation targets.
+
+Проверки:
+
+- bundle notes консистентны с live observations и repo code
+
+Артефакт результата:
+
+- сформирован список узких мест и рекомендуемый следующий шаг.
+
+## 4. Rollback point
+
+После Slice 1 можно остановиться с чистым live diagnosis без дополнительных
+code changes.
+
+## 5. Final validation
+
+- повторная проверка в кластере по live objects
+- `git diff --check` по bundle notes
+- узкие локальные проверки только если в ходе работы понадобятся code changes

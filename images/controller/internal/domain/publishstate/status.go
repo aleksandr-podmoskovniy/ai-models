@@ -49,7 +49,7 @@ func InitialStatus(
 	if sourceType == modelsv1alpha1.ModelSourceTypeUpload {
 		return pendingUploadStatus(current, generation, sourceType, "0%", "")
 	}
-	return publishingStatus(current, generation, sourceType, modelsv1alpha1.ModelConditionReasonPending, "")
+	return publishingStatus(current, generation, sourceType, modelsv1alpha1.ModelConditionReasonPending, "", "")
 }
 
 func ProjectStatus(
@@ -70,7 +70,7 @@ func ProjectStatus(
 			return Projection{}, errors.New("upload staging cleanup handle must not be empty")
 		}
 		return Projection{
-			Status:        publishingStatus(current, generation, sourceType, modelsv1alpha1.ModelConditionReasonPending, ""),
+			Status:        publishingStatus(current, generation, sourceType, modelsv1alpha1.ModelConditionReasonPending, "", ""),
 			CleanupHandle: observation.CleanupHandle,
 			Requeue:       true,
 		}, nil
@@ -105,7 +105,7 @@ func runningStatus(
 	progress string,
 ) modelsv1alpha1.ModelStatus {
 	if sourceType != modelsv1alpha1.ModelSourceTypeUpload {
-		return publishingStatus(current, generation, sourceType, reason, message)
+		return publishingStatus(current, generation, sourceType, reason, message, progress)
 	}
 	if upload != nil {
 		return waitForUploadStatus(current, generation, sourceType, upload, progress, message)
@@ -113,5 +113,5 @@ func runningStatus(
 	if runtimeKind == RuntimeKindUploadSession {
 		return pendingUploadStatus(current, generation, sourceType, progress, message)
 	}
-	return publishingStatus(current, generation, sourceType, reason, message)
+	return publishingStatus(current, generation, sourceType, reason, message, "")
 }

@@ -47,6 +47,15 @@ workstream над самим internal registry ingest contract. Пока он н
 4. Весь workstream ограничен только publication ingest в internal registry:
    без смешивания с workload delivery, `DMZ` и node-local cache.
 
+Текущий continuation внутри этого же workstream:
+
+- поднять bounded publication progress из direct-upload checkpoint не только в
+  condition reason/message, но и в top-level `Model.status.progress`;
+- убрать зависимость controller/status path от парсинга text-only progress
+  message;
+- сохранить при этом machine-readable stage reasons (`started`, `uploading`,
+  `resumed`, `sealing`, `committed`) и honest percentage semantics.
+
 ## 4. Scope
 
 - зафиксировать единственный целевой ingest contract для `DMCR`;
@@ -58,6 +67,8 @@ workstream над самим internal registry ingest contract. Пока он н
 - определить внутреннюю раскладку registry storage/index так, чтобы published
   contract снаружи оставался digest-based OCI contract;
 - определить machine-readable progress/state surface для долгих upload-сессий;
+- довести `catalogstatus` / `publishobserve` до отдельного
+  machine-readable progress field для sourceworker runtime;
 - синхронизировать docs с новым ingest contract и его ограничениями.
 
 ## 5. Non-goals
@@ -77,6 +88,9 @@ workstream над самим internal registry ingest contract. Пока он н
 - `images/controller/internal/adapters/modelpack/oci/*`
 - `images/controller/internal/controllers/catalogstatus/*`, если ingest
   progress/state выводится в `status`
+- `images/controller/internal/application/publishobserve/*`
+- `images/controller/internal/domain/publishstate/*`
+- `images/controller/internal/ports/publishop/*`
 - `docs/CONFIGURATION.ru.md`
 - `docs/CONFIGURATION.md`
 - `images/dmcr/README.md`
@@ -120,6 +134,13 @@ workstream над самим internal registry ingest contract. Пока он н
   - storage/index refactor;
   - controller-side session resume;
   - status/progress/docs.
+- Для sourceworker-driven publication path:
+  - top-level `status.progress` публикуется из explicit runtime progress field,
+    а не извлекается из human-readable condition message;
+  - progress не показывает ложные `100%`, пока весь planned publish не
+    завершён;
+  - progress очищается на terminal `Ready` / `Failed` status и не становится
+    второй историей поверх conditions.
 
 ## 8. Риски
 

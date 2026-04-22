@@ -64,6 +64,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 
 	if err := setupDeploymentController(mgr, baseReconciler{
 		client:   mgr.GetClient(),
+		reader:   mgr.GetAPIReader(),
 		delivery: deliveryService,
 		options:  options,
 		logger:   controllerLogger("Deployment"),
@@ -73,6 +74,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	}
 	if err := setupStatefulSetController(mgr, baseReconciler{
 		client:   mgr.GetClient(),
+		reader:   mgr.GetAPIReader(),
 		delivery: deliveryService,
 		options:  options,
 		logger:   controllerLogger("StatefulSet"),
@@ -82,6 +84,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	}
 	if err := setupDaemonSetController(mgr, baseReconciler{
 		client:   mgr.GetClient(),
+		reader:   mgr.GetAPIReader(),
 		delivery: deliveryService,
 		options:  options,
 		logger:   controllerLogger("DaemonSet"),
@@ -91,6 +94,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	}
 	return setupCronJobController(mgr, baseReconciler{
 		client:   mgr.GetClient(),
+		reader:   mgr.GetAPIReader(),
 		delivery: deliveryService,
 		options:  options,
 		logger:   controllerLogger("CronJob"),

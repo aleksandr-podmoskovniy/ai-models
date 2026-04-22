@@ -49,6 +49,9 @@ func (r *baseReconciler) applyEnsureFinalizerDecision(
 }
 
 func (r *baseReconciler) applyFinalizeDeleteFlow(ctx context.Context, flow finalizeDeleteFlow) (ctrl.Result, error) {
+	if result, handled, err := r.maybeDeletePublicationRuntimeResources(ctx, flow.runtime.object, flow.decision.DeleteRuntimeResources); handled || err != nil {
+		return result, err
+	}
 	if result, handled, err := r.maybeCreateCleanupJob(ctx, flow.runtime, flow.decision.CreateJob); handled || err != nil {
 		return result, err
 	}
@@ -65,6 +68,20 @@ func (r *baseReconciler) applyFinalizeDeleteFlow(ctx context.Context, flow final
 		return result, err
 	}
 	return requeueResult(flow.decision.Requeue, r.options.RequeueAfter), nil
+}
+
+func (r *baseReconciler) maybeDeletePublicationRuntimeResources(
+	ctx context.Context,
+	object client.Object,
+	enabled bool,
+) (ctrl.Result, bool, error) {
+	if !enabled {
+		return ctrl.Result{}, false, nil
+	}
+	if err := r.deletePublicationRuntimeResources(ctx, object.GetUID()); err != nil {
+		return r.failDeleteStatus(ctx, object, err)
+	}
+	return ctrl.Result{}, false, nil
 }
 
 func (r *baseReconciler) maybeCreateCleanupJob(

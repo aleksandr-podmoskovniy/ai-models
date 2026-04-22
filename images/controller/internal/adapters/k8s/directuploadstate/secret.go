@@ -148,6 +148,9 @@ func normalizeState(state modelpackports.DirectUploadState) (modelpackports.Dire
 	if state.Phase != modelpackports.DirectUploadStatePhaseFailed {
 		state.FailureMessage = ""
 	}
+	if err := normalizeProgressPlan(&state); err != nil {
+		return modelpackports.DirectUploadState{}, err
+	}
 
 	completed := make([]modelpackports.DirectUploadLayerDescriptor, 0, len(state.CompletedLayers))
 	for _, layer := range state.CompletedLayers {
@@ -172,6 +175,9 @@ func normalizeState(state modelpackports.DirectUploadState) (modelpackports.Dire
 	}
 	if state.Phase == modelpackports.DirectUploadStatePhaseRunning && state.Stage == modelpackports.DirectUploadStateStageIdle {
 		state.Stage = inferStage(state)
+	}
+	if err := validateProgressPlan(state); err != nil {
+		return modelpackports.DirectUploadState{}, err
 	}
 
 	return state, nil
@@ -240,4 +246,49 @@ func normalizeCurrentLayer(layer modelpackports.DirectUploadCurrentLayer) (model
 		return modelpackports.DirectUploadCurrentLayer{}, errors.New("direct upload current layer uploaded size must not exceed total size")
 	}
 	return layer, nil
+}
+
+func normalizeProgressPlan(state *modelpackports.DirectUploadState) error {
+	if state == nil {
+		return nil
+	}
+	if state.PlannedLayerCount < 0 {
+		return errors.New("direct upload planned layer count must not be negative")
+	}
+	if state.PlannedSizeBytes < 0 {
+		return errors.New("direct upload planned size must not be negative")
+	}
+	if (state.PlannedLayerCount == 0) != (state.PlannedSizeBytes == 0) {
+		return errors.New("direct upload planned layer count and size must be both set or both empty")
+	}
+	return nil
+}
+
+func validateProgressPlan(state modelpackports.DirectUploadState) error {
+	if state.PlannedLayerCount == 0 && state.PlannedSizeBytes == 0 {
+		return nil
+	}
+	if len(state.CompletedLayers) > state.PlannedLayerCount {
+		return fmt.Errorf(
+			"direct upload completed layer count %d exceeds planned layer count %d",
+			len(state.CompletedLayers),
+			state.PlannedLayerCount,
+		)
+	}
+
+	var uploadedSizeBytes int64
+	for _, layer := range state.CompletedLayers {
+		uploadedSizeBytes += layer.SizeBytes
+	}
+	if state.CurrentLayer != nil {
+		uploadedSizeBytes += state.CurrentLayer.UploadedSizeBytes
+	}
+	if uploadedSizeBytes > state.PlannedSizeBytes {
+		return fmt.Errorf(
+			"direct upload uploaded size %d exceeds planned size %d",
+			uploadedSizeBytes,
+			state.PlannedSizeBytes,
+		)
+	}
+	return nil
 }

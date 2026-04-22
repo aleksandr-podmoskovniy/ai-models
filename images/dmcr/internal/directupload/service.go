@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -262,25 +263,74 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		http.Error(writer, "sizeBytes must match uploaded parts", http.StatusBadRequest)
 		return
 	}
+	completeStarted := s.now()
+	log.Printf(
+		"direct upload complete started repository=%q objectKey=%q sizeBytes=%d parts=%d",
+		claims.Repository,
+		claims.ObjectKey,
+		payload.SizeBytes,
+		len(parts),
+	)
 	if err := s.backend.CompleteMultipartUpload(request.Context(), claims.ObjectKey, claims.UploadID, parts); err != nil {
+		log.Printf(
+			"direct upload multipart completion failed repository=%q objectKey=%q error=%v",
+			claims.Repository,
+			claims.ObjectKey,
+			err,
+		)
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	sealStarted := s.now()
+	log.Printf(
+		"direct upload sealing started repository=%q objectKey=%q sizeBytes=%d",
+		claims.Repository,
+		claims.ObjectKey,
+		payload.SizeBytes,
+	)
 	sealed, err := s.sealUploadedObject(request.Context(), claims.ObjectKey)
 	if err != nil {
 		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		log.Printf(
+			"direct upload sealing failed repository=%q objectKey=%q error=%v",
+			claims.Repository,
+			claims.ObjectKey,
+			err,
+		)
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	log.Printf(
+		"direct upload sealing completed repository=%q objectKey=%q digest=%q sizeBytes=%d durationMs=%d",
+		claims.Repository,
+		claims.ObjectKey,
+		sealed.Digest,
+		sealed.SizeBytes,
+		s.now().Sub(sealStarted).Milliseconds(),
+	)
 	clientDigest := strings.TrimSpace(payload.Digest)
 	if clientDigest != "" && clientDigest != sealed.Digest {
 		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		log.Printf(
+			"direct upload digest mismatch repository=%q objectKey=%q clientDigest=%q sealedDigest=%q",
+			claims.Repository,
+			claims.ObjectKey,
+			clientDigest,
+			sealed.Digest,
+		)
 		http.Error(writer, "digest must match trusted sealed object digest", http.StatusConflict)
 		return
 	}
 	if payload.SizeBytes != sealed.SizeBytes {
 		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		log.Printf(
+			"direct upload size mismatch repository=%q objectKey=%q clientSizeBytes=%d sealedSizeBytes=%d",
+			claims.Repository,
+			claims.ObjectKey,
+			payload.SizeBytes,
+			sealed.SizeBytes,
+		)
 		http.Error(writer, "sizeBytes must match trusted sealed object size", http.StatusConflict)
 		return
 	}
@@ -299,30 +349,80 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 	}
 	if exists, err := s.sealedBlobExists(request.Context(), blobKey); err != nil {
 		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		log.Printf(
+			"direct upload sealed blob existence check failed repository=%q objectKey=%q blobKey=%q error=%v",
+			claims.Repository,
+			claims.ObjectKey,
+			blobKey,
+			err,
+		)
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	} else if exists {
 		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
 		if err := s.backend.PutContent(request.Context(), linkKey, []byte(sealed.Digest)); err != nil {
+			log.Printf(
+				"direct upload repository link write failed repository=%q objectKey=%q blobKey=%q error=%v",
+				claims.Repository,
+				claims.ObjectKey,
+				blobKey,
+				err,
+			)
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		log.Printf(
+			"direct upload complete finished repository=%q objectKey=%q digest=%q deduplicated=true durationMs=%d",
+			claims.Repository,
+			claims.ObjectKey,
+			sealed.Digest,
+			s.now().Sub(completeStarted).Milliseconds(),
+		)
 		writeJSON(writer, map[string]bool{"ok": true})
 		return
 	}
 	if err := s.writeSealedBlobMetadata(request.Context(), blobKey, sealed, claims.ObjectKey); err != nil {
 		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		log.Printf(
+			"direct upload sealed metadata write failed repository=%q objectKey=%q blobKey=%q error=%v",
+			claims.Repository,
+			claims.ObjectKey,
+			blobKey,
+			err,
+		)
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if err := s.backend.PutContent(request.Context(), linkKey, []byte(sealed.Digest)); err != nil {
 		if cleanupErr := s.cleanupSealedUpload(request.Context(), blobKey, claims.ObjectKey); cleanupErr != nil {
+			log.Printf(
+				"direct upload repository link write failed after metadata repository=%q objectKey=%q blobKey=%q error=%v cleanupError=%v",
+				claims.Repository,
+				claims.ObjectKey,
+				blobKey,
+				err,
+				cleanupErr,
+			)
 			http.Error(writer, fmt.Sprintf("%s; cleanup failed: %v", err.Error(), cleanupErr), http.StatusInternalServerError)
 			return
 		}
+		log.Printf(
+			"direct upload repository link write failed repository=%q objectKey=%q blobKey=%q error=%v",
+			claims.Repository,
+			claims.ObjectKey,
+			blobKey,
+			err,
+		)
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	log.Printf(
+		"direct upload complete finished repository=%q objectKey=%q digest=%q deduplicated=false durationMs=%d",
+		claims.Repository,
+		claims.ObjectKey,
+		sealed.Digest,
+		s.now().Sub(completeStarted).Milliseconds(),
+	)
 	writeJSON(writer, map[string]bool{"ok": true})
 }
 

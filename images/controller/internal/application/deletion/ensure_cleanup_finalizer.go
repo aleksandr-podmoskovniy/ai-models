@@ -32,14 +32,9 @@ func EnsureCleanupFinalizer(input EnsureCleanupFinalizerInput) (EnsureCleanupFin
 		return EnsureCleanupFinalizerDecision{}, input.HandleErr
 	}
 
-	switch {
-	case !input.HandleFound && input.HasFinalizer:
-		return EnsureCleanupFinalizerDecision{RemoveFinalizer: true}, nil
-	case !input.HandleFound:
+	if input.HasFinalizer {
 		return EnsureCleanupFinalizerDecision{}, nil
-	case input.HasFinalizer:
-		return EnsureCleanupFinalizerDecision{}, nil
-	default:
-		return EnsureCleanupFinalizerDecision{AddFinalizer: true}, nil
 	}
+
+	return EnsureCleanupFinalizerDecision{AddFinalizer: true}, nil
 }

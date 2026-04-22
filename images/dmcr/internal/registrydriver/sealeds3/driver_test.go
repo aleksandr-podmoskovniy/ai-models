@@ -32,11 +32,15 @@ import (
 )
 
 type fakeStorageDriver struct {
-	files map[string][]byte
+	files    map[string][]byte
+	statDirs map[string]bool
 }
 
 func newFakeStorageDriver() *fakeStorageDriver {
-	return &fakeStorageDriver{files: make(map[string][]byte)}
+	return &fakeStorageDriver{
+		files:    make(map[string][]byte),
+		statDirs: make(map[string]bool),
+	}
 }
 
 func (d *fakeStorageDriver) Name() string {
@@ -73,15 +77,23 @@ func (d *fakeStorageDriver) Writer(context.Context, string, bool) (storagedriver
 
 func (d *fakeStorageDriver) Stat(_ context.Context, path string) (storagedriver.FileInfo, error) {
 	payload, ok := d.files[path]
-	if !ok {
-		return nil, storagedriver.PathNotFoundError{Path: path, DriverName: d.Name()}
+	if ok {
+		return storagedriver.FileInfoInternal{FileInfoFields: storagedriver.FileInfoFields{
+			Path:    path,
+			Size:    int64(len(payload)),
+			ModTime: time.Unix(1_700_000_000, 0),
+			IsDir:   false,
+		}}, nil
 	}
-	return storagedriver.FileInfoInternal{FileInfoFields: storagedriver.FileInfoFields{
-		Path:    path,
-		Size:    int64(len(payload)),
-		ModTime: time.Unix(1_700_000_000, 0),
-		IsDir:   false,
-	}}, nil
+	if d.statDirs[path] {
+		return storagedriver.FileInfoInternal{FileInfoFields: storagedriver.FileInfoFields{
+			Path:    path,
+			Size:    0,
+			ModTime: time.Unix(1_700_000_000, 0),
+			IsDir:   true,
+		}}, nil
+	}
+	return nil, storagedriver.PathNotFoundError{Path: path, DriverName: d.Name()}
 }
 
 func (d *fakeStorageDriver) List(_ context.Context, path string) ([]string, error) {
@@ -173,6 +185,42 @@ func TestStorageDriverServesResolvedBlob(t *testing.T) {
 	}
 	if got, want := string(payload), "payload-bytes"; got != want {
 		t.Fatalf("payload = %q, want %q", got, want)
+	}
+}
+
+func TestStorageDriverStatResolvesCanonicalBlobWhenDelegateReturnsDirectory(t *testing.T) {
+	t.Parallel()
+
+	const (
+		canonicalPath = "/docker/registry/v2/blobs/sha256/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/data"
+		physicalPath  = "/_ai_models/direct-upload/objects/session-dir/data"
+	)
+
+	delegate := newFakeStorageDriver()
+	delegate.files[physicalPath] = []byte("payload-bytes")
+	delegate.statDirs[canonicalPath] = true
+	metadataPayload, err := sealedblob.Marshal(sealedblob.Metadata{
+		Version:      sealedblob.MetadataVersion,
+		Digest:       "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		PhysicalPath: physicalPath,
+		SizeBytes:    int64(len(delegate.files[physicalPath])),
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	delegate.files[sealedblob.MetadataPath(canonicalPath)] = metadataPayload
+
+	driver := newStorageDriver(delegate)
+
+	fileInfo, err := driver.Stat(context.Background(), canonicalPath)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if fileInfo.IsDir() {
+		t.Fatal("Stat().IsDir() = true, want false")
+	}
+	if got, want := fileInfo.Size(), int64(len(delegate.files[physicalPath])); got != want {
+		t.Fatalf("Stat().Size() = %d, want %d", got, want)
 	}
 }
 

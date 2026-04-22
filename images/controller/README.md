@@ -179,8 +179,10 @@ Current phase-2 slice implemented here:
   creation, and the worker Pod now carries only explicit CPU, memory and
   ephemeral-storage requests/limits without a local publication workspace; the
   adapter also keeps one owner-scoped direct-upload state `Secret`, recreates a
-  failed worker Pod only when that state still says `Running`, and exposes a
-  bounded running progress message derived from the persisted checkpoint;
+  failed worker Pod only when that state still says `Running`, and exposes both
+  bounded running progress percent and message derived from the persisted
+  checkpoint instead of forcing status code to infer progress from logs or
+  human-readable condition text;
 - `internal/adapters/k8s/uploadsession` for controller-owned upload session
   supplements:
   one short-lived session `Secret` per upload plus user-facing upload URL
@@ -254,11 +256,13 @@ Current phase-2 slice implemented here:
   contracts and worker/session handles reused across adapters; the live handoff
   is now one direct `publishop.Request`, not a wrapper over the same request,
   and source-worker handles now also carry one bounded running progress
-  message instead of forcing status code to scrape raw Pod logs;
+  percent plus message instead of forcing status code to scrape raw Pod logs or
+  parse human-readable condition text;
 - `internal/domain/publishstate` for publication lifecycle state, condition and
-  observation decisions; upload-driven objects now project one top-level
-  `status.progress` percent string for the local upload path instead of
-  forcing operators to infer progress from `conditions[*].message`;
+  observation decisions; upload-driven objects and sourceworker-driven
+  publication now project one top-level `status.progress` percent string from
+  machine-readable runtime progress instead of forcing operators to infer
+  progress from `conditions[*].message`;
 - `internal/application/publishplan` for source-worker and upload-session
   planning use cases;
 - `internal/application/publishaudit` for append-only internal audit/event

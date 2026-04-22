@@ -28,62 +28,95 @@ func TestDirectUploadProgress(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name        string
-		state       modelpackports.DirectUploadState
-		wantReason  modelsv1alpha1.ModelConditionReason
-		wantMessage string
+		name         string
+		state        modelpackports.DirectUploadState
+		wantReason   modelsv1alpha1.ModelConditionReason
+		wantProgress string
+		wantMessage  string
 	}{
 		{
 			name: "starting layer",
 			state: modelpackports.DirectUploadState{
-				Phase: modelpackports.DirectUploadStatePhaseRunning,
-				Stage: modelpackports.DirectUploadStateStageStarting,
+				Phase:             modelpackports.DirectUploadStatePhaseRunning,
+				Stage:             modelpackports.DirectUploadStateStageStarting,
+				PlannedLayerCount: 4,
+				PlannedSizeBytes:  1024,
 				CurrentLayer: &modelpackports.DirectUploadCurrentLayer{
 					UploadedSizeBytes: 0,
 					TotalSizeBytes:    256,
 				},
 			},
-			wantReason:  modelsv1alpha1.ModelConditionReasonPublicationStarted,
-			wantMessage: "controller started model artifact upload into the internal registry: 0/256 bytes uploaded",
+			wantReason:   modelsv1alpha1.ModelConditionReasonPublicationStarted,
+			wantProgress: "0%",
+			wantMessage:  "controller started model artifact upload into the internal registry: 0/1024 bytes uploaded",
 		},
 		{
 			name: "resumed layer",
 			state: modelpackports.DirectUploadState{
-				Phase: modelpackports.DirectUploadStatePhaseRunning,
-				Stage: modelpackports.DirectUploadStateStageResumed,
+				Phase:             modelpackports.DirectUploadStatePhaseRunning,
+				Stage:             modelpackports.DirectUploadStateStageResumed,
+				PlannedLayerCount: 4,
+				PlannedSizeBytes:  1024,
+				CompletedLayers: []modelpackports.DirectUploadLayerDescriptor{
+					{Key: "a", SizeBytes: 256},
+				},
 				CurrentLayer: &modelpackports.DirectUploadCurrentLayer{
 					UploadedSizeBytes: 128,
 					TotalSizeBytes:    256,
 				},
 			},
-			wantReason:  modelsv1alpha1.ModelConditionReasonPublicationResumed,
-			wantMessage: "controller resumed model artifact upload into the internal registry: 128/256 bytes uploaded",
+			wantReason:   modelsv1alpha1.ModelConditionReasonPublicationResumed,
+			wantProgress: "37%",
+			wantMessage:  "controller resumed model artifact upload into the internal registry: 384/1024 bytes uploaded",
 		},
 		{
 			name: "sealing layer",
 			state: modelpackports.DirectUploadState{
-				Phase: modelpackports.DirectUploadStatePhaseRunning,
-				Stage: modelpackports.DirectUploadStateStageSealing,
+				Phase:             modelpackports.DirectUploadStatePhaseRunning,
+				Stage:             modelpackports.DirectUploadStateStageSealing,
+				PlannedLayerCount: 4,
+				PlannedSizeBytes:  1024,
+				CompletedLayers: []modelpackports.DirectUploadLayerDescriptor{
+					{Key: "a", SizeBytes: 512},
+				},
 				CurrentLayer: &modelpackports.DirectUploadCurrentLayer{
 					UploadedSizeBytes: 256,
 					TotalSizeBytes:    256,
 				},
 			},
-			wantReason:  modelsv1alpha1.ModelConditionReasonPublicationSealing,
-			wantMessage: "controller is sealing the current model artifact layer in the internal registry after 256/256 uploaded bytes",
+			wantReason:   modelsv1alpha1.ModelConditionReasonPublicationSealing,
+			wantProgress: "75%",
+			wantMessage:  "controller is sealing the current model artifact layer in the internal registry after 768/1024 uploaded bytes",
 		},
 		{
 			name: "committed layers",
 			state: modelpackports.DirectUploadState{
-				Phase: modelpackports.DirectUploadStatePhaseRunning,
-				Stage: modelpackports.DirectUploadStateStageCommitted,
+				Phase:             modelpackports.DirectUploadStatePhaseRunning,
+				Stage:             modelpackports.DirectUploadStateStageCommitted,
+				PlannedLayerCount: 2,
+				PlannedSizeBytes:  1024,
 				CompletedLayers: []modelpackports.DirectUploadLayerDescriptor{
-					{Key: "a"},
-					{Key: "b"},
+					{Key: "a", SizeBytes: 512},
+					{Key: "b", SizeBytes: 512},
 				},
 			},
-			wantReason:  modelsv1alpha1.ModelConditionReasonPublicationCommitted,
-			wantMessage: "controller is publishing the model artifact: 2 layer(s) already committed into the internal registry",
+			wantReason:   modelsv1alpha1.ModelConditionReasonPublicationCommitted,
+			wantProgress: "99%",
+			wantMessage:  "controller is publishing the model artifact: 2/2 layer(s) already committed into the internal registry",
+		},
+		{
+			name: "legacy state without planned totals keeps per-layer message",
+			state: modelpackports.DirectUploadState{
+				Phase: modelpackports.DirectUploadStatePhaseRunning,
+				Stage: modelpackports.DirectUploadStateStageUploading,
+				CurrentLayer: &modelpackports.DirectUploadCurrentLayer{
+					UploadedSizeBytes: 128,
+					TotalSizeBytes:    256,
+				},
+			},
+			wantReason:   modelsv1alpha1.ModelConditionReasonPublicationUploading,
+			wantProgress: "",
+			wantMessage:  "controller is publishing the model artifact: 128/256 bytes uploaded into the internal registry",
 		},
 	}
 
@@ -91,12 +124,15 @@ func TestDirectUploadProgress(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			gotReason, gotMessage := directUploadProgress(tc.state)
-			if gotReason != tc.wantReason {
-				t.Fatalf("directUploadProgress() reason = %q, want %q", gotReason, tc.wantReason)
+			got := directUploadProgress(tc.state)
+			if got.Reason != tc.wantReason {
+				t.Fatalf("directUploadProgress() reason = %q, want %q", got.Reason, tc.wantReason)
 			}
-			if gotMessage != tc.wantMessage {
-				t.Fatalf("directUploadProgress() message = %q, want %q", gotMessage, tc.wantMessage)
+			if got.Progress != tc.wantProgress {
+				t.Fatalf("directUploadProgress() progress = %q, want %q", got.Progress, tc.wantProgress)
+			}
+			if got.Message != tc.wantMessage {
+				t.Fatalf("directUploadProgress() message = %q, want %q", got.Message, tc.wantMessage)
 			}
 		})
 	}
@@ -105,13 +141,16 @@ func TestDirectUploadProgress(t *testing.T) {
 func TestDirectUploadProgressReturnsEmptyOutsideRunning(t *testing.T) {
 	t.Parallel()
 
-	reason, message := directUploadProgress(modelpackports.DirectUploadState{
+	progress := directUploadProgress(modelpackports.DirectUploadState{
 		Phase: modelpackports.DirectUploadStatePhaseCompleted,
 	})
-	if reason != "" {
-		t.Fatalf("unexpected reason %q", reason)
+	if progress.Reason != "" {
+		t.Fatalf("unexpected reason %q", progress.Reason)
 	}
-	if strings.TrimSpace(message) != "" {
-		t.Fatalf("unexpected message %q", message)
+	if strings.TrimSpace(progress.Progress) != "" {
+		t.Fatalf("unexpected progress %q", progress.Progress)
+	}
+	if strings.TrimSpace(progress.Message) != "" {
+		t.Fatalf("unexpected message %q", progress.Message)
 	}
 }

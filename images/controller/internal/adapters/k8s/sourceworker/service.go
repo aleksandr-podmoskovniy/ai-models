@@ -19,7 +19,6 @@ package sourceworker
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -110,13 +109,14 @@ func (s *Service) handleFromPod(
 	if message == "" && directUploadState.Phase == modelpackports.DirectUploadStatePhaseFailed {
 		message = strings.TrimSpace(directUploadState.FailureMessage)
 	}
-	reason, progressMessage := directUploadProgress(directUploadState)
+	progress := directUploadProgress(directUploadState)
 	return publicationports.NewSourceWorkerHandle(
 		pod.Name,
 		pod.Status.Phase,
 		message,
-		reason,
-		progressMessage,
+		progress.Reason,
+		progress.Progress,
+		progress.Message,
 		func(ctx context.Context) error {
 			return s.deleteResources(ctx, pod)
 		},
@@ -181,7 +181,7 @@ func queuedHandle(ownerUID types.UID) (*publicationports.SourceWorkerHandle, boo
 	if err != nil {
 		return nil, false, err
 	}
-	return publicationports.NewSourceWorkerHandle(name, corev1.PodPending, "", modelsv1alpha1.ModelConditionReasonPending, "", nil), false, nil
+	return publicationports.NewSourceWorkerHandle(name, corev1.PodPending, "", modelsv1alpha1.ModelConditionReasonPending, "", "", nil), false, nil
 }
 
 func (s *Service) projectedAuthSecretForPod(pod *corev1.Pod) (*corev1.Secret, error) {
@@ -293,45 +293,4 @@ func normalizedOwnerGeneration(generation int64) int64 {
 		return generation
 	}
 	return 1
-}
-
-func directUploadProgress(state modelpackports.DirectUploadState) (modelsv1alpha1.ModelConditionReason, string) {
-	if state.Phase != modelpackports.DirectUploadStatePhaseRunning {
-		return "", ""
-	}
-	if state.CurrentLayer != nil {
-		switch state.Stage {
-		case modelpackports.DirectUploadStateStageStarting:
-			return modelsv1alpha1.ModelConditionReasonPublicationStarted, fmt.Sprintf(
-				"controller started model artifact upload into the internal registry: %d/%d bytes uploaded",
-				state.CurrentLayer.UploadedSizeBytes,
-				state.CurrentLayer.TotalSizeBytes,
-			)
-		case modelpackports.DirectUploadStateStageResumed:
-			return modelsv1alpha1.ModelConditionReasonPublicationResumed, fmt.Sprintf(
-				"controller resumed model artifact upload into the internal registry: %d/%d bytes uploaded",
-				state.CurrentLayer.UploadedSizeBytes,
-				state.CurrentLayer.TotalSizeBytes,
-			)
-		case modelpackports.DirectUploadStateStageSealing:
-			return modelsv1alpha1.ModelConditionReasonPublicationSealing, fmt.Sprintf(
-				"controller is sealing the current model artifact layer in the internal registry after %d/%d uploaded bytes",
-				state.CurrentLayer.UploadedSizeBytes,
-				state.CurrentLayer.TotalSizeBytes,
-			)
-		default:
-			return modelsv1alpha1.ModelConditionReasonPublicationUploading, fmt.Sprintf(
-				"controller is publishing the model artifact: %d/%d bytes uploaded into the internal registry",
-				state.CurrentLayer.UploadedSizeBytes,
-				state.CurrentLayer.TotalSizeBytes,
-			)
-		}
-	}
-	if len(state.CompletedLayers) > 0 {
-		return modelsv1alpha1.ModelConditionReasonPublicationCommitted, fmt.Sprintf(
-			"controller is publishing the model artifact: %d layer(s) already committed into the internal registry",
-			len(state.CompletedLayers),
-		)
-	}
-	return modelsv1alpha1.ModelConditionReasonPending, ""
 }

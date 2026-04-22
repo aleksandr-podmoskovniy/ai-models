@@ -19,6 +19,7 @@ package workloaddelivery
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -85,6 +86,7 @@ func newDeploymentReconcilerWithOptions(t *testing.T, serviceOptions modeldelive
 
 	return &baseReconciler{
 		client:   kubeClient,
+		reader:   kubeClient,
 		delivery: service,
 		options: Options{
 			Service: serviceOptions,
@@ -268,4 +270,33 @@ func reconcileDeployment(t *testing.T, reconciler *baseReconciler, workload *app
 		t.Fatalf("reconcileWorkload() error = %v", err)
 	}
 	return result
+}
+
+func drainRecordedEvents(t *testing.T, reconciler *baseReconciler) []string {
+	t.Helper()
+
+	fakeRecorder, ok := reconciler.recorder.(*record.FakeRecorder)
+	if !ok {
+		t.Fatalf("recorder type = %T, want *record.FakeRecorder", reconciler.recorder)
+	}
+
+	var events []string
+	for {
+		select {
+		case event := <-fakeRecorder.Events:
+			events = append(events, event)
+		default:
+			return events
+		}
+	}
+}
+
+func countRecordedEvents(events []string, reason string) int {
+	count := 0
+	for _, event := range events {
+		if strings.Contains(event, reason) {
+			count++
+		}
+	}
+	return count
 }

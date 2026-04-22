@@ -19,6 +19,7 @@ package oci
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
@@ -74,6 +75,43 @@ func (c *directUploadCheckpoint) currentLayer(plan publishLayerDescriptor) *mode
 	}
 	current := *c.state.CurrentLayer
 	return &current
+}
+
+func (c *directUploadCheckpoint) ensureProgressPlan(
+	ctx context.Context,
+	plannedLayerCount int,
+	plannedSizeBytes int64,
+) error {
+	if c == nil {
+		return nil
+	}
+	if plannedLayerCount <= 0 {
+		return errors.New("direct upload progress plan layer count must be positive")
+	}
+	if plannedSizeBytes <= 0 {
+		return errors.New("direct upload progress plan size must be positive")
+	}
+
+	switch {
+	case c.state.PlannedLayerCount == 0 && c.state.PlannedSizeBytes == 0:
+		c.state.PlannedLayerCount = plannedLayerCount
+		c.state.PlannedSizeBytes = plannedSizeBytes
+		return c.store.Save(ctx, c.state)
+	case c.state.PlannedLayerCount != plannedLayerCount:
+		return fmt.Errorf(
+			"direct upload progress plan layer count %d does not match persisted value %d",
+			plannedLayerCount,
+			c.state.PlannedLayerCount,
+		)
+	case c.state.PlannedSizeBytes != plannedSizeBytes:
+		return fmt.Errorf(
+			"direct upload progress plan size %d does not match persisted value %d",
+			plannedSizeBytes,
+			c.state.PlannedSizeBytes,
+		)
+	default:
+		return nil
+	}
 }
 
 func (c *directUploadCheckpoint) saveRunningLayer(

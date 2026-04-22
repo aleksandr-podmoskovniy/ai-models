@@ -84,7 +84,8 @@ func testCleanupOptions() Options {
 				CredentialsSecretName: "ai-models-artifacts",
 			},
 		},
-		RequeueAfter: time.Second,
+		RuntimeNamespace: "d8-ai-models",
+		RequeueAfter:     time.Second,
 	}
 }
 

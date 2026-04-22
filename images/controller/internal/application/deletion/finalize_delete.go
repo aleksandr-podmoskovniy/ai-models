@@ -46,12 +46,14 @@ type FinalizeDeleteInput struct {
 	HandleFound            bool
 	HandleErr              error
 	HandleKind             cleanuphandle.Kind
+	RuntimeResourcePresent bool
 	JobState               CleanupJobState
 	GarbageCollectionState GarbageCollectionState
 }
 
 type FinalizeDeleteDecision struct {
 	RemoveFinalizer                bool
+	DeleteRuntimeResources         bool
 	CreateJob                      bool
 	EnsureGarbageCollectionRequest bool
 	DeleteGarbageCollectionRequest bool
@@ -72,6 +74,9 @@ func FinalizeDelete(input FinalizeDeleteInput) FinalizeDeleteDecision {
 		)
 	}
 	if !input.HandleFound {
+		if input.RuntimeResourcePresent {
+			return pendingRuntimeCleanupDecision()
+		}
 		return FinalizeDeleteDecision{RemoveFinalizer: true}
 	}
 
@@ -157,6 +162,16 @@ func createJobDecision(message string) FinalizeDeleteDecision {
 		StatusReason:  modelsv1alpha1.ModelConditionReasonPending,
 		StatusMessage: message,
 		Requeue:       true,
+	}
+}
+
+func pendingRuntimeCleanupDecision() FinalizeDeleteDecision {
+	return FinalizeDeleteDecision{
+		DeleteRuntimeResources: true,
+		UpdateStatus:           true,
+		StatusReason:           modelsv1alpha1.ModelConditionReasonPending,
+		StatusMessage:          "publication runtime resources are still being cleaned up",
+		Requeue:                true,
 	}
 }
 

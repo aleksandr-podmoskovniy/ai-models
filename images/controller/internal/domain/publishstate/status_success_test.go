@@ -41,7 +41,7 @@ func TestProjectStatusSucceeded(t *testing.T) {
 		},
 	}
 	projection, err := ProjectStatus(
-		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelStatus{Progress: "98%"},
 		modelsv1alpha1.ModelSpec{},
 		5,
 		modelsv1alpha1.ModelSourceTypeHuggingFace,
@@ -94,6 +94,9 @@ func TestProjectStatusSucceeded(t *testing.T) {
 	}
 	if projection.Status.Artifact == nil || projection.Status.Artifact.URI != "registry.example/model@sha256:deadbeef" {
 		t.Fatalf("unexpected artifact status %#v", projection.Status.Artifact)
+	}
+	if projection.Status.Progress != "" {
+		t.Fatalf("ready status must clear running progress, got %q", projection.Status.Progress)
 	}
 	if projection.Status.Resolved == nil {
 		t.Fatalf("unexpected resolved status %#v", projection.Status.Resolved)

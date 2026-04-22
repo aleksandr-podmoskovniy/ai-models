@@ -23,6 +23,10 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - jsonPath: .status.progress
+      name: Progress
+      priority: 1
+      type: string
     - jsonPath: .status.source.resolvedType
       name: Source
       type: string
@@ -188,6 +192,11 @@ spec:
                 - Failed
                 - Deleting
                 type: string
+              progress:
+                description: |-
+                  Progress reports bounded controller-computed completion percentage for upload
+                  and publication flows when runtime progress is available.
+                type: string
               resolved:
                 properties:
                   architecture:
@@ -258,6 +267,8 @@ spec:
                 type: object
               upload:
                 properties:
+                  authorizationHeaderValue:
+                    type: string
                   expiresAt:
                     format: date-time
                     type: string
