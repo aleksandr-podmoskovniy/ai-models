@@ -584,3 +584,29 @@
 - validations for the lifecycle slice:
   - `cd images/controller && go test ./internal/application/deletion/... ./internal/controllers/catalogcleanup/... ./internal/adapters/modelpack/oci/... ./cmd/ai-models-controller/...`
   - `cd images/dmcr && go test ./internal/directupload/...`
+
+### 13.9 Local corrective slice for controller LOC gate
+
+- a follow-up local quality gate failure surfaced after the lifecycle and
+  observability slices:
+  - `tools/check-controller-loc.sh` rejected
+    `images/controller/internal/adapters/modelpack/oci/direct_upload_transport.go`
+    at `353` lines with the controller file-size threshold set to `350`;
+- this was a structure problem, not a reason to grow the allowlist:
+  - described direct-upload orchestration, session resume, part transport and
+    shared uploaded-part helpers had drifted into one file;
+- the local slice split that boundary back into explicit files:
+  - `direct_upload_transport.go` keeps the described upload orchestration path;
+  - `direct_upload_transport_described_session.go` owns described
+    session/resume state opening;
+  - `direct_upload_transport_described_parts.go` owns described part upload and
+    recovery helpers;
+  - `upload_transport_common.go` now owns shared direct-upload part
+    normalization and chunk-position helpers used by both described and raw
+    paths.
+- local validations after the split passed through the full repo gate:
+  - `go test ./internal/adapters/modelpack/oci/...` from `images/controller`
+  - `make lint-controller-size`
+  - `make lint-controller-complexity`
+  - `make lint`
+  - `make verify`

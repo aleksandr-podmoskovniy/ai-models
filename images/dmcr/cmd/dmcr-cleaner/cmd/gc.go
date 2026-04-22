@@ -50,6 +50,7 @@ func newGCCommand() *cobra.Command {
 				slog.Duration("garbage_collection_timeout", options.GCTimeout),
 				slog.Duration("rescan_interval", options.RescanInterval),
 				slog.Duration("activation_delay", options.ActivationDelay),
+				slog.String("schedule", options.Schedule),
 			)
 			client, err := garbagecollection.NewInClusterClient()
 			if err != nil {
@@ -62,6 +63,38 @@ func newGCCommand() *cobra.Command {
 			return nil
 		},
 	}
+	checkCommand := &cobra.Command{
+		Use:   "check",
+		Short: "Report stale DMCR repository and source-mirror prefixes that no longer belong to live Model or ClusterModel objects",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			report, err := garbagecollection.Check(cmd.Context(), options.ConfigPath)
+			if err != nil {
+				return err
+			}
+			_, err = cmd.OutOrStdout().Write([]byte(report.Format()))
+			return err
+		},
+	}
+	autoCleanupCommand := &cobra.Command{
+		Use:   "auto-cleanup",
+		Short: "Delete stale DMCR repository and source-mirror prefixes, then run registry garbage-collect",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			result, err := garbagecollection.AutoCleanup(cmd.Context(), options.ConfigPath, options.RegistryBinary, options.GCTimeout)
+			if err != nil {
+				return err
+			}
+			_, err = cmd.OutOrStdout().Write([]byte(result.Report.Format()))
+			if err != nil {
+				return err
+			}
+			if result.RegistryOutput != "" {
+				_, err = cmd.OutOrStdout().Write([]byte(result.RegistryOutput + "\n"))
+			}
+			return err
+		},
+	}
 
 	runCommand.Flags().StringVar(&options.RequestNamespace, "request-namespace", "", "Namespace containing DMCR garbage-collection request Secrets.")
 	runCommand.Flags().StringVar(&options.RequestLabelSelector, "request-label-selector", garbagecollection.DefaultRequestLabelSelector(), "Label selector used to find DMCR garbage-collection request Secrets.")
@@ -70,8 +103,15 @@ func newGCCommand() *cobra.Command {
 	runCommand.Flags().DurationVar(&options.GCTimeout, "garbage-collection-timeout", 10*time.Minute, "Maximum time allowed for one registry garbage-collect run.")
 	runCommand.Flags().DurationVar(&options.RescanInterval, "rescan-interval", garbagecollection.DefaultRescanInterval, "Polling interval used while waiting for new pending garbage-collection requests.")
 	runCommand.Flags().DurationVar(&options.ActivationDelay, "activation-delay", garbagecollection.DefaultActivationDelay, "Minimum time a queued request must stay pending before the helper arms a maintenance GC cycle.")
+	runCommand.Flags().StringVar(&options.Schedule, "schedule", "", "Cron schedule used to enqueue periodic stale-sweep requests; empty disables the periodic trigger.")
 	_ = runCommand.MarkFlagRequired("request-namespace")
+	checkCommand.Flags().StringVar(&options.ConfigPath, "config-path", garbagecollection.DefaultConfigPath, "Path to the active DMCR registry config file.")
+	autoCleanupCommand.Flags().StringVar(&options.RegistryBinary, "registry-binary", garbagecollection.DefaultRegistryBinary, "Path to the DMCR registry binary used for garbage-collect.")
+	autoCleanupCommand.Flags().StringVar(&options.ConfigPath, "config-path", garbagecollection.DefaultConfigPath, "Path to the active DMCR registry config file.")
+	autoCleanupCommand.Flags().DurationVar(&options.GCTimeout, "garbage-collection-timeout", 10*time.Minute, "Maximum time allowed for one registry garbage-collect run.")
 
 	command.AddCommand(runCommand)
+	command.AddCommand(checkCommand)
+	command.AddCommand(autoCleanupCommand)
 	return command
 }

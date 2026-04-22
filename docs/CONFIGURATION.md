@@ -11,6 +11,7 @@ Only stable module-level settings are exposed:
 
 - `logLevel`;
 - `artifacts`.
+- `dmcr`.
 - `nodeCache`.
 
 High availability mode, HTTPS policy, ingress class, controller/runtime wiring,
@@ -43,6 +44,13 @@ must live in `d8-system` and expose `ca.crt`. When `caSecretName` is empty,
 ai-models first reuses `credentialsSecretName` if that Secret also contains
 `ca.crt`, and otherwise falls back to the platform CA already discovered by the
 module runtime or copied from the global HTTPS `CustomCertificate` path.
+
+`dmcr.gc.schedule` exposes the productized stale-sweep cadence for the internal
+registry. By default, ai-models enqueues one stale cleanup cycle daily at
+02:00. Setting the schedule to an empty string disables the periodic sweep
+without removing the operator-facing inspection surface: `dmcr-cleaner gc check`
+still reports stale published repository prefixes and source-mirror prefixes
+inside the DMCR Pod.
 
 The public runtime path for models is now controller-owned:
 
@@ -90,25 +98,24 @@ the layer only at `complete(session, digest, size, parts)`. For range-capable
 raw layers this removes the old controller-side full descriptor pre-read, so
 heavy remote model bytes are read once on the publish worker side.
 
-`DMCR` no longer treats the client-supplied `digest` as the source of truth.
-After multipart completion the helper re-reads the assembled physical object
-from backing storage, computes the trusted `sha256` and size itself, and only
-then compares them with the client payload. The client `digest` and `size` are
-now consistency assertions, not an instruction to name the canonical blob.
+Because this helper is only the trusted internal controller-owned publication
+path, `DMCR` no longer re-reads the assembled physical object after multipart
+completion. The controller-computed `digest` and `size` are now the trusted
+sealing inputs for this private boundary, not a generic public promise for
+arbitrary external uploads. Phase 1 still does not claim a fast-seal guarantee
+for untrusted clients outside the controller-owned path.
 
 Small `config`/manifest writes and final remote inspect still use the normal
 registry API so the internal contract changes one responsibility at a time.
 
 The current helper implementation still has one internal seal step, but it no
-longer rewrites the full heavy object under a second canonical blob key. The
-multipart upload first lands into a physical object under
-`_ai_models/direct-upload/objects/<session-id>/data`, then the helper re-reads
-that object and writes a tiny `.dmcr-sealed` sidecar near the canonical
-digest-addressed blob path. The published OCI contract remains digest-based:
-repository links still point to the canonical digest, while the internal
-`sealeds3` driver resolves that digest to the physical object key. The full
-storage-side rewrite is gone, but one full storage-side read during sealing
-still remains.
+longer rewrites or re-reads the full heavy object during sealing. The multipart
+upload first lands into a physical object under
+`_ai_models/direct-upload/objects/<session-id>/data`, then the helper writes a
+tiny `.dmcr-sealed` sidecar near the canonical digest-addressed blob path using
+the trusted controller-owned digest/size. The published OCI contract remains
+digest-based: repository links still point to the canonical digest, while the
+internal `sealeds3` driver resolves that digest to the physical object key.
 
 On the controller side, direct-upload now also keeps one compact owner-scoped
 checkpoint `Secret`. During `Running`, that state stores the current layer key,

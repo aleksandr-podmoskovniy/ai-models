@@ -53,6 +53,23 @@ properties:
       usePathStyle:
         type: boolean
         default: true
+  dmcr:
+    type: object
+    description: Stable DMCR maintenance settings exposed by ai-models.
+    additionalProperties: false
+    default:
+      gc:
+        schedule: "0 2 * * *"
+    properties:
+      gc:
+        type: object
+        additionalProperties: false
+        default:
+          schedule: "0 2 * * *"
+        properties:
+          schedule:
+            type: string
+            default: "0 2 * * *"
   nodeCache:
     type: object
     description: Managed node-local cache substrate settings exposed by ai-models.
@@ -147,6 +164,9 @@ properties:
             caSecretName: ""
             insecure: false
             usePathStyle: true
+          dmcr:
+            gc:
+              schedule: "0 2 * * *"
           nodeCache:
             enabled: false
             maxSize: 200Gi
@@ -212,10 +232,21 @@ properties:
         additionalProperties: true
       dmcr:
         type: object
-        description: Runtime-only internal DMCR state controlled by hooks and controller cleanup flow.
+        description: Stable module-level DMCR cleanup settings plus runtime-only maintenance mode state.
         default:
+          gc:
+            schedule: "0 2 * * *"
           garbageCollectionModeEnabled: false
         properties:
+          gc:
+            type: object
+            additionalProperties: false
+            default:
+              schedule: "0 2 * * *"
+            properties:
+              schedule:
+                type: string
+                default: "0 2 * * *"
           garbageCollectionModeEnabled:
             type: boolean
             default: false

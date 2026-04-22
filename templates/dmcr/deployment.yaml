@@ -227,6 +227,7 @@ spec:
             - --request-namespace={{ include "ai-models.namespace" . }}
             - --request-label-selector={{ include "ai-models.dmcrGCRequestLabelKey" . }}=true
             - --garbage-collection-timeout=10m
+            - {{ printf "--schedule=%s" (include "ai-models.dmcrGCSchedule" . | trim) | quote }}
           env:
             - name: LOG_FORMAT
               value: json

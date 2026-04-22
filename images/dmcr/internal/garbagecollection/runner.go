@@ -27,12 +27,10 @@ import (
 	"syscall"
 	"time"
 
-	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 )
 
 const (
@@ -55,22 +53,11 @@ type Options struct {
 	GCTimeout            time.Duration
 	RescanInterval       time.Duration
 	ActivationDelay      time.Duration
+	Schedule             string
 }
 
 func DefaultRequestLabelSelector() string {
 	return RequestLabelKey + "=" + RequestLabelValue
-}
-
-func NewInClusterClient() (kubernetes.Interface, error) {
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, fmt.Errorf("build in-cluster config: %w", err)
-	}
-	client, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("build kubernetes client: %w", err)
-	}
-	return client, nil
 }
 
 func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) error {
@@ -79,6 +66,10 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 	}
 
 	options = applyDefaultOptions(options)
+	schedulePlanner, err := newSchedulePlanner(options.Schedule, time.Now().UTC())
+	if err != nil {
+		return err
+	}
 	slog.Default().Info(
 		"dmcr garbage collection loop started",
 		slog.String("request_namespace", options.RequestNamespace),
@@ -86,12 +77,17 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 		slog.Duration("garbage_collection_timeout", options.GCTimeout),
 		slog.Duration("rescan_interval", options.RescanInterval),
 		slog.Duration("activation_delay", options.ActivationDelay),
+		slog.String("schedule", strings.TrimSpace(options.Schedule)),
 	)
 
 	signalContext, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	for {
+		if err := maybeEnqueueScheduledRequest(signalContext, client, options, schedulePlanner, time.Now().UTC()); err != nil {
+			return err
+		}
+
 		handled, err := runRequestCycle(signalContext, client, options, func() time.Time {
 			return time.Now().UTC()
 		})
@@ -99,11 +95,17 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 			return err
 		}
 		if !handled {
+			waitDuration := options.RescanInterval
+			if schedulePlanner != nil {
+				if scheduleWait := schedulePlanner.WaitDuration(time.Now().UTC()); scheduleWait > 0 && scheduleWait < waitDuration {
+					waitDuration = scheduleWait
+				}
+			}
 			select {
 			case <-signalContext.Done():
 				slog.Default().Info("dmcr garbage collection loop stopped")
 				return nil
-			case <-time.After(options.RescanInterval):
+			case <-time.After(waitDuration):
 				continue
 			}
 		}
@@ -165,16 +167,18 @@ func runActiveRequestCycle(
 		slog.Any("request_names", requestNames),
 	)
 
-	output, err := execGarbageCollect(ctx, options)
-	if err != nil {
-		return true, err
+	result, cleanupErr := autoCleanupRunner(ctx, options.ConfigPath, options.RegistryBinary, options.GCTimeout)
+	if cleanupErr != nil {
+		return true, cleanupErr
 	}
 
 	attrs := []any{
 		slog.Int("request_count", len(activeSecrets)),
 		slog.Any("request_names", requestNames),
+		slog.Int("stale_repository_prefix_count", len(result.Report.StaleRepositories)),
+		slog.Int("stale_raw_prefix_count", len(result.Report.StaleRawPrefixes)),
 	}
-	if trimmedOutput := strings.TrimSpace(string(output)); trimmedOutput != "" {
+	if trimmedOutput := strings.TrimSpace(result.RegistryOutput); trimmedOutput != "" {
 		attrs = append(attrs, slog.String("registry_output", trimmedOutput))
 	}
 	slog.Default().Info("dmcr garbage collection completed", attrs...)
@@ -340,34 +344,4 @@ func deleteRequests(
 		}
 	}
 	return nil
-}
-
-type registryConfig struct {
-	Storage registryStorageConfig `yaml:"storage"`
-}
-
-type registryStorageConfig struct {
-	Maintenance registryMaintenanceConfig `yaml:"maintenance"`
-}
-
-type registryMaintenanceConfig struct {
-	Readonly registryReadonlyConfig `yaml:"readonly"`
-}
-
-type registryReadonlyConfig struct {
-	Enabled bool `yaml:"enabled"`
-}
-
-func registryMaintenanceModeEnabled(configPath string) (bool, error) {
-	payload, err := os.ReadFile(configPath)
-	if err != nil {
-		return false, fmt.Errorf("read dmcr config: %w", err)
-	}
-
-	var config registryConfig
-	if err := yaml.Unmarshal(payload, &config); err != nil {
-		return false, fmt.Errorf("parse dmcr config: %w", err)
-	}
-
-	return config.Storage.Maintenance.Readonly.Enabled, nil
 }

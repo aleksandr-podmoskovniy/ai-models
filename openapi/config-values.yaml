@@ -84,6 +84,29 @@ properties:
         type: boolean
         description: Use path-style S3 requests.
         default: true
+  dmcr:
+    type: object
+    additionalProperties: false
+    description: |
+      Stable DMCR maintenance settings exposed by ai-models.
+      These settings productize the stale sweep for published repository
+      metadata and source-mirror prefixes without exposing internal
+      secret-driven maintenance choreography as a public contract.
+    properties:
+      gc:
+        type: object
+        additionalProperties: false
+        description: Parameters for DMCR stale sweep and garbage collection.
+        properties:
+          schedule:
+            type: string
+            default: "0 2 * * *"
+            description: |
+              Cron schedule for periodic DMCR stale sweep of published model
+              repositories and source mirrors. The default is daily at 02:00.
+              Set an empty string to disable periodic sweep. Operators can still
+              run `dmcr-cleaner gc check` for report-only inspection inside the
+              DMCR Pod.
   nodeCache:
     type: object
     additionalProperties: false

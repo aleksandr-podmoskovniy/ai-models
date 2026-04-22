@@ -11,6 +11,7 @@ weight: 60
 
 - `logLevel`;
 - `artifacts`.
+- `dmcr`.
 - `nodeCache`.
 
 Режим HA, HTTPS policy, ingress class, controller/runtime wiring, внутренний
@@ -44,6 +45,13 @@ Custom trust для S3-compatible endpoint задаётся через `artifact
 если тот же Secret тоже содержит `ca.crt`, а иначе fallback'ится на platform CA,
 который уже discovered module runtime или скопирован из global HTTPS
 `CustomCertificate` path.
+
+`dmcr.gc.schedule` выставляет наружу productized cadence для stale sweep во
+внутреннем registry. По умолчанию ai-models ставит один stale cleanup cycle
+ежедневно в 02:00. Пустая строка отключает периодический sweep, но не убирает
+operator-facing inspection surface: внутри Pod'а `DMCR` по-прежнему можно
+запустить `dmcr-cleaner gc check` и получить report по stale published
+repository prefix и source-mirror prefix.
 
 Публичный runtime path для моделей теперь controller-owned:
 
@@ -92,27 +100,27 @@ Trade-off между режимами такой:
 контроллера, поэтому тяжёлые remote model bytes на publish-worker читаются
 один раз.
 
-При этом `DMCR` больше не принимает клиентский `digest` как источник истины.
-После завершения multipart upload helper один раз перечитывает уже собранный
-физический объект из backing storage, сам считает trusted `sha256` и размер и
-только затем сопоставляет их с тем, что прислал клиент. Клиентские `digest`
-и `size` теперь используются только как проверка согласованности, а не как
-команда для именования канонического blob.
+Поскольку этот helper остаётся только trusted internal controller-owned
+publication path, `DMCR` больше не перечитывает собранный физический объект
+после multipart completion. Controller-computed `digest` и `size` теперь
+становятся trusted sealing input именно для этой private boundary, а не
+generic promise для произвольных внешних upload-клиентов. Phase 1 по-прежнему
+не заявляет fast-seal guarantee для untrusted клиентов вне controller-owned
+path.
 
 Маленькие `config`/`manifest` записи и финальный remote inspect по-прежнему
 идут через обычный registry API, чтобы внутренний контракт менялся по одному
 слою ответственности за раз.
 
 Текущая helper-реализация всё ещё делает один внутренний seal step, но больше
-не переписывает второй раз весь тяжёлый объект под новый digest-addressed key.
+не переписывает и не перечитывает полностью тяжёлый объект на этапе sealing.
 Multipart upload сначала собирается в физический object key под
-`_ai_models/direct-upload/objects/<session-id>/data`, затем helper
-перечитывает этот объект и пишет маленький `.dmcr-sealed` sidecar под
-каноническим blob path. Published OCI contract снаружи остаётся digest-based:
-repository link указывает на канонический digest, а внутренний `sealeds3`
-driver уже прозрачно разворачивает этот digest в физический object key.
-Полной второй записи тех же байтов в storage больше нет, но один полный
-внутренний read на этапе seal остаётся.
+`_ai_models/direct-upload/objects/<session-id>/data`, затем helper пишет
+маленький `.dmcr-sealed` sidecar под каноническим blob path, используя trusted
+controller-owned digest/size. Published OCI contract снаружи остаётся
+digest-based: repository link указывает на канонический digest, а внутренний
+`sealeds3` driver уже прозрачно разворачивает этот digest в физический object
+key.
 
 На стороне контроллера direct-upload теперь также ведёт один компактный
 owner-scoped checkpoint `Secret`. В фазе `Running` в нём лежат ключ текущего

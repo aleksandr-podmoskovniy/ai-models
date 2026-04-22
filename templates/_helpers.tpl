@@ -193,6 +193,17 @@ ai.deckhouse.io/dmcr-gc-switch
 ai.deckhouse.io/dmcr-gc-done
 {{- end -}}
 
+{{- define "ai-models.dmcrGCSchedule" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $dmcr := (index $moduleValues "dmcr") | default dict -}}
+{{- $gc := (index $dmcr "gc") | default dict -}}
+{{- if hasKey $gc "schedule" -}}
+{{- index $gc "schedule" -}}
+{{- else -}}
+0 2 * * *
+{{- end -}}
+{{- end -}}
+
 {{- define "ai-models.dmcrGarbageCollectionModeEnabled" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $internal := (index $moduleValues "internal") | default dict -}}

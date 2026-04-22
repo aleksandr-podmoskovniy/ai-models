@@ -40,6 +40,7 @@ type fakeBackend struct {
 	uploads          map[string]string
 	parts            map[string][]UploadedPart
 	deleted          []string
+	readerCalls      int
 	putErr           error
 	putErrPathSuffix string
 }
@@ -86,6 +87,7 @@ func (b *fakeBackend) AbortMultipartUpload(_ context.Context, objectKey, uploadI
 }
 
 func (b *fakeBackend) Reader(_ context.Context, objectKey string, offset int64) (io.ReadCloser, error) {
+	b.readerCalls++
 	payload, exists := b.objects[strings.TrimSpace(objectKey)]
 	if !exists {
 		return nil, errors.New("object not found")
@@ -212,9 +214,12 @@ func TestServiceCompleteWritesRepositoryLinkAndSealedMetadata(t *testing.T) {
 	if _, exists := backend.objects[claims.ObjectKey]; !exists {
 		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
 	}
+	if got := backend.readerCalls; got != 0 {
+		t.Fatalf("Reader() call count = %d, want 0 for trusted sealing path", got)
+	}
 }
 
-func TestServiceCompleteRejectsDigestMismatchAndDeletesUploadedObject(t *testing.T) {
+func TestServiceCompleteUsesTrustedDigestWithoutReread(t *testing.T) {
 	t.Parallel()
 
 	backend := newFakeBackend()
@@ -240,20 +245,63 @@ func TestServiceCompleteRejectsDigestMismatchAndDeletesUploadedObject(t *testing
 	parts := []UploadedPart{
 		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
 	}
+	trustedDigest := "sha256:" + strings.Repeat("f", 64)
 	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
 		SessionToken: startPayload.SessionToken,
-		Digest:       "sha256:" + strings.Repeat("f", 64),
+		Digest:       trustedDigest,
 		SizeBytes:    8,
 		Parts:        parts,
 	})
-	if got, want := completeResp.StatusCode, http.StatusConflict; got != want {
+	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
 	}
-	if _, exists := backend.objects[claims.ObjectKey]; exists {
-		t.Fatalf("physical upload object %q still exists after digest mismatch", claims.ObjectKey)
+	if slices.Contains(backend.deleted, claims.ObjectKey) {
+		t.Fatalf("expected physical upload object %q to be retained, deleted = %#v", claims.ObjectKey, backend.deleted)
 	}
-	if !slices.Contains(backend.deleted, claims.ObjectKey) {
-		t.Fatalf("DeleteObject() did not remove %q, deleted = %#v", claims.ObjectKey, backend.deleted)
+	if got := backend.readerCalls; got != 0 {
+		t.Fatalf("Reader() call count = %d, want 0 for trusted sealing path", got)
+	}
+	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", trustedDigest)
+	if err != nil {
+		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
+	}
+	if got := string(backend.objects[linkKey]); got != trustedDigest {
+		t.Fatalf("link payload = %q, want %q", got, trustedDigest)
+	}
+	if _, exists := backend.objects[claims.ObjectKey]; !exists {
+		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
+	}
+}
+
+func TestServiceCompleteRejectsMissingDigest(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+	}
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		SizeBytes:    8,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusBadRequest; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
 	}
 }
 

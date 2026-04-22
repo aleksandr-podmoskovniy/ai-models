@@ -19,12 +19,10 @@ package directupload
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"sort"
@@ -263,6 +261,11 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		http.Error(writer, "sizeBytes must match uploaded parts", http.StatusBadRequest)
 		return
 	}
+	clientDigest := strings.TrimSpace(payload.Digest)
+	if clientDigest == "" {
+		http.Error(writer, "digest must not be empty", http.StatusBadRequest)
+		return
+	}
 	completeStarted := s.now()
 	log.Printf(
 		"direct upload complete started repository=%q objectKey=%q sizeBytes=%d parts=%d",
@@ -284,56 +287,26 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 
 	sealStarted := s.now()
 	log.Printf(
-		"direct upload sealing started repository=%q objectKey=%q sizeBytes=%d",
+		"direct upload trusted sealing started repository=%q objectKey=%q sizeBytes=%d",
 		claims.Repository,
 		claims.ObjectKey,
 		payload.SizeBytes,
 	)
-	sealed, err := s.sealUploadedObject(request.Context(), claims.ObjectKey)
-	if err != nil {
-		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
-		log.Printf(
-			"direct upload sealing failed repository=%q objectKey=%q error=%v",
-			claims.Repository,
-			claims.ObjectKey,
-			err,
-		)
-		http.Error(writer, err.Error(), http.StatusInternalServerError)
-		return
+	// This helper is an internal controller-owned publication boundary.
+	// Once S3 multipart completion succeeded, the canonical digest and size come
+	// from the trusted publisher rather than a second full storage-side reread.
+	sealed := sealedUpload{
+		Digest:    clientDigest,
+		SizeBytes: payload.SizeBytes,
 	}
 	log.Printf(
-		"direct upload sealing completed repository=%q objectKey=%q digest=%q sizeBytes=%d durationMs=%d",
+		"direct upload trusted sealing completed repository=%q objectKey=%q digest=%q sizeBytes=%d durationMs=%d",
 		claims.Repository,
 		claims.ObjectKey,
 		sealed.Digest,
 		sealed.SizeBytes,
 		s.now().Sub(sealStarted).Milliseconds(),
 	)
-	clientDigest := strings.TrimSpace(payload.Digest)
-	if clientDigest != "" && clientDigest != sealed.Digest {
-		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
-		log.Printf(
-			"direct upload digest mismatch repository=%q objectKey=%q clientDigest=%q sealedDigest=%q",
-			claims.Repository,
-			claims.ObjectKey,
-			clientDigest,
-			sealed.Digest,
-		)
-		http.Error(writer, "digest must match trusted sealed object digest", http.StatusConflict)
-		return
-	}
-	if payload.SizeBytes != sealed.SizeBytes {
-		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
-		log.Printf(
-			"direct upload size mismatch repository=%q objectKey=%q clientSizeBytes=%d sealedSizeBytes=%d",
-			claims.Repository,
-			claims.ObjectKey,
-			payload.SizeBytes,
-			sealed.SizeBytes,
-		)
-		http.Error(writer, "sizeBytes must match trusted sealed object size", http.StatusConflict)
-		return
-	}
 
 	blobKey, err := BlobDataObjectKey(s.rootDirectory, sealed.Digest)
 	if err != nil {
@@ -495,24 +468,6 @@ func normalizeParts(parts []UploadedPart) ([]UploadedPart, error) {
 		}
 	}
 	return normalized, nil
-}
-
-func (s *Service) sealUploadedObject(ctx context.Context, objectKey string) (sealedUpload, error) {
-	reader, err := s.backend.Reader(ctx, objectKey, 0)
-	if err != nil {
-		return sealedUpload{}, err
-	}
-	defer reader.Close()
-
-	hasher := sha256.New()
-	sizeBytes, err := io.Copy(hasher, reader)
-	if err != nil {
-		return sealedUpload{}, err
-	}
-	return sealedUpload{
-		Digest:    "sha256:" + hex.EncodeToString(hasher.Sum(nil)),
-		SizeBytes: sizeBytes,
-	}, nil
 }
 
 func (s *Service) sealedBlobExists(ctx context.Context, blobKey string) (bool, error) {
