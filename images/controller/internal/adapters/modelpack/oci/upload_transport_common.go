@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
@@ -70,4 +71,53 @@ func resolvedResponseLocation(baseURL, location string) (string, error) {
 		return baseURL, nil
 	}
 	return resolveUploadLocation(baseURL, location)
+}
+
+func nextDirectUploadChunkLength(offset, totalSize, partSizeBytes int64) int64 {
+	if remaining := totalSize - offset; remaining < partSizeBytes {
+		return remaining
+	}
+	return partSizeBytes
+}
+
+func normalizeUploadedDirectParts(parts []uploadedDirectPart) ([]uploadedDirectPart, error) {
+	normalized := make([]uploadedDirectPart, 0, len(parts))
+	for _, part := range parts {
+		if part.PartNumber <= 0 {
+			return nil, fmt.Errorf("uploaded direct part number must be positive, got %d", part.PartNumber)
+		}
+		if part.SizeBytes <= 0 {
+			return nil, fmt.Errorf("uploaded direct part size must be positive, got %d", part.SizeBytes)
+		}
+		if part.ETag == "" {
+			return nil, fmt.Errorf("uploaded direct part %d is missing ETag", part.PartNumber)
+		}
+		normalized = append(normalized, uploadedDirectPart{
+			PartNumber: part.PartNumber,
+			ETag:       part.ETag,
+			SizeBytes:  part.SizeBytes,
+		})
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		return normalized[i].PartNumber < normalized[j].PartNumber
+	})
+	for index := range normalized {
+		expected := index + 1
+		if normalized[index].PartNumber != expected {
+			return nil, fmt.Errorf("uploaded direct parts are not contiguous: got part %d, want %d", normalized[index].PartNumber, expected)
+		}
+	}
+	return normalized, nil
+}
+
+func nextDirectUploadPosition(parts []uploadedDirectPart) (int64, int, error) {
+	normalized, err := normalizeUploadedDirectParts(parts)
+	if err != nil {
+		return 0, 0, err
+	}
+	offset := int64(0)
+	for _, part := range normalized {
+		offset += part.SizeBytes
+	}
+	return offset, len(normalized) + 1, nil
 }
