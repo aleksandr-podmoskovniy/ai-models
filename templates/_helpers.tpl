@@ -36,7 +36,7 @@ memory: 128Mi
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $internal := (index $moduleValues "internal") | default dict -}}
 {{- $runtime := (index $internal "publicationRuntime") | default dict -}}
-{{- default 1 (index $runtime "maxConcurrentWorkers") -}}
+{{- default 4 (index $runtime "maxConcurrentWorkers") -}}
 {{- end -}}
 
 {{- define "ai-models.publicationWorkerCPURequest" -}}
@@ -54,7 +54,7 @@ memory: 128Mi
 {{- $runtime := (index $internal "publicationRuntime") | default dict -}}
 {{- $resources := (index $runtime "resources") | default dict -}}
 {{- $requests := (index $resources "requests") | default dict -}}
-{{- default "8Gi" (index $requests "memory") -}}
+{{- default "1Gi" (index $requests "memory") -}}
 {{- end -}}
 
 {{- define "ai-models.publicationWorkerEphemeralStorageRequest" -}}
@@ -81,7 +81,7 @@ memory: 128Mi
 {{- $runtime := (index $internal "publicationRuntime") | default dict -}}
 {{- $resources := (index $runtime "resources") | default dict -}}
 {{- $limits := (index $resources "limits") | default dict -}}
-{{- default "16Gi" (index $limits "memory") -}}
+{{- default "2Gi" (index $limits "memory") -}}
 {{- end -}}
 
 {{- define "ai-models.publicationWorkerEphemeralStorageLimit" -}}

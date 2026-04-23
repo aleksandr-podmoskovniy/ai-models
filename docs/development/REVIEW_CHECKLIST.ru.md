@@ -13,6 +13,10 @@
 - Изменённые workflow surfaces проверены как одна instruction system, а не как отдельные wording files.
 - `make lint-codex-governance` прогнан и его результат отражает текущий diff.
 - `CODEX_WORKFLOW.ru.md`, `TASK_TEMPLATE.ru.md` и `REVIEW_CHECKLIST.ru.md` не противоречат `AGENTS.md` и `.codex/README.md`.
+- reusable core остаётся переносимым, а project-specific doctrine не протекла
+  в generic skills и agent profiles.
+- Для baseline-porting task явно перечислены source baseline, replaced overlays
+  и rewritten repo-specific docs.
 
 ## Архитектура
 - Изменение укладывается в текущий этап проекта.

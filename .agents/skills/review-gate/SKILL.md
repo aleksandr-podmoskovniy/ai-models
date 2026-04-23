@@ -33,19 +33,25 @@ description: Use at the end of any substantial task. Reviews the diff against th
    - skill and agent responsibilities are still distinct
    - no new governance surface was introduced without a real need
    - the task bundle explicitly captured that governance scope
+   - reusable core stays portable, and module-specific doctrine stays in
+     explicit overlays instead of leaking into generic core
+   - if this is a baseline-porting task, the bundle explicitly lists source
+     baseline, replaced overlays, and rewritten repo-specific docs
 7. If controller code changed, check whether controller quality gates and corrective architecture rules were respected.
    - treat ambiguous package naming such as `app` vs `application` as a real
      finding, not a cosmetic nit
    - treat misleading verify output or controller checks hidden behind broader
      shells as a real finding
    - treat public API noise as a real finding:
-     fixed internal output formats must not be echoed in public `spec`, and
-     source-coupled pseudo-format names such as `HuggingFaceDirectory` or
-     `HFCheckpoint` must not survive when the real concern is input file format
-   - treat dead public knobs with no live semantics, such as speculative
-     `spec.publish` blocks, as a real finding
-   - treat nested provider scaffolding in public `spec.source` as a real
-     finding when the same UX can stay as `source.url` or `source.upload`
+     fixed internal output formats, backend entity names, and adapter-specific
+     transport encodings must not leak into public `spec`
+   - treat dead public knobs with no live semantics as a real finding
+   - treat nested provider scaffolding as a real finding when the same UX can
+     stay close to user intent with a simpler public shape
+   - for any artifact/publication change, ask explicitly:
+     - what is the exact published source of truth?
+     - what exact artifact or published state is canonical?
+     - are concrete tool or backend brands leaking into public contract?
    - for any storage/data-plane change, ask explicitly:
      - what is the exact byte path end-to-end?
      - how many full-size copies may exist at once?
@@ -57,10 +63,6 @@ description: Use at the end of any substantial task. Reviews the diff against th
      - who consumes them?
      - are they a source of truth or only audit/history?
      - do they duplicate public `status` or another backend state machine?
-   - for any MLflow-vs-DMCR design, treat these as real findings:
-     - MLflow used as final published artifact source of truth
-     - blind 1:1 duplication of huge raw blobs in MLflow artifacts
-     - controller reconciliation relying on MLflow browser-oriented entities
    - for any large-model claim, require a concrete worst-case resource answer
      instead of prose like "uses staging" or "publishes asynchronously"
 8. If the task was substantial or used delegation, confirm whether a final `reviewer` pass is still required.

@@ -1,5 +1,5 @@
 name = "module_implementer"
-description = "Execution-focused agent for scoped implementation work inside the ai-models module after a plan and boundaries are already clear."
+description = "Execution-focused agent for scoped implementation work inside the current DKP module after a plan and boundaries are already clear."
 model = "gpt-5.4"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"

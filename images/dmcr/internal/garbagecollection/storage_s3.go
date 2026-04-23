@@ -22,11 +22,14 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -35,7 +38,14 @@ import (
 
 type prefixStore interface {
 	ForEachObject(ctx context.Context, prefix string, visit func(string)) error
+	ForEachObjectInfo(ctx context.Context, prefix string, visit func(prefixObjectInfo)) error
+	GetObject(ctx context.Context, key string) ([]byte, error)
 	DeletePrefix(ctx context.Context, prefix string) error
+}
+
+type prefixObjectInfo struct {
+	Key          string
+	LastModified time.Time
 }
 
 type s3PrefixStore struct {
@@ -88,15 +98,22 @@ func NewS3PrefixStore(config S3StorageConfig) (prefixStore, error) {
 }
 
 func (s *s3PrefixStore) ForEachObject(ctx context.Context, prefix string, visit func(string)) error {
+	return s.ForEachObjectInfo(ctx, prefix, func(info prefixObjectInfo) {
+		visit(info.Key)
+	})
+}
+
+func (s *s3PrefixStore) ForEachObjectInfo(ctx context.Context, prefix string, visit func(prefixObjectInfo)) error {
 	if s == nil {
 		return errors.New("prefix store must not be nil")
 	}
 
+	listPrefix := normalizedListPrefix(prefix, false)
 	var continuationToken *string
 	for {
 		output, err := s.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 			Bucket:            aws.String(s.bucket),
-			Prefix:            aws.String(strings.Trim(strings.TrimSpace(prefix), "/")),
+			Prefix:            aws.String(listPrefix),
 			ContinuationToken: continuationToken,
 		})
 		if err != nil {
@@ -108,7 +125,10 @@ func (s *s3PrefixStore) ForEachObject(ctx context.Context, prefix string, visit 
 			if key == "" {
 				continue
 			}
-			visit(key)
+			visit(prefixObjectInfo{
+				Key:          key,
+				LastModified: aws.ToTime(object.LastModified).UTC(),
+			})
 		}
 
 		if !aws.ToBool(output.IsTruncated) {
@@ -118,13 +138,35 @@ func (s *s3PrefixStore) ForEachObject(ctx context.Context, prefix string, visit 
 	}
 }
 
+func (s *s3PrefixStore) GetObject(ctx context.Context, key string) ([]byte, error) {
+	if s == nil {
+		return nil, errors.New("prefix store must not be nil")
+	}
+
+	cleanKey := strings.Trim(strings.TrimSpace(key), "/")
+	if cleanKey == "" {
+		return nil, errors.New("get object key must not be empty")
+	}
+
+	output, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(cleanKey),
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer output.Body.Close()
+
+	return io.ReadAll(output.Body)
+}
+
 func (s *s3PrefixStore) DeletePrefix(ctx context.Context, prefix string) error {
 	if s == nil {
 		return errors.New("prefix store must not be nil")
 	}
 
-	cleanPrefix := strings.Trim(strings.TrimSpace(prefix), "/")
-	if cleanPrefix == "" {
+	cleanPrefix := normalizedListPrefix(prefix, true)
+	if strings.Trim(cleanPrefix, "/") == "" {
 		return errors.New("delete prefix must not be empty")
 	}
 
@@ -201,8 +243,15 @@ func deletePrefixErrors(errors []types.Error) error {
 	return fmt.Errorf("delete prefix returned object errors: %s", strings.Join(messages, ", "))
 }
 
-func newS3HTTPClient(config S3StorageConfig) (*http.Client, error) {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+func normalizedListPrefix(prefix string, preserveTrailingSlash bool) string {
+	cleanPrefix := strings.TrimLeft(strings.TrimSpace(prefix), "/")
+	if !preserveTrailingSlash {
+		cleanPrefix = strings.TrimRight(cleanPrefix, "/")
+	}
+	return cleanPrefix
+}
+
+func newS3HTTPClient(config S3StorageConfig) (*awshttp.BuildableClient, error) {
 	tlsConfig := &tls.Config{
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: config.Insecure,
@@ -227,6 +276,7 @@ func newS3HTTPClient(config S3StorageConfig) (*http.Client, error) {
 		tlsConfig.RootCAs = rootCAs
 	}
 
-	transport.TLSClientConfig = tlsConfig
-	return &http.Client{Transport: transport}, nil
+	return awshttp.NewBuildableClient().WithTransportOptions(func(transport *http.Transport) {
+		transport.TLSClientConfig = tlsConfig
+	}), nil
 }

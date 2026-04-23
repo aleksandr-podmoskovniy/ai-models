@@ -27,8 +27,14 @@ type UploadedPart struct {
 	SizeBytes  int64  `json:"sizeBytes"`
 }
 
+type ObjectAttributes struct {
+	SizeBytes    int64
+	SHA256Digest string
+}
+
 type Backend interface {
 	ObjectExists(ctx context.Context, objectKey string) (bool, error)
+	ObjectAttributes(ctx context.Context, objectKey string) (ObjectAttributes, error)
 	StartMultipartUpload(ctx context.Context, objectKey string) (string, error)
 	PresignUploadPart(ctx context.Context, objectKey, uploadID string, partNumber int) (string, error)
 	ListUploadedParts(ctx context.Context, objectKey, uploadID string) ([]UploadedPart, error)

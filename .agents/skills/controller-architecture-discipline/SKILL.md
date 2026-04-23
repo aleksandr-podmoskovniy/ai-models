@@ -1,6 +1,6 @@
 ---
 name: controller-architecture-discipline
-description: Use for ai-models controller implementation or refactor work when the task touches images/controller/internal. Encodes the current corrective discipline: hexagonal split, no new feature work on fat controller packages, thin reconcilers, quality-gate compliance, and centralized controller test evidence.
+description: Use for controller implementation or refactor work when the task touches controller runtime internals and needs durable architecture guardrails: thin reconcilers, explicit domain/application/ports/adapters split, quality-gate compliance, and centralized controller test evidence.
 ---
 
 # Controller architecture discipline
@@ -15,8 +15,9 @@ description: Use for ai-models controller implementation or refactor work when t
 
 - the task touches `images/controller/internal/*`;
 - the task implements or refactors controller lifecycle code;
-- the task changes publication, upload, materialization, or deletion flow;
-- the task risks adding new code on top of current fat controller boundaries.
+- the task changes controller-owned lifecycle orchestration, external workload
+  management, or deletion/finalizer flow;
+- the task risks adding new code on top of already-fat controller boundaries.
 
 ## Workflow
 

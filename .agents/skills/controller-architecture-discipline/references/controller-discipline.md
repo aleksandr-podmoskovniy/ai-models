@@ -2,40 +2,43 @@
 
 ## Purpose
 
-This reference holds the durable controller architecture rules for `ai-models`.
-It exists so the project memory does not depend on a specific active planning
-bundle staying under `plans/active`.
+This reference holds the durable controller architecture rules for DKP module
+controllers. It exists so the project memory does not depend on a specific
+active planning bundle staying under `plans/active`.
 
 Read this reference when the task touches `images/controller/internal/*`,
-especially publication, upload, materialization, cleanup, status projection,
-and finalizer flow.
+especially lifecycle orchestration, status projection, external workload
+adapters, cleanup, and finalizer flow.
+
+Module-specific artifact, upload, storage, or API semantics do not belong in
+this reference. Keep those in explicit overlay skills or repo docs.
 
 ## Target split
 
 Keep controller code split into these layers:
 
 - `domain`
-  - publication states
+  - lifecycle states
   - transitions
   - invariants
   - status/condition mapping rules
 - `application`
   - use cases such as:
-    - `AcceptSource`
-    - `StartPublication`
+    - `AcceptInput`
+    - `StartReconcileStep`
     - `ObserveWorker`
     - `ProjectStatus`
     - `FinalizeDelete`
 - `ports`
   - worker runtime
-  - ModelPack artifact publisher
+  - published-artifact writer or runtime publisher
   - cleanup executor
   - clock
-  - token/session issuer
+  - token/session issuer when the module owns that lifecycle
 - `adapters`
   - Kubernetes reconcilers
   - concrete Pod/Service/Secret/Job builders and service adapters
-  - concrete `ModelPack` implementations such as `KitOps` or `Modctl`
+  - concrete packagers, publishers, storage, or API clients
 
 ## Thin reconciler rule
 
@@ -52,21 +55,24 @@ Allowed in a reconciler:
 Do not keep the following in reconciler files:
 
 - lifecycle branching trees
-- publication state machine logic
+- state machine logic
 - inline `Pod` / `Service` / `Secret` / `Job` construction
 - status reason decision trees
 - serialization format details for worker result handoff
 
 ## First corrective cuts
 
-Cut the current controller in this order:
+When a controller is already too fat, corrective cuts should start with the
+highest-decision-surface areas first:
 
-1. `controllers/catalogstatus`
-2. `adapters/k8s/sourceworker`
-3. `adapters/k8s/uploadsession`
+1. status/condition projection
+2. external workload orchestration
+3. credential/session/token issuance
+4. delete/finalizer policy
+5. repeated K8s object builders
 
-Do not add new feature logic to these packages before checking whether the
-current slice should instead reduce their responsibility first.
+Do not add new feature logic to those areas before checking whether the current
+slice should instead reduce their responsibility first.
 
 ## Current concrete package map
 
@@ -91,18 +97,18 @@ pair is semantically ambiguous in a hexagonal tree. Composition root packages
 must be named by responsibility, for example `internal/bootstrap`.
 
 Do not keep four generic folders named around one vague word such as
-`publication` across `internal/`, `application/`, `domain/`, and `ports/`
+`lifecycle` across `internal/`, `application/`, `domain/`, and `ports/`
 when each one actually owns a narrower responsibility. Use role-based names
-such as `publishedsnapshot`, `publishplan`, `publishstate`, and `publishop`.
+such as `statusprojection`, `deliveryplan`, `lifecyclepolicy`, and `workloadrun`.
 
 Do not recreate package-local `names.go` wrappers for Pod/Service/Secret/Job
 names unless they add a real new boundary. Canonical resource naming belongs in
 `internal/support/resourcenames`.
 
-Do not mirror shared publication runtime input through adapter-local `Request`
+Do not mirror shared runtime input through adapter-local `Request`
 or `OwnerRef` wrapper types unless the adapter truly needs a different contract.
-Concrete adapters should consume `publishop.OperationContext` directly and keep
-only adapter-specific planning helpers.
+Concrete adapters should consume the shared application/port contract directly
+and keep only adapter-specific planning helpers.
 
 Do not keep a separate `runtime.go` proxy over the same concrete adapter object
 when that file only forwards to `Service`/CRUD methods and wraps the same
@@ -197,59 +203,37 @@ Shared fixture discipline:
 If the change mostly moves logic between packages, tests still need to prove
 that the decision surface is preserved.
 
-## Runtime direction
+## Published artifact direction
 
-Controller work must stay aligned with the current model lifecycle direction:
+If the module owns publication or delivery, controller work must stay aligned
+with these rules:
 
-- source-first public contract
-- controller-owned publication
-- `ModelPack` as the published artifact contract
-- pluggable packaging/materialization adapters; current implementation may use
-  `KitOps`, but contract must not depend on one concrete implementation brand
-- `OCI` published artifact
-- runtime consumption through local materialization, not direct backend
-  semantics
+- public contract stays close to user intent
+- controller-owned published artifact or published state stays canonical
+- concrete packaging/materialization brands stay behind adapters
+- runtime consumption should depend on the published artifact/state, not on
+  direct backend internals
 
-## Large-upload discipline
+## Large-ingest discipline
 
-For large raw-model ingest, keep these rules stable:
+For large-object ingest or staging, keep these rules stable:
 
-- `CRD.status` remains the only platform truth for publication state.
-- Raw storage and optional audit/provenance records are internal only and must
-  never become a second lifecycle truth beside `CRD + DMCR`.
-- For object-storage upload mode, prefer one shared upload gateway plus
-  short-lived per-upload session `Secret` state in the module namespace.
-- Use one exact control API for the shared upload gateway:
-  - `GET /v1/upload/<sessionID>`
-  - `POST /probe`
-  - `POST /init`
-  - `POST /parts`
-  - `POST /complete`
-  - `POST /abort`
-- Do not create one uploader Pod / Service / Ingress trio per upload when the
-  bytes can go directly to object storage through presigned multipart URLs.
-- Keep the gateway as a control-plane service only:
-  auth, bounded probe validation, presign, complete, abort.
-- Bulk bytes after probe must bypass the gateway and go directly to object
-  storage.
-- Upload concurrency and publish concurrency must be bounded separately.
-- Tens of concurrent uploads must primarily grow:
-  - session records;
-  - object-storage multipart uploads;
-  and not a matching number of heavy runtime Pods.
-- Preflight checks before full ingest must stay small and explicit:
-  - authz;
-  - owner binding;
-  - quota / declared size;
-  - allowed format / extension / lightweight source probe.
-- Deep malware/content scanning is a later async stage; do not describe
-  preflight as a security guarantee it cannot provide.
-- The copy budget for the multi-terabyte path is:
-  - one durable raw copy;
-  - one temporary bounded working copy;
-  - one durable published OCI copy.
-- Anything above that copy budget must be treated as debt and called out in
-  the task bundle and review.
+- public `status` remains the only platform truth for lifecycle state;
+- raw storage plus optional audit/provenance records stay internal and must not
+  become a second lifecycle truth;
+- when bytes can bypass the control plane directly to object storage or another
+  durable sink, prefer one shared control-plane gateway over one heavy runtime
+  Pod/Service/Ingress trio per ingest;
+- bulk bytes should bypass the controller or gateway after bounded preflight;
+- ingest concurrency and publish/materialize concurrency must be bounded
+  separately;
+- preflight checks before full ingest must stay small and explicit:
+  authz, owner binding, quota, declared size, allowed format, lightweight
+  source probe;
+- deep malware/content scanning is a later async stage; do not describe
+  preflight as a security guarantee it cannot provide;
+- the copy budget for large ingest must be explicit in the task bundle and
+  review, and anything above that budget must be treated as debt.
 
 Use task-local bundles for slice-specific implementation detail, but keep these
 rules stable here.

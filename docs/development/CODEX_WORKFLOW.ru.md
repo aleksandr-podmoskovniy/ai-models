@@ -87,6 +87,19 @@ Bundle hygiene:
 то это отдельный governance bundle, а не incidental wording fix inside another
 product/runtime task.
 
+Если задача меняет сам reusable governance baseline, bundle должен явно
+зафиксировать:
+- что остаётся reusable core;
+- что остаётся project-specific overlay;
+- какие instruction layers обязаны остаться взаимно согласованными.
+
+Если baseline переносится из другого репозитория, это тоже governance task.
+Первый bundle в новом repo должен явно зафиксировать:
+- source repo baseline;
+- какие reusable core surfaces копируются;
+- какие overlay skills/agents заменяются или удаляются;
+- какие repo-specific docs переписываются до первого product/runtime slice.
+
 ### Шаг 2. Выбрать и вызвать нужных subagents
 
 Сабагенты вызываются **до первого изменения кода**, если задача не в режиме
@@ -120,6 +133,20 @@ product/runtime task.
 
 Перед завершением задачи repo-level verification всё равно идёт через обычный
 `make verify`.
+
+### Шаг 6. Проверить переносимость governance baseline
+
+Если менялись skills/agents/workflow docs:
+- reusable core должен остаться module-agnostic;
+- project-specific product/runtime rules должны остаться в overlays или
+  module docs;
+- нельзя прятать предметную специфику одного модуля в supposedly generic
+  core skill/agent.
+
+Если это baseline porting task:
+- overlays из source repo не должны пережить копирование по инерции;
+- repo purpose, phases и layout docs должны быть переписаны под новый модуль;
+- `make lint-codex-governance` должен быть зелёным до первого product diff.
 
 ## Как пользоваться из VS Code
 

@@ -91,6 +91,23 @@ publication/runtime baseline без возврата к backend-first narrative.
 - Новая работа должна продолжать canonical active bundle для workstream, а не
   создавать sibling source of truth.
 
+### Portable reusable baseline
+
+- Reusable core skills и agents должны описывать переносимую инженерную
+  методику и guardrails, а не narrative одного конкретного модуля.
+- Project-specific product/runtime/API rules должны жить в явных overlays или
+  repo docs, а не протекать в generic core.
+- Если этот baseline копируется в другой DKP module repo, переносить нужно
+  precedence chain, reusable core, governance inventory и workflow docs, а
+  project-specific overlays заменять осознанно.
+- Слепое копирование repo-local governance surface в новый модуль запрещено:
+  сначала нужен отдельный governance porting slice.
+- Этот porting slice обязан явно зафиксировать:
+  - source repo baseline;
+  - какие overlays заменяются или удаляются;
+  - какие repo docs и верхние instruction surfaces переписываются под новый
+    модуль до первого product/runtime change.
+
 ### Systematic testing
 
 - Тесты считаются частью архитектуры, а не приложением к коду.
@@ -135,10 +152,12 @@ publication/runtime baseline без возврата к backend-first narrative.
 1. вынести её в отдельный task bundle;
 2. явно перечислить touched instruction surfaces;
 3. проверить на противоречия все изменённые уровни, а не только один файл;
-4. не плодить новые skills или agent roles, если проблему можно решить
+4. явно отделить reusable core от project-specific overlays, если меняется
+   сам governance baseline;
+5. не плодить новые skills или agent roles, если проблему можно решить
    tightening existing boundaries;
-5. завершать задачу только после manual consistency review этих surfaces.
-6. прогонять `make lint-codex-governance` как machine-checkable guardrail.
+6. завершать задачу только после manual consistency review этих surfaces.
+7. прогонять `make lint-codex-governance` как machine-checkable guardrail.
 
 ## Когда обязательно использовать planning
 
@@ -199,6 +218,9 @@ Delegation обязателен, если:
 
 - `backend_integrator` — используется только для внутренних publication
   backend/runtime details внутри `ai-models`.
+- `model-catalog-api` — используется только для `ai-models`-specific
+  semantics вокруг `Model`, `ClusterModel`, status/conditions и sync с
+  internal publication/runtime machinery.
 
 ## Канонический mapping
 
@@ -206,6 +228,7 @@ Delegation обязателен, если:
 - layout/module shell/repo boundaries -> `repo_architect`
 - runtime/build/auth/storage/ingress/observability -> `integration_architect`
 - publication-backend-specific runtime details -> `backend_integrator`
+- `Model` / `ClusterModel` overlay semantics -> `model-catalog-api`
 - Kubernetes/DKP API/CRD/status/conditions -> `api_designer`
 - scoped write delegation после ясных boundaries -> `module_implementer`
 - финальная substantial review -> `review-gate`, а при delegation или multi-area task ещё и `reviewer`
@@ -247,5 +270,7 @@ Delegation обязателен, если:
 - финальный review не оставил критичных замечаний.
 - если менялся workflow surface, между `AGENTS.md`, `.codex/README.md`,
   `.agents/skills/*` и `.codex/agents/*.toml` не осталось явных противоречий.
+- если менялся reusable governance baseline, reusable core остался переносимым,
+  а module-specific doctrine осталась в явных overlays.
 - если менялись architecture/testing/workflow rules, они зафиксированы в
   durable repo-local surfaces и не зависят от chat-only context.

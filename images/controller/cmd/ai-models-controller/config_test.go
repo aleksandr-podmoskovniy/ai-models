@@ -22,7 +22,36 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
+
+func TestDefaultManagerConfigPublicationRuntimeDefaults(t *testing.T) {
+	t.Setenv(publicationMaxConcurrentWorkersEnv, "")
+	t.Setenv(publicationWorkerMemoryRequestEnv, "")
+	t.Setenv(publicationWorkerMemoryLimitEnv, "")
+
+	config := defaultManagerConfig()
+	if got, want := config.PublicationMaxConcurrentWorkers, 4; got != want {
+		t.Fatalf("PublicationMaxConcurrentWorkers = %d, want %d", got, want)
+	}
+	if got, want := config.PublicationWorkerMemoryRequest, "1Gi"; got != want {
+		t.Fatalf("PublicationWorkerMemoryRequest = %q, want %q", got, want)
+	}
+	if got, want := config.PublicationWorkerMemoryLimit, "2Gi"; got != want {
+		t.Fatalf("PublicationWorkerMemoryLimit = %q, want %q", got, want)
+	}
+
+	resources, resourceErr := runtimeResources(config)
+	if resourceErr != nil {
+		t.Fatalf("runtimeResources() error = %v", resourceErr.cause)
+	}
+	if got, want := resources.Requests[corev1.ResourceMemory], resource.MustParse("1Gi"); got.Cmp(want) != 0 {
+		t.Fatalf("memory request = %s, want %s", got.String(), want.String())
+	}
+	if got, want := resources.Limits[corev1.ResourceMemory], resource.MustParse("2Gi"); got.Cmp(want) != 0 {
+		t.Fatalf("memory limit = %s, want %s", got.String(), want.String())
+	}
+}
 
 func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	t.Parallel()

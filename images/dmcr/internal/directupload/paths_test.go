@@ -46,3 +46,23 @@ func TestRepositoryBlobLinkObjectKeyIncludesRepositoryPath(t *testing.T) {
 		t.Fatalf("RepositoryBlobLinkObjectKey() = %q, want %q", got, want)
 	}
 }
+
+func TestStorageDriverPathForObjectKeyRemovesRootDirectory(t *testing.T) {
+	t.Parallel()
+
+	got := storageDriverPathForObjectKey("/dmcr", "dmcr/_ai_models/direct-upload/objects/session/data")
+	want := "/_ai_models/direct-upload/objects/session/data"
+	if got != want {
+		t.Fatalf("storageDriverPathForObjectKey() = %q, want %q", got, want)
+	}
+}
+
+func TestStorageDriverPathForObjectKeyKeepsRootlessObjectKeyAbsolute(t *testing.T) {
+	t.Parallel()
+
+	got := storageDriverPathForObjectKey("", "_ai_models/direct-upload/objects/session/data")
+	want := "/_ai_models/direct-upload/objects/session/data"
+	if got != want {
+		t.Fatalf("storageDriverPathForObjectKey() = %q, want %q", got, want)
+	}
+}

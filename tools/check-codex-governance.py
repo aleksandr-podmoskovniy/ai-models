@@ -183,6 +183,24 @@ def main() -> int:
                 f"{core_read_only_agents} != {inventory['core_read_only_agents']}"
             )
 
+        overlay_skills = extract_bullets_after_label(
+            codex_readme, "Project-specific overlay skills:"
+        )
+        if overlay_skills != inventory["overlay_skills"]:
+            failures.append(
+                ".codex/README.md: overlay skills "
+                f"{overlay_skills} != {inventory['overlay_skills']}"
+            )
+
+        overlay_agents = extract_bullets_after_label(
+            codex_readme, "Project-specific overlay agents:"
+        )
+        if overlay_agents != inventory["overlay_agents"]:
+            failures.append(
+                ".codex/README.md: overlay agents "
+                f"{overlay_agents} != {inventory['overlay_agents']}"
+            )
+
         write_capable_agents = extract_bullets_after_label(
             codex_readme, "Write-capable agents:"
         )
@@ -192,9 +210,40 @@ def main() -> int:
                 f"{write_capable_agents} != {inventory['write_capable_agents']}"
             )
 
+        porting_review_files = extract_bullets_after_label(
+            codex_readme, "Files that must be reviewed and rewritten during porting:"
+        )
+        if porting_review_files != inventory["porting_review_files"]:
+            failures.append(
+                ".codex/README.md: porting review files "
+                f"{porting_review_files} != {inventory['porting_review_files']}"
+            )
+
     overlap = set(inventory["core_read_only_agents"]) & set(inventory["write_capable_agents"])
     if overlap:
         failures.append(f"inventory overlap between read-only and write-capable agents: {sorted(overlap)}")
+
+    skill_overlap = set(inventory["core_skills"]) & set(inventory["overlay_skills"])
+    if skill_overlap:
+        failures.append(f"inventory overlap between core and overlay skills: {sorted(skill_overlap)}")
+
+    agent_overlap = (
+        set(inventory["core_read_only_agents"]) | set(inventory["write_capable_agents"])
+    ) & set(inventory["overlay_agents"])
+    if agent_overlap:
+        failures.append(f"inventory overlap between core and overlay agents: {sorted(agent_overlap)}")
+
+    unknown_overlay_skills = set(inventory["overlay_skills"]) - set(expected_skill_names)
+    if unknown_overlay_skills:
+        failures.append(f"inventory overlay skills missing from skills inventory: {sorted(unknown_overlay_skills)}")
+
+    unknown_overlay_agents = set(inventory["overlay_agents"]) - set(expected_agent_names)
+    if unknown_overlay_agents:
+        failures.append(f"inventory overlay agents missing from agents inventory: {sorted(unknown_overlay_agents)}")
+
+    for rel_path in inventory["porting_review_files"]:
+        if not (root / rel_path).exists():
+            failures.append(f"inventory porting review file missing: {rel_path}")
 
     if "task_framer" in inventory["core_read_only_agents"]:
         failures.append("inventory: task_framer must not be in core read-only agents")

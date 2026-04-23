@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -32,14 +33,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/deckhouse/ai-models/dmcr/internal/sealedblob"
 )
 
 type fakeBackend struct {
 	objects          map[string][]byte
+	attributes       map[string]ObjectAttributes
 	uploads          map[string]string
 	parts            map[string][]UploadedPart
 	deleted          []string
+	attributesCalls  int
+	attributesErr    error
 	readerCalls      int
 	completeErr      error
 	readerErr        error
@@ -49,15 +55,32 @@ type fakeBackend struct {
 
 func newFakeBackend() *fakeBackend {
 	return &fakeBackend{
-		objects: make(map[string][]byte),
-		uploads: make(map[string]string),
-		parts:   make(map[string][]UploadedPart),
+		objects:    make(map[string][]byte),
+		attributes: make(map[string]ObjectAttributes),
+		uploads:    make(map[string]string),
+		parts:      make(map[string][]UploadedPart),
 	}
 }
 
 func (b *fakeBackend) ObjectExists(_ context.Context, objectKey string) (bool, error) {
 	_, exists := b.objects[strings.TrimSpace(objectKey)]
 	return exists, nil
+}
+
+func (b *fakeBackend) ObjectAttributes(_ context.Context, objectKey string) (ObjectAttributes, error) {
+	b.attributesCalls++
+	if b.attributesErr != nil {
+		return ObjectAttributes{}, b.attributesErr
+	}
+	trimmed := strings.TrimSpace(objectKey)
+	if attributes, exists := b.attributes[trimmed]; exists {
+		return attributes, nil
+	}
+	payload, exists := b.objects[trimmed]
+	if !exists {
+		return ObjectAttributes{}, errors.New("object not found")
+	}
+	return ObjectAttributes{SizeBytes: int64(len(payload))}, nil
 }
 
 func (b *fakeBackend) StartMultipartUpload(_ context.Context, objectKey string) (string, error) {
@@ -223,8 +246,9 @@ func TestServiceCompleteWritesRepositoryLinkAndSealedMetadata(t *testing.T) {
 	if metadata.Digest != digest {
 		t.Fatalf("metadata.Digest = %q, want %q", metadata.Digest, digest)
 	}
-	if metadata.PhysicalPath != claims.ObjectKey {
-		t.Fatalf("metadata.PhysicalPath = %q, want %q", metadata.PhysicalPath, claims.ObjectKey)
+	expectedPhysicalPath := storageDriverPathForObjectKey("/dmcr", claims.ObjectKey)
+	if metadata.PhysicalPath != expectedPhysicalPath {
+		t.Fatalf("metadata.PhysicalPath = %q, want %q", metadata.PhysicalPath, expectedPhysicalPath)
 	}
 	if metadata.SizeBytes != 12 {
 		t.Fatalf("metadata.SizeBytes = %d, want %d", metadata.SizeBytes, 12)
@@ -234,6 +258,285 @@ func TestServiceCompleteWritesRepositoryLinkAndSealedMetadata(t *testing.T) {
 	}
 	if got := backend.readerCalls; got != 1 {
 		t.Fatalf("Reader() call count = %d, want 1 for verified sealing path", got)
+	}
+}
+
+func TestServiceCompleteUsesTrustedBackendDigestWithoutReadingObject(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+	claims, err := decodeSessionToken([]byte("salt"), startPayload.SessionToken)
+	if err != nil {
+		t.Fatalf("decodeSessionToken() error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+		{PartNumber: 2, ETag: "etag-2", SizeBytes: 4},
+	}
+	digest := digestForParts(parts)
+	backend.attributes[claims.ObjectKey] = ObjectAttributes{
+		SizeBytes:    12,
+		SHA256Digest: digest,
+	}
+
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		Digest:       digest,
+		SizeBytes:    12,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if got := backend.attributesCalls; got != 1 {
+		t.Fatalf("ObjectAttributes() call count = %d, want 1", got)
+	}
+	if got := backend.readerCalls; got != 0 {
+		t.Fatalf("Reader() call count = %d, want 0 for trusted backend digest path", got)
+	}
+}
+
+func TestTrustedFullObjectSHA256DigestAcceptsFullObjectChecksum(t *testing.T) {
+	t.Parallel()
+
+	checksum := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("\xaa", sha256DigestBytes)))
+
+	got := trustedFullObjectSHA256Digest(aws.String(checksum), types.ChecksumTypeFullObject)
+	want := "sha256:" + strings.Repeat("aa", sha256DigestBytes)
+	if got != want {
+		t.Fatalf("trustedFullObjectSHA256Digest() = %q, want %q", got, want)
+	}
+}
+
+func TestTrustedFullObjectSHA256DigestRejectsCompositeChecksum(t *testing.T) {
+	t.Parallel()
+
+	checksum := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("\xbb", sha256DigestBytes)))
+
+	got := trustedFullObjectSHA256Digest(aws.String(checksum), types.ChecksumTypeComposite)
+	if got != "" {
+		t.Fatalf("trustedFullObjectSHA256Digest() = %q, want empty digest", got)
+	}
+}
+
+func TestTrustedFullObjectSHA256DigestRejectsMalformedChecksum(t *testing.T) {
+	t.Parallel()
+
+	got := trustedFullObjectSHA256Digest(aws.String("not-base64"), types.ChecksumTypeFullObject)
+	if got != "" {
+		t.Fatalf("trustedFullObjectSHA256Digest() = %q, want empty digest", got)
+	}
+}
+
+func TestServiceCompleteFallsBackWhenBackendDigestLookupFails(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	backend.attributesErr = errors.New("checksum metadata is not supported")
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+		{PartNumber: 2, ETag: "etag-2", SizeBytes: 4},
+	}
+	digest := digestForParts(parts)
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		Digest:       digest,
+		SizeBytes:    12,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if got := backend.readerCalls; got != 1 {
+		t.Fatalf("Reader() call count = %d, want 1 fallback read", got)
+	}
+}
+
+func TestServiceCompleteFallsBackWhenTrustedBackendDigestIsMalformed(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+	claims, err := decodeSessionToken([]byte("salt"), startPayload.SessionToken)
+	if err != nil {
+		t.Fatalf("decodeSessionToken() error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+		{PartNumber: 2, ETag: "etag-2", SizeBytes: 4},
+	}
+	digest := digestForParts(parts)
+	backend.attributes[claims.ObjectKey] = ObjectAttributes{
+		SizeBytes:    12,
+		SHA256Digest: "sha256:not-a-valid-digest",
+	}
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		Digest:       digest,
+		SizeBytes:    12,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if got := backend.readerCalls; got != 1 {
+		t.Fatalf("Reader() call count = %d, want 1 fallback read", got)
+	}
+}
+
+func TestServiceCompleteRejectsTrustedBackendSizeMismatch(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+	claims, err := decodeSessionToken([]byte("salt"), startPayload.SessionToken)
+	if err != nil {
+		t.Fatalf("decodeSessionToken() error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+		{PartNumber: 2, ETag: "etag-2", SizeBytes: 4},
+	}
+	digest := digestForParts(parts)
+	backend.attributes[claims.ObjectKey] = ObjectAttributes{
+		SizeBytes:    11,
+		SHA256Digest: digest,
+	}
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		Digest:       digest,
+		SizeBytes:    12,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusConflict; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if !slices.Contains(backend.deleted, claims.ObjectKey) {
+		t.Fatalf("expected physical upload object %q to be deleted, deleted = %#v", claims.ObjectKey, backend.deleted)
+	}
+	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", digest)
+	if err != nil {
+		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
+	}
+	if _, exists := backend.objects[linkKey]; exists {
+		t.Fatalf("repository link %q exists after trusted size mismatch", linkKey)
+	}
+	if got := backend.readerCalls; got != 0 {
+		t.Fatalf("Reader() call count = %d, want 0 when trusted size mismatches", got)
+	}
+}
+
+func TestServiceCompleteRejectsTrustedBackendDigestMismatch(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+	claims, err := decodeSessionToken([]byte("salt"), startPayload.SessionToken)
+	if err != nil {
+		t.Fatalf("decodeSessionToken() error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+		{PartNumber: 2, ETag: "etag-2", SizeBytes: 4},
+	}
+	expectedDigest := digestForParts(parts)
+	backend.attributes[claims.ObjectKey] = ObjectAttributes{
+		SizeBytes:    12,
+		SHA256Digest: "sha256:" + strings.Repeat("f", 64),
+	}
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		Digest:       expectedDigest,
+		SizeBytes:    12,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusConflict; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if !slices.Contains(backend.deleted, claims.ObjectKey) {
+		t.Fatalf("expected physical upload object %q to be deleted, deleted = %#v", claims.ObjectKey, backend.deleted)
+	}
+	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", expectedDigest)
+	if err != nil {
+		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
+	}
+	if _, exists := backend.objects[linkKey]; exists {
+		t.Fatalf("repository link %q exists after trusted digest mismatch", linkKey)
+	}
+	if got := backend.readerCalls; got != 0 {
+		t.Fatalf("Reader() call count = %d, want 0 when trusted digest mismatches", got)
 	}
 }
 

@@ -30,12 +30,15 @@ type PrefixInventoryEntry struct {
 }
 
 type Report struct {
-	LiveRepositoryPrefixCount   int
-	LiveRawPrefixCount          int
-	StoredRepositoryPrefixCount int
-	StoredRawPrefixCount        int
-	StaleRepositories           []PrefixInventoryEntry
-	StaleRawPrefixes            []PrefixInventoryEntry
+	LiveRepositoryPrefixCount         int
+	LiveRawPrefixCount                int
+	StoredRepositoryPrefixCount       int
+	StoredRawPrefixCount              int
+	StoredDirectUploadPrefixCount     int
+	ReferencedDirectUploadPrefixCount int
+	StaleRepositories                 []PrefixInventoryEntry
+	StaleRawPrefixes                  []PrefixInventoryEntry
+	StaleDirectUploadPrefixes         []PrefixInventoryEntry
 }
 
 type livePrefixSet struct {
@@ -104,7 +107,7 @@ func staleEntries(live map[string]struct{}, stored []PrefixInventoryEntry) []Pre
 }
 
 func (r Report) HasStalePrefixes() bool {
-	return len(r.StaleRepositories) > 0 || len(r.StaleRawPrefixes) > 0
+	return len(r.StaleRepositories) > 0 || len(r.StaleRawPrefixes) > 0 || len(r.StaleDirectUploadPrefixes) > 0
 }
 
 func (r Report) Format() string {
@@ -113,8 +116,11 @@ func (r Report) Format() string {
 		fmt.Sprintf("Live raw source mirror prefixes: %d", r.LiveRawPrefixCount),
 		fmt.Sprintf("Stored repository prefixes: %d", r.StoredRepositoryPrefixCount),
 		fmt.Sprintf("Stored raw source mirror prefixes: %d", r.StoredRawPrefixCount),
+		fmt.Sprintf("Stored direct-upload prefixes: %d", r.StoredDirectUploadPrefixCount),
+		fmt.Sprintf("Referenced direct-upload prefixes: %d", r.ReferencedDirectUploadPrefixCount),
 		fmt.Sprintf("Stale repository prefixes: %d", len(r.StaleRepositories)),
 		fmt.Sprintf("Stale raw source mirror prefixes: %d", len(r.StaleRawPrefixes)),
+		fmt.Sprintf("Stale orphan direct-upload prefixes: %d", len(r.StaleDirectUploadPrefixes)),
 	}
 	if !r.HasStalePrefixes() {
 		lines = append(lines, "No stale prefixes eligible for cleanup.")
@@ -130,6 +136,12 @@ func (r Report) Format() string {
 	if len(r.StaleRawPrefixes) > 0 {
 		lines = append(lines, "", "Stale raw source mirror prefixes:")
 		for _, entry := range r.StaleRawPrefixes {
+			lines = append(lines, formatReportEntry(entry))
+		}
+	}
+	if len(r.StaleDirectUploadPrefixes) > 0 {
+		lines = append(lines, "", "Stale orphan direct-upload prefixes:")
+		for _, entry := range r.StaleDirectUploadPrefixes {
 			lines = append(lines, formatReportEntry(entry))
 		}
 	}

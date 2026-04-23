@@ -382,7 +382,8 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		})
 		return
 	}
-	if err := s.writeSealedBlobMetadata(request.Context(), blobKey, sealed, claims.ObjectKey); err != nil {
+	physicalPath := storageDriverPathForObjectKey(s.rootDirectory, claims.ObjectKey)
+	if err := s.writeSealedBlobMetadata(request.Context(), blobKey, sealed, physicalPath); err != nil {
 		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
 		log.Printf(
 			"direct upload sealed metadata write failed repository=%q objectKey=%q blobKey=%q error=%v",

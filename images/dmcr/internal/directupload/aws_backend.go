@@ -19,6 +19,8 @@ package directupload
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/url"
@@ -114,6 +116,32 @@ func (b *s3Backend) ObjectExists(ctx context.Context, objectKey string) (bool, e
 		return false, nil
 	}
 	return false, err
+}
+
+func (b *s3Backend) ObjectAttributes(ctx context.Context, objectKey string) (ObjectAttributes, error) {
+	output, err := b.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket:       aws.String(b.bucket),
+		Key:          aws.String(strings.TrimSpace(objectKey)),
+		ChecksumMode: types.ChecksumModeEnabled,
+	})
+	if err != nil {
+		return ObjectAttributes{}, err
+	}
+	return ObjectAttributes{
+		SizeBytes:    aws.ToInt64(output.ContentLength),
+		SHA256Digest: trustedFullObjectSHA256Digest(output.ChecksumSHA256, output.ChecksumType),
+	}, nil
+}
+
+func trustedFullObjectSHA256Digest(checksum *string, checksumType types.ChecksumType) string {
+	if checksum == nil || checksumType != types.ChecksumTypeFullObject {
+		return ""
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(aws.ToString(checksum)))
+	if err != nil || len(decoded) != sha256DigestBytes {
+		return ""
+	}
+	return "sha256:" + hex.EncodeToString(decoded)
 }
 
 func (b *s3Backend) StartMultipartUpload(ctx context.Context, objectKey string) (string, error) {

@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -56,7 +57,7 @@ func New(cfg Config) (*Adapter, error) {
 		return nil, err
 	}
 
-	httpClient, err := newHTTPClient(cfg)
+	awsHTTPClient, httpClient, err := newHTTPClients(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +69,7 @@ func New(cfg Config) (*Adapter, error) {
 			strings.TrimSpace(cfg.SecretAccessKey),
 			"",
 		)),
-		config.WithHTTPClient(httpClient),
+		config.WithHTTPClient(awsHTTPClient),
 	)
 	if err != nil {
 		return nil, err
@@ -109,8 +110,7 @@ func (c Config) Validate() error {
 	}
 }
 
-func newHTTPClient(cfg Config) (*http.Client, error) {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+func newHTTPClients(cfg Config) (*awshttp.BuildableClient, *http.Client, error) {
 	tlsConfig := &tls.Config{
 		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: cfg.Insecure,
@@ -119,21 +119,23 @@ func newHTTPClient(cfg Config) (*http.Client, error) {
 	if !cfg.Insecure && strings.TrimSpace(cfg.CAFile) != "" {
 		rootCAs, err := x509.SystemCertPool()
 		if err != nil {
-			return nil, fmt.Errorf("load system cert pool: %w", err)
+			return nil, nil, fmt.Errorf("load system cert pool: %w", err)
 		}
 		if rootCAs == nil {
 			rootCAs = x509.NewCertPool()
 		}
 		caData, err := os.ReadFile(cfg.CAFile)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if ok := rootCAs.AppendCertsFromPEM(caData); !ok {
-			return nil, errors.New("append upload staging CA bundle")
+			return nil, nil, errors.New("append upload staging CA bundle")
 		}
 		tlsConfig.RootCAs = rootCAs
 	}
 
-	transport.TLSClientConfig = tlsConfig
-	return &http.Client{Transport: transport}, nil
+	awsClient := awshttp.NewBuildableClient().WithTransportOptions(func(transport *http.Transport) {
+		transport.TLSClientConfig = tlsConfig
+	})
+	return awsClient, &http.Client{Transport: awsClient.GetTransport().Clone()}, nil
 }

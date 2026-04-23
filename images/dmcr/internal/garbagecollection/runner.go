@@ -168,6 +168,7 @@ func runActiveRequestCycle(
 		slog.Any("request_names", requestNames),
 		slog.Int("stale_repository_prefix_count", len(result.Report.StaleRepositories)),
 		slog.Int("stale_raw_prefix_count", len(result.Report.StaleRawPrefixes)),
+		slog.Int("stale_direct_upload_prefix_count", len(result.Report.StaleDirectUploadPrefixes)),
 	}
 	if trimmedOutput := strings.TrimSpace(result.RegistryOutput); trimmedOutput != "" {
 		attrs = append(attrs, slog.String("registry_output", trimmedOutput))

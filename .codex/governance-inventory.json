@@ -13,6 +13,7 @@
     "third-party-component-integration",
     "platform-runtime-integration",
     "k8s-api-design",
+    "controller-architecture-discipline",
     "controller-runtime-implementation"
   ],
   "core_read_only_agents": [
@@ -21,9 +22,24 @@
     "api_designer",
     "reviewer"
   ],
+  "overlay_skills": [
+    "ai-models-backend-platform",
+    "model-catalog-api"
+  ],
+  "overlay_agents": [
+    "backend_integrator"
+  ],
   "write_capable_agents": [
     "task_framer",
     "module_implementer"
+  ],
+  "porting_review_files": [
+    "AGENTS.md",
+    ".codex/README.md",
+    "docs/development/TZ.ru.md",
+    "docs/development/PHASES.ru.md",
+    "docs/development/REPO_LAYOUT.ru.md",
+    "docs/development/CODEX_WORKFLOW.ru.md"
   ],
   "skills": [
     {
@@ -46,7 +62,7 @@
       "name": "controller-runtime-implementation",
       "path": ".agents/skills/controller-runtime-implementation/SKILL.md",
       "must_include": [
-        "Prefer Go-first phase-2 data-plane code by default.",
+        "Prefer the repository's primary implementation language for durable",
         "If the controller package map or controller test tree changes, sync:"
       ]
     },
@@ -181,6 +197,7 @@
       "must_include": [
         "Repo-local workflow rules имеют строгий precedence:",
         "## Engineering doctrine",
+        "### Portable reusable baseline",
         "## Workflow governance",
         "make lint-codex-governance"
       ]
@@ -191,7 +208,11 @@
         "Precedence внутри repo-local Codex surface:",
         "Core skills:",
         "Core read-only agents:",
+        "Project-specific overlay skills:",
+        "Project-specific overlay agents:",
         "Write-capable agents:",
+        "## Porting pattern",
+        "Files that must be reviewed and rewritten during porting:",
         ".codex/governance-inventory.json",
         "make lint-codex-governance"
       ]
@@ -201,6 +222,8 @@
       "must_include": [
         "reuse canonical active bundle",
         "это отдельный governance bundle",
+        "что остаётся reusable core;",
+        "source repo baseline;",
         "make lint-codex-governance"
       ]
     },
@@ -208,6 +231,8 @@
       "path": "docs/development/TASK_TEMPLATE.ru.md",
       "must_include": [
         "Для workflow/governance tasks дополнительно:",
+        "что считается reusable core и что остаётся project-specific overlay;",
+        "Для baseline-porting tasks дополнительно:",
         "### 2. Orchestration",
         "Для workflow/governance tasks сюда входит `make lint-codex-governance`."
       ]
@@ -217,7 +242,9 @@
       "must_include": [
         "## Workflow governance",
         "`make lint-codex-governance` прогнан",
-        "не противоречат `AGENTS.md` и `.codex/README.md`"
+        "не противоречат `AGENTS.md` и `.codex/README.md`",
+        "reusable core остаётся переносимым",
+        "source baseline, replaced overlays"
       ]
     },
     {

@@ -1,7 +1,7 @@
 ## 1. Current phase
 
-Governance follow-up after runtime-baseline reset. Это отдельный workflow task,
-а не product/runtime implementation slice.
+Governance hardening поверх live `ai-models` baseline. Это не product/runtime
+slice, а dedicated workflow-governance continuation bundle.
 
 ## 2. Orchestration
 
@@ -9,60 +9,95 @@ Governance follow-up after runtime-baseline reset. Это отдельный wor
 
 Причина:
 
-- scope ограничен repo-local governance surfaces;
-- runtime/API behavior не проектируется заново;
-- основной риск здесь в consistency review, а не в multi-agent exploration.
+- задача целиком лежит на repo-local workflow surface;
+- цель — tightening, transferability и consistency review инструкций, а не
+  проектирование нового runtime/API behavior;
+- основной риск здесь в качестве границ между reusable core и overlays, а не
+  в multi-agent exploration.
 
 ## 3. Slices
 
-### Slice 1. Audit current governance drift
+### Slice 1. Reframe the canonical governance bundle
 
 Цель:
 
-- зафиксировать расхождения между live repo baseline and governance surfaces.
+- обновить существующий canonical active bundle под переносимый multi-agent
+  baseline и зафиксировать acceptance criteria.
+
+Файлы/каталоги:
+
+- `plans/active/governance-surface-sync/TASK.ru.md`
+- `plans/active/governance-surface-sync/PLAN.ru.md`
+
+Проверки:
+
+- manual consistency review against `AGENTS.md` and `.codex/README.md`
+
+Артефакт результата:
+
+- актуальный bundle, который явно описывает reusable core, overlays, touched
+  instruction surfaces и governance validations.
+
+### Slice 2. Tighten reusable core and overlay boundaries
+
+Цель:
+
+- переписать instruction surface так, чтобы generic core skills/agents были
+  переносимыми, а `ai-models`-specific knowledge оставался в overlays;
+- сделать overlay split и porting contract machine-checkable.
 
 Файлы/каталоги:
 
 - `AGENTS.md`
 - `.codex/README.md`
-- `docs/development/CODEX_WORKFLOW.ru.md`
-- `plans/active/governance-surface-sync/*`
+- `.codex/governance-inventory.json`
+- `.codex/agents/*.toml`
+- `.agents/skills/*`
+- `tools/check-codex-governance.py`
 
 Проверки:
 
-- manual consistency review
+- manual consistency review of precedence chain
+- targeted drift scan for domain-specific wording in core skills/agents
 
 Артефакт результата:
 
-- explicit drift list to fix.
+- repo-local governance surface с явным capability split:
+  reusable core vs project-specific overlays;
+- lintable porting contract for copying the baseline into another module repo.
 
-### Slice 2. Rewrite stale phase/workflow narrative
+### Slice 3. Sync workflow docs and review surfaces
 
 Цель:
 
-- перевести governance surfaces на current publication/runtime-first roadmap.
+- выровнять workflow docs с новым baseline так, чтобы task intake, review и
+  handoff одинаково трактовали переносимый multi-agent system;
+- убрать необходимость “помнить на словах”, что именно нельзя слепо копировать.
 
 Файлы/каталоги:
 
-- `AGENTS.md`
-- `.codex/README.md`
 - `docs/development/CODEX_WORKFLOW.ru.md`
-- optional related workflow docs if needed
+- `docs/development/TASK_TEMPLATE.ru.md`
+- `docs/development/REVIEW_CHECKLIST.ru.md`
+- `plans/README.md`
+- optional `docs/development/REPO_LAYOUT.ru.md`
 
 Проверки:
 
-- `make lint-codex-governance`
+- manual consistency review across touched docs
 
 Артефакт результата:
 
-- repo-local instruction surface aligned to live baseline.
+- workflow docs, которые не противоречат precedence surface и одинаково
+  описывают governance guardrails.
 
 ## 4. Rollback point
 
-После Slice 1: drift inventory already captured, but no instruction surface has
-changed yet.
+После Slice 1: canonical bundle already updated, but instruction surfaces ещё не
+переписаны.
 
 ## 5. Final validation
 
 - `make lint-codex-governance`
 - `git diff --check`
+- manual review of touched governance layers as one instruction system

@@ -81,6 +81,18 @@ func RepositoryBlobLinkObjectKey(rootDirectory, repository, dgst string) (string
 	), nil
 }
 
+func storageDriverPathForObjectKey(rootDirectory, objectKey string) string {
+	cleanPath := strings.Trim(strings.TrimSpace(objectKey), "/")
+	cleanRoot := strings.Trim(strings.TrimSpace(rootDirectory), "/")
+	if cleanRoot != "" {
+		cleanPath = strings.TrimPrefix(cleanPath, cleanRoot+"/")
+	}
+	if cleanPath == "" {
+		return "/"
+	}
+	return "/" + cleanPath
+}
+
 func withRootDirectory(rootDirectory, objectPath string) string {
 	cleanRoot := strings.Trim(strings.TrimSpace(rootDirectory), "/")
 	cleanPath := strings.Trim(strings.TrimSpace(objectPath), "/")

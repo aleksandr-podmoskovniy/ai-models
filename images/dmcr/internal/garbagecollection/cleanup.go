@@ -93,6 +93,17 @@ func BuildReport(
 	store prefixStore,
 	rootDirectory string,
 ) (Report, error) {
+	return buildReportWithClock(ctx, dynamicClient, store, rootDirectory, time.Now().UTC(), defaultDirectUploadOrphanStaleAge)
+}
+
+func buildReportWithClock(
+	ctx context.Context,
+	dynamicClient dynamic.Interface,
+	store prefixStore,
+	rootDirectory string,
+	now time.Time,
+	directUploadStaleAge time.Duration,
+) (Report, error) {
 	live, err := DiscoverLivePrefixes(ctx, dynamicClient)
 	if err != nil {
 		return Report{}, err
@@ -103,7 +114,16 @@ func BuildReport(
 		return Report{}, err
 	}
 
-	return buildReport(live, storedRepositories, storedRawPrefixes), nil
+	report := buildReport(live, storedRepositories, storedRawPrefixes)
+
+	directUploadInventory, err := discoverDirectUploadInventory(ctx, store, rootDirectory, now, directUploadStaleAge)
+	if err != nil {
+		return Report{}, err
+	}
+	report.StoredDirectUploadPrefixCount = directUploadInventory.StoredPrefixCount
+	report.ReferencedDirectUploadPrefixCount = directUploadInventory.ReferencedPrefixCount
+	report.StaleDirectUploadPrefixes = directUploadInventory.StalePrefixes
+	return report, nil
 }
 
 func deleteStalePrefixes(ctx context.Context, store prefixStore, report Report) error {
@@ -115,6 +135,11 @@ func deleteStalePrefixes(ctx context.Context, store prefixStore, report Report) 
 	for _, entry := range report.StaleRawPrefixes {
 		if err := store.DeletePrefix(ctx, entry.Prefix); err != nil {
 			return fmt.Errorf("delete stale raw source mirror prefix %s: %w", entry.Prefix, err)
+		}
+	}
+	for _, entry := range report.StaleDirectUploadPrefixes {
+		if err := store.DeletePrefix(ctx, directUploadDeletePrefix(entry.Prefix)); err != nil {
+			return fmt.Errorf("delete stale direct-upload prefix %s: %w", entry.Prefix, err)
 		}
 	}
 	return nil
@@ -131,4 +156,12 @@ func newPrefixStoreFromConfig(configPath string) (prefixStore, string, error) {
 		return nil, "", err
 	}
 	return store, storageConfig.RootDirectory, nil
+}
+
+func directUploadDeletePrefix(prefix string) string {
+	cleanPrefix := strings.Trim(strings.TrimSpace(prefix), "/")
+	if cleanPrefix == "" {
+		return ""
+	}
+	return cleanPrefix + "/"
 }

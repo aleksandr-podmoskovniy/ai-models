@@ -49,8 +49,9 @@ module runtime or copied from the global HTTPS `CustomCertificate` path.
 registry. By default, ai-models enqueues one stale cleanup cycle daily at
 02:00. Setting the schedule to an empty string disables the periodic sweep
 without removing the operator-facing inspection surface: `dmcr-cleaner gc check`
-still reports stale published repository prefixes and source-mirror prefixes
-inside the DMCR Pod.
+still reports stale published repository prefixes, source-mirror prefixes, and
+orphan direct-upload prefixes without a `.dmcr-sealed` reference that already
+outlived the bounded stale-age window inside the DMCR Pod.
 
 The public runtime path for models is now controller-owned:
 
@@ -85,7 +86,7 @@ The trade-off is explicit:
 There is no separate transport choice for published layer payloads. The
 canonical byte path is fixed:
 
-- `publish-worker -> DMCR direct-upload v2 session -> physical multipart object -> DMCR verification read -> canonical digest metadata/link`.
+- `publish-worker -> DMCR direct-upload v2 session -> physical multipart object -> DMCR trusted S3 full-object digest when available, otherwise verification read -> canonical digest metadata/link`.
 
 `DMCR` still owns authentication, final blob/link materialization, and the
 published artifact contract, but the thick byte stream no longer goes through
@@ -97,6 +98,10 @@ without the final layer digest, streams the payload parts, and seals the layer
 with `complete(session, expectedDigest, size, parts)`. For range-capable raw
 layers this removes the old controller-side full descriptor pre-read: the
 publish worker reads the remote model source once. After multipart completion
+`DMCR` first asks object storage for a trusted full-object `ChecksumSHA256`.
+When it is available, `DMCR` uses that value without a second object read.
+`ETag`, multipart part checksums, and composite checksums are not accepted as
+safe OCI `sha256` digests. If a trusted full-object checksum is unavailable,
 `DMCR` makes one verification pass over the assembled physical object in
 object storage, computes the final `sha256` and actual size itself, and uses
 the controller-provided `expectedDigest` only as an additional equality check.
@@ -113,10 +118,11 @@ registry API so the internal contract changes one responsibility at a time.
 The current helper implementation still has one internal seal step, but it no
 longer rewrites the full heavy object during sealing. The multipart upload
 first lands into a physical object under
-`_ai_models/direct-upload/objects/<session-id>/data`, then `DMCR` reads that
-object once for verification, writes a tiny `.dmcr-sealed` sidecar near the
-canonical digest-addressed blob path, and creates the repository link using the
-computed digest/size. The published OCI contract remains digest-based:
+`_ai_models/direct-upload/objects/<session-id>/data`, then `DMCR` either uses a
+trusted full-object SHA256 from object storage or reads the object once for
+verification, writes a tiny `.dmcr-sealed` sidecar near the canonical
+digest-addressed blob path, and creates the repository link using the computed
+digest/size. The published OCI contract remains digest-based:
 repository links still point to the canonical digest, while the internal
 `sealeds3` driver resolves that digest to the physical object key.
 
@@ -147,6 +153,11 @@ The successful publication worker path no longer uses a local workspace/PVC.
 raw object-source or archive-source streaming semantics. The only local bounded
 storage contract left for the publish worker is the container
 `ephemeral-storage` request/limit for logs and writable layer usage.
+
+The internal publication runtime default is sized for the streaming path: up to
+`4` worker Pods at once, memory request `1Gi`, memory limit `2Gi` per worker,
+CPU request `1`, CPU limit `4`, and ephemeral-storage request/limit `1Gi`.
+These values stay internal module values, not public `ModuleConfig`.
 
 The public model API is also intentionally minimal. Users specify only
 `spec.source`; format, task, and other model metadata are calculated by the

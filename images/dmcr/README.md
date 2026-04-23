@@ -27,12 +27,14 @@ productized DMCR cleanup surface:
 - public `dmcr.gc.schedule` can enqueue periodic stale-sweep requests even
   without a concrete delete event;
 - operators can run `dmcr-cleaner gc check` for report-only inspection of stale
-  repository/source-mirror prefixes and `dmcr-cleaner gc auto-cleanup` for the
-  same sweep followed by registry `garbage-collect`;
+  repository/source-mirror prefixes plus orphan direct-upload prefixes and
+  `dmcr-cleaner gc auto-cleanup` for the same sweep followed by registry
+  `garbage-collect`;
 - `dmcr-cleaner` coalesces queued requests, arms one maintenance/read-only
   cycle after the internal debounce window, removes stale repository/source-
-  mirror prefixes, runs registry `garbage-collect`, and removes processed
-  requests;
+  mirror prefixes plus orphan unsealed direct-upload prefixes older than the
+  bounded session window, runs registry `garbage-collect`, and removes
+  processed requests;
 - `dmcr-cleaner gc run` uses an internal Kubernetes `Lease` so only one
   replica owns scheduled enqueue and active cleanup while other `DMCR` replicas
   stay as standby executors;

@@ -1,6 +1,6 @@
 ---
 name: model-catalog-api
-description: Ai-models-specific overlay for phase-2 and later work on Model and ClusterModel, controller boundaries, status.conditions, immutability, and internal backend synchronization semantics.
+description: Ai-models-specific overlay for `Model` and `ClusterModel` contract work: ownership, status.conditions, immutability, and synchronization with internal publication/runtime machinery.
 ---
 
 # Model catalog API overlay

@@ -14,5 +14,7 @@ State the orchestration mode: `solo`, `light`, or `full`.
 If the mode is not `solo`, list the read-only subagents that should review the task before implementation.
 Reuse the canonical active bundle when the task is a continuation; archive stale or oversized active bundles instead of creating sibling sources of truth.
 If the task touches repo-local workflow governance (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`, `docs/development/CODEX_WORKFLOW.ru.md`, `docs/development/TASK_TEMPLATE.ru.md`, `docs/development/REVIEW_CHECKLIST.ru.md`, `plans/README.md`), make that scope explicit and require consistency checks across all touched instruction layers.
+If the task tightens the reusable governance baseline, state explicitly what remains reusable core and what remains project-specific overlay.
+If the task ports this baseline from another repo, record source repo baseline, copied reusable core surfaces, overlays to replace/remove, and repo docs that must be rewritten before the first product slice.
 """
 nickname_candidates = ["Brief", "Triage", "Frame"]

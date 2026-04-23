@@ -78,11 +78,11 @@ const (
 const defaultCleanupPassThrough = "LOG_FORMAT,LOG_LEVEL,SSL_CERT_FILE,REQUESTS_CA_BUNDLE,AWS_CA_BUNDLE"
 
 const (
-	defaultPublicationMaxConcurrentWorkers = 1
+	defaultPublicationMaxConcurrentWorkers = 4
 	defaultPublicationWorkerCPURequest     = "1"
 	defaultPublicationWorkerCPULimit       = "4"
-	defaultPublicationWorkerMemoryRequest  = "8Gi"
-	defaultPublicationWorkerMemoryLimit    = "16Gi"
+	defaultPublicationWorkerMemoryRequest  = "1Gi"
+	defaultPublicationWorkerMemoryLimit    = "2Gi"
 	defaultPublicationWorkerEphemeralReq   = "1Gi"
 	defaultPublicationWorkerEphemeralLimit = "1Gi"
 )

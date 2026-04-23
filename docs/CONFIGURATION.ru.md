@@ -51,7 +51,8 @@ Custom trust для S3-compatible endpoint задаётся через `artifact
 ежедневно в 02:00. Пустая строка отключает периодический sweep, но не убирает
 operator-facing inspection surface: внутри Pod'а `DMCR` по-прежнему можно
 запустить `dmcr-cleaner gc check` и получить report по stale published
-repository prefix и source-mirror prefix.
+repository prefix, source-mirror prefix и orphan direct-upload prefix без
+`.dmcr-sealed` reference, который пережил bounded stale-age window.
 
 Публичный runtime path для моделей теперь controller-owned:
 
@@ -86,7 +87,7 @@ Trade-off между режимами такой:
 Отдельного выбора транспорта для публикуемых слоёв больше нет.
 Канонический byte path теперь один:
 
-- `publish-worker -> DMCR direct-upload v2 session -> physical multipart object -> DMCR verification read -> canonical digest metadata/link`.
+- `publish-worker -> DMCR direct-upload v2 session -> physical multipart object -> DMCR trusted S3 full-object digest, если доступен, иначе verification read -> canonical digest metadata/link`.
 
 `DMCR` остаётся владельцем аутентификации, финализации blob/link и итогового
 артефактного контракта, но толстый поток байтов больше не идёт через registry
@@ -102,8 +103,11 @@ Trade-off между режимами такой:
 проверочный проход по уже собранному физическому объекту в объектном
 хранилище, сам считает итоговый `sha256` и фактический размер, а
 `expectedDigest` от контроллера использует только как дополнительную проверку.
-Если digest не совпал, публикация отклоняется и физический объект загрузки
-удаляется.
+Если S3 отдаёт `ChecksumSHA256` именно как full-object checksum, `DMCR`
+использует его без второго чтения объекта. `ETag`, multipart part checksum и
+composite checksum не считаются безопасным OCI `sha256` digest: при их
+отсутствии или неподходящем типе остаётся полный проверочный read. Если digest
+не совпал, публикация отклоняется и физический объект загрузки удаляется.
 Если проверочный read временно падает после успешной multipart-сборки,
 физический объект не удаляется: повторный `complete` может продолжить проверку
 уже собранного объекта без повторной загрузки байтов модели.
@@ -115,11 +119,13 @@ Trade-off между режимами такой:
 Текущая реализация делает один внутренний шаг запечатывания без второй полной
 записи тяжёлого объекта. Multipart upload сначала собирается в физический
 ключ объекта `_ai_models/direct-upload/objects/<session-id>/data`, затем
-`DMCR` один раз читает этот объект для проверки, пишет маленький
-`.dmcr-sealed` sidecar под каноническим blob path и repository link по
-вычисленному digest. Published OCI contract снаружи остаётся digest-based:
-repository link указывает на канонический digest, а внутренний `sealeds3`
-driver прозрачно разворачивает этот digest в физический ключ объекта.
+`DMCR` сначала пытается взять доверенный full-object SHA256 из object storage,
+а если хранилище его не отдаёт, один раз читает объект для проверки. После
+этого он пишет маленький `.dmcr-sealed` sidecar под каноническим blob path и
+repository link по вычисленному digest. Published OCI contract снаружи
+остаётся digest-based: repository link указывает на канонический digest, а
+внутренний `sealeds3` driver прозрачно разворачивает этот digest в физический
+ключ объекта.
 
 На стороне контроллера direct-upload теперь также ведёт один компактный
 owner-scoped checkpoint `Secret`. В фазе `Running` в нём лежат ключ текущего
@@ -148,6 +154,11 @@ raw-слоями. Это только внутреннее решение publis
 raw object-source или archive-source streaming semantics. Локальный bounded storage
 contract для publish-worker теперь только один: `ephemeral-storage` requests и
 limits контейнера для writable layer и логов.
+
+Internal default для publication runtime рассчитан на streaming path:
+одновременно до `4` worker Pods, memory request `1Gi`, memory limit `2Gi` на
+worker, CPU request `1`, CPU limit `4`, ephemeral-storage request/limit `1Gi`.
+Эти значения остаются internal module values, а не public `ModuleConfig`.
 
 Публичный model API тоже намеренно минимален. Пользователь задаёт только
 `spec.source`; формат, task и остальная model metadata вычисляются controller'ом

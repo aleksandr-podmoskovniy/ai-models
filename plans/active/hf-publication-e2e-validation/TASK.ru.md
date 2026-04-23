@@ -1,10 +1,11 @@
-# HF publication e2e validation
+# HF publication e2e validation and runtime hardening
 
 ## 1. Заголовок
 
 Проверить живой end-to-end путь публикации двух публичных моделей `Hugging Face`
-разных форматов и зафиксировать реальный byte path, копии и отклонение от
-целевой картины
+разных форматов, зафиксировать реальный byte path, а затем по найденным
+дефектам и узким местам скорректировать internal publication runtime defaults
+и `DMCR` direct-upload verification path
 
 ## 2. Контекст
 
@@ -26,10 +27,19 @@
 - каких это объёмов;
 - насколько это совпадает с целевой картиной модуля.
 
+По итогам live проверки стали обязательны и corrective changes внутри того же
+workstream:
+
+- исправить дефект `GGUF` direct-upload sealing path в `DMCR`;
+- снизить publication worker memory defaults до streaming-friendly значений;
+- поднять default concurrency publication workers;
+- перед полным reread в `DMCR` сначала пытаться использовать trusted
+  full-object SHA256 из object storage, но без ослабления zero-trust проверки.
+
 ## 3. Постановка задачи
 
 Нужно выполнить bounded эксплуатационную проверку текущего publication/runtime
-baseline:
+baseline и довести найденные defects до продуктового состояния:
 
 1. Взять две публичные модели `Hugging Face` разных форматов:
    - одну `Safetensors`;
@@ -49,6 +59,10 @@ baseline:
    - какие объёмы проходят через каждый шаг;
    - где есть packaging/repackaging.
 5. Сопоставить получившуюся фактическую картину с целевой архитектурой модуля.
+6. Исправить выявленные узкие места в internal implementation:
+   - sealed metadata path для direct-upload;
+   - runtime defaults для publication workers;
+   - trusted S3 full-object digest fast path перед fallback reread.
 
 ## 4. Scope
 
@@ -58,6 +72,10 @@ baseline:
   - два временных `Model`;
 - operational inspection через `kubectl`, controller/source-worker logs и
   object/registry metadata;
+- internal runtime/defaults changes:
+  - `DMCR direct-upload`;
+  - controller runtime defaults;
+  - Helm/OpenAPI/doc surfaces, которые описывают эти internal defaults;
 - при необходимости обновление:
   - `images/controller/TEST_EVIDENCE.ru.md`.
 
@@ -76,6 +94,8 @@ baseline:
 - controller publication observability;
 - `Hugging Face` remote ingest path;
 - `DMCR` publication backend contract;
+- controller runtime defaults;
+- Helm/OpenAPI/doc surfaces for internal runtime defaults and verification path;
 - operational evidence surfaces, если будет полезно закрепить результаты в
   репозитории.
 
@@ -97,6 +117,13 @@ baseline:
 - Есть отдельный вывод по количеству полных копий и по узким местам текущей
   схемы.
 - Есть отдельное сравнение "как сейчас" против "какая целевая картина".
+- Дефект `GGUF` direct-upload закрыт кодом и тестами.
+- Default publication runtime после continuation:
+  - `maxConcurrentWorkers=4`;
+  - worker memory request `1Gi`;
+  - worker memory limit `2Gi`.
+- `DMCR` использует trusted S3 full-object `ChecksumSHA256` только если он
+  явно безопасен для OCI `sha256`; иначе остаётся fallback на полный read.
 - После проверки временные объекты либо удалены, либо явно перечислены как
   оставленные намеренно.
 
@@ -110,3 +137,5 @@ baseline:
   streaming/object-source path с локальной materialization;
 - если публикация не завершится, важно зафиксировать именно место сбоя, а не
   подменить результат рассуждением по коду.
+- если принять unsafe S3 checksum или `ETag` за OCI digest, можно незаметно
+  ослабить zero-trust семантику sealed publication path.

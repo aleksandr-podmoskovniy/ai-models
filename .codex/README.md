@@ -19,6 +19,7 @@ Precedence внутри repo-local Codex surface:
 - не допускать split-brain между skills, agent profiles и task bundles.
 - удерживать workflow docs в `docs/development/` и `plans/README.md`
   выровненными с этим instruction surface.
+- держать reusable core отдельно от project-specific overlays.
 
 Current ai-models baseline:
 
@@ -41,6 +42,7 @@ Core skills:
 - `third-party-component-integration`
 - `platform-runtime-integration`
 - `k8s-api-design`
+- `controller-architecture-discipline`
 - `controller-runtime-implementation`
 
 Reusable doctrine lives primarily in:
@@ -50,6 +52,13 @@ Reusable doctrine lives primarily in:
 - `review-gate`
 - `controller-architecture-discipline`
 - `controller-runtime-implementation`
+
+Правило переносимости:
+
+- core skills должны оставаться module-agnostic;
+- product/runtime/API specifics текущего модуля должны жить в overlays;
+- agent profiles должны задавать role-specific focus, а не копировать skill
+  texts слово в слово.
 
 Core read-only agents:
 - `repo_architect` для layout и anti-patchwork решений
@@ -74,6 +83,13 @@ Write-capable agents:
 `backend_integrator` относится к внутренним publication backend/runtime
 деталям, а не к backend-first roadmap как project phase.
 
+Project-specific overlay skills:
+- `ai-models-backend-platform`
+- `model-catalog-api`
+
+Project-specific overlay agents:
+- `backend_integrator`
+
 ## Recommended orchestration
 
 Режимы:
@@ -87,7 +103,8 @@ Decision matrix:
 - layout/module shell/repo topology -> `repo_architect`
 - runtime/auth/storage/ingress/build/HA/observability -> `integration_architect`
 - publication-backend-specific runtime details -> `backend_integrator`
-- `Model` / `ClusterModel` / API / CRD / conditions -> `api_designer`
+- `Model` / `ClusterModel` overlay semantics -> `model-catalog-api`
+- broader Kubernetes / DKP API / CRD / conditions semantics -> `api_designer`
 - scoped implementation after clear boundaries -> `module_implementer`
 - substantial final handoff -> `review-gate`; если использовалась delegation
   или задача была multi-area, ещё и `reviewer`
@@ -99,6 +116,7 @@ Engineering expectations carried by this baseline:
 - no wrapper-on-wrapper architecture
 - test methodology by decision surface, not by helper accretion
 - explicit review of governance changes as a first-class scope
+- portable core over disguised module-specific prose
 
 Machine-checkable governance baseline:
 
@@ -116,6 +134,33 @@ Cadence:
 4. Только после этого менять код.
 5. Если меняется repo-local workflow surface, не смешивать это с product/runtime
    slice: делать отдельный governance bundle.
+
+## Porting pattern
+
+Когда этот baseline переносится в другой DKP module repo:
+
+- сначала открыть dedicated governance porting bundle, а не начинать с
+  product/runtime diff;
+- копировать precedence chain, core skills, core agents,
+  `.codex/governance-inventory.json` и workflow docs как baseline mechanics;
+- оставлять reusable core module-agnostic;
+- заменять product phase docs и project-specific overlays осознанно, а не
+  переписывать под них generic core.
+
+Files that must be reviewed and rewritten during porting:
+- `AGENTS.md`
+- `.codex/README.md`
+- `docs/development/TZ.ru.md`
+- `docs/development/PHASES.ru.md`
+- `docs/development/REPO_LAYOUT.ru.md`
+- `docs/development/CODEX_WORKFLOW.ru.md`
+
+Baseline porting bundle must capture:
+- source repo baseline;
+- copied reusable core surfaces;
+- replaced or removed overlay skills and agents;
+- rewritten repo-specific docs and phase narrative;
+- `make lint-codex-governance` result before the first product/runtime slice.
 
 Для ai-models-specific задач поверх этого добавлять:
 - `backend_integrator` для internal publication backend/runtime и 3p runtime

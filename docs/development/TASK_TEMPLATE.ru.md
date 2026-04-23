@@ -25,7 +25,14 @@
 
 Для workflow/governance tasks дополнительно:
 - какие instruction surfaces должны остаться согласованными;
+- что считается reusable core и что остаётся project-specific overlay;
 - какие machine-checkable guardrails должны быть прогнаны.
+
+Для baseline-porting tasks дополнительно:
+- из какого repo взят baseline;
+- какие reusable surfaces копируются;
+- какие overlay skills/agents заменяются или удаляются;
+- какие repo-specific docs должны быть переписаны до первого product slice.
 
 ### 8. Риски
 Что может пойти не так.
