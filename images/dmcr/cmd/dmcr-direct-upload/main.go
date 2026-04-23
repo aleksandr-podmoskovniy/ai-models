@@ -27,25 +27,26 @@ import (
 )
 
 const (
-	listenAddressEnv   = "DMCR_DIRECT_UPLOAD_LISTEN_ADDRESS"
-	tlsCertFileEnv     = "DMCR_DIRECT_UPLOAD_TLS_CERT_FILE"
-	tlsKeyFileEnv      = "DMCR_DIRECT_UPLOAD_TLS_KEY_FILE"
-	authUsernameEnv    = "DMCR_DIRECT_UPLOAD_USERNAME"
-	authPasswordEnv    = "DMCR_DIRECT_UPLOAD_PASSWORD"
-	tokenSecretEnv     = "REGISTRY_HTTP_SECRET"
-	rootDirectoryEnv   = "DMCR_STORAGE_S3_ROOT_DIRECTORY"
-	bucketEnv          = "DMCR_STORAGE_S3_BUCKET"
-	regionEnv          = "DMCR_STORAGE_S3_REGION"
-	endpointEnv        = "DMCR_STORAGE_S3_ENDPOINT"
-	usePathStyleEnv    = "DMCR_STORAGE_S3_USE_PATH_STYLE"
-	insecureEnv        = "DMCR_STORAGE_S3_INSECURE"
-	accessKeyEnv       = "REGISTRY_STORAGE_S3_ACCESSKEY"
-	secretKeyEnv       = "REGISTRY_STORAGE_S3_SECRETKEY"
-	partSizeBytesEnv   = "DMCR_DIRECT_UPLOAD_PART_SIZE_BYTES"
-	presignExpiryEnv   = "DMCR_DIRECT_UPLOAD_PRESIGN_EXPIRY"
-	sessionTTLEnv      = "DMCR_DIRECT_UPLOAD_SESSION_TTL"
-	defaultListenAddr  = ":5002"
-	defaultPresignLife = 15 * time.Minute
+	listenAddressEnv      = "DMCR_DIRECT_UPLOAD_LISTEN_ADDRESS"
+	tlsCertFileEnv        = "DMCR_DIRECT_UPLOAD_TLS_CERT_FILE"
+	tlsKeyFileEnv         = "DMCR_DIRECT_UPLOAD_TLS_KEY_FILE"
+	authUsernameEnv       = "DMCR_DIRECT_UPLOAD_USERNAME"
+	authPasswordEnv       = "DMCR_DIRECT_UPLOAD_PASSWORD"
+	tokenSecretEnv        = "REGISTRY_HTTP_SECRET"
+	rootDirectoryEnv      = "DMCR_STORAGE_S3_ROOT_DIRECTORY"
+	bucketEnv             = "DMCR_STORAGE_S3_BUCKET"
+	regionEnv             = "DMCR_STORAGE_S3_REGION"
+	endpointEnv           = "DMCR_STORAGE_S3_ENDPOINT"
+	usePathStyleEnv       = "DMCR_STORAGE_S3_USE_PATH_STYLE"
+	insecureEnv           = "DMCR_STORAGE_S3_INSECURE"
+	accessKeyEnv          = "REGISTRY_STORAGE_S3_ACCESSKEY"
+	secretKeyEnv          = "REGISTRY_STORAGE_S3_SECRETKEY"
+	partSizeBytesEnv      = "DMCR_DIRECT_UPLOAD_PART_SIZE_BYTES"
+	presignExpiryEnv      = "DMCR_DIRECT_UPLOAD_PRESIGN_EXPIRY"
+	sessionTTLEnv         = "DMCR_DIRECT_UPLOAD_SESSION_TTL"
+	verificationPolicyEnv = "DMCR_DIRECT_UPLOAD_VERIFICATION_POLICY"
+	defaultListenAddr     = ":5002"
+	defaultPresignLife    = 15 * time.Minute
 )
 
 func main() {
@@ -73,6 +74,13 @@ func main() {
 		envDuration(sessionTTLEnv, directupload.DefaultSessionTTL),
 	)
 	if err != nil {
+		log.Fatal(err)
+	}
+	verificationPolicy, err := directupload.ParseVerificationPolicy(env(verificationPolicyEnv))
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := service.SetVerificationPolicy(verificationPolicy); err != nil {
 		log.Fatal(err)
 	}
 

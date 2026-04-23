@@ -35,7 +35,9 @@ func TestModelReconcilerEnqueuesGarbageCollectionRequestAndRemovesFinalizerAfter
 	model := newDeletingModel()
 	setCleanupHandle(t, model, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef")
 	jobName := cleanupJobName(t, model)
-	reconciler, kubeClient := newModelReconciler(t, model, completedJob("d8-ai-models", jobName))
+	const sessionToken = "session-token-1"
+	stateSecret := sourceWorkerStateSecretWithSessionToken(t, "d8-ai-models", model.GetUID(), sessionToken)
+	reconciler, kubeClient := newModelReconciler(t, model, completedJob("d8-ai-models", jobName), stateSecret)
 
 	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)})
 	if err != nil {
@@ -62,8 +64,11 @@ func TestModelReconcilerEnqueuesGarbageCollectionRequestAndRemovesFinalizerAfter
 	if requestSecret.Annotations[dmcrGCRequestedAnnotationKey] == "" {
 		t.Fatalf("expected queued request annotation on garbage-collection request secret, got %#v", requestSecret.Annotations)
 	}
-	if requestSecret.Annotations[dmcrGCSwitchAnnotationKey] != "" {
-		t.Fatalf("expected active switch to stay empty on queued request secret, got %#v", requestSecret.Annotations)
+	if requestSecret.Annotations[dmcrGCSwitchAnnotationKey] == "" {
+		t.Fatalf("expected delete-triggered garbage-collection request to be armed immediately, got %#v", requestSecret.Annotations)
+	}
+	if got, want := string(requestSecret.Data[dmcrGCDirectUploadTokenKey]), sessionToken; got != want {
+		t.Fatalf("expected delete-triggered garbage-collection request to snapshot current direct-upload session token %q, got %q", want, got)
 	}
 }
 

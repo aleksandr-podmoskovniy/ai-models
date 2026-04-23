@@ -21,6 +21,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 )
 
 type PrefixInventoryEntry struct {
@@ -30,15 +31,18 @@ type PrefixInventoryEntry struct {
 }
 
 type Report struct {
-	LiveRepositoryPrefixCount         int
-	LiveRawPrefixCount                int
-	StoredRepositoryPrefixCount       int
-	StoredRawPrefixCount              int
-	StoredDirectUploadPrefixCount     int
-	ReferencedDirectUploadPrefixCount int
-	StaleRepositories                 []PrefixInventoryEntry
-	StaleRawPrefixes                  []PrefixInventoryEntry
-	StaleDirectUploadPrefixes         []PrefixInventoryEntry
+	LiveRepositoryPrefixCount              int
+	LiveRawPrefixCount                     int
+	StoredRepositoryPrefixCount            int
+	StoredRawPrefixCount                   int
+	StoredDirectUploadPrefixCount          int
+	ProtectedDirectUploadPrefixCount       int
+	StoredDirectUploadMultipartUploadCount int
+	StoredDirectUploadMultipartPartCount   int
+	StaleRepositories                      []PrefixInventoryEntry
+	StaleRawPrefixes                       []PrefixInventoryEntry
+	StaleDirectUploadPrefixes              []PrefixInventoryEntry
+	StaleDirectUploadMultipartUploads      []MultipartUploadInventoryEntry
 }
 
 type livePrefixSet struct {
@@ -107,7 +111,10 @@ func staleEntries(live map[string]struct{}, stored []PrefixInventoryEntry) []Pre
 }
 
 func (r Report) HasStalePrefixes() bool {
-	return len(r.StaleRepositories) > 0 || len(r.StaleRawPrefixes) > 0 || len(r.StaleDirectUploadPrefixes) > 0
+	return len(r.StaleRepositories) > 0 ||
+		len(r.StaleRawPrefixes) > 0 ||
+		len(r.StaleDirectUploadPrefixes) > 0 ||
+		len(r.StaleDirectUploadMultipartUploads) > 0
 }
 
 func (r Report) Format() string {
@@ -116,11 +123,14 @@ func (r Report) Format() string {
 		fmt.Sprintf("Live raw source mirror prefixes: %d", r.LiveRawPrefixCount),
 		fmt.Sprintf("Stored repository prefixes: %d", r.StoredRepositoryPrefixCount),
 		fmt.Sprintf("Stored raw source mirror prefixes: %d", r.StoredRawPrefixCount),
-		fmt.Sprintf("Stored direct-upload prefixes: %d", r.StoredDirectUploadPrefixCount),
-		fmt.Sprintf("Referenced direct-upload prefixes: %d", r.ReferencedDirectUploadPrefixCount),
+		fmt.Sprintf("Stored direct-upload object prefixes: %d", r.StoredDirectUploadPrefixCount),
+		fmt.Sprintf("Protected direct-upload object prefixes: %d", r.ProtectedDirectUploadPrefixCount),
+		fmt.Sprintf("Open direct-upload multipart uploads: %d", r.StoredDirectUploadMultipartUploadCount),
+		fmt.Sprintf("Open direct-upload multipart parts: %d", r.StoredDirectUploadMultipartPartCount),
 		fmt.Sprintf("Stale repository prefixes: %d", len(r.StaleRepositories)),
 		fmt.Sprintf("Stale raw source mirror prefixes: %d", len(r.StaleRawPrefixes)),
-		fmt.Sprintf("Stale orphan direct-upload prefixes: %d", len(r.StaleDirectUploadPrefixes)),
+		fmt.Sprintf("Stale orphan direct-upload object prefixes: %d", len(r.StaleDirectUploadPrefixes)),
+		fmt.Sprintf("Stale orphan direct-upload multipart uploads: %d", len(r.StaleDirectUploadMultipartUploads)),
 	}
 	if !r.HasStalePrefixes() {
 		lines = append(lines, "No stale prefixes eligible for cleanup.")
@@ -140,9 +150,15 @@ func (r Report) Format() string {
 		}
 	}
 	if len(r.StaleDirectUploadPrefixes) > 0 {
-		lines = append(lines, "", "Stale orphan direct-upload prefixes:")
+		lines = append(lines, "", "Stale orphan direct-upload object prefixes:")
 		for _, entry := range r.StaleDirectUploadPrefixes {
 			lines = append(lines, formatReportEntry(entry))
+		}
+	}
+	if len(r.StaleDirectUploadMultipartUploads) > 0 {
+		lines = append(lines, "", "Stale orphan direct-upload multipart uploads:")
+		for _, entry := range r.StaleDirectUploadMultipartUploads {
+			lines = append(lines, formatMultipartUploadReportEntry(entry))
 		}
 	}
 
@@ -156,6 +172,19 @@ func formatReportEntry(entry PrefixInventoryEntry) string {
 	}
 	if sample := strings.Trim(strings.TrimSpace(entry.SampleObjectKey), "/"); sample != "" {
 		parts = append(parts, "sample="+sample)
+	}
+	return strings.Join(parts, " ")
+}
+
+func formatMultipartUploadReportEntry(entry MultipartUploadInventoryEntry) string {
+	parts := []string{
+		"- " + strings.Trim(strings.TrimSpace(entry.Prefix), "/"),
+		"object=" + strings.Trim(strings.TrimSpace(entry.ObjectKey), "/"),
+		"upload_id=" + strings.TrimSpace(entry.UploadID),
+		fmt.Sprintf("parts=%d", entry.PartCount),
+	}
+	if !entry.InitiatedAt.IsZero() {
+		parts = append(parts, "initiated_at="+entry.InitiatedAt.UTC().Format(time.RFC3339Nano))
 	}
 	return strings.Join(parts, " ")
 }

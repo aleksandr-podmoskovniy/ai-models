@@ -39,13 +39,22 @@ import (
 type prefixStore interface {
 	ForEachObject(ctx context.Context, prefix string, visit func(string)) error
 	ForEachObjectInfo(ctx context.Context, prefix string, visit func(prefixObjectInfo)) error
+	ForEachMultipartUpload(ctx context.Context, prefix string, visit func(multipartUploadInfo)) error
+	CountMultipartUploadParts(ctx context.Context, objectKey, uploadID string) (int, error)
 	GetObject(ctx context.Context, key string) ([]byte, error)
 	DeletePrefix(ctx context.Context, prefix string) error
+	AbortMultipartUpload(ctx context.Context, objectKey, uploadID string) error
 }
 
 type prefixObjectInfo struct {
 	Key          string
 	LastModified time.Time
+}
+
+type multipartUploadInfo struct {
+	Key         string
+	UploadID    string
+	InitiatedAt time.Time
 }
 
 type s3PrefixStore struct {

@@ -12,6 +12,14 @@ production gap:
 - orphan `direct-upload` physical residue под
   `_ai_models/direct-upload/objects/<session-id>/data`, который не покрыт
   ownership-based stale sweep.
+- delete-triggered cleanup requests слишком долго оставляли bucket грязным,
+  потому что физический sweep ждал общего debounce окна вместо немедленного
+  maintenance arming.
+- immediate reclaim после delete-triggered request всё ещё не доведён до
+  production-safe состояния:
+  - orphan direct-upload residue продолжает жить по global stale-age;
+  - глобальный age-bypass unsafe, пока delete-flow не несёт точный per-owner
+    targeted snapshot unfinished upload session.
 
 ## 2. Orchestration
 
@@ -203,6 +211,104 @@ production gap:
   - generic S3 backend остаётся best-effort по checksum metadata и не обещает
     portable multipart `full-object sha256`.
 
+### Slice 9. Ускорить physical GC после delete-triggered cleanup
+
+- Цель:
+  - убрать длинное окно между удалением `Model`/`ClusterModel` и фактическим
+    reclaim bytes в bucket для backend artifact cleanup.
+- Файлы:
+  - `images/controller/internal/controllers/catalogcleanup/*`
+  - `images/dmcr/README.md`
+  - `plans/active/phase1-gc-sweep-and-fast-seal/*`
+- Проверки:
+  - `cd images/controller && go test ./internal/controllers/catalogcleanup`
+  - `make verify`
+- Артефакт:
+  - delete-triggered GC request сразу armed через switch-аннотацию;
+  - scheduled sweep остаётся queued/coalesced и по-прежнему использует
+    debounce window внутри `dmcr-cleaner`.
+
+### Slice 10. Добить immediate orphan direct-upload cleanup после delete-triggered request
+
+- Цель:
+  - забирать orphan direct-upload bytes сразу после удаления
+    `Model`/`ClusterModel`, не дожидаясь `24h session TTL`, но не ломать
+    recreate/resume живой публикации другой модели.
+- Файлы:
+  - `images/controller/internal/controllers/catalogcleanup/*`
+  - `images/dmcr/internal/garbagecollection/*`
+  - `images/dmcr/README.md`
+  - `plans/active/phase1-gc-sweep-and-fast-seal/*`
+- Проверки:
+  - `cd images/controller && go test ./internal/controllers/catalogcleanup`
+  - `cd images/dmcr && go test ./internal/garbagecollection`
+  - `make verify`
+- Артефакт:
+- delete-triggered GC request несёт internal cleanup intent для immediate
+  orphan direct-upload cleanup вместе с per-owner targeted session snapshot;
+  - `dmcr-cleaner` удаляет только exact direct-upload session prefixes,
+    snapshot'нутые controller delete flow, и всё ещё уважает sealed metadata
+    protection published blobs;
+  - immediate cleanup применяется только в active delete-triggered GC cycle;
+  - manual `gc check` и scheduled sweep остаются консервативными и не получают
+    global age-bypass.
+
+### Slice 11. Ослабить default direct-upload verification policy без потери explainability
+
+- Цель:
+  - убрать mandatory reread как default path для больших direct-upload blobs;
+  - оставить strict reread как internal policy, которую можно вернуть позже
+    без смены controller contract или public module values.
+- Файлы:
+  - `images/dmcr/internal/directupload/*`
+  - `images/dmcr/cmd/dmcr-direct-upload/main.go`
+  - `templates/dmcr/deployment.yaml`
+  - `images/dmcr/README.md`
+  - `plans/active/phase1-gc-sweep-and-fast-seal/*`
+- Проверки:
+  - `cd images/dmcr && go test ./internal/directupload/...`
+  - `make verify`
+- Артефакт:
+  - policy и фактический verification source разведены:
+    - policy `trusted-backend-or-client-asserted` становится default;
+    - internal strict alternative `trusted-backend-or-reread` остаётся
+      доступной только через env wiring внутри `dmcr-direct-upload`;
+  - backend `full-object sha256` по-прежнему имеет приоритет, если storage
+    реально его даёт;
+  - при отсутствии trusted backend checksum `dmcr-direct-upload` по default
+    принимает client-declared digest/size без reread, но не притворяется, что
+    объект был строго verified;
+  - если client digest отсутствует, helper всё ещё вынужден дочитывать объект,
+    чтобы получить canonical digest-addressed blob key;
+  - logs/docs явно различают `trusted-backend-sha256`,
+    `client-asserted` и `object-reread`.
+
+### Slice 12. Добавить multipart residue sweep для direct-upload
+
+- Цель:
+  - убрать invisible RGW/S3 multipart residue, которое не видно как обычные
+    objects, но продолжает занимать bucket capacity и раздувать object count.
+- Файлы:
+  - `images/dmcr/internal/garbagecollection/*`
+  - `images/dmcr/cmd/dmcr-cleaner/*`
+  - `images/dmcr/README.md`
+  - `plans/active/phase1-gc-sweep-and-fast-seal/*`
+- Проверки:
+  - `cd images/dmcr && go test ./internal/garbagecollection ./cmd/dmcr-cleaner/...`
+  - `make verify`
+- Артефакт:
+  - `dmcr-cleaner gc check` отдельно показывает:
+    - visible direct-upload object prefixes;
+    - open direct-upload multipart uploads;
+    - aggregate multipart part count;
+  - scheduled/manual cleanup abort'ит stale multipart uploads только старше
+    bounded stale-age;
+  - delete-triggered active cleanup может abort'ить exact multipart upload по
+    `{objectKey, uploadID}` из controller snapshot secret без global
+    age-bypass;
+  - cleanup остаётся DMCR-local storage concern и не выносится в controller
+    или новый public API.
+
 ## 4. Rollback point
 
 После Slice 2 можно безопасно остановиться:
@@ -232,6 +338,26 @@ production gap:
 - checksum-path diagnostics изолированы внутри `dmcr-direct-upload`;
 - public API / values contract не меняется;
 - safe reread fallback остаётся тем же даже при откате observability slice.
+
+После Slice 10 rollback тоже локален:
+
+- delete-triggered direct-upload reclaim остаётся изолирован внутри internal
+  GC request annotations и direct-upload inventory policy;
+- scheduled sweep и operator `gc check` сохраняют прежнюю bounded-age
+  семантику даже при откате этого continuation slice.
+
+После Slice 11 rollback тоже локален:
+
+- verification policy остаётся изолирована внутри `dmcr-direct-upload`;
+- controller publish contract и public module settings не меняются;
+- откат возвращает reread default, не ломая cleanup/storage layout contract.
+
+После Slice 12 rollback тоже локален:
+
+- multipart residue sweep остаётся изолирован внутри `dmcr-cleaner` storage
+  inventory/abort boundary;
+- visible direct-upload object cleanup, sealed metadata protection и registry
+  GC остаются прежними даже при откате multipart continuation slice.
 
 ## 5. Final validation
 

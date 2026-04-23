@@ -65,7 +65,7 @@ func newGCCommand() *cobra.Command {
 	}
 	checkCommand := &cobra.Command{
 		Use:   "check",
-		Short: "Report stale DMCR repository and source-mirror prefixes that no longer belong to live Model or ClusterModel objects",
+		Short: "Report stale DMCR repository, source-mirror, direct-upload object, and direct-upload multipart residue that no longer belong to live Model or ClusterModel objects",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			report, err := garbagecollection.Check(cmd.Context(), options.ConfigPath)
@@ -78,7 +78,7 @@ func newGCCommand() *cobra.Command {
 	}
 	autoCleanupCommand := &cobra.Command{
 		Use:   "auto-cleanup",
-		Short: "Delete stale DMCR repository and source-mirror prefixes, then run registry garbage-collect",
+		Short: "Delete stale DMCR repository, source-mirror, and direct-upload residue, then run registry garbage-collect",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, err := garbagecollection.AutoCleanup(cmd.Context(), options.ConfigPath, options.RegistryBinary, options.GCTimeout)

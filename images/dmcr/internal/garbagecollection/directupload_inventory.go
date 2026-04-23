@@ -31,9 +31,9 @@ import (
 const defaultDirectUploadOrphanStaleAge = directupload.DefaultSessionTTL + DefaultActivationDelay
 
 type directUploadInventory struct {
-	StoredPrefixCount     int
-	ReferencedPrefixCount int
-	StalePrefixes         []PrefixInventoryEntry
+	StoredPrefixCount    int
+	ProtectedPrefixCount int
+	StalePrefixes        []PrefixInventoryEntry
 }
 
 type directUploadStoredEntry struct {
@@ -48,26 +48,24 @@ func discoverDirectUploadInventory(
 	store prefixStore,
 	rootDirectory string,
 	now time.Time,
-	staleAge time.Duration,
+	policy cleanupPolicy,
 ) (directUploadInventory, error) {
-	if staleAge <= 0 {
-		staleAge = defaultDirectUploadOrphanStaleAge
-	}
+	policy = normalizeCleanupPolicy(policy)
 
 	storedPrefixes, err := collectStoredDirectUploadPrefixes(ctx, store, rootDirectory)
 	if err != nil {
 		return directUploadInventory{}, err
 	}
 
-	referencedPrefixes, err := collectReferencedDirectUploadPrefixes(ctx, store, rootDirectory)
+	protectedPrefixes, err := collectProtectedDirectUploadPrefixes(ctx, store, rootDirectory)
 	if err != nil {
 		return directUploadInventory{}, err
 	}
 
 	return directUploadInventory{
-		StoredPrefixCount:     len(storedPrefixes),
-		ReferencedPrefixCount: len(referencedPrefixes),
-		StalePrefixes:         staleDirectUploadPrefixes(storedPrefixes, referencedPrefixes, now.UTC(), staleAge),
+		StoredPrefixCount:    len(storedPrefixes),
+		ProtectedPrefixCount: len(protectedPrefixes),
+		StalePrefixes:        staleDirectUploadPrefixes(storedPrefixes, protectedPrefixes, now.UTC(), policy),
 	}, nil
 }
 
@@ -109,11 +107,7 @@ func collectStoredDirectUploadPrefixes(
 	return result, nil
 }
 
-func collectReferencedDirectUploadPrefixes(
-	ctx context.Context,
-	store prefixStore,
-	rootDirectory string,
-) (map[string]struct{}, error) {
+func collectProtectedDirectUploadPrefixes(ctx context.Context, store prefixStore, rootDirectory string) (map[string]struct{}, error) {
 	metadataKeys := make([]string, 0, 128)
 	if err := store.ForEachObject(ctx, blobInventoryBasePrefix(rootDirectory), func(key string) {
 		if sealedblob.IsMetadataPath(key) {
@@ -124,7 +118,7 @@ func collectReferencedDirectUploadPrefixes(
 	}
 
 	sort.Strings(metadataKeys)
-	referenced := make(map[string]struct{}, len(metadataKeys))
+	protected := make(map[string]struct{}, len(metadataKeys))
 	for _, key := range metadataKeys {
 		payload, err := store.GetObject(ctx, key)
 		if err != nil {
@@ -138,24 +132,24 @@ func collectReferencedDirectUploadPrefixes(
 		if !ok {
 			continue
 		}
-		referenced[prefix] = struct{}{}
+		protected[prefix] = struct{}{}
 	}
-	return referenced, nil
+	return protected, nil
 }
 
 func staleDirectUploadPrefixes(
 	stored []directUploadStoredEntry,
-	referenced map[string]struct{},
+	protected map[string]struct{},
 	now time.Time,
-	staleAge time.Duration,
+	policy cleanupPolicy,
 ) []PrefixInventoryEntry {
-	cutoff := now.Add(-staleAge)
+	cutoff := now.Add(-policy.directUploadStaleAge)
 	stale := make([]PrefixInventoryEntry, 0, len(stored))
 	for _, entry := range stored {
-		if _, found := referenced[entry.Prefix]; found {
+		if _, found := protected[entry.Prefix]; found {
 			continue
 		}
-		if entry.LastModifiedAt.After(cutoff) {
+		if _, targeted := policy.targetDirectUploadPrefixes[entry.Prefix]; !targeted && entry.LastModifiedAt.After(cutoff) {
 			continue
 		}
 		stale = append(stale, PrefixInventoryEntry{
@@ -165,6 +159,25 @@ func staleDirectUploadPrefixes(
 		})
 	}
 	return stale
+}
+
+func normalizeCleanupPolicy(policy cleanupPolicy) cleanupPolicy {
+	if policy.directUploadStaleAge <= 0 {
+		policy.directUploadStaleAge = defaultDirectUploadOrphanStaleAge
+	}
+	if policy.targetDirectUploadPrefixes == nil {
+		policy.targetDirectUploadPrefixes = make(map[string]struct{})
+	}
+	if policy.targetDirectUploadMultipartUploads == nil {
+		policy.targetDirectUploadMultipartUploads = make(map[directUploadMultipartTarget]struct{})
+	} else {
+		normalizedTargets := make(map[directUploadMultipartTarget]struct{}, len(policy.targetDirectUploadMultipartUploads))
+		for target := range policy.targetDirectUploadMultipartUploads {
+			normalizedTargets[normalizeDirectUploadMultipartTarget(target)] = struct{}{}
+		}
+		policy.targetDirectUploadMultipartUploads = normalizedTargets
+	}
+	return policy
 }
 
 func directUploadInventoryBasePrefix(rootDirectory string) string {

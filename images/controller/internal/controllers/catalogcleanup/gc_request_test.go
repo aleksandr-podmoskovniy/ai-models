@@ -36,7 +36,7 @@ func TestBuildDMCRGCRequestSecretIncludesSharedOwnerLabels(t *testing.T) {
 		Kind:      "Model",
 		Name:      "deepseek-r1",
 		Namespace: "team-a",
-	})
+	}, "")
 
 	if got, want := secret.Labels[resourcenames.AppNameLabelKey], garbageCollectionRequestAppName; got != want {
 		t.Fatalf("unexpected app label %q", got)
@@ -52,6 +52,12 @@ func TestBuildDMCRGCRequestSecretIncludesSharedOwnerLabels(t *testing.T) {
 	}
 	if secret.Annotations[dmcrGCRequestedAnnotationKey] == "" {
 		t.Fatal("expected queued-request annotation on garbage-collection request secret")
+	}
+	if secret.Annotations[dmcrGCSwitchAnnotationKey] == "" {
+		t.Fatal("expected delete-triggered request to be armed immediately")
+	}
+	if got := string(secret.Data[dmcrGCDirectUploadTokenKey]); got != "" {
+		t.Fatalf("unexpected direct-upload session token payload %q", got)
 	}
 }
 
@@ -103,7 +109,35 @@ func TestEnsureGarbageCollectionRequestRefreshesMetadataOnExistingSecret(t *test
 	if updated.Annotations[dmcrGCRequestedAnnotationKey] == "" {
 		t.Fatalf("expected queued-request annotation to be set, got %#v", updated.Annotations)
 	}
-	if updated.Annotations[dmcrGCSwitchAnnotationKey] != "" {
-		t.Fatalf("expected active switch annotation to stay cleared, got %#v", updated.Annotations)
+	if updated.Annotations[dmcrGCSwitchAnnotationKey] == "" {
+		t.Fatalf("expected active switch annotation to be set, got %#v", updated.Annotations)
+	}
+}
+
+func TestEnsureGarbageCollectionRequestSnapshotsCurrentDirectUploadSessionToken(t *testing.T) {
+	t.Parallel()
+
+	model := newDeletingModel()
+	owner := cleanupJobOwner{
+		UID:       model.GetUID(),
+		Kind:      "Model",
+		Name:      "deepseek-r1",
+		Namespace: "team-a",
+	}
+	const sessionToken = "session-token-1"
+	stateSecret := sourceWorkerStateSecretWithSessionToken(t, "d8-ai-models", model.GetUID(), sessionToken)
+	reconciler, kubeClient := newModelReconciler(t, model, stateSecret)
+
+	if err := reconciler.ensureGarbageCollectionRequest(context.Background(), owner); err != nil {
+		t.Fatalf("ensureGarbageCollectionRequest() error = %v", err)
+	}
+
+	var request corev1.Secret
+	key := client.ObjectKey{Namespace: "d8-ai-models", Name: dmcrGCRequestSecretName(owner.UID)}
+	if err := kubeClient.Get(context.Background(), key, &request); err != nil {
+		t.Fatalf("Get(secret) error = %v", err)
+	}
+	if got, want := string(request.Data[dmcrGCDirectUploadTokenKey]), sessionToken; got != want {
+		t.Fatalf("session token payload = %q, want %q", got, want)
 	}
 }

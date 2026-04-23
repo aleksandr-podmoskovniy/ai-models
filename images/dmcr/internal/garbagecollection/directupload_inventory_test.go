@@ -69,7 +69,7 @@ func TestDiscoverDirectUploadInventoryReturnsOnlyOldUnreferencedPrefixes(t *test
 		store,
 		"dmcr",
 		now,
-		defaultDirectUploadOrphanStaleAge,
+		cleanupPolicy{},
 	)
 	if err != nil {
 		t.Fatalf("discoverDirectUploadInventory() error = %v", err)
@@ -78,8 +78,8 @@ func TestDiscoverDirectUploadInventoryReturnsOnlyOldUnreferencedPrefixes(t *test
 	if got, want := inventory.StoredPrefixCount, 3; got != want {
 		t.Fatalf("stored prefix count = %d, want %d", got, want)
 	}
-	if got, want := inventory.ReferencedPrefixCount, 1; got != want {
-		t.Fatalf("referenced prefix count = %d, want %d", got, want)
+	if got, want := inventory.ProtectedPrefixCount, 1; got != want {
+		t.Fatalf("protected prefix count = %d, want %d", got, want)
 	}
 	if got, want := len(inventory.StalePrefixes), 1; got != want {
 		t.Fatalf("stale prefix count = %d, want %d", got, want)
@@ -108,7 +108,7 @@ func TestDiscoverDirectUploadInventoryFailsClosedOnBrokenMetadata(t *testing.T) 
 		store,
 		"dmcr",
 		time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC),
-		defaultDirectUploadOrphanStaleAge,
+		cleanupPolicy{},
 	)
 	if err == nil {
 		t.Fatal("discoverDirectUploadInventory() error = nil, want non-nil")
@@ -229,7 +229,7 @@ func TestBuildReportFailsClosedWhenDirectUploadMetadataIsBroken(t *testing.T) {
 		store,
 		"dmcr",
 		time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC),
-		defaultDirectUploadOrphanStaleAge,
+		cleanupPolicy{},
 	)
 	if err == nil {
 		t.Fatal("buildReportWithClock() error = nil, want non-nil")
@@ -239,21 +239,85 @@ func TestBuildReportFailsClosedWhenDirectUploadMetadataIsBroken(t *testing.T) {
 	}
 }
 
+func TestDiscoverDirectUploadInventoryTargetsFreshPrefixWhenCleanupPolicyRequestsIt(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	store := newFakePrefixStore(
+		fakePrefixObject{
+			key:          "dmcr/_ai_models/direct-upload/objects/session-fresh/data",
+			lastModified: now.Add(-2 * time.Hour),
+		},
+	)
+
+	inventory, err := discoverDirectUploadInventory(
+		context.Background(),
+		store,
+		"dmcr",
+		now,
+		cleanupPolicy{
+			targetDirectUploadPrefixes: map[string]struct{}{
+				"dmcr/_ai_models/direct-upload/objects/session-fresh": {},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("discoverDirectUploadInventory() error = %v", err)
+	}
+	if got, want := len(inventory.StalePrefixes), 1; got != want {
+		t.Fatalf("stale prefix count = %d, want %d", got, want)
+	}
+	if got, want := inventory.StalePrefixes[0].Prefix, "dmcr/_ai_models/direct-upload/objects/session-fresh"; got != want {
+		t.Fatalf("stale prefix = %q, want %q", got, want)
+	}
+}
+
 type fakePrefixObject struct {
 	key          string
 	lastModified time.Time
 	payload      []byte
 }
 
+type fakeMultipartUpload struct {
+	key         string
+	uploadID    string
+	initiatedAt time.Time
+	partCount   int
+}
+
 type fakePrefixStore struct {
-	objects         map[string]fakePrefixObject
-	deletedPrefixes []string
+	objects                 map[string]fakePrefixObject
+	multipartUploads        map[directUploadMultipartTarget]fakeMultipartUpload
+	multipartUploadPartErrs map[directUploadMultipartTarget]error
+	deletedPrefixes         []string
+	abortedMultipartUploads []directUploadMultipartTarget
 }
 
 func newFakePrefixStore(objects ...fakePrefixObject) *fakePrefixStore {
-	result := &fakePrefixStore{objects: make(map[string]fakePrefixObject, len(objects))}
+	result := &fakePrefixStore{
+		objects:                 make(map[string]fakePrefixObject, len(objects)),
+		multipartUploads:        make(map[directUploadMultipartTarget]fakeMultipartUpload),
+		multipartUploadPartErrs: make(map[directUploadMultipartTarget]error),
+	}
 	for _, object := range objects {
 		result.objects[strings.Trim(strings.TrimSpace(object.key), "/")] = object
+	}
+	return result
+}
+
+func newFakePrefixStoreWithMultipartUploads(objects []fakePrefixObject, uploads ...fakeMultipartUpload) *fakePrefixStore {
+	result := newFakePrefixStore(objects...)
+	for _, upload := range uploads {
+		target := normalizeDirectUploadMultipartTarget(directUploadMultipartTarget{
+			ObjectKey: upload.key,
+			UploadID:  upload.uploadID,
+		})
+		result.multipartUploads[target] = fakeMultipartUpload{
+			key:         target.ObjectKey,
+			uploadID:    target.UploadID,
+			initiatedAt: upload.initiatedAt,
+			partCount:   upload.partCount,
+		}
 	}
 	return result
 }
@@ -294,8 +358,58 @@ func (s *fakePrefixStore) GetObject(_ context.Context, key string) ([]byte, erro
 	return append([]byte(nil), object.payload...), nil
 }
 
+func (s *fakePrefixStore) ForEachMultipartUpload(_ context.Context, prefix string, visit func(multipartUploadInfo)) error {
+	cleanPrefix := strings.Trim(strings.TrimSpace(prefix), "/")
+	targets := make([]directUploadMultipartTarget, 0, len(s.multipartUploads))
+	for target := range s.multipartUploads {
+		if cleanPrefix == "" || target.ObjectKey == cleanPrefix || strings.HasPrefix(target.ObjectKey, cleanPrefix+"/") {
+			targets = append(targets, target)
+		}
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].ObjectKey == targets[j].ObjectKey {
+			return targets[i].UploadID < targets[j].UploadID
+		}
+		return targets[i].ObjectKey < targets[j].ObjectKey
+	})
+	for _, target := range targets {
+		upload := s.multipartUploads[target]
+		visit(multipartUploadInfo{
+			Key:         upload.key,
+			UploadID:    upload.uploadID,
+			InitiatedAt: upload.initiatedAt,
+		})
+	}
+	return nil
+}
+
+func (s *fakePrefixStore) CountMultipartUploadParts(_ context.Context, objectKey, uploadID string) (int, error) {
+	target := normalizeDirectUploadMultipartTarget(directUploadMultipartTarget{
+		ObjectKey: objectKey,
+		UploadID:  uploadID,
+	})
+	if err, found := s.multipartUploadPartErrs[target]; found {
+		return 0, err
+	}
+	upload, found := s.multipartUploads[target]
+	if !found {
+		return 0, fmt.Errorf("multipart upload %s (%s) not found", target.ObjectKey, target.UploadID)
+	}
+	return upload.partCount, nil
+}
+
 func (s *fakePrefixStore) DeletePrefix(_ context.Context, prefix string) error {
 	s.deletedPrefixes = append(s.deletedPrefixes, strings.TrimSpace(prefix))
+	return nil
+}
+
+func (s *fakePrefixStore) AbortMultipartUpload(_ context.Context, objectKey, uploadID string) error {
+	target := normalizeDirectUploadMultipartTarget(directUploadMultipartTarget{
+		ObjectKey: objectKey,
+		UploadID:  uploadID,
+	})
+	s.abortedMultipartUploads = append(s.abortedMultipartUploads, target)
+	delete(s.multipartUploads, target)
 	return nil
 }
 
@@ -337,4 +451,16 @@ func equalStringSlices(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func newFakeDynamicClient(t *testing.T) *dynamicfake.FakeDynamicClient {
+	t.Helper()
+
+	return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
+		runtime.NewScheme(),
+		map[schema.GroupVersionResource]string{
+			modelGVR:        "ModelList",
+			clusterModelGVR: "ClusterModelList",
+		},
+	)
 }

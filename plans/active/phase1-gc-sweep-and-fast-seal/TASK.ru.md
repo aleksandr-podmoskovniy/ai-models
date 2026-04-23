@@ -61,6 +61,30 @@ Continuation на 2026-04-23 после live cluster inspection `PublicationSeal
      должен уходить в terminal `Failed` на `context canceled`, иначе controller
      теряет recreate/resume path и модель преждевременно становится `Failed`.
 
+Continuation на 2026-04-23 после live bucket / cluster GC inspection:
+
+6. Delete-triggered physical GC всё ещё недостаточно жёсткий для orphan
+   `direct-upload` residue:
+   - controller уже armed delete-triggered GC request сразу после cleanup job;
+   - но orphan `direct-upload` cleanup всё ещё использует общий bounded
+     stale-age `session TTL + activation delay`, поэтому после удаления модели
+     physical objects могут оставаться в bucket до суток;
+  - прямое снятие stale-age unsafe, потому что оно может снести свежую
+    resumable/in-flight direct-upload session другой ещё живой модели;
+  - значит нужен отдельный per-owner delete-triggered cleanup intent с
+    targeted snapshot текущей unfinished upload session, а не глобальный age
+    bypass для всех `gc check` / scheduled sweep циклов.
+
+Continuation на 2026-04-23 после прямой инвентаризации multipart state:
+
+7. Current GC всё ещё не видит и не abort'ит invisible multipart residue:
+   - bucket browser показывает почти пустой `dmcr/`, но RGW bucket stats могут
+     держать тысячи мелких multipart parts и завышенный used capacity;
+   - текущий stale sweep инвентаризирует только visible objects и
+     `.dmcr-sealed` metadata, но не open multipart uploads;
+   - из-за этого после удаления модели bucket может оставаться захламлённым,
+     даже если orphan visible object prefixes уже удалены.
+
 Предшественники:
 
 - `plans/active/live-cluster-error-triage/*`
@@ -124,6 +148,8 @@ Continuation на 2026-04-23 после live cluster inspection `PublicationSeal
 - добавить bounded lease-based executor ownership для `dmcr-cleaner gc run`;
 - добавить bounded orphan direct-upload discovery/cleanup, который не удаляет
   published physical blobs, пока на них есть sealed reference;
+- добавить stale multipart-upload discovery/abort path внутри `dmcr-cleaner`,
+  чтобы invisible multipart residue тоже исчезал из bucket;
 - переделать direct-upload sealing contract так, чтобы controller-owned
   publisher больше не вызывал full-object copy inside `DMCR`;
 - сделать checksum/verification path explainable в live logs и тестах без
@@ -143,6 +169,12 @@ Continuation на 2026-04-23 после live cluster inspection `PublicationSeal
   если фактическая storage capability этого не гарантирует;
 - не выводить lease/election tuning в public module settings без отдельной
   необходимости;
+- не делать unsafe global direct-upload stale-age bypass для scheduled sweep
+  или operator `gc check`, который может удалить resumable upload другой живой
+  модели только ради ускорения delete-flow для уже удалённого owner;
+- не переносить multipart abort logic в controller или новый внешний API, пока
+  `dmcr-cleaner` уже владеет storage creds, lease и operator-facing GC
+  surface;
 - не делать live cluster rollout или cluster validation в этом bundle.
 
 ## 6. Затрагиваемые области
@@ -172,6 +204,8 @@ Continuation на 2026-04-23 после live cluster inspection `PublicationSeal
 - `dmcr-cleaner gc check` локально умеет:
   - перечислять stale published repository/raw prefixes, ownership которых не
     подтверждается живыми `Model` / `ClusterModel`;
+  - отдельно показывать visible direct-upload object prefixes и open
+    direct-upload multipart uploads/parts;
   - не удалять данные;
   - выдавать объяснимый report, пригодный для operator use.
 - `dmcr-cleaner gc auto-cleanup` локально умеет:
@@ -180,6 +214,10 @@ Continuation на 2026-04-23 после live cluster inspection `PublicationSeal
   - удалять orphan direct-upload prefixes только если они не защищены sealed
     reference, older than bounded stale-age threshold и удаляются строго по
     одному session prefix без prefix-collision с соседними session IDs;
+  - abort'ить stale open direct-upload multipart uploads:
+    - scheduled/manual path уважает bounded stale-age;
+    - delete-triggered path может делать immediate abort только для exact
+      `{objectKey, uploadID}`, snapshot'нутых controller GC request secret'ом;
   - затем запускать registry `garbage-collect`.
 - Sidecar wiring умеет запускать scheduled sweep без controller-triggered
   delete event.
@@ -192,27 +230,48 @@ Continuation на 2026-04-23 после live cluster inspection `PublicationSeal
 - `DMCR` direct-upload sealing path больше не делает full-object copy для
   controller-owned direct-upload flow.
 - `DMCR` direct-upload live logs объясняют verification path:
-  - trusted backend checksum vs reread;
+  - trusted backend checksum vs client-asserted trust vs reread;
   - fallback reason;
   - checksum type / availability без утечки secret-bearing data;
   - reread progress/throughput for large objects.
 - Generic S3-compatible backend остаётся fail-safe:
   - checksum metadata support остаётся best-effort;
   - отсутствие/невалидность checksum metadata не ломает upload само по себе;
-  - verification reread остаётся mandatory fallback.
+  - default phase-1 policy не требует reread, если controller already declared
+    digest/size и trusted backend checksum отсутствует;
+  - internal strict policy всё ещё может вернуть reread fallback позже без
+    смены public module contract.
+- Delete-triggered orphan direct-upload cleanup становится immediate только для
+  exact session prefixes, которые controller явно snapshot'ит в per-owner GC
+  request secret:
+  - `dmcr-cleaner` не получает global age-bypass для всех orphan prefixes;
+  - active/resumable session другой модели не удаляется только потому, что
+    рядом был чужой delete-triggered GC request;
+  - scheduled sweep и operator `gc check` остаются консервативными и по
+    умолчанию продолжают использовать bounded stale-age.
+- Open multipart residue не остаётся скрытым:
+  - stale report считает upload count и total part count отдельно от visible
+    objects;
+  - active cleanup умеет abort'ить exact multipart upload, а не только
+    удалять final object prefix.
 - В docs и code явно зафиксирована continuation boundary:
   - этот bundle закрывает no-copy storage layout;
-  - `dmcr-zero-trust-ingest` закрывает `DMCR`-owned digest verification.
+  - более жёсткий `DMCR`-owned zero-trust reread остаётся отдельным будущим
+    continuation, а не implicit default phase-1 behavior.
 - Тесты покрывают:
   - stale sweep detection and cleanup decisions;
   - orphan direct-upload detection against sealed references;
+  - stale multipart upload detection and exact abort behavior;
   - bounded age gate for orphan direct-upload cleanup;
   - malformed `.dmcr-sealed` metadata fail-closed behavior;
   - exact direct-upload delete boundary без `session-1` / `session-10`
     over-delete;
   - verification path decision and fallback reason for trusted / missing /
     composite / malformed checksum metadata;
-  - reread progress/diagnostic logging behavior без изменения verify result;
+  - policy/source distinction для `trusted-backend-sha256`,
+    `client-asserted` и `object-reread`;
+  - reread progress/diagnostic logging behavior там, где reread реально
+    остался;
   - CLI check/auto-cleanup behavior;
   - schedule wiring;
   - lease acquisition/renew/takeover и non-holder standby behavior;
@@ -234,3 +293,8 @@ Continuation на 2026-04-23 после live cluster inspection `PublicationSeal
   оставить две конкурирующие cleanup истории вместо одной explainable модели.
 - можно сделать lease ownership слишком хрупким и получить stuck cleanup или,
   наоборот, duplicate executor при failover.
+- можно сделать delete-triggered orphan cleanup слишком агрессивным и снести
+  direct-upload session, которая ещё нужна живой модели для recreate/resume.
+- можно добавить multipart inventory/abort слишком поверхностно и оставить
+  bucket stats захламлёнными невидимыми parts, хотя visible objects уже
+  вычищены.

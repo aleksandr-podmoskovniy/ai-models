@@ -231,6 +231,11 @@ spec:
           env:
             - name: LOG_FORMAT
               value: json
+            - name: REGISTRY_HTTP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.dmcrAuthSecretName" . }}
+                  key: salt
             - name: REGISTRY_STORAGE_SEALEDS3_ACCESSKEY
               valueFrom:
                 secretKeyRef:

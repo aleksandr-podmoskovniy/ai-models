@@ -152,13 +152,19 @@ func runActiveRequestCycle(
 	activeSecrets []corev1.Secret,
 ) (bool, error) {
 	requestNames := secretNames(activeSecrets)
+	policy, err := cleanupPolicyForActiveRequests(options.ConfigPath, activeSecrets)
+	if err != nil {
+		return true, err
+	}
 	slog.Default().Info(
 		"dmcr garbage collection requested",
 		slog.Int("request_count", len(activeSecrets)),
 		slog.Any("request_names", requestNames),
+		slog.Int("targeted_direct_upload_prefix_count", len(policy.targetDirectUploadPrefixes)),
+		slog.Int("targeted_direct_upload_multipart_upload_count", len(policy.targetDirectUploadMultipartUploads)),
 	)
 
-	result, cleanupErr := autoCleanupRunner(ctx, options.ConfigPath, options.RegistryBinary, options.GCTimeout)
+	result, cleanupErr := autoCleanupRunner(ctx, options.ConfigPath, options.RegistryBinary, options.GCTimeout, policy)
 	if cleanupErr != nil {
 		return true, cleanupErr
 	}
@@ -169,6 +175,9 @@ func runActiveRequestCycle(
 		slog.Int("stale_repository_prefix_count", len(result.Report.StaleRepositories)),
 		slog.Int("stale_raw_prefix_count", len(result.Report.StaleRawPrefixes)),
 		slog.Int("stale_direct_upload_prefix_count", len(result.Report.StaleDirectUploadPrefixes)),
+		slog.Int("open_direct_upload_multipart_upload_count", result.Report.StoredDirectUploadMultipartUploadCount),
+		slog.Int("open_direct_upload_multipart_part_count", result.Report.StoredDirectUploadMultipartPartCount),
+		slog.Int("stale_direct_upload_multipart_upload_count", len(result.Report.StaleDirectUploadMultipartUploads)),
 	}
 	if trimmedOutput := strings.TrimSpace(result.RegistryOutput); trimmedOutput != "" {
 		attrs = append(attrs, slog.String("registry_output", trimmedOutput))

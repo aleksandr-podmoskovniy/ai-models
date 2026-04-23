@@ -258,10 +258,11 @@ func TestRunRequestCycleDeletesActiveRequestsAndLogs(t *testing.T) {
 		GCTimeout:            time.Minute,
 	}
 	previousAutoCleanupRunner := autoCleanupRunner
-	autoCleanupRunner = func(_ context.Context, configPath, registryBinary string, gcTimeout time.Duration) (AutoCleanupResult, error) {
+	autoCleanupRunner = func(_ context.Context, configPath, registryBinary string, gcTimeout time.Duration, policy cleanupPolicy) (AutoCleanupResult, error) {
 		_ = configPath
 		_ = registryBinary
 		_ = gcTimeout
+		_ = policy
 		return AutoCleanupResult{RegistryOutput: "gc-ok"}, nil
 	}
 	t.Cleanup(func() {

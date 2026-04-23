@@ -36,14 +36,15 @@ const DefaultBlobPartSizeBytes int64 = 8 << 20
 const DefaultSessionTTL = 24 * time.Hour
 
 type Service struct {
-	backend       Backend
-	authUsername  string
-	authPassword  string
-	tokenSecret   []byte
-	rootDirectory string
-	partSizeBytes int64
-	sessionTTL    time.Duration
-	now           func() time.Time
+	backend            Backend
+	authUsername       string
+	authPassword       string
+	tokenSecret        []byte
+	rootDirectory      string
+	partSizeBytes      int64
+	sessionTTL         time.Duration
+	verificationPolicy VerificationPolicy
+	now                func() time.Time
 }
 
 type startRequest struct {
@@ -108,15 +109,25 @@ func NewService(backend Backend, authUsername, authPassword, tokenSecret, rootDi
 		sessionTTL = DefaultSessionTTL
 	}
 	return &Service{
-		backend:       backend,
-		authUsername:  strings.TrimSpace(authUsername),
-		authPassword:  strings.TrimSpace(authPassword),
-		tokenSecret:   []byte(strings.TrimSpace(tokenSecret)),
-		rootDirectory: strings.TrimSpace(rootDirectory),
-		partSizeBytes: partSizeBytes,
-		sessionTTL:    sessionTTL,
-		now:           time.Now,
+		backend:            backend,
+		authUsername:       strings.TrimSpace(authUsername),
+		authPassword:       strings.TrimSpace(authPassword),
+		tokenSecret:        []byte(strings.TrimSpace(tokenSecret)),
+		rootDirectory:      strings.TrimSpace(rootDirectory),
+		partSizeBytes:      partSizeBytes,
+		sessionTTL:         sessionTTL,
+		verificationPolicy: DefaultVerificationPolicy,
+		now:                time.Now,
 	}, nil
+}
+
+func (s *Service) SetVerificationPolicy(policy VerificationPolicy) error {
+	normalized, err := ParseVerificationPolicy(string(policy))
+	if err != nil {
+		return err
+	}
+	s.verificationPolicy = normalized
+	return nil
 }
 
 func (s *Service) Handler() http.Handler {
@@ -289,17 +300,23 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 
 	sealStarted := s.now()
 	log.Printf(
-		"direct upload verification started repository=%q objectKey=%q sizeBytes=%d",
+		"direct upload verification policy started repository=%q objectKey=%q sizeBytes=%d verificationPolicy=%q expectedDigestPresent=%t",
 		claims.Repository,
 		claims.ObjectKey,
 		payload.SizeBytes,
+		s.verificationPolicy,
+		expectedDigest != "",
 	)
-	verification, err := s.verifyUploadedObject(request.Context(), claims.ObjectKey, payload.SizeBytes)
+	verification, err := s.verifyUploadedObject(request.Context(), claims.ObjectKey, sealedUpload{
+		Digest:    expectedDigest,
+		SizeBytes: payload.SizeBytes,
+	})
 	if err != nil {
 		log.Printf(
-			"direct upload verification failed repository=%q objectKey=%q error=%v",
+			"direct upload verification failed repository=%q objectKey=%q verificationPolicy=%q error=%v",
 			claims.Repository,
 			claims.ObjectKey,
+			s.verificationPolicy,
 			err,
 		)
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
@@ -310,7 +327,7 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
 		http.Error(
 			writer,
-			fmt.Sprintf("verified sizeBytes %d does not match expected sizeBytes %d", sealed.SizeBytes, payload.SizeBytes),
+			fmt.Sprintf("resolved sizeBytes %d does not match expected sizeBytes %d", sealed.SizeBytes, payload.SizeBytes),
 			http.StatusConflict,
 		)
 		return
@@ -319,19 +336,24 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
 		http.Error(
 			writer,
-			fmt.Sprintf("verified digest %q does not match expected digest %q", sealed.Digest, expectedDigest),
+			fmt.Sprintf("resolved digest %q does not match expected digest %q", sealed.Digest, expectedDigest),
 			http.StatusConflict,
 		)
 		return
 	}
 	log.Printf(
-		"direct upload verification completed repository=%q objectKey=%q digest=%q sizeBytes=%d method=%q fallbackReason=%q backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q durationMs=%d",
+		"direct upload verification source selected repository=%q objectKey=%q verificationPolicy=%q verificationSource=%q declaredDigest=%q declaredSizeBytes=%d digest=%q sizeBytes=%d fallbackReason=%q backendAttributesPresent=%t backendSizeBytes=%d backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q durationMs=%d",
 		claims.Repository,
 		claims.ObjectKey,
+		verification.Policy,
+		verification.Source,
+		expectedDigest,
+		payload.SizeBytes,
 		sealed.Digest,
 		sealed.SizeBytes,
-		verification.Method,
 		verification.FallbackReason,
+		verification.BackendAttributesPresent,
+		verification.BackendSizeBytes,
 		verification.BackendChecksumType,
 		verification.BackendSHA256Present,
 		strings.Join(verification.AvailableChecksums, ","),

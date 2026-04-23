@@ -256,8 +256,8 @@ func TestServiceCompleteWritesRepositoryLinkAndSealedMetadata(t *testing.T) {
 	if _, exists := backend.objects[claims.ObjectKey]; !exists {
 		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
 	}
-	if got := backend.readerCalls; got != 1 {
-		t.Fatalf("Reader() call count = %d, want 1 for verified sealing path", got)
+	if got := backend.readerCalls; got != 0 {
+		t.Fatalf("Reader() call count = %d, want 0 for default client-asserted path", got)
 	}
 }
 
@@ -346,7 +346,7 @@ func TestTrustedFullObjectSHA256DigestRejectsMalformedChecksum(t *testing.T) {
 	}
 }
 
-func TestServiceCompleteFallsBackWhenBackendDigestLookupFails(t *testing.T) {
+func TestServiceCompleteTrustsClientDigestWhenBackendDigestLookupFailsByDefault(t *testing.T) {
 	t.Parallel()
 
 	backend := newFakeBackend()
@@ -380,12 +380,12 @@ func TestServiceCompleteFallsBackWhenBackendDigestLookupFails(t *testing.T) {
 	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
 	}
-	if got := backend.readerCalls; got != 1 {
-		t.Fatalf("Reader() call count = %d, want 1 fallback read", got)
+	if got := backend.readerCalls; got != 0 {
+		t.Fatalf("Reader() call count = %d, want 0 for default client-asserted path", got)
 	}
 }
 
-func TestServiceCompleteFallsBackWhenTrustedBackendDigestIsMalformed(t *testing.T) {
+func TestServiceCompleteTrustsClientDigestWhenTrustedBackendDigestIsMalformedByDefault(t *testing.T) {
 	t.Parallel()
 
 	backend := newFakeBackend()
@@ -429,8 +429,8 @@ func TestServiceCompleteFallsBackWhenTrustedBackendDigestIsMalformed(t *testing.
 	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
 	}
-	if got := backend.readerCalls; got != 1 {
-		t.Fatalf("Reader() call count = %d, want 1 fallback read", got)
+	if got := backend.readerCalls; got != 0 {
+		t.Fatalf("Reader() call count = %d, want 0 for default client-asserted path", got)
 	}
 }
 
@@ -552,7 +552,7 @@ func TestServiceCompleteRejectsTrustedBackendDigestMismatch(t *testing.T) {
 	}
 }
 
-func TestServiceCompleteRejectsExpectedDigestMismatch(t *testing.T) {
+func TestServiceCompleteTrustsExpectedDigestWithoutTrustedBackendChecksumByDefault(t *testing.T) {
 	t.Parallel()
 
 	backend := newFakeBackend()
@@ -585,24 +585,24 @@ func TestServiceCompleteRejectsExpectedDigestMismatch(t *testing.T) {
 		SizeBytes:    8,
 		Parts:        parts,
 	})
-	if got, want := completeResp.StatusCode, http.StatusConflict; got != want {
+	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
 	}
-	if !slices.Contains(backend.deleted, claims.ObjectKey) {
-		t.Fatalf("expected physical upload object %q to be deleted, deleted = %#v", claims.ObjectKey, backend.deleted)
+	if slices.Contains(backend.deleted, claims.ObjectKey) {
+		t.Fatalf("physical upload object %q was deleted, deleted = %#v", claims.ObjectKey, backend.deleted)
 	}
-	if got := backend.readerCalls; got != 1 {
-		t.Fatalf("Reader() call count = %d, want 1 for verified sealing path", got)
+	if got := backend.readerCalls; got != 0 {
+		t.Fatalf("Reader() call count = %d, want 0 for default client-asserted path", got)
 	}
 	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", trustedDigest)
 	if err != nil {
 		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
 	}
-	if _, exists := backend.objects[linkKey]; exists {
-		t.Fatalf("repository link %q exists after digest mismatch", linkKey)
+	if got, want := string(backend.objects[linkKey]), trustedDigest; got != want {
+		t.Fatalf("link payload = %q, want %q", got, want)
 	}
-	if _, exists := backend.objects[claims.ObjectKey]; exists {
-		t.Fatalf("physical upload object %q exists after digest mismatch", claims.ObjectKey)
+	if _, exists := backend.objects[claims.ObjectKey]; !exists {
+		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
 	}
 }
 
@@ -661,6 +661,9 @@ func TestServiceCompleteComputesDigestWithoutClientDigest(t *testing.T) {
 	if _, exists := backend.objects[claims.ObjectKey]; !exists {
 		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
 	}
+	if got := backend.readerCalls; got != 1 {
+		t.Fatalf("Reader() call count = %d, want 1 when client digest is absent", got)
+	}
 }
 
 func TestTrustedBackendVerificationReportsMissingChecksumFallback(t *testing.T) {
@@ -715,6 +718,26 @@ func TestTrustedBackendVerificationReportsMalformedChecksumFallback(t *testing.T
 	}
 	if reason != verificationFallbackReasonChecksumMalformed {
 		t.Fatalf("trustedBackendVerification() reason = %q, want %q", reason, verificationFallbackReasonChecksumMalformed)
+	}
+}
+
+func TestParseVerificationPolicyDefaultsToClientAsserted(t *testing.T) {
+	t.Parallel()
+
+	got, err := ParseVerificationPolicy("")
+	if err != nil {
+		t.Fatalf("ParseVerificationPolicy() error = %v", err)
+	}
+	if got != VerificationPolicyTrustedBackendOrClientAsserted {
+		t.Fatalf("ParseVerificationPolicy() = %q, want %q", got, VerificationPolicyTrustedBackendOrClientAsserted)
+	}
+}
+
+func TestParseVerificationPolicyRejectsUnknownValue(t *testing.T) {
+	t.Parallel()
+
+	if _, err := ParseVerificationPolicy("unknown"); err == nil {
+		t.Fatal("ParseVerificationPolicy() error = nil, want non-nil")
 	}
 }
 
@@ -810,8 +833,8 @@ func TestServiceCompleteVerifiesAlreadyCompletedObject(t *testing.T) {
 	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
 	}
-	if got := backend.readerCalls; got != 1 {
-		t.Fatalf("Reader() call count = %d, want 1 for already completed object", got)
+	if got := backend.readerCalls; got != 0 {
+		t.Fatalf("Reader() call count = %d, want 0 for default client-asserted path", got)
 	}
 	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", digest)
 	if err != nil {
@@ -822,7 +845,7 @@ func TestServiceCompleteVerifiesAlreadyCompletedObject(t *testing.T) {
 	}
 }
 
-func TestServiceCompleteKeepsPhysicalObjectWhenVerificationReadFails(t *testing.T) {
+func TestServiceCompleteStrictPolicyKeepsPhysicalObjectWhenVerificationReadFails(t *testing.T) {
 	t.Parallel()
 
 	backend := newFakeBackend()
@@ -831,6 +854,7 @@ func TestServiceCompleteKeepsPhysicalObjectWhenVerificationReadFails(t *testing.
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
+	mustSetVerificationPolicy(t, service, VerificationPolicyTrustedBackendOrReread)
 	server := httptest.NewServer(service.Handler())
 	defer server.Close()
 
@@ -863,6 +887,97 @@ func TestServiceCompleteKeepsPhysicalObjectWhenVerificationReadFails(t *testing.
 	}
 	if _, exists := backend.objects[claims.ObjectKey]; !exists {
 		t.Fatalf("physical upload object %q does not exist after temporary verification failure", claims.ObjectKey)
+	}
+}
+
+func TestServiceCompleteStrictPolicyFallsBackWhenBackendDigestLookupFails(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	backend.attributesErr = errors.New("checksum metadata is not supported")
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	mustSetVerificationPolicy(t, service, VerificationPolicyTrustedBackendOrReread)
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+		{PartNumber: 2, ETag: "etag-2", SizeBytes: 4},
+	}
+	digest := digestForParts(parts)
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		Digest:       digest,
+		SizeBytes:    12,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if got := backend.readerCalls; got != 1 {
+		t.Fatalf("Reader() call count = %d, want 1 for strict reread policy", got)
+	}
+}
+
+func TestServiceCompleteRejectsBackendSizeMismatchWithoutChecksumByDefault(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+	claims, err := decodeSessionToken([]byte("salt"), startPayload.SessionToken)
+	if err != nil {
+		t.Fatalf("decodeSessionToken() error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+		{PartNumber: 2, ETag: "etag-2", SizeBytes: 4},
+	}
+	digest := digestForParts(parts)
+	backend.attributes[claims.ObjectKey] = ObjectAttributes{
+		SizeBytes:                   11,
+		ReportedChecksumType:        "",
+		SHA256ChecksumPresent:       false,
+		AvailableChecksumAlgorithms: nil,
+	}
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		Digest:       digest,
+		SizeBytes:    12,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusConflict; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if !slices.Contains(backend.deleted, claims.ObjectKey) {
+		t.Fatalf("expected physical upload object %q to be deleted, deleted = %#v", claims.ObjectKey, backend.deleted)
+	}
+	if got := backend.readerCalls; got != 0 {
+		t.Fatalf("Reader() call count = %d, want 0 without reread in default policy", got)
 	}
 }
 
@@ -1002,6 +1117,13 @@ func postJSON(t *testing.T, url, username, password string, payload any) *http.R
 		_ = response.Body.Close()
 	})
 	return response
+}
+
+func mustSetVerificationPolicy(t *testing.T, service *Service, policy VerificationPolicy) {
+	t.Helper()
+	if err := service.SetVerificationPolicy(policy); err != nil {
+		t.Fatalf("SetVerificationPolicy() error = %v", err)
+	}
 }
 
 func payloadForParts(parts []UploadedPart) []byte {

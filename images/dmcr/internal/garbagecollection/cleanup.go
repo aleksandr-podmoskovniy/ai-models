@@ -30,7 +30,15 @@ type AutoCleanupResult struct {
 	RegistryOutput string
 }
 
-var autoCleanupRunner = AutoCleanup
+type cleanupPolicy struct {
+	targetDirectUploadPrefixes         map[string]struct{}
+	targetDirectUploadMultipartUploads map[directUploadMultipartTarget]struct{}
+	directUploadStaleAge               time.Duration
+}
+
+type autoCleanupFunc func(context.Context, string, string, time.Duration, cleanupPolicy) (AutoCleanupResult, error)
+
+var autoCleanupRunner autoCleanupFunc = autoCleanupWithPolicy
 
 func Check(ctx context.Context, configPath string) (Report, error) {
 	dynamicClient, err := NewInClusterDynamicClient()
@@ -52,6 +60,16 @@ func AutoCleanup(
 	registryBinary string,
 	gcTimeout time.Duration,
 ) (AutoCleanupResult, error) {
+	return autoCleanupWithPolicy(ctx, configPath, registryBinary, gcTimeout, cleanupPolicy{})
+}
+
+func autoCleanupWithPolicy(
+	ctx context.Context,
+	configPath string,
+	registryBinary string,
+	gcTimeout time.Duration,
+	policy cleanupPolicy,
+) (AutoCleanupResult, error) {
 	dynamicClient, err := NewInClusterDynamicClient()
 	if err != nil {
 		return AutoCleanupResult{}, err
@@ -62,7 +80,7 @@ func AutoCleanup(
 		return AutoCleanupResult{}, err
 	}
 
-	report, err := BuildReport(ctx, dynamicClient, store, rootDirectory)
+	report, err := BuildReportWithPolicy(ctx, dynamicClient, store, rootDirectory, policy)
 	if err != nil {
 		return AutoCleanupResult{}, err
 	}
@@ -93,7 +111,17 @@ func BuildReport(
 	store prefixStore,
 	rootDirectory string,
 ) (Report, error) {
-	return buildReportWithClock(ctx, dynamicClient, store, rootDirectory, time.Now().UTC(), defaultDirectUploadOrphanStaleAge)
+	return BuildReportWithPolicy(ctx, dynamicClient, store, rootDirectory, cleanupPolicy{})
+}
+
+func BuildReportWithPolicy(
+	ctx context.Context,
+	dynamicClient dynamic.Interface,
+	store prefixStore,
+	rootDirectory string,
+	policy cleanupPolicy,
+) (Report, error) {
+	return buildReportWithClock(ctx, dynamicClient, store, rootDirectory, time.Now().UTC(), policy)
 }
 
 func buildReportWithClock(
@@ -102,7 +130,7 @@ func buildReportWithClock(
 	store prefixStore,
 	rootDirectory string,
 	now time.Time,
-	directUploadStaleAge time.Duration,
+	policy cleanupPolicy,
 ) (Report, error) {
 	live, err := DiscoverLivePrefixes(ctx, dynamicClient)
 	if err != nil {
@@ -116,13 +144,20 @@ func buildReportWithClock(
 
 	report := buildReport(live, storedRepositories, storedRawPrefixes)
 
-	directUploadInventory, err := discoverDirectUploadInventory(ctx, store, rootDirectory, now, directUploadStaleAge)
+	directUploadInventory, err := discoverDirectUploadInventory(ctx, store, rootDirectory, now, policy)
+	if err != nil {
+		return Report{}, err
+	}
+	directUploadMultipartInventory, err := discoverDirectUploadMultipartInventory(ctx, store, rootDirectory, now, policy)
 	if err != nil {
 		return Report{}, err
 	}
 	report.StoredDirectUploadPrefixCount = directUploadInventory.StoredPrefixCount
-	report.ReferencedDirectUploadPrefixCount = directUploadInventory.ReferencedPrefixCount
+	report.ProtectedDirectUploadPrefixCount = directUploadInventory.ProtectedPrefixCount
 	report.StaleDirectUploadPrefixes = directUploadInventory.StalePrefixes
+	report.StoredDirectUploadMultipartUploadCount = directUploadMultipartInventory.StoredUploadCount
+	report.StoredDirectUploadMultipartPartCount = directUploadMultipartInventory.StoredPartCount
+	report.StaleDirectUploadMultipartUploads = directUploadMultipartInventory.StaleUploads
 	return report, nil
 }
 
@@ -140,6 +175,11 @@ func deleteStalePrefixes(ctx context.Context, store prefixStore, report Report) 
 	for _, entry := range report.StaleDirectUploadPrefixes {
 		if err := store.DeletePrefix(ctx, directUploadDeletePrefix(entry.Prefix)); err != nil {
 			return fmt.Errorf("delete stale direct-upload prefix %s: %w", entry.Prefix, err)
+		}
+	}
+	for _, entry := range report.StaleDirectUploadMultipartUploads {
+		if err := store.AbortMultipartUpload(ctx, entry.ObjectKey, entry.UploadID); err != nil {
+			return fmt.Errorf("abort stale direct-upload multipart upload %s (%s): %w", entry.ObjectKey, entry.UploadID, err)
 		}
 	}
 	return nil

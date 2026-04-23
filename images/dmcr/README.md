@@ -21,19 +21,30 @@ productized DMCR cleanup surface:
 - `dmcr` serves the internal registry over HTTPS;
 - `dmcr-cleaner` runs as an always-on loop in the same Pod during normal
   operation;
-- controller delete flow only enqueues internal GC requests after registry
-  artifact removal and does not wait for physical GC to finish before removing
-  the model finalizer;
+- controller delete flow creates armed internal GC requests immediately after
+  registry artifact removal, so model deletion does not sit behind the
+  scheduled debounce window;
+- delete-triggered GC requests can also snapshot the deleted owner's current
+  unfinished direct-upload session token, so the maintenance cycle may reclaim
+  that exact orphan session prefix immediately instead of waiting for the
+  generic session-age window;
+- model finalizer still does not wait for physical GC to finish before
+  disappearing; physical bytes are reclaimed by the maintenance cycle that the
+  delete flow just armed;
 - public `dmcr.gc.schedule` can enqueue periodic stale-sweep requests even
   without a concrete delete event;
 - operators can run `dmcr-cleaner gc check` for report-only inspection of stale
-  repository/source-mirror prefixes plus orphan direct-upload prefixes and
-  `dmcr-cleaner gc auto-cleanup` for the same sweep followed by registry
-  `garbage-collect`;
+  repository/source-mirror prefixes plus orphan direct-upload object prefixes
+  and open direct-upload multipart uploads, and `dmcr-cleaner gc auto-cleanup`
+  for the same sweep followed by registry `garbage-collect`;
 - `dmcr-cleaner` coalesces queued requests, arms one maintenance/read-only
-  cycle after the internal debounce window, removes stale repository/source-
-  mirror prefixes plus orphan unsealed direct-upload prefixes older than the
-  bounded session window, runs registry `garbage-collect`, and removes
+  cycle after the internal debounce window for scheduled sweep, removes stale
+  repository/source-mirror prefixes plus orphan unsealed direct-upload
+  object prefixes older than the bounded session window, separately aborts
+  stale open direct-upload multipart uploads, and for delete-triggered
+  requests may additionally reclaim the exact unfinished direct-upload
+  multipart upload snapshotted by controller delete flow as
+  `{objectKey, uploadID}`; then it runs registry `garbage-collect` and removes
   processed requests;
 - `dmcr-cleaner gc run` uses an internal Kubernetes `Lease` so only one
   replica owns scheduled enqueue and active cleanup while other `DMCR` replicas
@@ -46,20 +57,28 @@ The command package stays intentionally thin. The actual garbage-collection
 lifecycle implementation now lives under `images/dmcr/internal/garbagecollection`.
 
 The same image also carries `dmcr-direct-upload`, the repo-owned helper for
-verified internal publication into backing storage:
+policy-controlled internal publication into backing storage:
 
 - it serves the `direct-upload v2` API under `/v2/blob-uploads`;
 - it stores multipart uploads as physical objects under
   `_ai_models/direct-upload/objects/<session-id>/data`;
 - session tokens are signed and time-bounded via
   `DMCR_DIRECT_UPLOAD_SESSION_TTL`;
-- after multipart completion it reads the assembled physical object once,
-  computes the final `sha256` digest and size, and uses that result as the
-  publication source of truth;
+- after multipart completion it first asks backing storage for trusted
+  `full-object sha256`;
+- current default internal policy
+  `DMCR_DIRECT_UPLOAD_VERIFICATION_POLICY=trusted-backend-or-client-asserted`
+  accepts the controller-declared digest/size without reread when storage does
+  not expose that trusted checksum;
+- internal strict policy `trusted-backend-or-reread` remains available for a
+  later zero-trust pass and still rereads the assembled object;
+- if the client did not declare a digest, `dmcr-direct-upload` still has to
+  reread the object to obtain the canonical digest-addressed blob key;
 - successful publication writes the repository link plus a tiny
   `.dmcr-sealed` sidecar near the canonical digest-addressed blob path; the
   heavy bytes stay in the physical upload object and are resolved by the
   repo-owned `sealeds3` storage driver;
-- digest/size mismatches clean up the physical upload object; transient
-  verification read failures keep it so a repeated `complete` can verify the
-  already assembled bytes instead of forcing a full re-upload.
+- trusted backend digest/size mismatches and backend-known size mismatches
+  clean up the physical upload object; transient reread failures keep it so a
+  repeated `complete` can reuse the already assembled bytes instead of forcing
+  a full re-upload.

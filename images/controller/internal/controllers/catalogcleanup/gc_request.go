@@ -19,8 +19,10 @@ package catalogcleanup
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	directuploadstate "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/directuploadstate"
 	deletionapp "github.com/deckhouse/ai-models/controller/internal/application/deletion"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -35,6 +37,9 @@ const (
 	dmcrGCRequestedAnnotationKey = "ai.deckhouse.io/dmcr-gc-requested-at"
 	dmcrGCSwitchAnnotationKey    = "ai.deckhouse.io/dmcr-gc-switch"
 	dmcrGCDoneAnnotationKey      = "ai.deckhouse.io/dmcr-gc-done"
+	dmcrGCDirectUploadModeKey    = "ai.deckhouse.io/dmcr-gc-direct-upload-mode"
+	dmcrGCDirectUploadModeFast   = "immediate-orphan-cleanup"
+	dmcrGCDirectUploadTokenKey   = "direct-upload-session-token"
 	dmcrGCRequestNamePrefix      = "dmcr-gc-"
 	dmcrGCRequestTimestampRFC    = time.RFC3339Nano
 )
@@ -47,9 +52,18 @@ func dmcrGCRequestSecretName(ownerUID types.UID) string {
 	return fmt.Sprintf("%s%s", dmcrGCRequestNamePrefix, suffix)
 }
 
-func buildDMCRGCRequestSecret(namespace string, owner cleanupJobOwner) *corev1.Secret {
+func buildDMCRGCRequestSecret(namespace string, owner cleanupJobOwner, directUploadSessionToken string) *corev1.Secret {
+	requestedAt := time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
 	annotations := map[string]string{
-		dmcrGCRequestedAnnotationKey: time.Now().UTC().Format(dmcrGCRequestTimestampRFC),
+		dmcrGCRequestedAnnotationKey: requestedAt,
+		dmcrGCSwitchAnnotationKey:    requestedAt,
+		dmcrGCDirectUploadModeKey:    dmcrGCDirectUploadModeFast,
+	}
+	data := map[string][]byte(nil)
+	if token := strings.TrimSpace(directUploadSessionToken); token != "" {
+		data = map[string][]byte{
+			dmcrGCDirectUploadTokenKey: []byte(token),
+		}
 	}
 
 	return &corev1.Secret{
@@ -60,6 +74,7 @@ func buildDMCRGCRequestSecret(namespace string, owner cleanupJobOwner) *corev1.S
 			Annotations: annotations,
 		},
 		Type: corev1.SecretTypeOpaque,
+		Data: data,
 	}
 }
 
@@ -80,11 +95,16 @@ func observeDMCRGCRequestState(secret *corev1.Secret) deletionapp.GarbageCollect
 }
 
 func (r *baseReconciler) ensureGarbageCollectionRequest(ctx context.Context, owner cleanupJobOwner) error {
+	sessionToken, err := r.directUploadSessionTokenSnapshot(ctx, owner.UID)
+	if err != nil {
+		return err
+	}
+
 	key := garbageCollectionRequestKey(r.options.CleanupJob.Namespace, owner.UID)
 	var existing corev1.Secret
 	switch err := r.client.Get(ctx, key, &existing); {
 	case apierrors.IsNotFound(err):
-		return r.client.Create(ctx, buildDMCRGCRequestSecret(r.options.CleanupJob.Namespace, owner))
+		return r.client.Create(ctx, buildDMCRGCRequestSecret(r.options.CleanupJob.Namespace, owner, sessionToken))
 	case err != nil:
 		return err
 	default:
@@ -92,11 +112,49 @@ func (r *baseReconciler) ensureGarbageCollectionRequest(ctx context.Context, own
 		if existing.Annotations == nil {
 			existing.Annotations = make(map[string]string, 3)
 		}
-		existing.Annotations[dmcrGCRequestedAnnotationKey] = time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
+		requestedAt := time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
+		existing.Annotations[dmcrGCRequestedAnnotationKey] = requestedAt
+		existing.Annotations[dmcrGCSwitchAnnotationKey] = requestedAt
+		existing.Annotations[dmcrGCDirectUploadModeKey] = dmcrGCDirectUploadModeFast
 		delete(existing.Annotations, dmcrGCDoneAnnotationKey)
-		delete(existing.Annotations, dmcrGCSwitchAnnotationKey)
+		if token := strings.TrimSpace(sessionToken); token != "" {
+			if existing.Data == nil {
+				existing.Data = make(map[string][]byte, 1)
+			}
+			existing.Data[dmcrGCDirectUploadTokenKey] = []byte(token)
+		} else if len(existing.Data) > 0 {
+			delete(existing.Data, dmcrGCDirectUploadTokenKey)
+			if len(existing.Data) == 0 {
+				existing.Data = nil
+			}
+		}
 		return r.client.Update(ctx, &existing)
 	}
+}
+
+func (r *baseReconciler) directUploadSessionTokenSnapshot(ctx context.Context, ownerUID types.UID) (string, error) {
+	name, err := resourcenames.SourceWorkerStateSecretName(ownerUID)
+	if err != nil {
+		return "", err
+	}
+
+	var secret corev1.Secret
+	key := types.NamespacedName{Namespace: r.options.CleanupJob.Namespace, Name: name}
+	switch err := r.client.Get(ctx, key, &secret); {
+	case apierrors.IsNotFound(err):
+		return "", nil
+	case err != nil:
+		return "", err
+	}
+
+	state, err := directuploadstate.StateFromSecret(&secret)
+	if err != nil {
+		return "", nil
+	}
+	if state.CurrentLayer == nil {
+		return "", nil
+	}
+	return strings.TrimSpace(state.CurrentLayer.SessionToken), nil
 }
 
 func (r *baseReconciler) deleteGarbageCollectionRequest(ctx context.Context, ownerUID types.UID) error {

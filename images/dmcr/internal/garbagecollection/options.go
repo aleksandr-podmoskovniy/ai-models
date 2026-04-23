@@ -22,18 +22,22 @@ import (
 )
 
 const (
-	RequestLabelKey              = "ai.deckhouse.io/dmcr-gc-request"
-	RequestLabelValue            = "true"
-	RequestQueuedAtAnnotationKey = "ai.deckhouse.io/dmcr-gc-requested-at"
-	switchAnnotationKey          = "ai.deckhouse.io/dmcr-gc-switch"
-	doneAnnotationKey            = "ai.deckhouse.io/dmcr-gc-done"
-	DefaultRegistryBinary        = "/usr/bin/dmcr"
-	DefaultConfigPath            = "/etc/docker/registry/config.yml"
-	DefaultRescanInterval        = 5 * time.Second
-	DefaultActivationDelay       = 10 * time.Minute
-	DefaultExecutorLeaseName     = "dmcr-gc-executor"
-	DefaultExecutorLeaseDuration = 45 * time.Second
-	DefaultExecutorRenewInterval = 15 * time.Second
+	RequestLabelKey               = "ai.deckhouse.io/dmcr-gc-request"
+	RequestLabelValue             = "true"
+	RequestQueuedAtAnnotationKey  = "ai.deckhouse.io/dmcr-gc-requested-at"
+	switchAnnotationKey           = "ai.deckhouse.io/dmcr-gc-switch"
+	doneAnnotationKey             = "ai.deckhouse.io/dmcr-gc-done"
+	directUploadModeAnnotationKey = "ai.deckhouse.io/dmcr-gc-direct-upload-mode"
+	directUploadModeImmediate     = "immediate-orphan-cleanup"
+	directUploadTokenDataKey      = "direct-upload-session-token"
+	directUploadTokenSecretEnv    = "REGISTRY_HTTP_SECRET"
+	DefaultRegistryBinary         = "/usr/bin/dmcr"
+	DefaultConfigPath             = "/etc/docker/registry/config.yml"
+	DefaultRescanInterval         = 5 * time.Second
+	DefaultActivationDelay        = 10 * time.Minute
+	DefaultExecutorLeaseName      = "dmcr-gc-executor"
+	DefaultExecutorLeaseDuration  = 45 * time.Second
+	DefaultExecutorRenewInterval  = 15 * time.Second
 )
 
 type Options struct {

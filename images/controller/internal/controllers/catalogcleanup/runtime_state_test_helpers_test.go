@@ -18,10 +18,12 @@ package catalogcleanup
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -69,7 +71,7 @@ func requestedGCSecret(namespace string, ownerUID types.UID) *corev1.Secret {
 		UID:  ownerUID,
 		Kind: modelsv1alpha1.ModelKind,
 		Name: "deepseek-r1",
-	})
+	}, "")
 	return secret
 }
 
@@ -84,6 +86,38 @@ func completedGCSecret(namespace string, ownerUID types.UID) *corev1.Secret {
 	secret := activeGCSecret(namespace, ownerUID)
 	secret.Annotations[dmcrGCDoneAnnotationKey] = time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
 	return secret
+}
+
+func sourceWorkerStateSecretWithSessionToken(t *testing.T, namespace string, ownerUID types.UID, token string) *corev1.Secret {
+	t.Helper()
+
+	name, err := resourcenames.SourceWorkerStateSecretName(ownerUID)
+	if err != nil {
+		t.Fatalf("SourceWorkerStateSecretName() error = %v", err)
+	}
+	payload, err := json.Marshal(modelpackports.DirectUploadState{
+		Phase: modelpackports.DirectUploadStatePhaseRunning,
+		Stage: modelpackports.DirectUploadStateStageUploading,
+		CurrentLayer: &modelpackports.DirectUploadCurrentLayer{
+			Key:            "model/model.safetensors|application/vnd.ai-models.layer.v1.raw",
+			SessionToken:   token,
+			PartSizeBytes:  8 << 20,
+			TotalSizeBytes: 16 << 20,
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			"state.json": payload,
+		},
+	}
 }
 
 func failedJob(namespace, name string) *batchv1.Job {
