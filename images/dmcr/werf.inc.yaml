@@ -2,15 +2,24 @@
 {{- $core := (get $versions "core") | default dict -}}
 {{- $distributionVersion := default "3.0.0" (get $core "distribution") -}}
 ---
-image: dmcr-build-artifact
+image: dmcr-src-artifact
 final: false
-fromImage: builder/golang-bookworm-1.25
+fromImage: builder/src
 git:
   - add: /images/dmcr
     to: /src/images/dmcr
     stageDependencies:
       install:
         - "**/*"
+---
+image: dmcr-build-artifact
+final: false
+fromImage: builder/golang-bookworm-1.25
+import:
+  - image: dmcr-src-artifact
+    add: /src
+    to: /src
+    before: install
 {{- if eq (env "WERF_ENABLE_HOST_GO_PKG_CACHE" "true") "true" }}
 mount:
   - fromPath: "~/go-pkg-cache"
