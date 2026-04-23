@@ -70,9 +70,15 @@ type listPartsResponse struct {
 
 type completeRequest struct {
 	SessionToken string         `json:"sessionToken"`
-	Digest       string         `json:"digest"`
+	Digest       string         `json:"digest,omitempty"`
 	SizeBytes    int64          `json:"sizeBytes"`
 	Parts        []UploadedPart `json:"parts"`
+}
+
+type completeResponse struct {
+	OK        bool   `json:"ok"`
+	Digest    string `json:"digest"`
+	SizeBytes int64  `json:"sizeBytes"`
 }
 
 type abortRequest struct {
@@ -261,11 +267,7 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		http.Error(writer, "sizeBytes must match uploaded parts", http.StatusBadRequest)
 		return
 	}
-	clientDigest := strings.TrimSpace(payload.Digest)
-	if clientDigest == "" {
-		http.Error(writer, "digest must not be empty", http.StatusBadRequest)
-		return
-	}
+	expectedDigest := strings.TrimSpace(payload.Digest)
 	completeStarted := s.now()
 	log.Printf(
 		"direct upload complete started repository=%q objectKey=%q sizeBytes=%d parts=%d",
@@ -274,7 +276,7 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		payload.SizeBytes,
 		len(parts),
 	)
-	if err := s.backend.CompleteMultipartUpload(request.Context(), claims.ObjectKey, claims.UploadID, parts); err != nil {
+	if err := s.completeMultipartUploadOrUseCompletedObject(request.Context(), claims.ObjectKey, claims.UploadID, parts); err != nil {
 		log.Printf(
 			"direct upload multipart completion failed repository=%q objectKey=%q error=%v",
 			claims.Repository,
@@ -287,20 +289,42 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 
 	sealStarted := s.now()
 	log.Printf(
-		"direct upload trusted sealing started repository=%q objectKey=%q sizeBytes=%d",
+		"direct upload verification started repository=%q objectKey=%q sizeBytes=%d",
 		claims.Repository,
 		claims.ObjectKey,
 		payload.SizeBytes,
 	)
-	// This helper is an internal controller-owned publication boundary.
-	// Once S3 multipart completion succeeded, the canonical digest and size come
-	// from the trusted publisher rather than a second full storage-side reread.
-	sealed := sealedUpload{
-		Digest:    clientDigest,
-		SizeBytes: payload.SizeBytes,
+	sealed, err := s.verifyUploadedObject(request.Context(), claims.ObjectKey)
+	if err != nil {
+		log.Printf(
+			"direct upload verification failed repository=%q objectKey=%q error=%v",
+			claims.Repository,
+			claims.ObjectKey,
+			err,
+		)
+		http.Error(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if sealed.SizeBytes != payload.SizeBytes {
+		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		http.Error(
+			writer,
+			fmt.Sprintf("verified sizeBytes %d does not match expected sizeBytes %d", sealed.SizeBytes, payload.SizeBytes),
+			http.StatusConflict,
+		)
+		return
+	}
+	if expectedDigest != "" && sealed.Digest != expectedDigest {
+		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
+		http.Error(
+			writer,
+			fmt.Sprintf("verified digest %q does not match expected digest %q", sealed.Digest, expectedDigest),
+			http.StatusConflict,
+		)
+		return
 	}
 	log.Printf(
-		"direct upload trusted sealing completed repository=%q objectKey=%q digest=%q sizeBytes=%d durationMs=%d",
+		"direct upload verification completed repository=%q objectKey=%q digest=%q sizeBytes=%d durationMs=%d",
 		claims.Repository,
 		claims.ObjectKey,
 		sealed.Digest,
@@ -351,7 +375,11 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 			sealed.Digest,
 			s.now().Sub(completeStarted).Milliseconds(),
 		)
-		writeJSON(writer, map[string]bool{"ok": true})
+		writeJSON(writer, completeResponse{
+			OK:        true,
+			Digest:    sealed.Digest,
+			SizeBytes: sealed.SizeBytes,
+		})
 		return
 	}
 	if err := s.writeSealedBlobMetadata(request.Context(), blobKey, sealed, claims.ObjectKey); err != nil {
@@ -396,7 +424,11 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		sealed.Digest,
 		s.now().Sub(completeStarted).Milliseconds(),
 	)
-	writeJSON(writer, map[string]bool{"ok": true})
+	writeJSON(writer, completeResponse{
+		OK:        true,
+		Digest:    sealed.Digest,
+		SizeBytes: sealed.SizeBytes,
+	})
 }
 
 func (s *Service) handleAbort(writer http.ResponseWriter, request *http.Request) {

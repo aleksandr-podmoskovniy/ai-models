@@ -82,12 +82,12 @@ func (s *Service) ensureSecret(
 		return nil, "", false, err
 	}
 	secret, err := uploadsessionstate.NewSecret(uploadsessionstate.SessionSpec{
-		Name:                name,
-		Namespace:           s.options.Runtime.Namespace,
-		Token:               token,
-		StagingKeyPrefix:    stagingPrefix,
-		OwnerGeneration:     owner.GetGeneration(),
-		ExpiresAt:           time.Now().Add(s.options.TokenTTL).UTC(),
+		Name:             name,
+		Namespace:        s.options.Runtime.Namespace,
+		Token:            token,
+		StagingKeyPrefix: stagingPrefix,
+		OwnerGeneration:  owner.GetGeneration(),
+		ExpiresAt:        time.Now().Add(s.options.TokenTTL).UTC(),
 	})
 	if err != nil {
 		return nil, "", false, err

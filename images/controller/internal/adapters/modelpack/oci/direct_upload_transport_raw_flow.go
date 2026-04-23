@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"hash"
 	"log/slog"
 	"time"
@@ -150,18 +151,7 @@ func finalizeRawDirectUpload(
 	state rawDirectUploadState,
 	logger *slog.Logger,
 ) (publishLayerDescriptor, error) {
-	digest := "sha256:" + hex.EncodeToString(state.hasher.Sum(nil))
-	descriptor := publishLayerDescriptor{
-		Digest:      digest,
-		DiffID:      digest,
-		Size:        state.totalSize,
-		MediaType:   plan.MediaType,
-		TargetPath:  plan.TargetPath,
-		Base:        plan.Base,
-		Format:      plan.Format,
-		Compression: modelpackports.LayerCompressionNone,
-	}
-
+	expectedDigest := "sha256:" + hex.EncodeToString(state.hasher.Sum(nil))
 	if err := checkpoint.markSealing(ctx, state.current); err != nil {
 		return publishLayerDescriptor{}, err
 	}
@@ -169,14 +159,31 @@ func finalizeRawDirectUpload(
 	if logger != nil {
 		logger.Info(
 			"native modelpack direct upload sealing started",
-			slog.String("layerTargetPath", descriptor.TargetPath),
-			slog.String("layerDigest", descriptor.Digest),
-			slog.Int64("layerSizeBytes", descriptor.Size),
+			slog.String("layerTargetPath", plan.TargetPath),
+			slog.String("expectedLayerDigest", expectedDigest),
+			slog.Int64("expectedLayerSizeBytes", state.totalSize),
 			slog.Int("uploadedPartCount", len(state.uploadedParts)),
 		)
 	}
-	if err := helperClient.complete(ctx, state.session.SessionToken, digest, state.totalSize, state.uploadedParts); err != nil {
+	completeResult, err := helperClient.complete(ctx, state.session.SessionToken, expectedDigest, state.totalSize, state.uploadedParts)
+	if err != nil {
 		return publishLayerDescriptor{}, err
+	}
+	if completeResult.SizeBytes != state.totalSize {
+		return publishLayerDescriptor{}, fmt.Errorf("DMCR verified sizeBytes %d does not match layer sizeBytes %d", completeResult.SizeBytes, state.totalSize)
+	}
+	if completeResult.Digest != expectedDigest {
+		return publishLayerDescriptor{}, fmt.Errorf("DMCR verified digest %q does not match locally computed digest %q", completeResult.Digest, expectedDigest)
+	}
+	descriptor := publishLayerDescriptor{
+		Digest:      completeResult.Digest,
+		DiffID:      completeResult.Digest,
+		Size:        completeResult.SizeBytes,
+		MediaType:   plan.MediaType,
+		TargetPath:  plan.TargetPath,
+		Base:        plan.Base,
+		Format:      plan.Format,
+		Compression: modelpackports.LayerCompressionNone,
 	}
 	if logger != nil {
 		logger.Info(

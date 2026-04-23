@@ -19,10 +19,10 @@ package main
 import (
 	_ "net/http/pprof"
 
+	_ "github.com/deckhouse/ai-models/dmcr/internal/registrydriver/sealeds3"
 	"github.com/distribution/distribution/v3/registry"
 	_ "github.com/distribution/distribution/v3/registry/auth/htpasswd"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
-	_ "github.com/deckhouse/ai-models/dmcr/internal/registrydriver/sealeds3"
 )
 
 func main() {

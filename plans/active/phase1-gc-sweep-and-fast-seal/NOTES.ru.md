@@ -13,12 +13,13 @@
      maintenance choreography без нового параллельного GC path;
    - для stale discovery и operator-facing commands добавлен cluster-scope RBAC
      на list/get `models` и `clustermodels`.
-2. Fast sealing для controller-owned publication path:
-   - `DMCR direct-upload` больше не делает второй полный storage-side reread
+2. No-copy sealing для controller-owned publication path:
+   - `DMCR direct-upload` больше не делает второй полный storage-side copy
      после `CompleteMultipartUpload(...)`;
-   - trusted digest/size теперь приходят с controller-owned publisher boundary;
-   - docs явно фиксируют, что это private internal fast path, а не generic
-     untrusted external upload guarantee.
+   - continuation `plans/active/dmcr-zero-trust-ingest` заменил доверие к
+     controller-provided digest на `DMCR`-owned verification read;
+   - актуальная целевая картина: нет второй полной записи объекта, но есть
+     один проверочный проход чтения по physical upload object.
 
 ## 2. Основные затронутые области
 
@@ -48,8 +49,28 @@ Repo-level:
 
 ## 4. Residual risk
 
-- Этот slice не проектировал отдельный executor election для `dmcr-cleaner`
-  между несколькими replica `DMCR`; stale sweep встроен в уже существующий
-  maintenance flow и не добавляет новый parallel cleanup path, но отдельный
-  HA-safe executor ownership остаётся потенциальной следующей hardening
-  задачей, если его решат выносить в phase-1.5/phase-3 hardening.
+- Закрыто continuation slice 2026-04-23: `dmcr-cleaner gc run` получил
+  внутренний lease-based executor ownership на
+  `coordination.k8s.io/Lease/dmcr-gc-executor`.
+- Lease holder выполняет scheduled enqueue, arm/delete request secrets и
+  active `auto-cleanup`; non-holder replica остаётся standby и не мутирует GC
+  state.
+- Lease tuning остаётся internal runtime detail и не выводится в public
+  module settings.
+
+## 5. Continuation checks 2026-04-23
+
+Узкая проверка:
+
+- `cd images/dmcr && go test ./internal/garbagecollection ./cmd/dmcr-cleaner/...`
+
+Repo-level:
+
+- `make fmt`
+- `make verify`
+
+Результат:
+
+- прошла успешно локально.
+- `make verify` прошёл успешно локально; cluster rollout/validation не
+  выполнялись.

@@ -33,6 +33,9 @@ productized DMCR cleanup surface:
   cycle after the internal debounce window, removes stale repository/source-
   mirror prefixes, runs registry `garbage-collect`, and removes processed
   requests;
+- `dmcr-cleaner gc run` uses an internal Kubernetes `Lease` so only one
+  replica owns scheduled enqueue and active cleanup while other `DMCR` replicas
+  stay as standby executors;
 - `dmcr-cleaner` writes repo-owned structured JSON lifecycle logs under the
   `dmcr-garbage-collection` logger; the main `dmcr` process stays on upstream
   logging behavior.
@@ -41,19 +44,20 @@ The command package stays intentionally thin. The actual garbage-collection
 lifecycle implementation now lives under `images/dmcr/internal/garbagecollection`.
 
 The same image also carries `dmcr-direct-upload`, the repo-owned helper for
-trusted internal publication into backing storage:
+verified internal publication into backing storage:
 
 - it serves the `direct-upload v2` API under `/v2/blob-uploads`;
 - it stores multipart uploads as physical objects under
   `_ai_models/direct-upload/objects/<session-id>/data`;
 - session tokens are signed and time-bounded via
   `DMCR_DIRECT_UPLOAD_SESSION_TTL`;
-- this helper is only the trusted internal controller-owned publication path,
-  so after multipart completion it trusts the controller-provided digest and
-  size instead of doing a second full storage-side reread;
+- after multipart completion it reads the assembled physical object once,
+  computes the final `sha256` digest and size, and uses that result as the
+  publication source of truth;
 - successful publication writes the repository link plus a tiny
   `.dmcr-sealed` sidecar near the canonical digest-addressed blob path; the
   heavy bytes stay in the physical upload object and are resolved by the
   repo-owned `sealeds3` storage driver;
-- failed finalization cleans up the physical upload object and the sidecar, so
-  the registry does not keep half-published blobs.
+- digest/size mismatches clean up the physical upload object; transient
+  verification read failures keep it so a repeated `complete` can verify the
+  already assembled bytes instead of forcing a full re-upload.

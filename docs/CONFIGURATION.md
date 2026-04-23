@@ -85,37 +85,40 @@ The trade-off is explicit:
 There is no separate transport choice for published layer payloads. The
 canonical byte path is fixed:
 
-- `publish-worker -> DMCR direct-upload v2 session -> physical multipart object -> trusted DMCR seal -> canonical digest metadata/link`.
+- `publish-worker -> DMCR direct-upload v2 session -> physical multipart object -> DMCR verification read -> canonical digest metadata/link`.
 
 `DMCR` still owns authentication, final blob/link materialization, and the
 published artifact contract, but the thick byte stream no longer goes through
 the registry `PATCH` path. This removes `DMCR` itself as the network bottleneck
 on the large-byte publish path.
 
-The direct helper now runs in late-digest mode: the controller starts the
-session without the final layer digest, streams the payload parts, and seals
-the layer only at `complete(session, digest, size, parts)`. For range-capable
-raw layers this removes the old controller-side full descriptor pre-read, so
-heavy remote model bytes are read once on the publish worker side.
-
-Because this helper is only the trusted internal controller-owned publication
-path, `DMCR` no longer re-reads the assembled physical object after multipart
-completion. The controller-computed `digest` and `size` are now the trusted
-sealing inputs for this private boundary, not a generic public promise for
-arbitrary external uploads. Phase 1 still does not claim a fast-seal guarantee
-for untrusted clients outside the controller-owned path.
+The direct helper runs in late-digest mode: the controller starts the session
+without the final layer digest, streams the payload parts, and seals the layer
+with `complete(session, expectedDigest, size, parts)`. For range-capable raw
+layers this removes the old controller-side full descriptor pre-read: the
+publish worker reads the remote model source once. After multipart completion
+`DMCR` makes one verification pass over the assembled physical object in
+object storage, computes the final `sha256` and actual size itself, and uses
+the controller-provided `expectedDigest` only as an additional equality check.
+If the digest does not match, publication is rejected and the physical upload
+object is deleted.
+If the verification read fails transiently after multipart assembly, the
+physical object is retained: a repeated `complete` call can continue
+verification of the already assembled object without uploading the model bytes
+again.
 
 Small `config`/manifest writes and final remote inspect still use the normal
 registry API so the internal contract changes one responsibility at a time.
 
 The current helper implementation still has one internal seal step, but it no
-longer rewrites or re-reads the full heavy object during sealing. The multipart
-upload first lands into a physical object under
-`_ai_models/direct-upload/objects/<session-id>/data`, then the helper writes a
-tiny `.dmcr-sealed` sidecar near the canonical digest-addressed blob path using
-the trusted controller-owned digest/size. The published OCI contract remains
-digest-based: repository links still point to the canonical digest, while the
-internal `sealeds3` driver resolves that digest to the physical object key.
+longer rewrites the full heavy object during sealing. The multipart upload
+first lands into a physical object under
+`_ai_models/direct-upload/objects/<session-id>/data`, then `DMCR` reads that
+object once for verification, writes a tiny `.dmcr-sealed` sidecar near the
+canonical digest-addressed blob path, and creates the repository link using the
+computed digest/size. The published OCI contract remains digest-based:
+repository links still point to the canonical digest, while the internal
+`sealeds3` driver resolves that digest to the physical object key.
 
 On the controller side, direct-upload now also keeps one compact owner-scoped
 checkpoint `Secret`. During `Running`, that state stores the current layer key,

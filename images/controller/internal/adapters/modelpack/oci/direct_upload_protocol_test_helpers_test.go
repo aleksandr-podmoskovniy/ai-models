@@ -133,10 +133,20 @@ func (s *directUploadTestServer) handleComplete(writer http.ResponseWriter, requ
 	if got, want := int64(len(assembled)), payload.SizeBytes; got != want {
 		s.registry.state.t.Fatalf("complete sizeBytes = %d, want %d", got, want)
 	}
-	s.registry.state.blobs[payload.Digest] = assembled
+	digestBytes := sha256.Sum256(assembled)
+	verifiedDigest := "sha256:" + hex.EncodeToString(digestBytes[:])
+	if expectedDigest := strings.TrimSpace(payload.Digest); expectedDigest != "" && expectedDigest != verifiedDigest {
+		http.Error(writer, "verified digest does not match expected digest", http.StatusConflict)
+		return
+	}
+	s.registry.state.blobs[verifiedDigest] = assembled
 	s.completeCalls++
 	delete(s.sessions, payload.SessionToken)
-	writer.WriteHeader(http.StatusOK)
+	writeJSON(writer, completeDirectUploadResponse{
+		OK:        true,
+		Digest:    verifiedDigest,
+		SizeBytes: int64(len(assembled)),
+	})
 }
 
 func (s *directUploadTestServer) handleAbort(writer http.ResponseWriter, request *http.Request) {

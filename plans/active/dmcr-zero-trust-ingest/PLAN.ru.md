@@ -1,30 +1,60 @@
 ## 1. Current phase
 
-Этап 1 corrective continuation перед дальнейшей phase-2 работой.
+Этап 1: corrective continuation вокруг publication/runtime baseline.
 
-Publication baseline уже landed, но ingest в internal `DMCR` ещё не даёт
-production-ready guarantees для zero-trust, resume и large-object economics.
-Пока этот контур не доведён, phase-2 runtime/distribution workstreams нельзя
-считать надёжным основанием.
+Задача остаётся внутри внутреннего publication backend: исправляем прямую
+загрузку больших слоёв в `DMCR`, не тащим сюда `DMZ`, workload delivery и
+node-local cache.
 
 ## 1a. Execution status
 
-На текущий момент уже выполнено:
+Уже сделано в предыдущих срезах workstream:
 
-- Slice 2: `DMCR` переведён на zero-trust seal без полного backend-copy.
-- Slice 3: controller-side direct-upload получил compact `Secret` journal,
-  restart-safe resume в `publish-worker` и повторный запуск `sourceworker`
-  после падения pod при живом upload state.
-- Slice 4: running-state и byte-progress начали подниматься из runtime state
-  в observation path и condition messages контроллера.
+- прямой multipart upload в backing storage вместо толстого registry `PATCH`
+  path;
+- `.dmcr-sealed` metadata/link, чтобы не делать полный `CopyObject` после
+  multipart completion;
+- controller-side checkpoint/resume для текущего direct-upload flow;
+- basic progress/status projection вокруг publication runtime.
 
-Следующий открытый срез:
+Долг этого continuation закрывается текущим change set:
 
-- финально довести public progress/status contract вокруг нового ingest flow:
-  - отдельный runtime progress field для sourceworker;
-  - честный top-level `status.progress` для publication path;
-  - docs/review surface без drift между upload-progress и publish-progress
-    narratives.
+- complete path больше не доверяет digest, присланному контроллером;
+- digest/size вычисляются внутри `DMCR` по физическому объекту после multipart
+  completion;
+- второй полной копии объекта не появляется, остаётся один проверочный проход
+  чтения.
+
+## 1b. Implementation result 2026-04-23
+
+Выполнено:
+
+- active bundle переписан под целевую схему “прямая загрузка в хранилище +
+  один проверочный проход чтения + no second full copy”;
+- `DMCR direct-upload complete` возвращает `digest` и `sizeBytes`,
+  вычисленные `DMCR`;
+- `digest` в complete request стал optional expected digest;
+- expected digest mismatch отклоняется, physical upload object удаляется;
+- temporary verification read failure не удаляет physical upload object;
+- повторный complete может продолжить проверку, если physical upload object
+  уже был собран предыдущей попыткой;
+- controller raw path строит descriptor из complete response;
+- controller described path сверяет complete response с ожидаемым descriptor;
+- тестовый direct-upload helper считает digest по фактическим uploaded bytes;
+- docs/README синхронизированы с новым byte path.
+
+Проверки:
+
+- `cd images/dmcr && go test ./internal/directupload`
+- `cd images/controller && go test ./internal/adapters/modelpack/oci/...`
+- `make fmt`
+- `make test`
+- `make verify`
+
+Результат:
+
+- все проверки прошли локально;
+- cluster rollout/validation не выполнялись.
 
 ## 2. Orchestration
 
@@ -32,135 +62,103 @@ production-ready guarantees для zero-trust, resume и large-object economics.
 
 Причина:
 
-- задача одновременно меняет storage/index model, direct-upload contract,
-  controller publication wiring и operator-facing documentation;
-- здесь есть архитектурные решения по trust boundary, durable session state и
-  physical-vs-logical blob identity.
-
-Ограничение текущей сессии:
-
-- delegation не используется, потому что в текущем runtime она допустима
-  только по явному запросу пользователя;
-- поэтому bundle исполняется как `solo`, а архитектурные выводы фиксируются
-  прямо в текущем plan/doc surface.
+- задача меняет внутренний `DMCR`/controller contract и документацию;
+- по repo rules для такой задачи обычно нужен read-only review;
+- в текущей сессии запуск сабагентов разрешён только по прямому запросу
+  пользователя, поэтому работаем без delegation и фиксируем решения прямо в
+  bundle.
 
 ## 3. Slices
 
-### Slice 1. Зафиксировать целевой ingest contract и state machine
+### Slice 1. Зафиксировать целевую картину
 
 Цель:
 
-- перестать спорить на уровне общих слов и зафиксировать одну defendable
-  схему: кто вычисляет digest, где живут байты, где живёт session metadata и
-  как происходит seal/commit.
+- закрепить схему “direct-to-S3 + один проверочный read + no second full copy”.
 
 Файлы/каталоги:
 
-- `plans/active/dmcr-zero-trust-ingest/*`
-- при необходимости `docs/CONFIGURATION*.md`
-- при необходимости `images/dmcr/README.md`
+- `plans/active/dmcr-zero-trust-ingest/TASK.ru.md`
+- `plans/active/dmcr-zero-trust-ingest/PLAN.ru.md`
 
 Проверки:
 
-- `rg -n "direct-upload|digest|session|resume|copy|blob" images/dmcr images/controller docs`
+- ручная сверка с текущим stage-1 scope.
 
 Артефакт результата:
 
-- bundle с явным verdict:
-  - zero-trust digest verification inside `DMCR`;
-  - no full object rewrite on seal;
-  - durable resume semantics.
+- active bundle больше не обещает unsafe trusted digest path.
 
-### Slice 2. Переделать внутреннюю storage/index модель `DMCR`
+### Slice 2. Перевести `DMCR complete` на проверяемый digest
 
 Цель:
 
-- разорвать текущую жёсткую связь между "канонический published digest" и
-  "физический object key, известный до seal", чтобы убрать полный storage copy
-  и сохранить published digest contract снаружи.
+- `DMCR` сам считает digest/size собранного physical object и возвращает их в
+  ответе complete.
 
 Файлы/каталоги:
 
 - `images/dmcr/internal/directupload/*`
-- `images/dmcr/internal/...` вокруг registry metadata/index
-- тесты `images/dmcr/internal/directupload/*_test.go`
 
 Проверки:
 
-- `go test ./images/dmcr/internal/directupload/...`
+- `cd images/dmcr && go test ./internal/directupload`
 
 Артефакт результата:
 
-- `DMCR`, который:
-  - хранит durable ingest session;
-  - seal'ит уже загруженный физический объект без полной переписи;
-  - коммитит logical digest/index metadata отдельно от physical upload key;
-  - хранит published digest mapping через `.dmcr-sealed` sidecar и
-    `sealeds3` storage driver.
+- missing digest allowed;
+- expected digest mismatch rejected;
+- successful complete writes repository link and `.dmcr-sealed` by
+  `DMCR`-computed digest;
+- no full object copy, only verification read.
 
-### Slice 3. Переделать controller-side attach/resume/finalize flow
+### Slice 3. Перевести controller direct-upload client на digest из `DMCR`
 
 Цель:
 
-- сделать publication worker aware of durable ingest sessions вместо текущего
-  best-effort `listParts()` recovery в рамках живой сессии.
+- raw path использует digest из complete response;
+- described path сверяет returned digest/size с ожидаемым descriptor.
 
 Файлы/каталоги:
 
 - `images/controller/internal/adapters/modelpack/oci/*`
-- при необходимости `images/controller/internal/controllers/catalogstatus/*`
 
 Проверки:
 
-- `go test ./images/controller/internal/adapters/modelpack/oci/...`
+- `cd images/controller && go test ./internal/adapters/modelpack/oci/...`
 
 Артефакт результата:
 
-- controller-side flow, который:
-  - умеет продолжать upload session после restart;
-  - не теряет state между reconcile attempts;
-  - корректно завершает или abort'ит ingest.
+- fake helper в тестах считает digest по фактическим uploaded bytes;
+- manifest/checkpoint получают digest из `DMCR`-owned complete result.
 
-### Slice 4. Добавить progress/status/observability
+### Slice 4. Синхронизировать документацию
 
 Цель:
 
-- перестать оставлять оператора наедине с сырыми логами долгой загрузки.
+- убрать stale narrative “controller digest is trusted” и честно описать
+  byte path для больших моделей.
 
 Файлы/каталоги:
 
-- `images/controller/internal/controllers/catalogstatus/*`
-- `images/dmcr/internal/directupload/*`
-- `docs/CONFIGURATION*.md`
-- возможно `images/controller/README.md`
-
-Проверки:
-
-- `go test ./images/controller/internal/controllers/catalogstatus/...`
-- `make test`
-
-Артефакт результата:
-
-- bounded progress/state signal по ingest:
-  - started / resumed / sealing / committed / failed / aborted;
-  - byte or part progress where technically available.
-- top-level `status.progress` для sourceworker-driven publication path
-  проецируется из machine-readable runtime field, а не из message scraping.
-
-### Slice 5. Удалить старые хвосты и синхронизировать документацию
-
-Цель:
-
-- после cutover не оставить в репозитории вторую "почти такую же" схему
-  ingest path.
-
-Файлы/каталоги:
-
-- `images/dmcr/internal/directupload/*`
-- `images/controller/internal/adapters/modelpack/oci/*`
-- `docs/CONFIGURATION*.md`
+- `docs/CONFIGURATION.ru.md`
+- `docs/CONFIGURATION.md`
 - `images/dmcr/README.md`
-- `images/controller/README.md`
+- при необходимости notes предыдущего active bundle
+
+Проверки:
+
+- `rg -n "trusted digest|controller-provided|no longer re-reads|не перечитывает|перечитывает полностью" docs images/dmcr plans/active`
+
+Артефакт результата:
+
+- docs говорят то же самое, что делает код.
+
+### Slice 5. Финальная проверка
+
+Цель:
+
+- убедиться, что изменение поддерживаемо и не ломает общий модуль.
 
 Проверки:
 
@@ -170,27 +168,22 @@ production-ready guarantees для zero-trust, resume и large-object economics.
 
 Артефакт результата:
 
-- один канонический ingress path без stale docs, dead code и legacy narrative.
-- execution status:
-  - контроллерная документация и `CONFIGURATION*` синхронизированы с
-    direct-upload checkpoint/resume semantics и bounded progress surface.
-  - running-status теперь поднимает machine-readable condition reasons для
-    `started/uploading/resumed/sealing/committed` поверх того же checkpoint.
+- задача готова к пользовательскому push/rollout без локального обращения к
+  кластеру.
 
 ## 4. Rollback point
 
-После Slice 1 можно безопасно остановиться:
+Безопасный rollback после Slice 1: только документы плана изменены, runtime
+code ещё не тронут.
 
-- целевой contract/state machine уже зафиксирован;
-- код ещё не переписан;
-- runtime не находится в полуразобранном состоянии.
-
-После Slice 2 rollback ещё возможен, если storage/index seam уже отделён и
-покрыт тестами, но controller-side attach/resume ещё не переключён на новый
-contract.
+После Slice 2 rollback делается как единый откат изменений в
+`images/dmcr/internal/directupload/*`, потому что request/response contract
+ещё не должен расходиться с controller-side client.
 
 ## 5. Final validation
 
+- `cd images/dmcr && go test ./internal/directupload`
+- `cd images/controller && go test ./internal/adapters/modelpack/oci/...`
 - `make fmt`
 - `make test`
 - `make verify`

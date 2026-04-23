@@ -33,33 +33,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-const (
-	RequestLabelKey              = "ai.deckhouse.io/dmcr-gc-request"
-	RequestLabelValue            = "true"
-	RequestQueuedAtAnnotationKey = "ai.deckhouse.io/dmcr-gc-requested-at"
-	switchAnnotationKey          = "ai.deckhouse.io/dmcr-gc-switch"
-	doneAnnotationKey            = "ai.deckhouse.io/dmcr-gc-done"
-	DefaultRegistryBinary        = "/usr/bin/dmcr"
-	DefaultConfigPath            = "/etc/docker/registry/config.yml"
-	DefaultRescanInterval        = 5 * time.Second
-	DefaultActivationDelay       = 10 * time.Minute
-)
-
-type Options struct {
-	RequestNamespace     string
-	RequestLabelSelector string
-	RegistryBinary       string
-	ConfigPath           string
-	GCTimeout            time.Duration
-	RescanInterval       time.Duration
-	ActivationDelay      time.Duration
-	Schedule             string
-}
-
-func DefaultRequestLabelSelector() string {
-	return RequestLabelKey + "=" + RequestLabelValue
-}
-
 func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) error {
 	if client == nil {
 		return fmt.Errorf("kubernetes client must not be nil")
@@ -67,6 +40,10 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 
 	options = applyDefaultOptions(options)
 	schedulePlanner, err := newSchedulePlanner(options.Schedule, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	executorLease, err := newExecutorLeaseRunner(client, options, time.Now)
 	if err != nil {
 		return err
 	}
@@ -78,18 +55,16 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 		slog.Duration("rescan_interval", options.RescanInterval),
 		slog.Duration("activation_delay", options.ActivationDelay),
 		slog.String("schedule", strings.TrimSpace(options.Schedule)),
+		slog.String("executor_lease", options.ExecutorLeaseName),
+		slog.String("executor_identity", executorLease.identity),
 	)
 
 	signalContext, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	for {
-		if err := maybeEnqueueScheduledRequest(signalContext, client, options, schedulePlanner, time.Now().UTC()); err != nil {
-			return err
-		}
-
-		handled, err := runRequestCycle(signalContext, client, options, func() time.Time {
-			return time.Now().UTC()
+		handled, err := executorLease.RunIfHolder(signalContext, func(leaseContext context.Context) (bool, error) {
+			return runLoopStep(leaseContext, client, options, schedulePlanner, time.Now)
 		})
 		if err != nil {
 			return err
@@ -110,6 +85,22 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 			}
 		}
 	}
+}
+
+func runLoopStep(
+	ctx context.Context,
+	client kubernetes.Interface,
+	options Options,
+	schedulePlanner *schedulePlanner,
+	now func() time.Time,
+) (bool, error) {
+	if err := maybeEnqueueScheduledRequest(ctx, client, options, schedulePlanner, now().UTC()); err != nil {
+		return false, err
+	}
+
+	return runRequestCycle(ctx, client, options, func() time.Time {
+		return now().UTC()
+	})
 }
 
 func runRequestCycle(
@@ -193,28 +184,6 @@ func runActiveRequestCycle(
 	)
 
 	return true, nil
-}
-
-func applyDefaultOptions(options Options) Options {
-	if strings.TrimSpace(options.RequestLabelSelector) == "" {
-		options.RequestLabelSelector = DefaultRequestLabelSelector()
-	}
-	if strings.TrimSpace(options.RegistryBinary) == "" {
-		options.RegistryBinary = DefaultRegistryBinary
-	}
-	if strings.TrimSpace(options.ConfigPath) == "" {
-		options.ConfigPath = DefaultConfigPath
-	}
-	if options.GCTimeout <= 0 {
-		options.GCTimeout = 10 * time.Minute
-	}
-	if options.RescanInterval <= 0 {
-		options.RescanInterval = DefaultRescanInterval
-	}
-	if options.ActivationDelay <= 0 {
-		options.ActivationDelay = DefaultActivationDelay
-	}
-	return options
 }
 
 func listRequestSecrets(ctx context.Context, client kubernetes.Interface, namespace, labelSelector string) ([]corev1.Secret, error) {

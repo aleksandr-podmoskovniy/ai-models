@@ -72,9 +72,20 @@ type listDirectUploadPartsResponse struct {
 
 type completeDirectUploadRequest struct {
 	SessionToken string               `json:"sessionToken"`
-	Digest       string               `json:"digest"`
+	Digest       string               `json:"digest,omitempty"`
 	SizeBytes    int64                `json:"sizeBytes"`
 	Parts        []uploadedDirectPart `json:"parts"`
+}
+
+type completeDirectUploadResponse struct {
+	OK        bool   `json:"ok"`
+	Digest    string `json:"digest"`
+	SizeBytes int64  `json:"sizeBytes"`
+}
+
+type directUploadCompleteResult struct {
+	Digest    string
+	SizeBytes int64
 }
 
 type abortDirectUploadRequest struct {
@@ -167,13 +178,29 @@ func (c *directUploadClient) complete(
 	digest string,
 	sizeBytes int64,
 	parts []uploadedDirectPart,
-) error {
-	return c.doJSON(ctx, http.MethodPost, "/v2/blob-uploads/complete", completeDirectUploadRequest{
+) (directUploadCompleteResult, error) {
+	var response completeDirectUploadResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v2/blob-uploads/complete", completeDirectUploadRequest{
 		SessionToken: strings.TrimSpace(sessionToken),
 		Digest:       strings.TrimSpace(digest),
 		SizeBytes:    sizeBytes,
 		Parts:        parts,
-	}, nil)
+	}, &response); err != nil {
+		return directUploadCompleteResult{}, err
+	}
+	result := directUploadCompleteResult{
+		Digest:    strings.TrimSpace(response.Digest),
+		SizeBytes: response.SizeBytes,
+	}
+	switch {
+	case !response.OK:
+		return directUploadCompleteResult{}, errors.New("DMCR direct upload complete response is not ok")
+	case result.Digest == "":
+		return directUploadCompleteResult{}, errors.New("DMCR direct upload complete response is missing digest")
+	case result.SizeBytes <= 0:
+		return directUploadCompleteResult{}, errors.New("DMCR direct upload complete response has non-positive sizeBytes")
+	}
+	return result, nil
 }
 
 func (c *directUploadClient) abort(ctx context.Context, sessionToken string) error {

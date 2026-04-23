@@ -73,10 +73,10 @@ func TestFetchRemoteDirectModeDoesNotPassSourceMirror(t *testing.T) {
 	}
 
 	_, err := fetchRemote(context.Background(), Options{
-		SourceType:            modelsv1alpha1.ModelSourceTypeHuggingFace,
-		HFModelID:             "owner/model",
+		SourceType:      modelsv1alpha1.ModelSourceTypeHuggingFace,
+		HFModelID:       "owner/model",
 		SourceFetchMode: publicationports.SourceFetchModeDirect,
-		Revision:              "main",
+		Revision:        "main",
 	})
 	if err != nil {
 		t.Fatalf("fetchRemote() error = %v", err)
@@ -87,11 +87,11 @@ func TestRunRejectsMirrorModeWithoutRawStageBoundary(t *testing.T) {
 	t.Parallel()
 
 	_, err := Run(context.Background(), Options{
-		SourceType:            modelsv1alpha1.ModelSourceTypeHuggingFace,
-		ArtifactURI:           "registry.internal.local/ai-models/test@sha256:deadbeef",
-		HFModelID:             "owner/model",
-		SourceFetchMode: publicationports.SourceFetchModeMirror,
-		ModelPackPublisher:    fakePublisher{},
+		SourceType:         modelsv1alpha1.ModelSourceTypeHuggingFace,
+		ArtifactURI:        "registry.internal.local/ai-models/test@sha256:deadbeef",
+		HFModelID:          "owner/model",
+		SourceFetchMode:    publicationports.SourceFetchModeMirror,
+		ModelPackPublisher: fakePublisher{},
 	})
 	if err == nil {
 		t.Fatal("expected mirror mode validation error")

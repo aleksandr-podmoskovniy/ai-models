@@ -24,6 +24,16 @@ Phase-1 closure: productized stale GC и fast sealing для controller-owned pu
    - но `DMCR` всё ещё перечитывает весь загруженный object в
      `sealUploadedObject()` только ради digest/size verification.
 
+Continuation на 2026-04-22 после закрытия этих двух долгов:
+
+3. `dmcr-cleaner gc run` всё ещё не гарантирует single executor ownership при
+   `DMCR` HA > 1:
+   - sidecar запущен в каждой replica `DMCR`;
+   - schedule enqueue, arm/delete request secrets и `auto-cleanup` исполняются
+     без lease-based coordination;
+   - при takeover/failover возможен duplicate maintenance cycle или гонка за
+     cleanup ownership.
+
 Предшественники:
 
 - `plans/active/live-cluster-error-triage/*`
@@ -43,12 +53,16 @@ Phase-1 closure: productized stale GC и fast sealing для controller-owned pu
    - scheduled `dmcr-cleaner gc auto-cleanup`, который ищет stale published
      model repositories и связанные raw/source-mirror prefixes без привязки к
      delete-событию конкретного `Model`.
-2. Убрать второй полный read из controller-owned publication sealing path:
-   - `DMCR direct-upload` должен перестать повторно читать heavy object после
-     multipart completion;
-   - direct-upload contract должен явно фиксировать, что этот fast path
-     относится к trusted controller-owned publisher boundary, а не к generic
-     untrusted external ingest.
+2. Убрать второй полный copy из controller-owned publication sealing path:
+   - `DMCR direct-upload` не должен переписывать heavy object после multipart
+     completion;
+   - дальнейшая проверка digest вынесена в continuation
+     `plans/active/dmcr-zero-trust-ingest`.
+3. Дожать `dmcr-cleaner` до HA-safe runtime ownership:
+   - scheduled sweep и active GC request cycle должны исполняться только одним
+     live executor;
+   - ownership должен оставаться bounded internal runtime concern, а не новым
+     public module contract.
 
 ## 4. Scope
 
@@ -58,8 +72,9 @@ Phase-1 closure: productized stale GC и fast sealing для controller-owned pu
 - добавить stale published-artifact sweep по ownership model
   `Model` / `ClusterModel` against registry/raw storage prefixes;
 - встроить scheduled auto-cleanup в `dmcr` Pod wiring;
-- переделать direct-upload sealing contract так, чтобы trusted
-  controller-owned publisher больше не вызывал full-object read inside `DMCR`;
+- добавить bounded lease-based executor ownership для `dmcr-cleaner gc run`;
+- переделать direct-upload sealing contract так, чтобы controller-owned
+  publisher больше не вызывал full-object copy inside `DMCR`;
 - синхронизировать docs и bundle notes с новым fast-seal / GC contract.
 
 ## 5. Non-goals
@@ -71,6 +86,8 @@ Phase-1 closure: productized stale GC и fast sealing для controller-owned pu
   bounded stale sweep для `ai-models` ownership model;
 - не обещать generic untrusted direct-upload fast path, если в текущем phase-1
   boundary direct-upload остаётся internal controller-owned interface;
+- не выводить lease/election tuning в public module settings без отдельной
+  необходимости;
 - не делать live cluster rollout или cluster validation в этом bundle.
 
 ## 6. Затрагиваемые области
@@ -105,16 +122,23 @@ Phase-1 closure: productized stale GC и fast sealing для controller-owned pu
   - затем запускать registry `garbage-collect`.
 - Sidecar wiring умеет запускать scheduled sweep без controller-triggered
   delete event.
-- `DMCR` fast sealing path больше не делает full-object read внутри
-  `sealUploadedObject()` для controller-owned direct-upload flow.
-- В docs и code явно зафиксирована trust boundary:
-  - direct-upload fast seal относится к trusted internal publisher path;
-  - phase-1 не заявляет generic untrusted fast-seal guarantee.
+- При `DMCR` HA runtime cleanup ownership bounded:
+  - только lease holder имеет право enqueue scheduled request, arm/delete
+    request secrets и запускать `auto-cleanup` из `gc run`;
+  - non-holder replica остаётся standby и не мутирует GC state;
+  - ownership реализован внутренним lease в namespace `DMCR`, без нового
+    public values contract.
+- `DMCR` direct-upload sealing path больше не делает full-object copy для
+  controller-owned direct-upload flow.
+- В docs и code явно зафиксирована continuation boundary:
+  - этот bundle закрывает no-copy storage layout;
+  - `dmcr-zero-trust-ingest` закрывает `DMCR`-owned digest verification.
 - Тесты покрывают:
   - stale sweep detection and cleanup decisions;
   - CLI check/auto-cleanup behavior;
   - schedule wiring;
-  - direct-upload complete path without backend reread.
+  - lease acquisition/renew/takeover и non-holder standby behavior;
+  - direct-upload complete path without full backend copy.
 - Перед завершением проходит:
   - `make fmt`
   - `make test`
@@ -130,3 +154,5 @@ Phase-1 closure: productized stale GC и fast sealing для controller-owned pu
   тем самым незаметно ослабить security narrative;
 - можно смешать productized stale sweep с legacy internal queued-request GC и
   оставить две конкурирующие cleanup истории вместо одной explainable модели.
+- можно сделать lease ownership слишком хрупким и получить stuck cleanup или,
+  наоборот, duplicate executor при failover.

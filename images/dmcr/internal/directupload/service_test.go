@@ -41,6 +41,8 @@ type fakeBackend struct {
 	parts            map[string][]UploadedPart
 	deleted          []string
 	readerCalls      int
+	completeErr      error
+	readerErr        error
 	putErr           error
 	putErrPathSuffix string
 }
@@ -74,6 +76,9 @@ func (b *fakeBackend) ListUploadedParts(_ context.Context, objectKey, uploadID s
 }
 
 func (b *fakeBackend) CompleteMultipartUpload(_ context.Context, objectKey, uploadID string, parts []UploadedPart) error {
+	if b.completeErr != nil {
+		return b.completeErr
+	}
 	b.parts[uploadID] = append([]UploadedPart(nil), parts...)
 	b.objects[strings.TrimSpace(objectKey)] = payloadForParts(parts)
 	return nil
@@ -88,6 +93,9 @@ func (b *fakeBackend) AbortMultipartUpload(_ context.Context, objectKey, uploadI
 
 func (b *fakeBackend) Reader(_ context.Context, objectKey string, offset int64) (io.ReadCloser, error) {
 	b.readerCalls++
+	if b.readerErr != nil {
+		return nil, b.readerErr
+	}
 	payload, exists := b.objects[strings.TrimSpace(objectKey)]
 	if !exists {
 		return nil, errors.New("object not found")
@@ -177,6 +185,16 @@ func TestServiceCompleteWritesRepositoryLinkAndSealedMetadata(t *testing.T) {
 	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
 	}
+	var completePayload completeResponse
+	if err := json.NewDecoder(completeResp.Body).Decode(&completePayload); err != nil {
+		t.Fatalf("Decode(completeResponse) error = %v", err)
+	}
+	if completePayload.Digest != digest {
+		t.Fatalf("complete digest = %q, want %q", completePayload.Digest, digest)
+	}
+	if completePayload.SizeBytes != 12 {
+		t.Fatalf("complete sizeBytes = %d, want 12", completePayload.SizeBytes)
+	}
 
 	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", digest)
 	if err != nil {
@@ -214,12 +232,12 @@ func TestServiceCompleteWritesRepositoryLinkAndSealedMetadata(t *testing.T) {
 	if _, exists := backend.objects[claims.ObjectKey]; !exists {
 		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
 	}
-	if got := backend.readerCalls; got != 0 {
-		t.Fatalf("Reader() call count = %d, want 0 for trusted sealing path", got)
+	if got := backend.readerCalls; got != 1 {
+		t.Fatalf("Reader() call count = %d, want 1 for verified sealing path", got)
 	}
 }
 
-func TestServiceCompleteUsesTrustedDigestWithoutReread(t *testing.T) {
+func TestServiceCompleteRejectsExpectedDigestMismatch(t *testing.T) {
 	t.Parallel()
 
 	backend := newFakeBackend()
@@ -252,28 +270,28 @@ func TestServiceCompleteUsesTrustedDigestWithoutReread(t *testing.T) {
 		SizeBytes:    8,
 		Parts:        parts,
 	})
-	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
+	if got, want := completeResp.StatusCode, http.StatusConflict; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
 	}
-	if slices.Contains(backend.deleted, claims.ObjectKey) {
-		t.Fatalf("expected physical upload object %q to be retained, deleted = %#v", claims.ObjectKey, backend.deleted)
+	if !slices.Contains(backend.deleted, claims.ObjectKey) {
+		t.Fatalf("expected physical upload object %q to be deleted, deleted = %#v", claims.ObjectKey, backend.deleted)
 	}
-	if got := backend.readerCalls; got != 0 {
-		t.Fatalf("Reader() call count = %d, want 0 for trusted sealing path", got)
+	if got := backend.readerCalls; got != 1 {
+		t.Fatalf("Reader() call count = %d, want 1 for verified sealing path", got)
 	}
 	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", trustedDigest)
 	if err != nil {
 		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
 	}
-	if got := string(backend.objects[linkKey]); got != trustedDigest {
-		t.Fatalf("link payload = %q, want %q", got, trustedDigest)
+	if _, exists := backend.objects[linkKey]; exists {
+		t.Fatalf("repository link %q exists after digest mismatch", linkKey)
 	}
-	if _, exists := backend.objects[claims.ObjectKey]; !exists {
-		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
+	if _, exists := backend.objects[claims.ObjectKey]; exists {
+		t.Fatalf("physical upload object %q exists after digest mismatch", claims.ObjectKey)
 	}
 }
 
-func TestServiceCompleteRejectsMissingDigest(t *testing.T) {
+func TestServiceCompleteComputesDigestWithoutClientDigest(t *testing.T) {
 	t.Parallel()
 
 	backend := newFakeBackend()
@@ -291,6 +309,10 @@ func TestServiceCompleteRejectsMissingDigest(t *testing.T) {
 	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
 		t.Fatalf("Decode(startResponse) error = %v", err)
 	}
+	claims, err := decodeSessionToken([]byte("salt"), startPayload.SessionToken)
+	if err != nil {
+		t.Fatalf("decodeSessionToken() error = %v", err)
+	}
 
 	parts := []UploadedPart{
 		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
@@ -300,8 +322,124 @@ func TestServiceCompleteRejectsMissingDigest(t *testing.T) {
 		SizeBytes:    8,
 		Parts:        parts,
 	})
-	if got, want := completeResp.StatusCode, http.StatusBadRequest; got != want {
+	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
 		t.Fatalf("status = %d, want %d", got, want)
+	}
+	var completePayload completeResponse
+	if err := json.NewDecoder(completeResp.Body).Decode(&completePayload); err != nil {
+		t.Fatalf("Decode(completeResponse) error = %v", err)
+	}
+	digest := digestForParts(parts)
+	if completePayload.Digest != digest {
+		t.Fatalf("complete digest = %q, want %q", completePayload.Digest, digest)
+	}
+	if completePayload.SizeBytes != 8 {
+		t.Fatalf("complete sizeBytes = %d, want 8", completePayload.SizeBytes)
+	}
+	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", digest)
+	if err != nil {
+		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
+	}
+	if got, want := string(backend.objects[linkKey]), digest; got != want {
+		t.Fatalf("link payload = %q, want %q", got, want)
+	}
+	if _, exists := backend.objects[claims.ObjectKey]; !exists {
+		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
+	}
+}
+
+func TestServiceCompleteVerifiesAlreadyCompletedObject(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	backend.completeErr = errors.New("multipart upload is already completed")
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+	claims, err := decodeSessionToken([]byte("salt"), startPayload.SessionToken)
+	if err != nil {
+		t.Fatalf("decodeSessionToken() error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+	}
+	digest := digestForParts(parts)
+	backend.objects[claims.ObjectKey] = payloadForParts(parts)
+
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		Digest:       digest,
+		SizeBytes:    8,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusOK; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if got := backend.readerCalls; got != 1 {
+		t.Fatalf("Reader() call count = %d, want 1 for already completed object", got)
+	}
+	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", digest)
+	if err != nil {
+		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
+	}
+	if got, want := string(backend.objects[linkKey]), digest; got != want {
+		t.Fatalf("link payload = %q, want %q", got, want)
+	}
+}
+
+func TestServiceCompleteKeepsPhysicalObjectWhenVerificationReadFails(t *testing.T) {
+	t.Parallel()
+
+	backend := newFakeBackend()
+	backend.readerErr = errors.New("temporary read failure")
+	service, err := NewService(backend, "writer", "secret", "salt", "/dmcr", 8<<20, time.Hour)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	startResp := postJSON(t, server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{
+		Repository: "ai-models/catalog/model",
+	})
+	var startPayload startResponse
+	if err := json.NewDecoder(startResp.Body).Decode(&startPayload); err != nil {
+		t.Fatalf("Decode(startResponse) error = %v", err)
+	}
+	claims, err := decodeSessionToken([]byte("salt"), startPayload.SessionToken)
+	if err != nil {
+		t.Fatalf("decodeSessionToken() error = %v", err)
+	}
+
+	parts := []UploadedPart{
+		{PartNumber: 1, ETag: "etag-1", SizeBytes: 8},
+	}
+	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
+		SessionToken: startPayload.SessionToken,
+		Digest:       digestForParts(parts),
+		SizeBytes:    8,
+		Parts:        parts,
+	})
+	if got, want := completeResp.StatusCode, http.StatusInternalServerError; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	if slices.Contains(backend.deleted, claims.ObjectKey) {
+		t.Fatalf("physical upload object %q was deleted after temporary verification failure", claims.ObjectKey)
+	}
+	if _, exists := backend.objects[claims.ObjectKey]; !exists {
+		t.Fatalf("physical upload object %q does not exist after temporary verification failure", claims.ObjectKey)
 	}
 }
 

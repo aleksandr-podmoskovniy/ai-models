@@ -19,6 +19,7 @@ package oci
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -187,8 +188,15 @@ func finalizeDescribedDirectUpload(
 			slog.Int("uploadedPartCount", len(state.uploadedParts)),
 		)
 	}
-	if err := helperClient.complete(ctx, state.session.SessionToken, descriptor.Digest, descriptor.Size, state.uploadedParts); err != nil {
+	completeResult, err := helperClient.complete(ctx, state.session.SessionToken, descriptor.Digest, descriptor.Size, state.uploadedParts)
+	if err != nil {
 		return err
+	}
+	if completeResult.Digest != descriptor.Digest {
+		return fmt.Errorf("DMCR verified digest %q does not match layer digest %q", completeResult.Digest, descriptor.Digest)
+	}
+	if completeResult.SizeBytes != descriptor.Size {
+		return fmt.Errorf("DMCR verified sizeBytes %d does not match layer sizeBytes %d", completeResult.SizeBytes, descriptor.Size)
 	}
 	if logger != nil {
 		logger.Info(

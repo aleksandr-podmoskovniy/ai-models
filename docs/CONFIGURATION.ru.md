@@ -86,41 +86,40 @@ Trade-off между режимами такой:
 Отдельного выбора транспорта для публикуемых слоёв больше нет.
 Канонический byte path теперь один:
 
-- `publish-worker -> DMCR direct-upload v2 session -> physical multipart object -> trusted DMCR seal -> canonical digest metadata/link`.
+- `publish-worker -> DMCR direct-upload v2 session -> physical multipart object -> DMCR verification read -> canonical digest metadata/link`.
 
 `DMCR` остаётся владельцем аутентификации, финализации blob/link и итогового
 артефактного контракта, но толстый поток байтов больше не идёт через registry
 `PATCH` path. Это убирает сам `DMCR` из роли сетевого узкого места на
 пути публикации крупных байтов.
 
-Прямой helper теперь работает в late-digest режиме: контроллер открывает
-сессию без итогового digest, отгружает части payload, а финализирует слой
-только на `complete(session, digest, size, parts)`. Для range-capable raw
-слоёв это убирает старое полное предварительное чтение на стороне
-контроллера, поэтому тяжёлые remote model bytes на publish-worker читаются
-один раз.
-
-Поскольку этот helper остаётся только trusted internal controller-owned
-publication path, `DMCR` больше не перечитывает собранный физический объект
-после multipart completion. Controller-computed `digest` и `size` теперь
-становятся trusted sealing input именно для этой private boundary, а не
-generic promise для произвольных внешних upload-клиентов. Phase 1 по-прежнему
-не заявляет fast-seal guarantee для untrusted клиентов вне controller-owned
-path.
+Прямой вспомогательный процесс работает в режиме позднего digest: контроллер
+открывает сессию без итогового digest, отгружает части слоя, а финализирует
+слой на `complete(session, expectedDigest, size, parts)`. Для raw-слоёв с
+чтением по диапазонам это убирает старое полное предварительное чтение
+исходника на стороне контроллера: байты модели из источника `publish-worker`
+читает один раз. После завершения multipart-сборки `DMCR` делает отдельный
+проверочный проход по уже собранному физическому объекту в объектном
+хранилище, сам считает итоговый `sha256` и фактический размер, а
+`expectedDigest` от контроллера использует только как дополнительную проверку.
+Если digest не совпал, публикация отклоняется и физический объект загрузки
+удаляется.
+Если проверочный read временно падает после успешной multipart-сборки,
+физический объект не удаляется: повторный `complete` может продолжить проверку
+уже собранного объекта без повторной загрузки байтов модели.
 
 Маленькие `config`/`manifest` записи и финальный remote inspect по-прежнему
 идут через обычный registry API, чтобы внутренний контракт менялся по одному
 слою ответственности за раз.
 
-Текущая helper-реализация всё ещё делает один внутренний seal step, но больше
-не переписывает и не перечитывает полностью тяжёлый объект на этапе sealing.
-Multipart upload сначала собирается в физический object key под
-`_ai_models/direct-upload/objects/<session-id>/data`, затем helper пишет
-маленький `.dmcr-sealed` sidecar под каноническим blob path, используя trusted
-controller-owned digest/size. Published OCI contract снаружи остаётся
-digest-based: repository link указывает на канонический digest, а внутренний
-`sealeds3` driver уже прозрачно разворачивает этот digest в физический object
-key.
+Текущая реализация делает один внутренний шаг запечатывания без второй полной
+записи тяжёлого объекта. Multipart upload сначала собирается в физический
+ключ объекта `_ai_models/direct-upload/objects/<session-id>/data`, затем
+`DMCR` один раз читает этот объект для проверки, пишет маленький
+`.dmcr-sealed` sidecar под каноническим blob path и repository link по
+вычисленному digest. Published OCI contract снаружи остаётся digest-based:
+repository link указывает на канонический digest, а внутренний `sealeds3`
+driver прозрачно разворачивает этот digest в физический ключ объекта.
 
 На стороне контроллера direct-upload теперь также ведёт один компактный
 owner-scoped checkpoint `Secret`. В фазе `Running` в нём лежат ключ текущего
