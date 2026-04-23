@@ -161,11 +161,17 @@ func runPublishWorker(args []string) int {
 		DirectUploadState:       directUploadStateStore,
 	})
 	if err != nil {
-		if markErr := persistDirectUploadTerminalState(ctx, directUploadStateStore, modelpackports.DirectUploadStatePhaseFailed, err.Error()); markErr != nil {
-			err = errors.Join(err, markErr)
+		if shouldPersistDirectUploadFailureState(err) {
+			if markErr := persistDirectUploadTerminalState(ctx, directUploadStateStore, modelpackports.DirectUploadStatePhaseFailed, err.Error()); markErr != nil {
+				err = errors.Join(err, markErr)
+			}
 		}
 		cmdsupport.WriteTerminationFailure(err.Error())
-		logger.Error("publication worker failed", slog.Any("error", err))
+		if shouldPersistDirectUploadFailureState(err) {
+			logger.Error("publication worker failed", slog.Any("error", err))
+		} else {
+			logger.Warn("publication worker interrupted before completion; keeping direct upload state resumable", slog.Any("error", err))
+		}
 		return 1
 	}
 	if err := persistDirectUploadTerminalState(ctx, directUploadStateStore, modelpackports.DirectUploadStatePhaseCompleted, ""); err != nil {
@@ -244,4 +250,11 @@ func persistDirectUploadTerminalState(
 	state.Phase = phase
 	state.FailureMessage = strings.TrimSpace(message)
 	return store.Save(ctx, state)
+}
+
+func shouldPersistDirectUploadFailureState(err error) bool {
+	if err == nil {
+		return false
+	}
+	return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
 }

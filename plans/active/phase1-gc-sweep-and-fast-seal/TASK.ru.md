@@ -47,6 +47,20 @@ Continuation на 2026-04-23 после live inspection bucket layout:
    - из-за этого незавершённые/брошенные direct-upload uploads могут оставлять
      physical residue в bucket даже при рабочем `gc check` / `auto-cleanup`.
 
+Continuation на 2026-04-23 после live cluster inspection `PublicationSealing`:
+
+5. Current fast-seal path всё ещё недостаточно explainable для production triage:
+   - large raw layer publication честно доходит до `complete`, но дальше модель
+     может долго стоять на `99%` в `PublicationSealing`;
+   - оператор по текущим логам не видит, использовал ли `DMCR` trusted backend
+     checksum или ушёл в полный reread physical object;
+   - generic S3-compatible path нельзя лечить ложным обещанием portable
+     multipart `full-object SHA256`, поэтому нужен явный checksum-path contract,
+     а не тихий fallback.
+   - при прерывании `source-worker` во время `Sealing` direct-upload state не
+     должен уходить в terminal `Failed` на `context canceled`, иначе controller
+     теряет recreate/resume path и модель преждевременно становится `Failed`.
+
 Предшественники:
 
 - `plans/active/live-cluster-error-triage/*`
@@ -83,6 +97,21 @@ Continuation на 2026-04-23 после live inspection bucket layout:
    - `dmcr-cleaner gc auto-cleanup` должен удалять только такие orphan
      prefixes, не конкурируя с registry `garbage-collect` за опубликованные
      physical blobs.
+5. Сделать fast-seal path explainable и безопасно диагностируемым:
+   - `dmcr-direct-upload` должен явно логировать, какой verification path
+     выбран:
+     - trusted backend `full-object sha256`;
+     - fallback reread from object storage;
+   - fallback должен логировать конкретную причину:
+     - `attributes-error`
+     - `checksum-missing`
+     - `checksum-composite`
+     - `checksum-malformed`
+   - при длинном reread large object оператор должен видеть bounded progress /
+     throughput logs, а не только молчаливое зависание между `verification
+     started` и `verification completed`;
+   - generic S3 backend не должен делать unsafe checksum assumptions ради
+     ложного fast-path.
 
 ## 4. Scope
 
@@ -97,6 +126,8 @@ Continuation на 2026-04-23 после live inspection bucket layout:
   published physical blobs, пока на них есть sealed reference;
 - переделать direct-upload sealing contract так, чтобы controller-owned
   publisher больше не вызывал full-object copy inside `DMCR`;
+- сделать checksum/verification path explainable в live logs и тестах без
+  ослабления safe fallback policy для S3-compatible backends;
 - синхронизировать docs и bundle notes с новым fast-seal / GC contract.
 
 ## 5. Non-goals
@@ -108,6 +139,8 @@ Continuation на 2026-04-23 после live inspection bucket layout:
   bounded stale sweep для `ai-models` ownership model;
 - не обещать generic untrusted direct-upload fast path, если в текущем phase-1
   boundary direct-upload остаётся internal controller-owned interface;
+- не объявлять portable multipart `full-object SHA256` на generic S3 backend,
+  если фактическая storage capability этого не гарантирует;
 - не выводить lease/election tuning в public module settings без отдельной
   необходимости;
 - не делать live cluster rollout или cluster validation в этом bundle.
@@ -116,6 +149,8 @@ Continuation на 2026-04-23 после live inspection bucket layout:
 
 - `plans/active/phase1-gc-sweep-and-fast-seal/*`
 - `images/dmcr/internal/directupload/*`
+- `images/controller/internal/adapters/k8s/sourceworker/*`
+- `images/controller/cmd/ai-models-artifact-runtime/*`
 - `images/dmcr/internal/garbagecollection/*`
 - `images/dmcr/cmd/dmcr-cleaner/*`
 - при необходимости `images/dmcr/internal/sealedblob/*`
@@ -156,6 +191,15 @@ Continuation на 2026-04-23 после live inspection bucket layout:
     public values contract.
 - `DMCR` direct-upload sealing path больше не делает full-object copy для
   controller-owned direct-upload flow.
+- `DMCR` direct-upload live logs объясняют verification path:
+  - trusted backend checksum vs reread;
+  - fallback reason;
+  - checksum type / availability без утечки secret-bearing data;
+  - reread progress/throughput for large objects.
+- Generic S3-compatible backend остаётся fail-safe:
+  - checksum metadata support остаётся best-effort;
+  - отсутствие/невалидность checksum metadata не ломает upload само по себе;
+  - verification reread остаётся mandatory fallback.
 - В docs и code явно зафиксирована continuation boundary:
   - этот bundle закрывает no-copy storage layout;
   - `dmcr-zero-trust-ingest` закрывает `DMCR`-owned digest verification.
@@ -166,6 +210,9 @@ Continuation на 2026-04-23 после live inspection bucket layout:
   - malformed `.dmcr-sealed` metadata fail-closed behavior;
   - exact direct-upload delete boundary без `session-1` / `session-10`
     over-delete;
+  - verification path decision and fallback reason for trusted / missing /
+    composite / malformed checksum metadata;
+  - reread progress/diagnostic logging behavior без изменения verify result;
   - CLI check/auto-cleanup behavior;
   - schedule wiring;
   - lease acquisition/renew/takeover и non-holder standby behavior;

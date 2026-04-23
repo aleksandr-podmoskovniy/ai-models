@@ -290,8 +290,11 @@ func TestServiceCompleteUsesTrustedBackendDigestWithoutReadingObject(t *testing.
 	}
 	digest := digestForParts(parts)
 	backend.attributes[claims.ObjectKey] = ObjectAttributes{
-		SizeBytes:    12,
-		SHA256Digest: digest,
+		SizeBytes:                     12,
+		TrustedFullObjectSHA256Digest: digest,
+		ReportedChecksumType:          checksumTypeFullObject,
+		SHA256ChecksumPresent:         true,
+		AvailableChecksumAlgorithms:   []string{"SHA256"},
 	}
 
 	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
@@ -411,8 +414,11 @@ func TestServiceCompleteFallsBackWhenTrustedBackendDigestIsMalformed(t *testing.
 	}
 	digest := digestForParts(parts)
 	backend.attributes[claims.ObjectKey] = ObjectAttributes{
-		SizeBytes:    12,
-		SHA256Digest: "sha256:not-a-valid-digest",
+		SizeBytes:                     12,
+		TrustedFullObjectSHA256Digest: "sha256:not-a-valid-digest",
+		ReportedChecksumType:          checksumTypeFullObject,
+		SHA256ChecksumPresent:         true,
+		AvailableChecksumAlgorithms:   []string{"SHA256"},
 	}
 	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
 		SessionToken: startPayload.SessionToken,
@@ -457,8 +463,11 @@ func TestServiceCompleteRejectsTrustedBackendSizeMismatch(t *testing.T) {
 	}
 	digest := digestForParts(parts)
 	backend.attributes[claims.ObjectKey] = ObjectAttributes{
-		SizeBytes:    11,
-		SHA256Digest: digest,
+		SizeBytes:                     11,
+		TrustedFullObjectSHA256Digest: digest,
+		ReportedChecksumType:          checksumTypeFullObject,
+		SHA256ChecksumPresent:         true,
+		AvailableChecksumAlgorithms:   []string{"SHA256"},
 	}
 	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
 		SessionToken: startPayload.SessionToken,
@@ -513,8 +522,11 @@ func TestServiceCompleteRejectsTrustedBackendDigestMismatch(t *testing.T) {
 	}
 	expectedDigest := digestForParts(parts)
 	backend.attributes[claims.ObjectKey] = ObjectAttributes{
-		SizeBytes:    12,
-		SHA256Digest: "sha256:" + strings.Repeat("f", 64),
+		SizeBytes:                     12,
+		TrustedFullObjectSHA256Digest: "sha256:" + strings.Repeat("f", 64),
+		ReportedChecksumType:          checksumTypeFullObject,
+		SHA256ChecksumPresent:         true,
+		AvailableChecksumAlgorithms:   []string{"SHA256"},
 	}
 	completeResp := postJSON(t, server.URL+"/v2/blob-uploads/complete", "writer", "secret", completeRequest{
 		SessionToken: startPayload.SessionToken,
@@ -648,6 +660,114 @@ func TestServiceCompleteComputesDigestWithoutClientDigest(t *testing.T) {
 	}
 	if _, exists := backend.objects[claims.ObjectKey]; !exists {
 		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
+	}
+}
+
+func TestTrustedBackendVerificationReportsMissingChecksumFallback(t *testing.T) {
+	t.Parallel()
+
+	_, ok, reason, err := trustedBackendVerification(ObjectAttributes{
+		SizeBytes: 128,
+	})
+	if err != nil {
+		t.Fatalf("trustedBackendVerification() error = %v", err)
+	}
+	if ok {
+		t.Fatal("trustedBackendVerification() ok = true, want false")
+	}
+	if reason != verificationFallbackReasonChecksumMissing {
+		t.Fatalf("trustedBackendVerification() reason = %q, want %q", reason, verificationFallbackReasonChecksumMissing)
+	}
+}
+
+func TestTrustedBackendVerificationReportsCompositeChecksumFallback(t *testing.T) {
+	t.Parallel()
+
+	_, ok, reason, err := trustedBackendVerification(ObjectAttributes{
+		SizeBytes:             128,
+		ReportedChecksumType:  "COMPOSITE",
+		SHA256ChecksumPresent: true,
+	})
+	if err != nil {
+		t.Fatalf("trustedBackendVerification() error = %v", err)
+	}
+	if ok {
+		t.Fatal("trustedBackendVerification() ok = true, want false")
+	}
+	if reason != verificationFallbackReasonChecksumComposite {
+		t.Fatalf("trustedBackendVerification() reason = %q, want %q", reason, verificationFallbackReasonChecksumComposite)
+	}
+}
+
+func TestTrustedBackendVerificationReportsMalformedChecksumFallback(t *testing.T) {
+	t.Parallel()
+
+	_, ok, reason, err := trustedBackendVerification(ObjectAttributes{
+		SizeBytes:             128,
+		ReportedChecksumType:  checksumTypeFullObject,
+		SHA256ChecksumPresent: true,
+	})
+	if err != nil {
+		t.Fatalf("trustedBackendVerification() error = %v", err)
+	}
+	if ok {
+		t.Fatal("trustedBackendVerification() ok = true, want false")
+	}
+	if reason != verificationFallbackReasonChecksumMalformed {
+		t.Fatalf("trustedBackendVerification() reason = %q, want %q", reason, verificationFallbackReasonChecksumMalformed)
+	}
+}
+
+func TestVerificationReadProgressWriterLogsOnByteThreshold(t *testing.T) {
+	t.Parallel()
+
+	startedAt := time.Unix(1_700_000_000, 0).UTC()
+	now := startedAt
+	messages := make([]string, 0, 2)
+
+	writer := newVerificationReadProgressWriter("dmcr/_ai_models/direct-upload/objects/session/data", 2<<30, startedAt)
+	writer.now = func() time.Time { return now }
+	writer.emit = func(format string, args ...any) {
+		messages = append(messages, format)
+	}
+
+	if _, err := writer.Write(bytes.Repeat([]byte("a"), int(verificationReadProgressStepBytes))); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("log count = %d, want 1", len(messages))
+	}
+	if writer.nextProgressBytes != verificationReadProgressStepBytes*2 {
+		t.Fatalf("nextProgressBytes = %d, want %d", writer.nextProgressBytes, verificationReadProgressStepBytes*2)
+	}
+}
+
+func TestVerificationReadProgressWriterLogsOnTimeInterval(t *testing.T) {
+	t.Parallel()
+
+	startedAt := time.Unix(1_700_000_000, 0).UTC()
+	now := startedAt
+	messages := make([]string, 0, 2)
+
+	writer := newVerificationReadProgressWriter("dmcr/_ai_models/direct-upload/objects/session/data", 768<<20, startedAt)
+	writer.now = func() time.Time { return now }
+	writer.emit = func(format string, args ...any) {
+		messages = append(messages, format)
+	}
+
+	if _, err := writer.Write(bytes.Repeat([]byte("b"), 8<<20)); err != nil {
+		t.Fatalf("first Write() error = %v", err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("log count after first write = %d, want 0", len(messages))
+	}
+
+	now = startedAt.Add(verificationReadProgressInterval)
+	if _, err := writer.Write(bytes.Repeat([]byte("c"), 8<<20)); err != nil {
+		t.Fatalf("second Write() error = %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("log count after second write = %d, want 1", len(messages))
 	}
 }
 

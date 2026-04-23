@@ -63,7 +63,7 @@ func directUploadProgress(state modelpackports.DirectUploadState) directUploadPr
 				Reason:   modelsv1alpha1.ModelConditionReasonPublicationSealing,
 				Progress: progress,
 				Message: fmt.Sprintf(
-					"controller is sealing the current model artifact layer in the internal registry after %d/%d uploaded bytes",
+					"controller is verifying and sealing the current model artifact layer in the internal registry after %d/%d uploaded bytes",
 					uploadedSizeBytes,
 					totalSizeBytes,
 				),

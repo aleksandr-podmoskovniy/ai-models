@@ -128,9 +128,35 @@ func (b *s3Backend) ObjectAttributes(ctx context.Context, objectKey string) (Obj
 		return ObjectAttributes{}, err
 	}
 	return ObjectAttributes{
-		SizeBytes:    aws.ToInt64(output.ContentLength),
-		SHA256Digest: trustedFullObjectSHA256Digest(output.ChecksumSHA256, output.ChecksumType),
+		SizeBytes:                     aws.ToInt64(output.ContentLength),
+		TrustedFullObjectSHA256Digest: trustedFullObjectSHA256Digest(output.ChecksumSHA256, output.ChecksumType),
+		ReportedChecksumType:          strings.TrimSpace(string(output.ChecksumType)),
+		SHA256ChecksumPresent:         strings.TrimSpace(aws.ToString(output.ChecksumSHA256)) != "",
+		AvailableChecksumAlgorithms:   availableChecksumAlgorithms(output),
 	}, nil
+}
+
+func availableChecksumAlgorithms(output *s3.HeadObjectOutput) []string {
+	if output == nil {
+		return nil
+	}
+	algorithms := make([]string, 0, 5)
+	if strings.TrimSpace(aws.ToString(output.ChecksumCRC32)) != "" {
+		algorithms = append(algorithms, "CRC32")
+	}
+	if strings.TrimSpace(aws.ToString(output.ChecksumCRC32C)) != "" {
+		algorithms = append(algorithms, "CRC32C")
+	}
+	if strings.TrimSpace(aws.ToString(output.ChecksumCRC64NVME)) != "" {
+		algorithms = append(algorithms, "CRC64NVME")
+	}
+	if strings.TrimSpace(aws.ToString(output.ChecksumSHA1)) != "" {
+		algorithms = append(algorithms, "SHA1")
+	}
+	if strings.TrimSpace(aws.ToString(output.ChecksumSHA256)) != "" {
+		algorithms = append(algorithms, "SHA256")
+	}
+	return algorithms
 }
 
 func trustedFullObjectSHA256Digest(checksum *string, checksumType types.ChecksumType) string {

@@ -86,7 +86,7 @@ func TestDirectUploadProgress(t *testing.T) {
 			},
 			wantReason:   modelsv1alpha1.ModelConditionReasonPublicationSealing,
 			wantProgress: "75%",
-			wantMessage:  "controller is sealing the current model artifact layer in the internal registry after 768/1024 uploaded bytes",
+			wantMessage:  "controller is verifying and sealing the current model artifact layer in the internal registry after 768/1024 uploaded bytes",
 		},
 		{
 			name: "committed layers",

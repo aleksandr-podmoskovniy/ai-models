@@ -172,6 +172,37 @@ production gap:
   - published physical blobs продолжают удаляться только через registry
     `garbage-collect`.
 
+### Slice 8. Сделать fast-seal checksum path explainable
+
+- Цель:
+  - убрать production-непрозрачность вокруг долгого `PublicationSealing` и
+    зафиксировать safe checksum policy для generic S3-compatible backend;
+  - сохранить recreate/resume path после interrupted `source-worker` во время
+    `Sealing`.
+- Файлы:
+  - `images/dmcr/internal/directupload/*`
+  - `images/controller/internal/adapters/k8s/sourceworker/*`
+  - `images/controller/cmd/ai-models-artifact-runtime/*`
+  - `plans/active/phase1-gc-sweep-and-fast-seal/*`
+- Проверки:
+  - `cd images/dmcr && go test ./internal/directupload/...`
+  - `cd images/controller && go test ./internal/adapters/k8s/sourceworker/... ./cmd/ai-models-artifact-runtime`
+  - `make verify`
+- Артефакт:
+  - `dmcr-direct-upload` явно логирует verification path:
+    - trusted backend `full-object sha256`;
+    - fallback reread from object storage;
+  - fallback reason и backend checksum shape видны в логах без утечки secret
+    data;
+  - long reread large object даёт bounded progress/throughput logs;
+  - `PublicationSealing` status message прямо говорит про verify+seal, а не
+    выглядит как продолжающийся upload;
+  - interrupted `source-worker` больше не переводит direct-upload state в
+    terminal `Failed` на `context canceled`/`deadline exceeded`, поэтому
+    controller сохраняет возможность recreate/resume;
+  - generic S3 backend остаётся best-effort по checksum metadata и не обещает
+    portable multipart `full-object sha256`.
+
 ## 4. Rollback point
 
 После Slice 2 можно безопасно остановиться:
@@ -195,6 +226,12 @@ production gap:
   inventory/report/delete path;
 - direct-upload publish contract не меняется;
 - published blob cleanup всё ещё принадлежит registry `garbage-collect`.
+
+После Slice 8 rollback тоже локален:
+
+- checksum-path diagnostics изолированы внутри `dmcr-direct-upload`;
+- public API / values contract не меняется;
+- safe reread fallback остаётся тем же даже при откате observability slice.
 
 ## 5. Final validation
 

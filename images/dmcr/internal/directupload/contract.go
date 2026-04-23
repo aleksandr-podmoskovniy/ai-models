@@ -28,8 +28,11 @@ type UploadedPart struct {
 }
 
 type ObjectAttributes struct {
-	SizeBytes    int64
-	SHA256Digest string
+	SizeBytes                     int64
+	TrustedFullObjectSHA256Digest string
+	ReportedChecksumType          string
+	SHA256ChecksumPresent         bool
+	AvailableChecksumAlgorithms   []string
 }
 
 type Backend interface {

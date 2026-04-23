@@ -294,7 +294,7 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		claims.ObjectKey,
 		payload.SizeBytes,
 	)
-	sealed, err := s.verifyUploadedObject(request.Context(), claims.ObjectKey)
+	verification, err := s.verifyUploadedObject(request.Context(), claims.ObjectKey, payload.SizeBytes)
 	if err != nil {
 		log.Printf(
 			"direct upload verification failed repository=%q objectKey=%q error=%v",
@@ -305,6 +305,7 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	sealed := verification.Sealed
 	if sealed.SizeBytes != payload.SizeBytes {
 		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
 		http.Error(
@@ -324,11 +325,16 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 	log.Printf(
-		"direct upload verification completed repository=%q objectKey=%q digest=%q sizeBytes=%d durationMs=%d",
+		"direct upload verification completed repository=%q objectKey=%q digest=%q sizeBytes=%d method=%q fallbackReason=%q backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q durationMs=%d",
 		claims.Repository,
 		claims.ObjectKey,
 		sealed.Digest,
 		sealed.SizeBytes,
+		verification.Method,
+		verification.FallbackReason,
+		verification.BackendChecksumType,
+		verification.BackendSHA256Present,
+		strings.Join(verification.AvailableChecksums, ","),
 		s.now().Sub(sealStarted).Milliseconds(),
 	)
 
