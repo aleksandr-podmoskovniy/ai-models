@@ -365,3 +365,50 @@ Read-only review input (`integration_architect`):
 
 - обе проверки прошли локально;
 - `make verify` остаётся финальной repo-level проверкой после sync docs/bundle.
+
+## 12. Follow-up correction 2026-04-23: delete-triggered GC against deleting owners
+
+Live cluster evidence после rollout предыдущего slice:
+
+- `dmcr-cleaner gc check` уже видел `6` stale orphan direct-upload object
+  prefixes и `3` stale orphan multipart uploads, то есть stale discovery path
+  работал;
+- при этом bytes в bucket не исчезали после delete-triggered cleanup, а в
+  `d8-ai-models` оставались `ai-model-publish-state-*` secrets уже удалённых
+  моделей;
+- значит production gap оставался не в stale inventory, а в delete-time
+  choreography между controller finalizer и active GC cycle.
+
+Уточнённый корень дефекта:
+
+- live inventory для `dmcr-cleaner` считал объекты с `deletionTimestamp` как
+  live owners;
+- из-за этого delete-triggered active GC, запущенный ещё до фактического
+  исчезновения `Model`, видел repository prefix удаляемой модели как live,
+  не prun'ил repository metadata и не освобождал blob references;
+- request после успешного active cycle удалялся, а когда объект окончательно
+  исчезал, второго active cycle уже не происходило;
+- параллельно controller release finalizer не удалял publication runtime
+  residue (`ai-model-publish-state-*` и related runtime secrets), если delete
+  шёл по cleanup-handle path.
+
+Фактически реализовано:
+
+- delete-triggered active GC cycle теперь отдельно игнорирует owners с
+  `deletionTimestamp`, но обычные `gc check` и scheduled/manual
+  `gc auto-cleanup` сохраняют прежнюю conservative semantics и продолжают
+  считать deleting owners live до их фактического исчезновения;
+- `catalogcleanup` перед снятием finalizer всегда добивает
+  `deletePublicationRuntimeResources`, поэтому после completed cleanup path не
+  остаются publication state secrets и другие source-worker/upload-session
+  остатки в `d8-ai-models`.
+
+Проверки:
+
+- `cd images/dmcr && go test ./internal/garbagecollection`
+- `cd images/controller && go test ./internal/controllers/catalogcleanup`
+- `make verify`
+
+Результат:
+
+- все три проверки прошли локально.

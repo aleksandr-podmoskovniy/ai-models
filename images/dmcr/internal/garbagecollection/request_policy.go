@@ -47,6 +47,7 @@ func cleanupPolicyForActiveRequests(configPath string, activeSecrets []corev1.Se
 		if strings.TrimSpace(secret.Annotations[directUploadModeAnnotationKey]) != directUploadModeImmediate {
 			continue
 		}
+		policy.ignoreDeletingOwners = true
 		needsDecode = true
 		if token := strings.TrimSpace(string(secret.Data[directUploadTokenDataKey])); token != "" {
 			targetTokens = append(targetTokens, token)

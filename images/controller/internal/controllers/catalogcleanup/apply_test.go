@@ -65,12 +65,17 @@ func TestMaybeRemoveDeleteFinalizerUsesObservedHandle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OCIRegistryCASecretName() error = %v", err)
 	}
+	stateSecretName, err := resourcenames.SourceWorkerStateSecretName(model.GetUID())
+	if err != nil {
+		t.Fatalf("SourceWorkerStateSecretName() error = %v", err)
+	}
 
 	reconciler, kubeClient := newModelReconciler(
 		t,
 		model,
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: authSecretName, Namespace: "d8-ai-models"}},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: caSecretName, Namespace: "d8-ai-models"}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: stateSecretName, Namespace: "d8-ai-models"}},
 	)
 
 	result, handled, err := reconciler.maybeRemoveDeleteFinalizer(context.Background(), finalizeDeleteRuntime{
@@ -99,5 +104,8 @@ func TestMaybeRemoveDeleteFinalizerUsesObservedHandle(t *testing.T) {
 	}
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: "d8-ai-models", Name: caSecretName}, &corev1.Secret{}); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected projected CA secret to be deleted, got err=%v", err)
+	}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: "d8-ai-models", Name: stateSecretName}, &corev1.Secret{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected publication state secret to be deleted, got err=%v", err)
 	}
 }

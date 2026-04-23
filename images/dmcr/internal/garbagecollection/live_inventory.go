@@ -46,16 +46,16 @@ type cleanupHandleBackendSnapshot struct {
 	SourceMirrorPrefix       string `json:"sourceMirrorPrefix,omitempty"`
 }
 
-func DiscoverLivePrefixes(ctx context.Context, client dynamic.Interface) (livePrefixSet, error) {
+func DiscoverLivePrefixes(ctx context.Context, client dynamic.Interface, ignoreDeletingOwners bool) (livePrefixSet, error) {
 	if client == nil {
 		return livePrefixSet{}, fmt.Errorf("dynamic client must not be nil")
 	}
 
 	live := newLivePrefixSet()
-	if err := collectLivePrefixesForResource(ctx, client, modelGVR, true, &live); err != nil {
+	if err := collectLivePrefixesForResource(ctx, client, modelGVR, true, ignoreDeletingOwners, &live); err != nil {
 		return livePrefixSet{}, err
 	}
-	if err := collectLivePrefixesForResource(ctx, client, clusterModelGVR, false, &live); err != nil {
+	if err := collectLivePrefixesForResource(ctx, client, clusterModelGVR, false, ignoreDeletingOwners, &live); err != nil {
 		return livePrefixSet{}, err
 	}
 	return live, nil
@@ -66,6 +66,7 @@ func collectLivePrefixesForResource(
 	client dynamic.Interface,
 	gvr schema.GroupVersionResource,
 	namespaced bool,
+	ignoreDeletingOwners bool,
 	live *livePrefixSet,
 ) error {
 	resource := client.Resource(gvr)
@@ -84,6 +85,9 @@ func collectLivePrefixesForResource(
 	}
 
 	for _, item := range list.Items {
+		if ignoreDeletingOwners && item.GetDeletionTimestamp() != nil {
+			continue
+		}
 		if namespaced {
 			live.modelCount++
 		} else {

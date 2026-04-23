@@ -166,10 +166,8 @@ func (r *baseReconciler) maybeRemoveDeleteFinalizer(
 	if !enabled {
 		return ctrl.Result{}, false, nil
 	}
-	if runtime.handle.Kind == cleanuphandle.KindBackendArtifact {
-		if err := ociregistry.DeleteProjectedAccess(ctx, r.client, r.options.CleanupJob.Namespace, runtime.object.GetUID()); err != nil {
-			return ctrl.Result{}, true, err
-		}
+	if err := r.deletePublicationRuntimeResources(ctx, runtime.object.GetUID()); err != nil {
+		return ctrl.Result{}, true, err
 	}
 	controllerutil.RemoveFinalizer(runtime.object, Finalizer)
 	return ctrl.Result{}, true, r.client.Update(ctx, runtime.object)

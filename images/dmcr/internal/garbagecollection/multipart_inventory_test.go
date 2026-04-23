@@ -20,6 +20,9 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func TestDiscoverDirectUploadMultipartInventoryReturnsOnlyOldOrTargetedUploads(t *testing.T) {
@@ -147,6 +150,88 @@ func TestBuildReportMarksFreshMultipartUploadStaleWhenNoLiveOwnersRemain(t *test
 	}
 	if got, want := report.StaleDirectUploadMultipartUploads[0].UploadID, "upload-fresh"; got != want {
 		t.Fatalf("stale multipart upload = %q, want %q", got, want)
+	}
+}
+
+func TestBuildReportKeepsFreshMultipartUploadAgeBoundedWhileOwnerIsDeleting(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	store := newFakePrefixStoreWithMultipartUploads(nil,
+		fakeMultipartUpload{
+			key:         "dmcr/_ai_models/direct-upload/objects/session-fresh/data",
+			uploadID:    "upload-fresh",
+			initiatedAt: now.Add(-2 * time.Hour),
+			partCount:   9,
+		},
+	)
+	deletingModel := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "ai.deckhouse.io/v1alpha1",
+		"kind":       "Model",
+		"metadata": map[string]any{
+			"name":              "deleting-model",
+			"namespace":         "team-a",
+			"deletionTimestamp": metav1.NewTime(now).Format(time.RFC3339),
+			"annotations": map[string]any{
+				cleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deleting/1111"}}`,
+			},
+		},
+	}}
+
+	report, err := buildReportWithClock(
+		context.Background(),
+		newFakeDynamicClient(t, deletingModel),
+		store,
+		"dmcr",
+		now,
+		cleanupPolicy{},
+	)
+	if err != nil {
+		t.Fatalf("buildReportWithClock() error = %v", err)
+	}
+	if got := len(report.StaleDirectUploadMultipartUploads); got != 0 {
+		t.Fatalf("stale multipart upload count = %d, want 0 for default age-bounded cleanup", got)
+	}
+}
+
+func TestBuildReportMarksFreshMultipartUploadStaleWhenDeleteTriggeredPolicyIgnoresDeletingOwner(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	store := newFakePrefixStoreWithMultipartUploads(nil,
+		fakeMultipartUpload{
+			key:         "dmcr/_ai_models/direct-upload/objects/session-fresh/data",
+			uploadID:    "upload-fresh",
+			initiatedAt: now.Add(-2 * time.Hour),
+			partCount:   9,
+		},
+	)
+	deletingModel := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "ai.deckhouse.io/v1alpha1",
+		"kind":       "Model",
+		"metadata": map[string]any{
+			"name":              "deleting-model",
+			"namespace":         "team-a",
+			"deletionTimestamp": metav1.NewTime(now).Format(time.RFC3339),
+			"annotations": map[string]any{
+				cleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deleting/1111"}}`,
+			},
+		},
+	}}
+
+	report, err := buildReportWithClock(
+		context.Background(),
+		newFakeDynamicClient(t, deletingModel),
+		store,
+		"dmcr",
+		now,
+		cleanupPolicy{ignoreDeletingOwners: true},
+	)
+	if err != nil {
+		t.Fatalf("buildReportWithClock() error = %v", err)
+	}
+	if got, want := len(report.StaleDirectUploadMultipartUploads), 1; got != want {
+		t.Fatalf("stale multipart upload count = %d, want %d", got, want)
 	}
 }
 

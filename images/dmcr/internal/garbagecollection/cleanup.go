@@ -35,6 +35,7 @@ type cleanupPolicy struct {
 	targetDirectUploadMultipartUploads map[directUploadMultipartTarget]struct{}
 	directUploadStaleAge               time.Duration
 	allowImmediateDirectUploadCleanup  bool
+	ignoreDeletingOwners               bool
 }
 
 type autoCleanupFunc func(context.Context, string, string, time.Duration, cleanupPolicy) (AutoCleanupResult, error)
@@ -140,7 +141,7 @@ func buildReportWithClock(
 	now time.Time,
 	policy cleanupPolicy,
 ) (Report, error) {
-	live, err := DiscoverLivePrefixes(ctx, dynamicClient)
+	live, err := DiscoverLivePrefixes(ctx, dynamicClient, policy.ignoreDeletingOwners)
 	if err != nil {
 		return Report{}, err
 	}

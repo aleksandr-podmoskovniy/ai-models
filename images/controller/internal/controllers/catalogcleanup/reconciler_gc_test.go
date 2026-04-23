@@ -70,6 +70,10 @@ func TestModelReconcilerEnqueuesGarbageCollectionRequestAndRemovesFinalizerAfter
 	if got, want := string(requestSecret.Data[dmcrGCDirectUploadTokenKey]), sessionToken; got != want {
 		t.Fatalf("expected delete-triggered garbage-collection request to snapshot current direct-upload session token %q, got %q", want, got)
 	}
+	stateSecretKey := client.ObjectKey{Namespace: "d8-ai-models", Name: stateSecret.Name}
+	if err := kubeClient.Get(context.Background(), stateSecretKey, &corev1.Secret{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected publication state secret to be deleted once delete finalizer is removed, got err=%v", err)
+	}
 }
 
 func TestModelReconcilerRemovesFinalizerWhenQueuedGarbageCollectionRequestAlreadyExists(t *testing.T) {
