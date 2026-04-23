@@ -48,11 +48,17 @@ Custom trust для S3-compatible endpoint задаётся через `artifact
 
 `dmcr.gc.schedule` выставляет наружу productized cadence для stale sweep во
 внутреннем registry. По умолчанию ai-models ставит один stale cleanup cycle
-ежедневно в 02:00. Пустая строка отключает периодический sweep, но не убирает
+каждые 20 минут. Пустая строка отключает периодический sweep, но не убирает
 operator-facing inspection surface: внутри Pod'а `DMCR` по-прежнему можно
 запустить `dmcr-cleaner gc check` и получить report по stale published
 repository prefix, source-mirror prefix и orphan direct-upload prefix без
 `.dmcr-sealed` reference, который пережил bounded stale-age window.
+
+Если scheduled loop стартует уже после настроенного schedule tick, он делает
+report-only startup check и повторяет его при transient failures. Если stale
+cleanup candidates уже есть и нет другого active или queued GC request, loop
+ставит обычный scheduled request; он не запускает destructive cleanup напрямую
+и всё равно проходит через штатный maintenance/read-only debounce.
 
 Публичный runtime path для моделей теперь controller-owned:
 

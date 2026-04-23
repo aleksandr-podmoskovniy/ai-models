@@ -217,6 +217,55 @@ func TestRunRequestCycleArmsQueuedRequestsAndLogs(t *testing.T) {
 	assertLogMessage(t, entries, "dmcr garbage collection maintenance cycle armed")
 }
 
+func TestRunLoopStepQueuesStartupBackfillRequest(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	planner, err := newSchedulePlanner("0 2 * * *", time.Date(2026, 4, 23, 18, 25, 53, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("newSchedulePlanner() error = %v", err)
+	}
+
+	previousRunner := startupBackfillCheckRunner
+	startupBackfillCheckRunner = func(context.Context, string) (Report, error) {
+		return Report{
+			StaleDirectUploadMultipartUploads: []MultipartUploadInventoryEntry{
+				{
+					Prefix:    "dmcr/_ai_models/direct-upload/objects/session-a",
+					ObjectKey: "dmcr/_ai_models/direct-upload/objects/session-a/data",
+					UploadID:  "upload-a",
+					PartCount: 2,
+				},
+			},
+		}, nil
+	}
+	t.Cleanup(func() {
+		startupBackfillCheckRunner = previousRunner
+	})
+
+	options := Options{
+		RequestNamespace:     "d8-ai-models",
+		RequestLabelSelector: DefaultRequestLabelSelector(),
+		ConfigPath:           filepath.Join(t.TempDir(), "config.yml"),
+		ActivationDelay:      10 * time.Minute,
+	}
+	now := time.Date(2026, 4, 23, 18, 26, 0, 0, time.UTC)
+
+	handled, err := runLoopStep(context.Background(), client, options, planner, func() time.Time { return now })
+	if err != nil {
+		t.Fatalf("runLoopStep() error = %v", err)
+	}
+	if handled {
+		t.Fatal("runLoopStep() = true, want false while startup request is still queued")
+	}
+
+	secret, err := client.CoreV1().Secrets("d8-ai-models").Get(context.Background(), ScheduledRequestName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(secret) error = %v", err)
+	}
+	if got, want := secret.Annotations[RequestQueuedAtAnnotationKey], now.Format(time.RFC3339Nano); got != want {
+		t.Fatalf("queued annotation = %q, want %q", got, want)
+	}
+}
+
 func TestRunRequestCycleDeletesActiveRequestsAndLogs(t *testing.T) {
 	var buffer bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buffer, &slog.HandlerOptions{ReplaceAttr: replaceAttrForTest}))

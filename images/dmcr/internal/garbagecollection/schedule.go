@@ -32,10 +32,18 @@ import (
 
 const ScheduledRequestName = "dmcr-gc-scheduled"
 
+const startupBackfillRetryDelay = time.Minute
+
 type schedulePlanner struct {
-	schedule cron.Schedule
-	next     time.Time
+	schedule                  cron.Schedule
+	next                      time.Time
+	startupBackfillChecked    bool
+	startupBackfillRetryAfter time.Time
 }
+
+type startupBackfillCheckFunc func(context.Context, string) (Report, error)
+
+var startupBackfillCheckRunner startupBackfillCheckFunc = Check
 
 func newSchedulePlanner(spec string, now time.Time) (*schedulePlanner, error) {
 	cleanSpec := strings.TrimSpace(spec)
@@ -112,6 +120,61 @@ func maybeEnqueueScheduledRequest(
 		"dmcr scheduled garbage collection request queued",
 		slog.String("request_name", ScheduledRequestName),
 		slog.Time("queued_at", now.UTC()),
+	)
+	return nil
+}
+
+func maybeEnqueueStartupBackfillRequest(
+	ctx context.Context,
+	client kubernetes.Interface,
+	options Options,
+	planner *schedulePlanner,
+	now time.Time,
+) error {
+	if planner == nil || planner.startupBackfillChecked {
+		return nil
+	}
+	now = now.UTC()
+	if !planner.startupBackfillRetryAfter.IsZero() && planner.startupBackfillRetryAfter.After(now) {
+		return nil
+	}
+
+	requestSecrets, err := listRequestSecrets(ctx, client, options.RequestNamespace, options.RequestLabelSelector)
+	if err != nil {
+		return err
+	}
+	if len(requestSecrets) > 0 {
+		planner.startupBackfillChecked = true
+		return nil
+	}
+
+	report, err := startupBackfillCheckRunner(ctx, options.ConfigPath)
+	if err != nil {
+		planner.startupBackfillRetryAfter = now.Add(startupBackfillRetryDelay)
+		slog.Default().Warn(
+			"dmcr startup garbage collection stale check failed",
+			slog.Any("error", err),
+			slog.Time("retry_after", planner.startupBackfillRetryAfter),
+		)
+		return nil
+	}
+	planner.startupBackfillChecked = true
+	if !report.HasStalePrefixes() {
+		return nil
+	}
+
+	if err := ensureScheduledRequest(ctx, client, options.RequestNamespace, now); err != nil {
+		return err
+	}
+
+	slog.Default().Info(
+		"dmcr startup garbage collection request queued",
+		slog.String("request_name", ScheduledRequestName),
+		slog.Time("queued_at", now.UTC()),
+		slog.Int("stale_repository_prefix_count", len(report.StaleRepositories)),
+		slog.Int("stale_raw_prefix_count", len(report.StaleRawPrefixes)),
+		slog.Int("stale_direct_upload_prefix_count", len(report.StaleDirectUploadPrefixes)),
+		slog.Int("stale_direct_upload_multipart_upload_count", len(report.StaleDirectUploadMultipartUploads)),
 	)
 	return nil
 }

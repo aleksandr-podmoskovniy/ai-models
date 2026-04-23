@@ -309,6 +309,50 @@ production gap:
   - cleanup остаётся DMCR-local storage concern и не выносится в controller
     или новый public API.
 
+### Slice 13. Добавить startup backfill для scheduled stale sweep
+
+- Цель:
+  - не ждать следующий periodic cron tick после `dmcr` rollout, если в bucket
+    уже есть stale residue, который `gc check` способен безопасно обнаружить.
+- Файлы:
+  - `images/dmcr/internal/garbagecollection/*`
+  - `images/dmcr/README.md`
+  - `docs/CONFIGURATION.ru.md`
+  - `docs/CONFIGURATION.md`
+  - `plans/active/phase1-gc-sweep-and-fast-seal/*`
+  - `plans/active/live-cluster-error-triage/NOTES.ru.md`
+- Проверки:
+  - `cd images/dmcr && go test ./internal/garbagecollection`
+  - `make verify`
+- Артефакт:
+  - `gc run` при старте делает report-only stale check только при включённом
+    schedule и bounded retry при transient check failure;
+  - если stale candidates есть и других GC request secrets нет, создаётся
+    обычный `dmcr-gc-scheduled` request;
+  - startup path не запускает destructive cleanup напрямую и не bypass'ит
+    activation-delay / maintenance-mode choreography;
+  - пустой bucket не получает maintenance cycle на каждый restart.
+
+### Slice 14. Сменить default GC cadence на 20 минут
+
+- Цель:
+  - сделать periodic stale sweep достаточно частым для phase-1 эксплуатации без
+    ручного live patch после каждого deploy.
+- Файлы:
+  - `openapi/config-values.yaml`
+  - `openapi/values.yaml`
+  - `templates/_helpers.tpl`
+  - `docs/CONFIGURATION.ru.md`
+  - `docs/CONFIGURATION.md`
+  - `plans/active/phase1-gc-sweep-and-fast-seal/*`
+- Проверки:
+  - `make helm-template`
+  - `make verify`
+- Артефакт:
+  - default `dmcr.gc.schedule` в public config и runtime helper fallback
+    равен `*/20 * * * *`;
+  - docs больше не обещают daily `02:00 UTC`.
+
 ## 4. Rollback point
 
 После Slice 2 можно безопасно остановиться:
@@ -358,6 +402,14 @@ production gap:
   inventory/abort boundary;
 - visible direct-upload object cleanup, sealed metadata protection и registry
   GC остаются прежними даже при откате multipart continuation slice.
+
+После Slice 13 rollback тоже локален:
+
+- startup backfill изолирован в `dmcr-cleaner gc run` scheduler boundary;
+- public `dmcr.gc.schedule` contract и stale discovery/delete semantics не
+  меняются;
+- откат возвращает прежнее поведение: cleanup стартует только по cron tick или
+  delete-triggered request.
 
 ## 5. Final validation
 

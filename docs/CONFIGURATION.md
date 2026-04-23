@@ -46,12 +46,18 @@ ai-models first reuses `credentialsSecretName` if that Secret also contains
 module runtime or copied from the global HTTPS `CustomCertificate` path.
 
 `dmcr.gc.schedule` exposes the productized stale-sweep cadence for the internal
-registry. By default, ai-models enqueues one stale cleanup cycle daily at
-02:00. Setting the schedule to an empty string disables the periodic sweep
-without removing the operator-facing inspection surface: `dmcr-cleaner gc check`
-still reports stale published repository prefixes, source-mirror prefixes, and
-orphan direct-upload prefixes without a `.dmcr-sealed` reference that already
-outlived the bounded stale-age window inside the DMCR Pod.
+registry. By default, ai-models enqueues one stale cleanup cycle every 20
+minutes. Setting the schedule to an empty string disables the periodic sweep
+without removing the operator-facing inspection surface: `dmcr-cleaner gc
+check` still reports stale published repository prefixes, source-mirror
+prefixes, and orphan direct-upload prefixes without a `.dmcr-sealed` reference
+that already outlived the bounded stale-age window inside the DMCR Pod.
+
+When the scheduled loop starts after the configured schedule tick, it performs a
+report-only startup check and retries transient check failures. If stale cleanup
+candidates already exist and no other GC request is active or queued, it queues
+the regular scheduled request; it does not run destructive cleanup directly and
+still uses the normal maintenance/read-only debounce.
 
 The public runtime path for models is now controller-owned:
 

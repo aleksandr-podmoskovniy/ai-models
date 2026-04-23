@@ -94,6 +94,9 @@ func runLoopStep(
 	schedulePlanner *schedulePlanner,
 	now func() time.Time,
 ) (bool, error) {
+	if err := maybeEnqueueStartupBackfillRequest(ctx, client, options, schedulePlanner, now().UTC()); err != nil {
+		return false, err
+	}
 	if err := maybeEnqueueScheduledRequest(ctx, client, options, schedulePlanner, now().UTC()); err != nil {
 		return false, err
 	}

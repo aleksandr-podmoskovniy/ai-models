@@ -33,6 +33,10 @@ productized DMCR cleanup surface:
   delete flow just armed;
 - public `dmcr.gc.schedule` can enqueue periodic stale-sweep requests even
   without a concrete delete event;
+- at startup, the scheduled loop performs a report-only stale check, retries
+  transient check failures, and queues the normal scheduled request only when
+  stale cleanup candidates already exist and no other GC request is active or
+  queued;
 - operators can run `dmcr-cleaner gc check` for report-only inspection of stale
   repository/source-mirror prefixes plus orphan direct-upload object prefixes
   and open direct-upload multipart uploads, and `dmcr-cleaner gc auto-cleanup`

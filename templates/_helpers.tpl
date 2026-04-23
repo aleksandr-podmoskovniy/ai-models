@@ -200,7 +200,7 @@ ai.deckhouse.io/dmcr-gc-done
 {{- if hasKey $gc "schedule" -}}
 {{- index $gc "schedule" -}}
 {{- else -}}
-0 2 * * *
+*/20 * * * *
 {{- end -}}
 {{- end -}}
 

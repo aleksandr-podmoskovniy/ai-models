@@ -3,8 +3,9 @@
 В этом bundle закрыты оба заявленных phase-1 долга:
 
 1. Productized stale sweep для `DMCR`:
-   - появился public module contract `dmcr.gc.schedule` с default daily
-     schedule `0 2 * * *`;
+   - появился public module contract `dmcr.gc.schedule`;
+   - текущий default schedule после follow-up correction:
+     `*/20 * * * *`;
    - `dmcr-cleaner` теперь умеет `gc check` и `gc auto-cleanup`;
    - stale discovery сравнивает live `Model` / `ClusterModel` cleanup handles с
      фактическими repository/source-mirror prefix в storage;
@@ -412,3 +413,92 @@ Live cluster evidence после rollout предыдущего slice:
 Результат:
 
 - все три проверки прошли локально.
+
+## 13. Follow-up correction 2026-04-23: startup backfill for scheduled GC
+
+Live cluster evidence:
+
+- fresh publish/delete/GC smoke for
+  `ai-models-smoke/tiny-random-phi-gc-20260423-1` worked end-to-end in the
+  current build:
+  - cleanup job completed;
+  - delete-triggered `dmcr-gc-*` request was created and armed;
+  - `dmcr` entered and left maintenance mode;
+  - post-cycle `dmcr-cleaner gc check` was clean.
+- historical S3 residue existed only because no active delete-triggered or
+  scheduled request was present after the latest rollout.
+- `dmcr-cleaner gc run --schedule=0 2 * * *` computed the next future cron
+  tick and did not backfill the missed daily tick after the `18:25 UTC`
+  rollout.
+
+Уточнённый корень дефекта:
+
+- fresh delete path is healthy;
+- stale discovery path is healthy;
+- missing part is trigger/backfill behavior for already-existing stale residue
+  after `dmcr` restarts after the configured schedule tick.
+
+Фактически реализовано:
+
+- `schedulePlanner` tracks startup backfill state per runner start.
+- `gc run` now performs the startup backfill only when schedule is configured
+  and the current replica is the lease holder.
+- the startup path first checks existing GC request secrets:
+  - if another queued/active request exists, it does nothing;
+  - if no request exists, it runs report-only stale discovery through the same
+    `Check` path used by `dmcr-cleaner gc check`.
+- transient `Check` failures do not mark startup backfill completed; the helper
+  logs the failure and retries after a bounded delay instead of hammering S3 on
+  every rescan tick.
+- if the report contains stale repositories, raw prefixes, orphan
+  direct-upload prefixes, or stale direct-upload multipart uploads, the helper
+  creates the normal `dmcr-gc-scheduled` request.
+- the startup path does not run destructive cleanup directly and does not
+  bypass activation-delay or maintenance-mode choreography.
+- empty buckets no longer produce a maintenance cycle on every restart.
+- `images/dmcr/README.md` and `docs/CONFIGURATION*.md` now document the
+  startup backfill behavior as part of the existing scheduled stale-sweep
+  contract.
+
+Проверки:
+
+- `cd images/dmcr && go test ./internal/garbagecollection`
+- `cd images/dmcr && go test ./cmd/dmcr-cleaner/...`
+- `make verify`
+
+Результат:
+
+- все три проверки прошли локально.
+
+## 14. Follow-up correction 2026-04-23: default GC cadence 20 minutes
+
+Причина:
+
+- live эксплуатация показала, что daily default слишком медленный для
+  обнаруженного orphan S3 residue;
+- startup backfill закрывает rollout-after-tick gap, но обычная periodic
+  эксплуатация всё равно должна иметь bounded cadence без ручного patch.
+
+Фактически реализовано:
+
+- default `dmcr.gc.schedule` сменён с `0 2 * * *` на `*/20 * * * *`;
+- runtime fallback в `templates/_helpers.tpl` использует тот же default;
+- `openapi/config-values.yaml` и generated/internal defaults в
+  `openapi/values.yaml` синхронизированы;
+- `docs/CONFIGURATION*.md` больше не описывают daily `02:00 UTC`.
+
+Ограничение:
+
+- schedule по-прежнему только создаёт queued scheduled request;
+- cleanup не запускается напрямую и проходит через existing
+  activation-delay / maintenance-mode choreography.
+
+Проверки:
+
+- `make helm-template`
+- `make verify`
+
+Результат:
+
+- обе проверки прошли локально;
+- rendered manifests содержат `--schedule=*/20 * * * *`.

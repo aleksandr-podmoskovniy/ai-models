@@ -610,3 +610,163 @@
   - `make lint-controller-complexity`
   - `make lint`
   - `make verify`
+
+## 14. 2026-04-23 live S3 deletion triage
+
+### 14.1 Live status
+
+- kube-context during this check:
+  - `k8s-main`
+- module status:
+  - `Module/ai-models` is `Ready`;
+  - `ModulePullOverride/ai-models.spec.imageTag=main`;
+  - override status digest is
+    `sha256:de80b072242cba92ac37d656e7c97d52446c4ee22c20088c365ecb848e00be58`;
+  - current Helm release is `sh.helm.release.v1.ai-models.v189`, created at
+    `2026-04-23T18:25:53Z`.
+- `d8-ai-models` pods are healthy after the v189 rollout:
+  - `ai-models-controller-5bc8897dbd-*` -> `3/3 Running`;
+  - `dmcr-696d574667-*` -> `4/4 Running`.
+- live catalog objects are absent:
+  - no `models.ai.deckhouse.io` in any namespace;
+  - no `clustermodels.ai.deckhouse.io`;
+  - no legacy `models.ai-models.deckhouse.io` or
+    `clustermodels.ai-models.deckhouse.io`.
+
+### 14.2 S3/DMCR residue
+
+- active GC request secrets are absent:
+  - `kubectl -n d8-ai-models get secret -l ai.deckhouse.io/dmcr-gc-request=true`
+    returned no resources.
+- current `dmcr-garbage-collection` logs only show helper startup and loop
+  startup; there is no `dmcr garbage collection requested`, `completed`, or
+  `requests removed` entry in the current pod logs.
+- report-only `dmcr-cleaner gc check` from the live `dmcr` Pod found:
+  - `Live repository prefixes: 0`;
+  - `Stored repository prefixes: 0`;
+  - `Stored direct-upload object prefixes: 6`;
+  - `Open direct-upload multipart uploads: 3`;
+  - `Open direct-upload multipart parts: 2905`;
+  - `Stale orphan direct-upload object prefixes: 6`;
+  - `Stale orphan direct-upload multipart uploads: 3`.
+- the stale direct-upload object prefixes are under:
+  - `dmcr/_ai_models/direct-upload/objects/03e7186f4878afef660c42d38c938b83`;
+  - `dmcr/_ai_models/direct-upload/objects/5994e9ea0ccef69d6730ddb71183c8a3`;
+  - `dmcr/_ai_models/direct-upload/objects/5ed31bf34da8c04d49e5a29d53fb28c2`;
+  - `dmcr/_ai_models/direct-upload/objects/874c887122bc7d6735a62b91924223ba`;
+  - `dmcr/_ai_models/direct-upload/objects/9c875ea629fcbd752b29c4b04e0b119e`;
+  - `dmcr/_ai_models/direct-upload/objects/d50d868e4b4425e3fae261f54e1f4af8`.
+- the stale multipart uploads started at:
+  - `2026-04-22T19:31:50.232Z`;
+  - `2026-04-23T08:26:29.62Z`;
+  - `2026-04-23T09:15:31.714Z`.
+
+### 14.3 Why S3 was not deleted
+
+- current cleaner can see the stale S3 residue, so this is not an S3
+  visibility/auth problem.
+- the automatic cleaner did not run because there was no trigger:
+  - no controller-created `dmcr-gc-*` request secret exists;
+  - no scheduled `dmcr-gc-scheduled` request exists at the moment of this
+    check;
+  - the current helper command uses `--schedule=0 2 * * *`, so after the
+    v189 pod start at `2026-04-23T18:25:53Z` the next scheduled enqueue is the
+    next `02:00 UTC` tick, not an immediate backfill.
+- two completed publication state secrets remain without owner references:
+  - `ai-model-publish-state-5fbeb2ff-06ce-4903-ab9b-fe19335505ac`;
+  - `ai-model-publish-state-6c00336f-5173-4629-a387-b829cb4ac584`;
+  - both point to `Model ai-models-smoke/gemma-4-e4b-it`;
+  - both have `phase=Completed`, `stage=Idle`, `plannedLayerCount=3`, and
+    `plannedSizeBytes=16024796230`.
+- practical failure mode:
+  - the catalog objects are gone;
+  - the delete lifecycle did not leave a matching GC request;
+  - the remaining residue is now only discoverable by the global stale sweep
+    path (`dmcr-cleaner gc check` / scheduled cleanup), not by a per-object
+    finalizer path.
+
+### 14.4 Immediate operational conclusion
+
+- do not treat this as `dmcr` being unable to delete from S3;
+- the current break is trigger/lifecycle ordering:
+  - object deletion completed without an active `dmcr-gc-*` handoff;
+  - daily scheduled cleanup has not reached its next tick after the latest
+    rollout;
+  - therefore S3 still contains stale direct-upload data and multipart parts.
+- manual destructive cleanup was not run during this triage.
+
+### 14.5 Manual cleanup run
+
+- manual cleanup was explicitly requested and run at:
+  - `2026-04-23T19:13:15Z`;
+  - `2026-04-23 22:13:15 MSK`.
+- pre-cleanup guard checks were repeated immediately before deletion:
+  - no `models.ai.deckhouse.io`;
+  - no `clustermodels.ai.deckhouse.io`;
+  - no active `ai.deckhouse.io/dmcr-gc-request=true` secrets.
+- command used:
+  - `kubectl -n d8-ai-models exec deploy/dmcr -c dmcr-garbage-collection -- /usr/local/bin/dmcr-cleaner gc auto-cleanup`
+- cleanup completed successfully.
+- registry GC output:
+  - `0 blobs marked, 0 blobs and 0 manifests eligible for deletion`.
+- post-cleanup `dmcr-cleaner gc check` result:
+  - `Stored direct-upload object prefixes: 0`;
+  - `Open direct-upload multipart uploads: 0`;
+  - `Open direct-upload multipart parts: 0`;
+  - `Stale orphan direct-upload object prefixes: 0`;
+  - `Stale orphan direct-upload multipart uploads: 0`;
+  - `No stale prefixes eligible for cleanup.`
+- post-cleanup module status:
+  - `Module/ai-models` remains `Ready`;
+  - `ai-models-controller` pods are `3/3 Running`;
+  - `dmcr` pods are `4/4 Running`.
+
+### 14.6 Fresh publish/delete/GC smoke after manual cleanup
+
+- fresh small smoke object was created after the manual S3 cleanup:
+  - namespace: `ai-models-smoke`;
+  - object: `Model/tiny-random-phi-gc-20260423-1`;
+  - source: `https://huggingface.co/hf-internal-testing/tiny-random-PhiForCausalLM`.
+- the object reached `Ready` and published a new artifact:
+  - model UID: `0295accc-9a90-4843-909e-f5be00394133`;
+  - digest:
+    `sha256:430809d43231b77dd8b4e64ec098976d77b6081838f23dd2328adbc36fbd6526`;
+  - size: `382119` bytes;
+  - artifact URI:
+    `dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/ai-models-smoke/tiny-random-phi-gc-20260423-1/0295accc-9a90-4843-909e-f5be00394133@sha256:430809d43231b77dd8b4e64ec098976d77b6081838f23dd2328adbc36fbd6526`.
+- the live object carried the expected cleanup ownership markers before
+  deletion:
+  - `ai.deckhouse.io/model-cleanup` finalizer;
+  - cleanup handle annotation.
+- deletion command:
+  - `kubectl -n ai-models-smoke delete models.ai.deckhouse.io tiny-random-phi-gc-20260423-1 --wait=false`.
+- delete-triggered cleanup behaved as expected:
+  - cleanup job:
+    `ai-model-cleanup-0295accc-9a90-4843-909e-f5be00394133`;
+  - cleanup pod log reported `artifact cleanup started` and
+    `artifact cleanup completed`;
+  - delete-triggered GC request was created:
+    `dmcr-gc-0295accc-9a90-4843-909e-f5be00394133`;
+  - the request carried:
+    - `ai.deckhouse.io/dmcr-gc-direct-upload-mode=immediate-orphan-cleanup`;
+    - `ai.deckhouse.io/dmcr-gc-requested-at=2026-04-23T19:19:46.551524254Z`;
+    - `ai.deckhouse.io/dmcr-gc-switch=2026-04-23T19:19:46.551524254Z`.
+- `dmcr` entered and then left maintenance mode for that request:
+  - maintenance ReplicaSet appeared as `dmcr-68ff4cb455-*`;
+  - normal ReplicaSet returned as `dmcr-8678549d95-*`;
+  - the request secret disappeared after the active GC cycle.
+- post-smoke `dmcr-cleaner gc check` result was clean:
+  - `Live repository prefixes: 0`;
+  - `Stored repository prefixes: 0`;
+  - `Stored direct-upload object prefixes: 0`;
+  - `Open direct-upload multipart uploads: 0`;
+  - `Open direct-upload multipart parts: 0`;
+  - `Stale orphan direct-upload object prefixes: 0`;
+  - `Stale orphan direct-upload multipart uploads: 0`;
+  - `No stale prefixes eligible for cleanup.`
+- conclusion:
+  - fresh publish/delete/GC path works in the current live build;
+  - the earlier S3 residue was historical/orphaned state that only the global
+    stale sweep could discover;
+  - the remaining product gap is startup/backfill behavior for scheduled stale
+    sweep after rollout, not a fresh delete-controller failure.

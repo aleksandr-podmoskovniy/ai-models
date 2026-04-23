@@ -101,11 +101,11 @@ properties:
         properties:
           schedule:
             type: string
-            default: "0 2 * * *"
+            default: "*/20 * * * *"
             description: |
               Cron schedule for periodic DMCR stale sweep of published model
               repositories, source mirrors, and orphan direct-upload residue.
-              The default is daily at 02:00. Set an empty string to disable
+              The default is every 20 minutes. Set an empty string to disable
               periodic sweep. Operators can still run `dmcr-cleaner gc check`
               for report-only inspection inside the DMCR Pod.
   nodeCache:
