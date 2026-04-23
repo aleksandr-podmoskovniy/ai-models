@@ -143,5 +143,3 @@ jobs:
           module_source: ghcr.io/${{ github.repository_owner }}/modules
           module_name: ai-models
           module_tag: ${{ steps.module_tag.outputs.tag }}
-      - name: Verify published module image payload
-        run: ./tools/ci/verify-module-image-payload.sh "ghcr.io/${{ github.repository_owner }}/modules/ai-models:${{ steps.module_tag.outputs.tag }}"

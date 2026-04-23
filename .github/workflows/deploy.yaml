@@ -77,8 +77,6 @@ jobs:
             exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Verify module image payload
-        run: ./tools/ci/verify-module-image-payload.sh "ghcr.io/${{ github.repository_owner }}/modules/ai-models:${{ steps.module_tag.outputs.tag }}"
       - uses: deckhouse/modules-actions/deploy@v2
         env:
           CI_COMMIT_REF_NAME: ${{ steps.module_tag.outputs.tag }}

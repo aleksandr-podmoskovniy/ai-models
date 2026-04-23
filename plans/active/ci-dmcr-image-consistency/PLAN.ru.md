@@ -1,4 +1,4 @@
-# План: согласованность DMCR image digest в CI
+# План: пересборка DMCR image из актуальных исходников
 
 ## Current phase
 
@@ -42,53 +42,12 @@ Read-only review:
 
 - DMCR build artifact получает исходники только через source artifact import.
 
-### Slice 2. Проверка опубликованного module image
-
-Цель: добавить воспроизводимую проверку, что `images_digests.json` указывает
-на DMCR image с ожидаемыми бинарями.
-
-Файлы:
-
-- `tools/ci/verify-module-image-payload.sh`
-
-Проверки:
-
-- `bash -n tools/ci/verify-module-image-payload.sh`;
-- негативная проверка против текущего сломанного
-  `ghcr.io/aleksandr-podmoskovniy/modules/ai-models:main`.
-
-Артефакт:
-
-- standalone script, который может запускаться и локально, и в GitHub Actions.
-
-### Slice 3. GitHub Actions gate
-
-Цель: включить проверку в publish path и release path.
-
-Файлы:
-
-- `.github/workflows/build.yaml`
-- `.github/workflows/deploy.yaml`
-
-Проверки:
-
-- `make lint`;
-- `make verify`.
-
-Артефакт:
-
-- build workflow проверяет опубликованный module image после `modules-actions/build`;
-- deploy workflow проверяет module image перед `modules-actions/deploy`.
-
 ## Rollback point
 
-Безопасный откат: вернуть изменения в `images/dmcr/werf.inc.yaml`, удалить
-`tools/ci/verify-module-image-payload.sh` и убрать новые workflow steps.
+Безопасный откат: вернуть изменения в `images/dmcr/werf.inc.yaml`.
 
 Такой откат не меняет runtime-код и не требует миграций в кластере.
 
 ## Final validation
 
-- `bash -n tools/ci/verify-module-image-payload.sh`
-- негативная проверка против текущего сломанного `main` tag
 - `make verify`

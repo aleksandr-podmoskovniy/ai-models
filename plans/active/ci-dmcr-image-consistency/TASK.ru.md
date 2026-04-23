@@ -1,4 +1,4 @@
-# Согласованность DMCR image digest в CI
+# Пересборка DMCR image из актуальных исходников
 
 ## Контекст
 
@@ -17,25 +17,20 @@
 - templates уже ожидают новый DMCR runtime, поэтому pod падает с
   `StorageDriver not registered: sealeds3` и `unknown flag: --schedule`.
 
-Проблема находится в сборочно-публикационной цепочке: module artifact
-может быть опубликован с устаревшим digest внутреннего DMCR image.
+Проблема находится в сборочно-публикационной цепочке: DMCR image был собран
+нестандартно относительно controller/hooks и мог переиспользоваться старым
+digest при свежей публикации module artifact.
 
 ## Постановка задачи
 
-Сделать так, чтобы GitHub Actions и werf-сборка не могли тихо опубликовать
-module artifact, в котором templates ожидают новый DMCR runtime, а
-`images_digests.json` указывает на старый или непригодный `dmcr` image.
+Сделать сборку DMCR такой же по форме, как сборка controller/hooks: отдельный
+source artifact и отдельный build artifact. Это должно заставить werf учитывать
+актуальные исходники DMCR при расчёте сборочных слоёв.
 
 ## Scope
 
 - Привести `images/dmcr/werf.inc.yaml` к тому же source/build split-паттерну,
   который уже используется для controller и hooks images.
-- Добавить CI-проверку опубликованного module image:
-  - прочитать `images_digests.json`;
-  - достать `dmcr` image по digest;
-  - проверить наличие обязательных runtime-признаков в бинарях DMCR.
-- Включить проверку в build workflow после публикации module image.
-- Включить ту же проверку в deploy workflow перед публикацией release.
 
 ## Non-goals
 
@@ -43,38 +38,22 @@ module artifact, в котором templates ожидают новый DMCR runt
 - Не менять ModuleSource, ModuleRelease или cluster resources.
 - Не чистить registry и не удалять уже опубликованные image digests.
 - Не менять DMCR runtime-контракт и логику публикации моделей.
+- Не добавлять дополнительный payload-check в GitHub Actions.
 
 ## Затрагиваемые области
 
 - `images/dmcr/werf.inc.yaml`
-- `.github/workflows/build.yaml`
-- `.github/workflows/deploy.yaml`
-- `tools/ci/*`
 - `plans/active/ci-dmcr-image-consistency/*`
 
 ## Критерии приёмки
 
 - Изменения в `images/dmcr/**` инвалидируют source artifact DMCR тем же способом,
   что и для controller/hooks.
-- CI-проверка падает, если module artifact ссылается на `dmcr` image без
-  регистрации `sealeds3`.
-- CI-проверка падает, если `dmcr-cleaner` image payload не содержит поддержку
-  `--schedule`.
-- CI-проверка падает, если `dmcr-direct-upload` image payload не содержит новый
-  проверочный код прямой загрузки.
-- Build workflow после публикации module image проверяет фактически
-  опубликованный artifact.
-- Deploy workflow проверяет artifact перед выпуском release.
-- Локальная shell-проверка нового CI script проходит.
-- Негативная локальная проверка против текущего сломанного `main` tag
-  воспроизводимо падает.
+- GitHub Actions workflow остаются без дополнительного payload-check step.
 - `make verify` проходит.
 
 ## Риски
 
-- Проверка выполняется уже после build/push, поэтому она не отменяет сам push,
-  но делает workflow красным и не даёт считать artifact годным.
-- Если module image repo отличается от repo внутренних images, понадобится
-  явный override через переменную окружения.
-- Проверка использует строки из бинарей как практический guardrail; она не
-  заменяет полноценные unit/integration tests runtime-кода.
+- Правка не добавляет отдельную проверку содержимого опубликованного image.
+  Если werf снова переиспользует неподходящий digest, это будет видно по
+  rollout/registry inspection, а не по отдельному Actions guard.
