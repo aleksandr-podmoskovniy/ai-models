@@ -239,6 +239,36 @@ func TestBuildReportFailsClosedWhenDirectUploadMetadataIsBroken(t *testing.T) {
 	}
 }
 
+func TestBuildReportMarksFreshDirectUploadPrefixStaleWhenNoLiveOwnersRemain(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	store := newFakePrefixStore(
+		fakePrefixObject{
+			key:          "dmcr/_ai_models/direct-upload/objects/session-fresh/data",
+			lastModified: now.Add(-2 * time.Hour),
+		},
+	)
+
+	report, err := buildReportWithClock(
+		context.Background(),
+		newFakeDynamicClient(t),
+		store,
+		"dmcr",
+		now,
+		cleanupPolicy{},
+	)
+	if err != nil {
+		t.Fatalf("buildReportWithClock() error = %v", err)
+	}
+	if got, want := len(report.StaleDirectUploadPrefixes), 1; got != want {
+		t.Fatalf("stale direct-upload prefix count = %d, want %d", got, want)
+	}
+	if got, want := report.StaleDirectUploadPrefixes[0].Prefix, "dmcr/_ai_models/direct-upload/objects/session-fresh"; got != want {
+		t.Fatalf("stale prefix = %q, want %q", got, want)
+	}
+}
+
 func TestDiscoverDirectUploadInventoryTargetsFreshPrefixWhenCleanupPolicyRequestsIt(t *testing.T) {
 	t.Parallel()
 
@@ -269,6 +299,35 @@ func TestDiscoverDirectUploadInventoryTargetsFreshPrefixWhenCleanupPolicyRequest
 	}
 	if got, want := inventory.StalePrefixes[0].Prefix, "dmcr/_ai_models/direct-upload/objects/session-fresh"; got != want {
 		t.Fatalf("stale prefix = %q, want %q", got, want)
+	}
+}
+
+func TestDeletePostGarbageCollectDirectUploadPrefixesDeletesFormerlyProtectedFreshPrefix(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	store := newFakePrefixStore(
+		fakePrefixObject{
+			key:          "dmcr/_ai_models/direct-upload/objects/session-fresh/data",
+			lastModified: now.Add(-2 * time.Hour),
+		},
+	)
+
+	if err := deletePostGarbageCollectDirectUploadPrefixes(
+		context.Background(),
+		store,
+		"dmcr",
+		now,
+		cleanupPolicy{},
+		map[string]struct{}{
+			"dmcr/_ai_models/direct-upload/objects/session-fresh": {},
+		},
+	); err != nil {
+		t.Fatalf("deletePostGarbageCollectDirectUploadPrefixes() error = %v", err)
+	}
+
+	if got, want := store.deletedPrefixes, []string{"dmcr/_ai_models/direct-upload/objects/session-fresh/"}; !equalStringSlices(got, want) {
+		t.Fatalf("deleted prefixes = %#v, want %#v", got, want)
 	}
 }
 

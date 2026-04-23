@@ -48,6 +48,8 @@ type Report struct {
 type livePrefixSet struct {
 	repositoryPrefixes map[string]struct{}
 	rawPrefixes        map[string]struct{}
+	modelCount         int
+	clusterModelCount  int
 }
 
 func newLivePrefixSet() livePrefixSet {
@@ -55,6 +57,10 @@ func newLivePrefixSet() livePrefixSet {
 		repositoryPrefixes: make(map[string]struct{}),
 		rawPrefixes:        make(map[string]struct{}),
 	}
+}
+
+func (s livePrefixSet) totalOwnerCount() int {
+	return s.modelCount + s.clusterModelCount
 }
 
 func (s *livePrefixSet) addRepository(prefix string) {

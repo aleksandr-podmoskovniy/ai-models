@@ -46,6 +46,12 @@ productized DMCR cleanup surface:
   multipart upload snapshotted by controller delete flow as
   `{objectKey, uploadID}`; then it runs registry `garbage-collect` and removes
   processed requests;
+- when no live `Model` or `ClusterModel` objects remain in the cluster,
+  unprotected direct-upload residue is treated as immediately reclaimable
+  instead of waiting for the generic session-age window;
+- after registry `garbage-collect`, `dmcr-cleaner` reruns direct-upload orphan
+  cleanup for prefixes that were protected before GC and may have become
+  orphaned only after canonical blob metadata was removed;
 - `dmcr-cleaner gc run` uses an internal Kubernetes `Lease` so only one
   replica owns scheduled enqueue and active cleanup while other `DMCR` replicas
   stay as standby executors;

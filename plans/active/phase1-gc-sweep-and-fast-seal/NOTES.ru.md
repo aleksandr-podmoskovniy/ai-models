@@ -349,6 +349,12 @@ Read-only review input (`integration_architect`):
   - `Open direct-upload multipart uploads`;
   - `Open direct-upload multipart parts`;
   - `Stale orphan direct-upload multipart uploads`.
+- follow-up correction после live cluster triage:
+  - если в кластере вообще не осталось live `Model` / `ClusterModel`, GC
+    больше не держит orphan direct-upload residue за generic `24h` age gate;
+  - после `registry garbage-collect` выполняется второй targeted
+    direct-upload sweep по prefixes, которые были protected до GC и могли
+    стать orphan только после удаления canonical blob metadata.
 
 Проверки:
 

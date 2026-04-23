@@ -84,6 +84,11 @@ func collectLivePrefixesForResource(
 	}
 
 	for _, item := range list.Items {
+		if namespaced {
+			live.modelCount++
+		} else {
+			live.clusterModelCount++
+		}
 		if err := collectLivePrefixesFromObject(item.GetNamespace(), item.GetName(), item.GetAnnotations(), live); err != nil {
 			return err
 		}

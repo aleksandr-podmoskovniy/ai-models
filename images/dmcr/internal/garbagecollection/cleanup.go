@@ -34,6 +34,7 @@ type cleanupPolicy struct {
 	targetDirectUploadPrefixes         map[string]struct{}
 	targetDirectUploadMultipartUploads map[directUploadMultipartTarget]struct{}
 	directUploadStaleAge               time.Duration
+	allowImmediateDirectUploadCleanup  bool
 }
 
 type autoCleanupFunc func(context.Context, string, string, time.Duration, cleanupPolicy) (AutoCleanupResult, error)
@@ -84,6 +85,10 @@ func autoCleanupWithPolicy(
 	if err != nil {
 		return AutoCleanupResult{}, err
 	}
+	preGCProtectedPrefixes, err := collectProtectedDirectUploadPrefixes(ctx, store, rootDirectory)
+	if err != nil {
+		return AutoCleanupResult{}, err
+	}
 	if err := deleteStalePrefixes(ctx, store, report); err != nil {
 		return AutoCleanupResult{}, err
 	}
@@ -96,6 +101,9 @@ func autoCleanupWithPolicy(
 		ActivationDelay: DefaultActivationDelay,
 	})
 	if err != nil {
+		return AutoCleanupResult{}, err
+	}
+	if err := deletePostGarbageCollectDirectUploadPrefixes(ctx, store, rootDirectory, time.Now().UTC(), policy, preGCProtectedPrefixes); err != nil {
 		return AutoCleanupResult{}, err
 	}
 
@@ -136,6 +144,9 @@ func buildReportWithClock(
 	if err != nil {
 		return Report{}, err
 	}
+	if live.totalOwnerCount() == 0 {
+		policy.allowImmediateDirectUploadCleanup = true
+	}
 
 	storedRepositories, storedRawPrefixes, err := DiscoverStoredPrefixes(ctx, store, rootDirectory)
 	if err != nil {
@@ -159,6 +170,38 @@ func buildReportWithClock(
 	report.StoredDirectUploadMultipartPartCount = directUploadMultipartInventory.StoredPartCount
 	report.StaleDirectUploadMultipartUploads = directUploadMultipartInventory.StaleUploads
 	return report, nil
+}
+
+func deletePostGarbageCollectDirectUploadPrefixes(
+	ctx context.Context,
+	store prefixStore,
+	rootDirectory string,
+	now time.Time,
+	policy cleanupPolicy,
+	preGCProtectedPrefixes map[string]struct{},
+) error {
+	if len(preGCProtectedPrefixes) == 0 && !policy.allowImmediateDirectUploadCleanup {
+		return nil
+	}
+
+	postPolicy := normalizeCleanupPolicy(policy)
+	targetPrefixes := make(map[string]struct{}, len(postPolicy.targetDirectUploadPrefixes)+len(preGCProtectedPrefixes))
+	for prefix := range postPolicy.targetDirectUploadPrefixes {
+		targetPrefixes[prefix] = struct{}{}
+	}
+	for prefix := range preGCProtectedPrefixes {
+		targetPrefixes[prefix] = struct{}{}
+	}
+	postPolicy.targetDirectUploadPrefixes = targetPrefixes
+
+	inventory, err := discoverDirectUploadInventory(ctx, store, rootDirectory, now, postPolicy)
+	if err != nil {
+		return err
+	}
+	if len(inventory.StalePrefixes) == 0 {
+		return nil
+	}
+	return deleteStalePrefixes(ctx, store, Report{StaleDirectUploadPrefixes: inventory.StalePrefixes})
 }
 
 func deleteStalePrefixes(ctx context.Context, store prefixStore, report Report) error {

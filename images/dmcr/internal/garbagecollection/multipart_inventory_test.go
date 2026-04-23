@@ -118,6 +118,38 @@ func TestBuildReportIncludesDirectUploadMultipartResidue(t *testing.T) {
 	}
 }
 
+func TestBuildReportMarksFreshMultipartUploadStaleWhenNoLiveOwnersRemain(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	store := newFakePrefixStoreWithMultipartUploads(nil,
+		fakeMultipartUpload{
+			key:         "dmcr/_ai_models/direct-upload/objects/session-fresh/data",
+			uploadID:    "upload-fresh",
+			initiatedAt: now.Add(-2 * time.Hour),
+			partCount:   9,
+		},
+	)
+
+	report, err := buildReportWithClock(
+		context.Background(),
+		newFakeDynamicClient(t),
+		store,
+		"dmcr",
+		now,
+		cleanupPolicy{},
+	)
+	if err != nil {
+		t.Fatalf("buildReportWithClock() error = %v", err)
+	}
+	if got, want := len(report.StaleDirectUploadMultipartUploads), 1; got != want {
+		t.Fatalf("stale multipart upload count = %d, want %d", got, want)
+	}
+	if got, want := report.StaleDirectUploadMultipartUploads[0].UploadID, "upload-fresh"; got != want {
+		t.Fatalf("stale multipart upload = %q, want %q", got, want)
+	}
+}
+
 func TestDiscoverDirectUploadMultipartInventorySkipsGoneUploads(t *testing.T) {
 	t.Parallel()
 

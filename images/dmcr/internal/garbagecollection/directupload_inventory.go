@@ -149,8 +149,10 @@ func staleDirectUploadPrefixes(
 		if _, found := protected[entry.Prefix]; found {
 			continue
 		}
-		if _, targeted := policy.targetDirectUploadPrefixes[entry.Prefix]; !targeted && entry.LastModifiedAt.After(cutoff) {
-			continue
+		if !policy.allowImmediateDirectUploadCleanup {
+			if _, targeted := policy.targetDirectUploadPrefixes[entry.Prefix]; !targeted && entry.LastModifiedAt.After(cutoff) {
+				continue
+			}
 		}
 		stale = append(stale, PrefixInventoryEntry{
 			Prefix:          entry.Prefix,
