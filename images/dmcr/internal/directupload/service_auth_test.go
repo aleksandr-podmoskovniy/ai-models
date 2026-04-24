@@ -40,6 +40,17 @@ func TestServiceRejectsWrongAuth(t *testing.T) {
 	expectStatus(t, response, http.StatusUnauthorized)
 }
 
+func TestServiceHealthDoesNotRequireAuth(t *testing.T) {
+	t.Parallel()
+
+	response, err := http.Get(newServiceHarness(t).server.URL + healthPath)
+	if err != nil {
+		t.Fatalf("Get(%s) error = %v", healthPath, err)
+	}
+	defer response.Body.Close()
+	expectStatus(t, response, http.StatusNoContent)
+}
+
 func TestServiceRejectsExpiredSessionToken(t *testing.T) {
 	t.Parallel()
 

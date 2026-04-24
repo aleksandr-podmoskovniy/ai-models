@@ -99,6 +99,29 @@ publication/runtime path.
 
 - сформирован список узких мест и рекомендуемый следующий шаг.
 
+### Slice 6. Повторный live log pass по DMCR после RBAC hardening
+
+Цель:
+
+- проверить свежие ошибки `d8-ai-models` в кластере и исправить только
+  подтверждённые runtime/template defects.
+
+Проверки:
+
+- `kubectl get pods -n d8-ai-models`;
+- `kubectl logs ... -c dmcr-garbage-collection --previous`;
+- `kubectl auth can-i ... --as=system:serviceaccount:d8-ai-models:dmcr`;
+- `cd images/dmcr && go test -count=1 ./internal/directupload`;
+- `make helm-template`;
+- `make kubeconform`;
+- rendered RBAC/probe checks.
+
+Артефакт результата:
+
+- DMCR service-account RBAC синхронизирован с GC runtime behavior;
+- direct-upload probe log noise убран через HTTPS health endpoint;
+- внешние cluster-wide проблемы отделены от module defects.
+
 ## 4. Rollback point
 
 После Slice 1 можно остановиться с чистым live diagnosis без дополнительных

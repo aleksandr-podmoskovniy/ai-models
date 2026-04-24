@@ -770,3 +770,82 @@
     stale sweep could discover;
   - the remaining product gap is startup/backfill behavior for scheduled stale
     sweep after rollout, not a fresh delete-controller failure.
+
+## 15. Live log pass on 2026-04-24
+
+### 15.1 ai-models pod status
+
+- current context: `k8s-main`;
+- namespace `d8-ai-models` contains two healthy controller pods and two `dmcr`
+  pods;
+- only module-local restart signal is in one `dmcr-garbage-collection`
+  container:
+  - `dmcr-76688666c-ml6d9`;
+  - `dmcr-garbage-collection` restart count: `7`;
+  - last failed run in previous logs: `2026-04-24T14:00:00Z`.
+- there are no current `Model` or `ClusterModel` resources.
+
+### 15.2 DMCR garbage-collection RBAC failure
+
+- previous `dmcr-garbage-collection` log:
+  - `dmcr-cleaner exited with error`;
+  - `User "system:serviceaccount:d8-ai-models:dmcr" cannot create resource
+    "secrets" in namespace "d8-ai-models"`.
+- live authz confirmed the mismatch:
+  - `create secrets` -> `no`;
+  - `get/list/update/patch/delete secrets` -> `yes`.
+- fix in repository:
+  - `templates/dmcr/rbac.yaml` now grants `create` on core `secrets` to the
+    internal `dmcr` service-account Role.
+- live direct patch was rejected by Deckhouse admission because
+  `heritage: deckhouse` objects cannot be changed directly.
+- current cluster therefore remains unfixed until the rendered module is
+  deployed through the module pipeline.
+
+### 15.3 Direct upload TLS handshake noise
+
+- `dmcr-direct-upload` produced 120 `TLS handshake error ... EOF` records in
+  10 minutes.
+- source `10.111.0.116` is inside `k8s-m1.apiac.ru` pod CIDR and is not a
+  current pod endpoint, which is consistent with node/probe traffic after CNI
+  translation.
+- root cause in templates/code:
+  - direct-upload listens with TLS on `https-upload`;
+  - probes used raw `tcpSocket`;
+  - the Go TLS server logs each TCP connect/close as a handshake EOF.
+- fix in repository:
+  - add unauthenticated `GET/HEAD /healthz` to direct-upload;
+  - switch readiness/liveness probes to HTTPS GET `/healthz`.
+
+### 15.4 S3 RequestTimeTooSkewed
+
+- both `dmcr` pods log repeated storage-driver health errors:
+  - `s3aws: RequestTimeTooSkewed`;
+  - HTTP status `403`;
+  - interval roughly 30 seconds in the sampled window.
+- local UTC time and public S3 `Date` header matched on `2026-04-24`;
+- repeated local curl requests to `https://s3.api.apiac.ru` returned current
+  `Date` headers and current request-id timestamp segments;
+- request-id timestamp segments from DMCR errors decode to `2025-05-29`;
+- this points to an S3/RGW/backend route or clock problem for requests from the
+  cluster, not to human RBAC and not to the `dmcr` service-account Secret verb.
+
+### 15.5 Other cluster-wide noise
+
+- unrelated current cluster problems:
+  - nodes `k8s-w2-gpu.apiac.ru` and `k8s-w3.apiac.ru` report
+    `NodeStatusUnknown` / `Kubelet stopped posting node status`;
+  - `d8-n8n` pods are in `ImagePullBackOff`;
+  - `d8-monitoring` has PVC mount/readiness issues;
+  - `kuberay-projects/open-webui-web-ui-0` is in `CrashLoopBackOff`.
+- these were not changed in this module slice.
+
+### 15.6 Validation
+
+- `cd images/dmcr && go test -count=1 ./internal/directupload`;
+- `make helm-template`;
+- `make kubeconform`;
+- rendered checks across six Helm scenarios:
+  - DMCR Role has `get,list,create,update,patch,delete` on internal Secrets;
+  - direct-upload readiness/liveness probes are HTTPS `/healthz`;
+  - human-facing `ai-models:*` roles do not grant `secrets`.

@@ -52,20 +52,33 @@ type abortRequest struct {
 	SessionToken string `json:"sessionToken"`
 }
 
+const healthPath = "/healthz"
+
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc(healthPath, handleHealth)
 	mux.HandleFunc("/v2/blob-uploads", s.handleStart)
 	mux.HandleFunc("/v2/blob-uploads/presign-part", s.handlePresignPart)
 	mux.HandleFunc("/v2/blob-uploads/parts", s.handleListParts)
 	mux.HandleFunc("/v2/blob-uploads/complete", s.handleComplete)
 	mux.HandleFunc("/v2/blob-uploads/abort", s.handleAbort)
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if err := s.authorize(request); err != nil {
-			http.Error(writer, err.Error(), http.StatusUnauthorized)
-			return
+		if request.URL.Path != healthPath {
+			if err := s.authorize(request); err != nil {
+				http.Error(writer, err.Error(), http.StatusUnauthorized)
+				return
+			}
 		}
 		mux.ServeHTTP(writer, request)
 	})
+}
+
+func handleHealth(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Service) authorize(request *http.Request) error {
