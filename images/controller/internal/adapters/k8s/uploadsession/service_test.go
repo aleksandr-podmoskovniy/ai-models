@@ -78,10 +78,5 @@ func testUploadStatus() modelsv1alpha1.ModelUploadStatus {
 		Repository:   "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/1111-2222:published",
 		ExternalURL:  "https://ai-models.example.com/v1/upload/ai-model-upload-auth-1111-2222",
 		InClusterURL: "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222",
-		TokenSecretRef: &modelsv1alpha1.UploadTokenSecretReference{
-			Namespace: "team-a",
-			Name:      "ai-model-upload-token-1111-2222",
-			Key:       TokenSecretAuthorizationHeaderKey,
-		},
 	}
 }

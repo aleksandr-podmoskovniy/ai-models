@@ -41,11 +41,6 @@ func TestResolvedHuggingFaceRevision(t *testing.T) {
 }
 
 func TestFetchHuggingFaceInfo(t *testing.T) {
-	previousBaseURL := huggingFaceBaseURL
-	t.Cleanup(func() {
-		huggingFaceBaseURL = previousBaseURL
-	})
-
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if got, want := request.URL.Path, "/api/models/deepseek-ai/DeepSeek-R1"; got != want {
 			t.Fatalf("unexpected path %q", got)
@@ -70,7 +65,7 @@ func TestFetchHuggingFaceInfo(t *testing.T) {
 	}))
 	defer server.Close()
 
-	huggingFaceBaseURL = server.URL
+	withHuggingFaceBaseURL(t, server.URL)
 	info, err := FetchHuggingFaceInfo(t.Context(), "deepseek-ai/DeepSeek-R1", "main", "hf-token")
 	if err != nil {
 		t.Fatalf("FetchHuggingFaceInfo() error = %v", err)

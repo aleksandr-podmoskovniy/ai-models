@@ -23,6 +23,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/auditevent"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/cleanupstate"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/sourceworker"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsession"
@@ -36,13 +37,14 @@ import (
 )
 
 type Options struct {
-	Runtime              PublicationRuntimeOptions
-	RuntimeLogFormat     string
-	RuntimeLogLevel      string
-	MaxConcurrentWorkers int
-	UploadGateway        UploadGatewayOptions
-	UploadStagingBucket  string
-	UploadStagingClient  uploadstagingports.MultipartStager
+	Runtime               PublicationRuntimeOptions
+	RuntimeLogFormat      string
+	RuntimeLogLevel       string
+	MaxConcurrentWorkers  int
+	UploadGateway         UploadGatewayOptions
+	UploadStagingBucket   string
+	UploadStagingClient   uploadstagingports.MultipartStager
+	CleanupStateNamespace string
 }
 
 type PublicationRuntimeOptions = sourceworker.RuntimeOptions
@@ -58,6 +60,7 @@ type baseReconciler struct {
 	options        Options
 	sourceWorkers  publicationports.SourceWorkerRuntime
 	uploadSessions publicationports.UploadSessionRuntime
+	cleanupState   *cleanupstate.Store
 	auditSink      auditsink.Sink
 }
 
@@ -70,6 +73,9 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	}
 	if !options.Enabled() {
 		return nil
+	}
+	if strings.TrimSpace(options.CleanupStateNamespace) == "" {
+		options.CleanupStateNamespace = options.Runtime.Namespace
 	}
 
 	if err := options.Validate(); err != nil {
@@ -85,6 +91,10 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 		return err
 	}
 	uploadSessions, err := uploadsession.NewService(mgr.GetClient(), mgr.GetScheme(), uploadSessionOptions(options))
+	if err != nil {
+		return err
+	}
+	cleanupState, err := cleanupstate.New(mgr.GetClient(), options.CleanupStateNamespace)
 	if err != nil {
 		return err
 	}
@@ -104,6 +114,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 		options:        options,
 		sourceWorkers:  sourceWorkers,
 		uploadSessions: uploadSessions,
+		cleanupState:   cleanupState,
 		auditSink:      auditRecorder,
 	}
 

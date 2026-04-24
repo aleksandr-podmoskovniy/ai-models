@@ -20,6 +20,8 @@ import (
 	"errors"
 	"os"
 	"strings"
+
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func PrepareModelInput(sourcePath, destination string) (string, error) {
@@ -31,7 +33,7 @@ func PrepareModelInput(sourcePath, destination string) (string, error) {
 	}
 
 	switch {
-	case isTarArchive(sourcePath), isZipArchive(sourcePath):
+	case archiveio.IsTarArchive(sourcePath), archiveio.IsZipArchive(sourcePath):
 		return UnpackArchive(sourcePath, destination)
 	default:
 		return materializeSingleFile(sourcePath, destination)
@@ -50,11 +52,11 @@ func UnpackArchive(archivePath, destination string) (string, error) {
 	}
 
 	switch {
-	case isTarArchive(archivePath):
+	case archiveio.IsTarArchive(archivePath):
 		if err := safeExtractTar(archivePath, destination); err != nil {
 			return "", err
 		}
-	case isZipArchive(archivePath):
+	case archiveio.IsZipArchive(archivePath):
 		if err := safeExtractZip(archivePath, destination); err != nil {
 			return "", err
 		}

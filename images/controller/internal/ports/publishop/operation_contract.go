@@ -27,15 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-type Phase string
-
-const (
-	PhasePending   Phase = "Pending"
-	PhaseRunning   Phase = "Running"
-	PhaseSucceeded Phase = "Succeeded"
-	PhaseFailed    Phase = "Failed"
-)
-
 type Owner struct {
 	Kind      string    `json:"kind"`
 	Name      string    `json:"name"`
@@ -48,12 +39,6 @@ type Request struct {
 	Identity    publishedsnapshot.Identity         `json:"identity"`
 	Spec        modelsv1alpha1.ModelSpec           `json:"spec"`
 	UploadStage *cleanuphandle.UploadStagingHandle `json:"uploadStage,omitempty"`
-}
-
-type Status struct {
-	Phase      Phase
-	Message    string
-	WorkerName string
 }
 
 func (r Request) Validate() error {

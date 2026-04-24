@@ -24,6 +24,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 type openArchiveReaderFunc func() (io.ReadCloser, error)
@@ -48,9 +49,9 @@ func InspectModelArchive(path string, requested modelsv1alpha1.ModelInputFormat)
 		return ArchiveInspection{}, errors.New("archive path must not be empty")
 	}
 	switch {
-	case isTarArchive(path):
+	case archiveio.IsTarArchive(path):
 		return inspectTarModelArchive(path, requested)
-	case isZipArchive(path):
+	case archiveio.IsZipArchive(path):
 		return inspectZipModelArchive(path, requested)
 	default:
 		return ArchiveInspection{}, errors.New("streaming archive inspection only supports tar/tar.gz/tgz/tar.zst/tar.zstd/tzst/zip")
@@ -58,7 +59,7 @@ func InspectModelArchive(path string, requested modelsv1alpha1.ModelInputFormat)
 }
 
 func InspectTarModelArchiveReader(path string, openReader openArchiveReaderFunc, requested modelsv1alpha1.ModelInputFormat) (ArchiveInspection, error) {
-	if !isTarArchive(path) {
+	if !archiveio.IsTarArchive(path) {
 		return ArchiveInspection{}, errors.New("streaming tar archive inspection only supports tar/tar.gz/tgz/tar.zst/tar.zstd/tzst")
 	}
 	return inspectTarModelArchiveReader(path, openReader, requested)

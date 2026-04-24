@@ -17,81 +17,13 @@ limitations under the License.
 package oci
 
 import (
-	"archive/tar"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
-
-func extractTarEntry(reader *tar.Reader, header *tar.Header, target string) error {
-	switch header.Typeflag {
-	case tar.TypeDir:
-		return os.MkdirAll(target, 0o755)
-	case tar.TypeReg, tar.TypeRegA:
-		return writeExtractedFile(target, reader)
-	case tar.TypeSymlink:
-		return fmt.Errorf("refusing to extract symbolic link tar entry %q", header.Name)
-	case tar.TypeLink:
-		return fmt.Errorf("refusing to extract hard link tar entry %q", header.Name)
-	default:
-		return fmt.Errorf("refusing to extract unsupported tar entry %q", header.Name)
-	}
-}
-
-func writeExtractedFile(target string, reader io.Reader) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
-	}
-	stream, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(stream, reader); err != nil {
-		stream.Close()
-		return err
-	}
-	return stream.Close()
-}
-
-func archiveTargetPath(destination, name string) (string, error) {
-	relative, err := archiveRelativePath(name)
-	if err != nil {
-		return "", err
-	}
-	if relative == "." {
-		return destination, nil
-	}
-	return filepath.Join(destination, relative), nil
-}
-
-func archiveRelativePath(name string) (string, error) {
-	rawName := strings.TrimSpace(strings.ReplaceAll(name, "\\", "/"))
-	if rawName == "" {
-		return "", errors.New("archive entry name must not be empty")
-	}
-
-	parts := strings.Split(rawName, "/")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		switch part {
-		case "", ".":
-			continue
-		case "..":
-			return "", fmt.Errorf("refusing to extract archive entry outside of destination: %q", name)
-		default:
-			result = append(result, part)
-		}
-	}
-	if len(result) == 0 {
-		return ".", nil
-	}
-	return filepath.Join(result...), nil
-}
 
 func resolveModelPath(destination string, payload InspectPayload) (string, error) {
 	manifest, _ := payload["manifest"].(map[string]any)

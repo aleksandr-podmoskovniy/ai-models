@@ -53,28 +53,42 @@ func dmcrGCRequestSecretName(ownerUID types.UID) string {
 }
 
 func buildDMCRGCRequestSecret(namespace string, owner cleanupJobOwner, directUploadSessionToken string) *corev1.Secret {
-	requestedAt := time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
-	annotations := map[string]string{
-		dmcrGCRequestedAnnotationKey: requestedAt,
-		dmcrGCSwitchAnnotationKey:    requestedAt,
-		dmcrGCDirectUploadModeKey:    dmcrGCDirectUploadModeFast,
-	}
-	data := map[string][]byte(nil)
-	if token := strings.TrimSpace(directUploadSessionToken); token != "" {
-		data = map[string][]byte{
-			dmcrGCDirectUploadTokenKey: []byte(token),
-		}
-	}
-
-	return &corev1.Secret{
+	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        dmcrGCRequestSecretName(owner.UID),
-			Namespace:   namespace,
-			Labels:      garbageCollectionRequestLabels(owner),
-			Annotations: annotations,
+			Name:      dmcrGCRequestSecretName(owner.UID),
+			Namespace: namespace,
 		},
 		Type: corev1.SecretTypeOpaque,
-		Data: data,
+	}
+	armDMCRGCRequestSecret(secret, owner, directUploadSessionToken)
+	return secret
+}
+
+func armDMCRGCRequestSecret(secret *corev1.Secret, owner cleanupJobOwner, directUploadSessionToken string) {
+	requestedAt := time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
+	secret.Labels = mergeLabels(secret.Labels, garbageCollectionRequestLabels(owner))
+	if secret.Annotations == nil {
+		secret.Annotations = make(map[string]string, 3)
+	}
+	secret.Annotations[dmcrGCRequestedAnnotationKey] = requestedAt
+	secret.Annotations[dmcrGCSwitchAnnotationKey] = requestedAt
+	secret.Annotations[dmcrGCDirectUploadModeKey] = dmcrGCDirectUploadModeFast
+	delete(secret.Annotations, dmcrGCDoneAnnotationKey)
+
+	token := strings.TrimSpace(directUploadSessionToken)
+	if token != "" {
+		if secret.Data == nil {
+			secret.Data = make(map[string][]byte, 1)
+		}
+		secret.Data[dmcrGCDirectUploadTokenKey] = []byte(token)
+		return
+	}
+	if len(secret.Data) == 0 {
+		return
+	}
+	delete(secret.Data, dmcrGCDirectUploadTokenKey)
+	if len(secret.Data) == 0 {
+		secret.Data = nil
 	}
 }
 
@@ -108,26 +122,7 @@ func (r *baseReconciler) ensureGarbageCollectionRequest(ctx context.Context, own
 	case err != nil:
 		return err
 	default:
-		existing.Labels = mergeLabels(existing.Labels, garbageCollectionRequestLabels(owner))
-		if existing.Annotations == nil {
-			existing.Annotations = make(map[string]string, 3)
-		}
-		requestedAt := time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
-		existing.Annotations[dmcrGCRequestedAnnotationKey] = requestedAt
-		existing.Annotations[dmcrGCSwitchAnnotationKey] = requestedAt
-		existing.Annotations[dmcrGCDirectUploadModeKey] = dmcrGCDirectUploadModeFast
-		delete(existing.Annotations, dmcrGCDoneAnnotationKey)
-		if token := strings.TrimSpace(sessionToken); token != "" {
-			if existing.Data == nil {
-				existing.Data = make(map[string][]byte, 1)
-			}
-			existing.Data[dmcrGCDirectUploadTokenKey] = []byte(token)
-		} else if len(existing.Data) > 0 {
-			delete(existing.Data, dmcrGCDirectUploadTokenKey)
-			if len(existing.Data) == 0 {
-				existing.Data = nil
-			}
-		}
+		armDMCRGCRequestSecret(&existing, owner, sessionToken)
 		return r.client.Update(ctx, &existing)
 	}
 }

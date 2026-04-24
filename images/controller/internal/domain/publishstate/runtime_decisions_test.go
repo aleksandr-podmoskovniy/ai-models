@@ -136,12 +136,7 @@ func TestObserveUploadSession(t *testing.T) {
 		ExternalURL:  "https://ai-models.example.com/upload/token",
 		InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
 		Repository:   "registry.example/upload",
-		TokenSecretRef: &modelsv1alpha1.UploadTokenSecretReference{
-			Namespace: "team-a",
-			Name:      "upload-token",
-			Key:       "authorizationHeaderValue",
-		},
-		ExpiresAt: &expiresAt,
+		ExpiresAt:    &expiresAt,
 	}
 
 	testCases := []struct {

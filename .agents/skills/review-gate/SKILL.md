@@ -63,6 +63,12 @@ description: Use at the end of any substantial task. Reviews the diff against th
      - who consumes them?
      - are they a source of truth or only audit/history?
      - do they duplicate public `status` or another backend state machine?
+   - for any DKP user-facing API/auth/exposure/RBAC/runtime entrypoint change, ask explicitly:
+     - which access levels/personas are covered?
+     - is the scope namespaced or cluster-wide?
+     - which verbs are allowed?
+     - which sensitive paths are intentionally denied?
+     - what render, kubeconform, or access-review evidence proves it?
    - for any large-model claim, require a concrete worst-case resource answer
      instead of prose like "uses staging" or "publishes asynchronously"
 8. If the task was substantial or used delegation, confirm whether a final `reviewer` pass is still required.

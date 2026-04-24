@@ -27,9 +27,6 @@ import (
 )
 
 func TestMirrorHuggingFaceSnapshotFilesResumesMultipartUpload(t *testing.T) {
-	previousBaseURL := huggingFaceBaseURL
-	t.Cleanup(func() { huggingFaceBaseURL = previousBaseURL })
-
 	var rangeHeader string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		rangeHeader = request.Header.Get("Range")
@@ -40,17 +37,10 @@ func TestMirrorHuggingFaceSnapshotFilesResumesMultipartUpload(t *testing.T) {
 		_, _ = writer.Write([]byte("defghi"))
 	}))
 	defer server.Close()
-	huggingFaceBaseURL = server.URL
+	withHuggingFaceBaseURL(t, server.URL)
 
 	mirrorClient := newFakeMirrorUploadStaging(t)
-	snapshot := &SourceMirrorSnapshot{
-		Locator: sourcemirrorports.SnapshotLocator{
-			Provider: "huggingface",
-			Subject:  "owner/model",
-			Revision: "deadbeef",
-		},
-		CleanupPrefix: "raw/1111-2222/source-url/.mirror/huggingface/owner/model/deadbeef",
-	}
+	snapshot := newTestSourceMirrorSnapshot()
 	mirrorKey := sourcemirrorports.SnapshotFileObjectKey(snapshot.CleanupPrefix, "model.safetensors")
 	mirrorClient.seedMultipartUpload("upload-1")
 	mirrorClient.seedUploadedPart("upload-1", 1, []byte("abc"))
@@ -77,8 +67,8 @@ func TestMirrorHuggingFaceSnapshotFilesResumesMultipartUpload(t *testing.T) {
 		Bucket:     "artifacts",
 		Client:     mirrorClient,
 		Store:      store,
-		BasePrefix: "raw/1111-2222/source-url/.mirror",
-	}, "owner/model", "deadbeef", "hf-token", []string{"model.safetensors"}, snapshot)
+		BasePrefix: testSourceMirrorBasePrefix,
+	}, testHuggingFaceSubject, testHuggingFaceRevision, testHuggingFaceToken, []string{"model.safetensors"}, snapshot)
 	if err != nil {
 		t.Fatalf("mirrorHuggingFaceSnapshotFiles() error = %v", err)
 	}

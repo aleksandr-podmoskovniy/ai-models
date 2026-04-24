@@ -21,10 +21,12 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func summarizeTarSafetensorsArchiveFromReader(path string, stream io.Reader, rootPrefix string, selectedFiles []string) ([]byte, int64, error) {
-	reader, closeArchive, err := newClosableTarReader(path, stream)
+	reader, closeArchive, err := archiveio.NewClosableTarReader(path, stream)
 	if err != nil {
 		return nil, 0, err
 	}

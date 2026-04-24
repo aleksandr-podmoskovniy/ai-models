@@ -22,6 +22,7 @@ import (
 	"io"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func InspectZipModelArchiveReaderAt(
@@ -31,7 +32,7 @@ func InspectZipModelArchiveReaderAt(
 	requested modelsv1alpha1.ModelInputFormat,
 ) (ArchiveInspection, error) {
 	switch {
-	case !isZipArchive(path):
+	case !archiveio.IsZipArchive(path):
 		return ArchiveInspection{}, errors.New("streaming zip archive inspection only supports .zip")
 	case sizeBytes <= 0:
 		return ArchiveInspection{}, errors.New("streaming zip archive inspection requires positive archive size")

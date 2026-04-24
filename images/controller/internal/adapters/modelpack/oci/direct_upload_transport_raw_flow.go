@@ -20,10 +20,8 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"hash"
 	"log/slog"
-	"time"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
@@ -46,6 +44,13 @@ func prepareRawDirectUpload(
 	plan publishLayerDescriptor,
 	checkpoint *directUploadCheckpoint,
 ) (*directUploadClient, rawDirectUploadState, error) {
+	totalSize, err := rawPublishLayerSize(layer)
+	if err != nil {
+		return nil, rawDirectUploadState{}, err
+	}
+	if totalSize <= 0 {
+		return nil, rawDirectUploadState{}, errors.New("raw ModelPack layer size must be positive")
+	}
 	parsedReference, err := parseOCIReference(input.ArtifactURI)
 	if err != nil {
 		return nil, rawDirectUploadState{}, err
@@ -54,16 +59,7 @@ func prepareRawDirectUpload(
 	if err != nil {
 		return nil, rawDirectUploadState{}, err
 	}
-
-	totalSize, err := rawPublishLayerSize(layer)
-	if err != nil {
-		return nil, rawDirectUploadState{}, err
-	}
-	if totalSize <= 0 {
-		return nil, rawDirectUploadState{}, errors.New("raw ModelPack layer size must be positive")
-	}
-
-	session, uploadedParts, current, hasher, offset, partNumber, err := openRawDirectUploadSession(
+	session, uploadedParts, current, nextHasher, offset, partNumber, err := openRawDirectUploadSession(
 		ctx,
 		helperClient,
 		parsedReference.Repository,
@@ -83,7 +79,7 @@ func prepareRawDirectUpload(
 		session:       session,
 		uploadedParts: uploadedParts,
 		current:       current,
-		hasher:        hasher,
+		hasher:        nextHasher,
 		totalSize:     totalSize,
 		offset:        offset,
 		partNumber:    partNumber,
@@ -98,49 +94,39 @@ func uploadRawDirectLayerParts(
 	state *rawDirectUploadState,
 ) error {
 	for state.offset < state.totalSize {
-		if err := uploadNextRawDirectLayerPart(ctx, helperClient, layer, checkpoint, state); err != nil {
+		chunkLength := nextDirectUploadChunkLength(state.offset, state.totalSize, state.session.PartSizeBytes)
+		payload, err := readPublishLayerChunk(ctx, layer, state.offset, chunkLength)
+		if err != nil {
+			return err
+		}
+
+		state.uploadedParts, err = uploadOrRecoverRawDirectBlobPart(
+			ctx,
+			helperClient,
+			state.session.SessionToken,
+			payload,
+			state.partNumber,
+			state.uploadedParts,
+		)
+		if err != nil {
+			return err
+		}
+		if _, err := state.hasher.Write(payload); err != nil {
+			return err
+		}
+
+		state.offset += int64(len(payload))
+		state.partNumber++
+		state.current.UploadedSizeBytes = state.offset
+		state.current.DigestState, err = marshalDirectUploadDigestState(state.hasher)
+		if err != nil {
+			return err
+		}
+		if err := checkpoint.saveRunningLayer(ctx, state.current, modelpackports.DirectUploadStateStageUploading); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func uploadNextRawDirectLayerPart(
-	ctx context.Context,
-	helperClient *directUploadClient,
-	layer modelpackports.PublishLayer,
-	checkpoint *directUploadCheckpoint,
-	state *rawDirectUploadState,
-) error {
-	chunkLength := nextDirectUploadChunkLength(state.offset, state.totalSize, state.session.PartSizeBytes)
-	payload, err := readPublishLayerChunk(ctx, layer, state.offset, chunkLength)
-	if err != nil {
-		return err
-	}
-
-	state.uploadedParts, err = uploadOrRecoverRawDirectBlobPart(
-		ctx,
-		helperClient,
-		state.session.SessionToken,
-		payload,
-		state.partNumber,
-		state.uploadedParts,
-	)
-	if err != nil {
-		return err
-	}
-	if _, err := state.hasher.Write(payload); err != nil {
-		return err
-	}
-
-	state.offset += int64(len(payload))
-	state.partNumber++
-	state.current.UploadedSizeBytes = state.offset
-	state.current.DigestState, err = marshalDirectUploadDigestState(state.hasher)
-	if err != nil {
-		return err
-	}
-	return checkpoint.saveRunningLayer(ctx, state.current, modelpackports.DirectUploadStateStageUploading)
 }
 
 func finalizeRawDirectUpload(
@@ -152,49 +138,33 @@ func finalizeRawDirectUpload(
 	logger *slog.Logger,
 ) (publishLayerDescriptor, error) {
 	expectedDigest := "sha256:" + hex.EncodeToString(state.hasher.Sum(nil))
-	if err := checkpoint.markSealing(ctx, state.current); err != nil {
-		return publishLayerDescriptor{}, err
-	}
-	completeStarted := time.Now()
-	if logger != nil {
-		logger.Info(
-			"native modelpack direct upload sealing started",
-			slog.String("layerTargetPath", plan.TargetPath),
-			slog.String("expectedLayerDigest", expectedDigest),
-			slog.Int64("expectedLayerSizeBytes", state.totalSize),
-			slog.Int("uploadedPartCount", len(state.uploadedParts)),
-		)
-	}
-	completeResult, err := helperClient.complete(ctx, state.session.SessionToken, expectedDigest, state.totalSize, state.uploadedParts)
-	if err != nil {
-		return publishLayerDescriptor{}, err
-	}
-	if completeResult.SizeBytes != state.totalSize {
-		return publishLayerDescriptor{}, fmt.Errorf("DMCR verified sizeBytes %d does not match layer sizeBytes %d", completeResult.SizeBytes, state.totalSize)
-	}
-	if completeResult.Digest != expectedDigest {
-		return publishLayerDescriptor{}, fmt.Errorf("DMCR verified digest %q does not match locally computed digest %q", completeResult.Digest, expectedDigest)
-	}
-	descriptor := publishLayerDescriptor{
-		Digest:      completeResult.Digest,
-		DiffID:      completeResult.Digest,
-		Size:        completeResult.SizeBytes,
-		MediaType:   plan.MediaType,
-		TargetPath:  plan.TargetPath,
-		Base:        plan.Base,
-		Format:      plan.Format,
-		Compression: modelpackports.LayerCompressionNone,
-	}
-	if logger != nil {
-		logger.Info(
-			"native modelpack direct upload sealing completed",
-			slog.String("layerTargetPath", descriptor.TargetPath),
-			slog.String("layerDigest", descriptor.Digest),
-			slog.Int64("durationMs", time.Since(completeStarted).Milliseconds()),
-		)
-	}
-	if err := checkpoint.markLayerCompleted(ctx, descriptor); err != nil {
-		return publishLayerDescriptor{}, err
-	}
-	return descriptor, nil
+	return completeDirectUpload(
+		ctx,
+		helperClient,
+		checkpoint,
+		state.session,
+		state.current,
+		state.uploadedParts,
+		expectedDigest,
+		state.totalSize,
+		logger,
+		func(result directUploadCompleteResult) (publishLayerDescriptor, error) {
+			if err := verifyDirectUploadCompleteResult(result, expectedDigest, state.totalSize); err != nil {
+				return publishLayerDescriptor{}, err
+			}
+			return publishLayerDescriptor{
+				Digest:      result.Digest,
+				DiffID:      result.Digest,
+				Size:        result.SizeBytes,
+				MediaType:   plan.MediaType,
+				TargetPath:  plan.TargetPath,
+				Base:        plan.Base,
+				Format:      plan.Format,
+				Compression: modelpackports.LayerCompressionNone,
+			}, nil
+		},
+		"layerTargetPath", plan.TargetPath,
+		"expectedLayerDigest", expectedDigest,
+		"expectedLayerSizeBytes", state.totalSize,
+	)
 }

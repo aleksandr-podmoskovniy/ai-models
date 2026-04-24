@@ -17,83 +17,32 @@ limitations under the License.
 package sourcefetch
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 )
 
 func TestFetchRemoteModelHuggingFaceFailsWhenRemoteProfileSummaryCannotBeResolved(t *testing.T) {
-	previousInfoFetcher := fetchHuggingFaceInfoFunc
-	previousProfileSummaryFetcher := fetchHuggingFaceProfileSummaryFunc
-	t.Cleanup(func() {
-		fetchHuggingFaceInfoFunc = previousInfoFetcher
-		fetchHuggingFaceProfileSummaryFunc = previousProfileSummaryFetcher
-	})
+	stubDefaultHuggingFaceInfo(t)
+	stubUnavailableHuggingFaceProfileSummary(t)
 
-	fetchHuggingFaceInfoFunc = func(context.Context, string, string, string) (HuggingFaceInfo, error) {
-		return HuggingFaceInfo{
-			ID:          "owner/model",
-			SHA:         "deadbeef",
-			PipelineTag: "text-generation",
-			License:     "apache-2.0",
-			Files:       []string{"config.json", "model.safetensors"},
-		}, nil
-	}
-	fetchHuggingFaceProfileSummaryFunc = func(context.Context, RemoteOptions, string, string, modelsv1alpha1.ModelInputFormat, []string) (*RemoteProfileSummary, error) {
-		return nil, errors.New("summary unavailable")
-	}
-
-	_, err := FetchRemoteModel(t.Context(), RemoteOptions{
-		URL:                      "https://huggingface.co/owner/model?revision=main",
-		HFToken:                  "hf-token",
-		SkipLocalMaterialization: true,
-	})
+	_, err := fetchTestHuggingFaceRemote(t, nil)
 	if err == nil {
 		t.Fatal("expected missing remote profile summary to fail")
 	}
 }
 
 func TestFetchRemoteModelHuggingFaceFailsWhenDirectObjectSourcePlanningFails(t *testing.T) {
-	previousInfoFetcher := fetchHuggingFaceInfoFunc
-	previousBaseURL := huggingFaceBaseURL
-	previousProfileSummaryFetcher := fetchHuggingFaceProfileSummaryFunc
-	t.Cleanup(func() {
-		fetchHuggingFaceInfoFunc = previousInfoFetcher
-		huggingFaceBaseURL = previousBaseURL
-		fetchHuggingFaceProfileSummaryFunc = previousProfileSummaryFetcher
-	})
-
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		http.NotFound(writer, request)
 	}))
 	defer server.Close()
 
-	fetchHuggingFaceInfoFunc = func(context.Context, string, string, string) (HuggingFaceInfo, error) {
-		return HuggingFaceInfo{
-			ID:          "owner/model",
-			SHA:         "deadbeef",
-			PipelineTag: "text-generation",
-			License:     "apache-2.0",
-			Files:       []string{"config.json", "model.safetensors"},
-		}, nil
-	}
-	fetchHuggingFaceProfileSummaryFunc = func(context.Context, RemoteOptions, string, string, modelsv1alpha1.ModelInputFormat, []string) (*RemoteProfileSummary, error) {
-		return &RemoteProfileSummary{
-			ConfigPayload: []byte(`{"architectures":["LlamaForCausalLM"]}`),
-			WeightBytes:   14,
-		}, nil
-	}
-	huggingFaceBaseURL = server.URL
+	stubDefaultHuggingFaceInfo(t)
+	stubHuggingFaceProfileSummary(t, defaultHuggingFaceProfileSummary(), nil)
+	withHuggingFaceBaseURL(t, server.URL)
 
-	_, err := FetchRemoteModel(t.Context(), RemoteOptions{
-		URL:                      "https://huggingface.co/owner/model?revision=main",
-		HFToken:                  "hf-token",
-		SkipLocalMaterialization: true,
-	})
+	_, err := fetchTestHuggingFaceRemote(t, nil)
 	if err == nil {
 		t.Fatal("expected direct object-source planning failure to fail publish source preparation")
 	}

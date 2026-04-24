@@ -30,7 +30,7 @@
 - больше одной области репозитория;
 - layout, build shell, CI shell или module boundaries;
 - values/OpenAPI/API contract;
-- auth, storage, ingress/TLS, observability, HA;
+- auth/RBAC, storage, ingress/TLS, observability, HA;
 - upstream patching/rebase или phase boundary.
 
 ## Что делает человек
@@ -58,6 +58,9 @@
 - что не входит в scope;
 - какие критерии приёмки;
 - какие риски.
+- если задача меняет DKP user-facing API/auth/RBAC/exposure/runtime
+  entrypoints, какие access levels/personas, scope, verbs и intentional deny
+  paths должны быть покрыты.
 
 `PLAN.ru.md` отвечает на вопросы:
 - какие slice нужны;

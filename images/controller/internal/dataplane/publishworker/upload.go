@@ -30,6 +30,7 @@ import (
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func publishFromUpload(ctx context.Context, options Options) (publicationartifact.Result, error) {
@@ -220,12 +221,5 @@ func resolveDirectUploadInputFormat(uploadPath string, requested modelsv1alpha1.
 }
 
 func isArchiveUploadPath(uploadPath string) bool {
-	lowerPath := strings.ToLower(strings.TrimSpace(uploadPath))
-	return strings.HasSuffix(lowerPath, ".tar") ||
-		strings.HasSuffix(lowerPath, ".tar.gz") ||
-		strings.HasSuffix(lowerPath, ".tgz") ||
-		strings.HasSuffix(lowerPath, ".tar.zst") ||
-		strings.HasSuffix(lowerPath, ".tar.zstd") ||
-		strings.HasSuffix(lowerPath, ".tzst") ||
-		strings.HasSuffix(lowerPath, ".zip")
+	return archiveio.IsTarArchive(uploadPath) || archiveio.IsZipArchive(uploadPath)
 }

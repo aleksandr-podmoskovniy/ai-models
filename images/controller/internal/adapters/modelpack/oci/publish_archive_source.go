@@ -18,10 +18,7 @@ package oci
 
 import (
 	"archive/tar"
-	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -30,7 +27,7 @@ import (
 	"strings"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
-	"github.com/klauspost/compress/zstd"
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func describeArchiveSourcePublishLayer(
@@ -42,63 +39,15 @@ func describeArchiveSourcePublishLayer(
 		return publishLayerDescriptor{}, err
 	}
 
-	diffHasher := sha256.New()
-	blobHasher := sha256.New()
-	counter := &countWriter{}
-	compressedSink := io.MultiWriter(blobHasher, counter)
-
-	archiveWriter, err := newArchiveWriter(compressedSink, layer.Compression)
-	if err != nil {
-		return publishLayerDescriptor{}, err
-	}
-	tarSink := io.MultiWriter(diffHasher, archiveWriter)
-	if err := writeLayerArchiveFromArchiveSource(ctx, tarSink, layer); err != nil {
-		_ = archiveWriter.Close()
-		return publishLayerDescriptor{}, err
-	}
-	if err := archiveWriter.Close(); err != nil {
-		return publishLayerDescriptor{}, err
-	}
-
-	return publishLayerDescriptor{
-		Digest:      "sha256:" + hex.EncodeToString(blobHasher.Sum(nil)),
-		DiffID:      "sha256:" + hex.EncodeToString(diffHasher.Sum(nil)),
-		Size:        counter.n,
-		MediaType:   mediaType,
-		TargetPath:  filepath.ToSlash(strings.TrimSpace(layer.TargetPath)),
-		Base:        layer.Base,
-		Format:      layer.Format,
-		Compression: normalizedArchiveCompression(layer.Compression),
-	}, nil
+	return describeGeneratedArchiveLayer(layer, mediaType, func(writer io.Writer) error {
+		return writeLayerArchiveFromArchiveSource(ctx, writer, layer)
+	})
 }
 
 func openArchiveSourceLayerRange(ctx context.Context, layer modelpackports.PublishLayer, offset, length int64) (io.ReadCloser, error) {
-	reader, writer := io.Pipe()
-	go func() {
-		archiveWriter, openErr := newArchiveWriter(writer, layer.Compression)
-		if openErr != nil {
-			_ = writer.CloseWithError(openErr)
-			return
-		}
-		writeErr := writeLayerArchiveFromArchiveSource(ctx, archiveWriter, layer)
-		closeErr := archiveWriter.Close()
-		if writeErr != nil {
-			_ = writer.CloseWithError(writeErr)
-			return
-		}
-		_ = writer.CloseWithError(closeErr)
-	}()
-
-	stream := &archivePipeStream{reader: reader}
-	body := io.Reader(stream.reader)
-	if offset > 0 {
-		body = &offsetReader{reader: body, offset: offset}
-	}
-	if length >= 0 {
-		body = io.LimitReader(body, length)
-	}
-
-	return &archiveRangeReader{body: body, stream: stream}, nil
+	return openGeneratedArchiveLayerRange(layer, offset, length, func(writer io.Writer) error {
+		return writeLayerArchiveFromArchiveSource(ctx, writer, layer)
+	})
 }
 
 func validateArchiveSourceLayer(layer modelpackports.PublishLayer) error {
@@ -109,7 +58,7 @@ func validateArchiveSourceLayer(layer modelpackports.PublishLayer) error {
 		return fmt.Errorf("archive source layer %q must publish as tar", layer.SourcePath)
 	}
 	lowerPath := strings.ToLower(strings.TrimSpace(layer.SourcePath))
-	if !(strings.HasSuffix(lowerPath, ".tar") || strings.HasSuffix(lowerPath, ".tar.gz") || strings.HasSuffix(lowerPath, ".tgz") || strings.HasSuffix(lowerPath, ".tar.zst") || strings.HasSuffix(lowerPath, ".tar.zstd") || strings.HasSuffix(lowerPath, ".tzst") || strings.HasSuffix(lowerPath, ".zip")) {
+	if !archiveio.IsTarArchive(lowerPath) && !archiveio.IsZipArchive(lowerPath) {
 		return fmt.Errorf("archive source layer %q must point to .tar, .tar.gz, .tgz, .tar.zst, .tar.zstd, .tzst or .zip", layer.SourcePath)
 	}
 	if layer.Archive.Reader != nil && strings.HasSuffix(lowerPath, ".zip") {
@@ -168,7 +117,7 @@ func writeLayerArchiveFromArchiveSource(ctx context.Context, writer io.Writer, l
 }
 
 func selectArchiveSourceEntry(header *tar.Header, layer modelpackports.PublishLayer) (string, bool, error) {
-	relative, err := archiveRelativePath(header.Name)
+	relative, err := archiveio.RelativePath(header.Name)
 	if err != nil {
 		return "", false, err
 	}
@@ -232,7 +181,7 @@ func openTarArchiveSource(ctx context.Context, layer modelpackports.PublishLayer
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		reader, closeArchive, err := openTarArchiveSourceReader(layer.SourcePath, object.Body)
+		reader, closeArchive, err := archiveio.NewClosableTarReader(layer.SourcePath, object.Body)
 		if err != nil {
 			_ = object.Body.Close()
 			return nil, nil, nil, err
@@ -243,32 +192,10 @@ func openTarArchiveSource(ctx context.Context, layer modelpackports.PublishLayer
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	reader, closeArchive, err := openTarArchiveSourceReader(layer.SourcePath, stream)
+	reader, closeArchive, err := archiveio.NewClosableTarReader(layer.SourcePath, stream)
 	if err != nil {
 		stream.Close()
 		return nil, nil, nil, err
 	}
 	return stream, reader, closeArchive, nil
-}
-
-func openTarArchiveSourceReader(path string, stream io.Reader) (*tar.Reader, func() error, error) {
-	lowerPath := strings.ToLower(strings.TrimSpace(path))
-	if strings.HasSuffix(lowerPath, ".tar.gz") || strings.HasSuffix(lowerPath, ".tgz") {
-		gzipReader, err := gzip.NewReader(stream)
-		if err != nil {
-			return nil, nil, err
-		}
-		return tar.NewReader(gzipReader), gzipReader.Close, nil
-	}
-	if strings.HasSuffix(lowerPath, ".tar.zst") || strings.HasSuffix(lowerPath, ".tar.zstd") || strings.HasSuffix(lowerPath, ".tzst") {
-		decoder, err := zstd.NewReader(stream)
-		if err != nil {
-			return nil, nil, err
-		}
-		return tar.NewReader(decoder), func() error {
-			decoder.Close()
-			return nil
-		}, nil
-	}
-	return tar.NewReader(stream), func() error { return nil }, nil
 }

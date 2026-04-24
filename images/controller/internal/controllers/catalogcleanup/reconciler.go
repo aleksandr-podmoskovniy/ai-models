@@ -52,7 +52,7 @@ func (r *baseReconciler) reconcile(ctx context.Context, object client.Object) (c
 }
 
 func (r *baseReconciler) reconcileActive(ctx context.Context, object client.Object) (ctrl.Result, error) {
-	decision, err := deletionapp.EnsureCleanupFinalizer(observeFinalizerGuard(object))
+	decision, err := deletionapp.EnsureCleanupFinalizer(r.observeFinalizerGuard(ctx, object))
 	if err != nil {
 		return ctrl.Result{}, err
 	}

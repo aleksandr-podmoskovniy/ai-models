@@ -25,6 +25,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func inspectZipModelArchive(path string, requested modelsv1alpha1.ModelInputFormat) (ArchiveInspection, error) {
@@ -106,14 +107,14 @@ func inspectZipArchiveFiles(files []*zip.File, requested modelsv1alpha1.ModelInp
 }
 
 func classifyZipArchiveEntry(file *zip.File) (string, bool, error) {
-	relative, err := archiveRelativePath(file.Name)
+	relative, err := archiveio.RelativePath(file.Name)
 	if err != nil {
 		return "", false, err
 	}
 	if file.FileInfo().IsDir() {
 		return relative, false, nil
 	}
-	if isZipSymlink(file) {
+	if archiveio.IsZipSymlink(file) {
 		return "", false, errors.New("refusing to inspect symbolic link zip entry")
 	}
 	return relative, true, nil

@@ -221,33 +221,16 @@ paths и test surfaces.
   - `upload_probe_test.go`
   - `upload_probe_shape_test.go`
 
-### `internal/application/publishplan`
-
-- Decision surface:
-  - source-worker vs upload-session planning
-  - source auth secret projection
-  - upload-session issuance policy
-- Primary evidence:
-  - `start_publication_test.go`
-  - `plan_source_worker_test.go`
-  - `issue_upload_session_test.go`
-
 ### `internal/application/publishobserve`
 
 - Decision surface:
   - runtime result decoding
   - worker/session observation mapping
-  - reconcile gating
   - status mutation planning
 - Primary evidence:
-  - `ensure_runtime_source_worker_test.go`
-  - `ensure_runtime_upload_test.go`
-  - `ensure_runtime_failure_test.go`
-  - `ensure_runtime_clock_test.go`
   - `observe_runtime_test.go`
   - `observe_source_worker_test.go`
   - `observe_upload_session_test.go`
-  - `reconcile_gate_test.go`
   - `status_mutation_test.go`
 
 ### `internal/application/sourceadmission`
@@ -371,7 +354,6 @@ paths и test surfaces.
 - Primary evidence:
   - `internal/ports/sourcemirror/contract_test.go`
   - `internal/ports/publishop/operation_contract_test.go`
-  - `internal/ports/publishop/ports_test.go`
 
 ## 4. K8s adapter evidence
 
@@ -569,6 +551,8 @@ paths и test surfaces.
 - `catalogstatus`:
   - `reconciler_test.go`
   - `reconciler_upload_test.go`
+  - `runtime_mode_test.go`
+  - `runtime_observation_test.go`
   - `runtime_fakes_test.go`
   - `reconciler_test_helpers_test.go`
   - `runtime_handle_test_helpers_test.go`

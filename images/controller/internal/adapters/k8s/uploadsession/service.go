@@ -52,11 +52,10 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 		return nil, false, errors.New("upload session owner must not be nil")
 	}
 
-	plan, err := requestPlan(request)
-	if err != nil {
+	if err := validateRequest(request); err != nil {
 		return nil, false, err
 	}
-	sessionSecret, session, rawToken, created, err := s.materializeSession(ctx, owner, request, plan)
+	sessionSecret, session, rawToken, created, err := s.materializeSession(ctx, owner, request)
 	if err != nil {
 		return nil, false, err
 	}

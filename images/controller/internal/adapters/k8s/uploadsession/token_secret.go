@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsessionstate"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
@@ -36,25 +35,31 @@ import (
 
 const TokenSecretAuthorizationHeaderKey = "authorizationHeaderValue"
 
+type tokenSecretReference struct {
+	Namespace string
+	Name      string
+	Key       string
+}
+
 func (s *Service) ensureTokenSecret(
 	ctx context.Context,
 	owner client.Object,
 	session *uploadsessionstate.Session,
 	rawToken string,
-) (modelsv1alpha1.UploadTokenSecretReference, error) {
+) (tokenSecretReference, error) {
 	if owner == nil {
-		return modelsv1alpha1.UploadTokenSecretReference{}, errors.New("upload session owner must not be nil")
+		return tokenSecretReference{}, errors.New("upload session owner must not be nil")
 	}
 	if session == nil {
-		return modelsv1alpha1.UploadTokenSecretReference{}, errors.New("upload session must not be nil")
+		return tokenSecretReference{}, errors.New("upload session must not be nil")
 	}
 	headerValue := buildAuthorizationHeaderValue(rawToken)
 	if headerValue == "" {
-		return modelsv1alpha1.UploadTokenSecretReference{}, errors.New("upload session token must not be empty")
+		return tokenSecretReference{}, errors.New("upload session token must not be empty")
 	}
 	name, namespace, err := tokenSecretObjectKey(owner.GetUID(), owner.GetNamespace(), s.options.Runtime.Namespace)
 	if err != nil {
-		return modelsv1alpha1.UploadTokenSecretReference{}, err
+		return tokenSecretReference{}, err
 	}
 	ownerKind, ownerName, ownerUID, ownerNamespace := tokenSecretOwnerMetadata(owner, session)
 
@@ -82,7 +87,7 @@ func (s *Service) ensureTokenSecret(
 
 	created, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, owner, desired)
 	if err != nil {
-		return modelsv1alpha1.UploadTokenSecretReference{}, err
+		return tokenSecretReference{}, err
 	}
 	if !created && tokenSecretNeedsUpdate(desired, headerValue, session) {
 		desired.Type = corev1.SecretTypeOpaque
@@ -102,11 +107,11 @@ func (s *Service) ensureTokenSecret(
 		}
 		desired.Data[TokenSecretAuthorizationHeaderKey] = []byte(headerValue)
 		if err := s.client.Update(ctx, desired); err != nil {
-			return modelsv1alpha1.UploadTokenSecretReference{}, err
+			return tokenSecretReference{}, err
 		}
 	}
 
-	return modelsv1alpha1.UploadTokenSecretReference{
+	return tokenSecretReference{
 		Namespace: namespace,
 		Name:      name,
 		Key:       TokenSecretAuthorizationHeaderKey,

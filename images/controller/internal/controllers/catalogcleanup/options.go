@@ -21,6 +21,7 @@ import (
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/cleanupstate"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,9 +41,10 @@ type Options struct {
 }
 
 type baseReconciler struct {
-	client  client.Client
-	scheme  *runtime.Scheme
-	options Options
+	client       client.Client
+	scheme       *runtime.Scheme
+	options      Options
+	cleanupState *cleanupstate.Store
 }
 
 type ModelReconciler struct{ baseReconciler }
@@ -58,11 +60,16 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	if options.RequeueAfter <= 0 {
 		options.RequeueAfter = 5 * time.Second
 	}
+	cleanupState, err := cleanupstate.New(mgr.GetClient(), options.CleanupJob.Namespace)
+	if err != nil {
+		return err
+	}
 
 	base := baseReconciler{
-		client:  mgr.GetClient(),
-		scheme:  mgr.GetScheme(),
-		options: options,
+		client:       mgr.GetClient(),
+		scheme:       mgr.GetScheme(),
+		options:      options,
+		cleanupState: cleanupState,
 	}
 
 	if err := ctrl.NewControllerManagedBy(mgr).

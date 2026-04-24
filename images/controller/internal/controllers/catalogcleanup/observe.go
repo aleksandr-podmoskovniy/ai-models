@@ -30,8 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-func observeFinalizerGuard(object client.Object) deletionapp.EnsureCleanupFinalizerInput {
-	handle, found, err := cleanuphandle.FromObject(object)
+func (r *baseReconciler) observeFinalizerGuard(ctx context.Context, object client.Object) deletionapp.EnsureCleanupFinalizerInput {
+	handle, found, err := r.cleanupState.Get(ctx, object)
 	_ = handle
 	return deletionapp.EnsureCleanupFinalizerInput{
 		HasFinalizer: controllerutil.ContainsFinalizer(object, Finalizer),
@@ -51,7 +51,7 @@ func (r *baseReconciler) observeDelete(
 		return cleanuphandle.Handle{}, observation, nil
 	}
 
-	handle, found, err := cleanuphandle.FromObject(object)
+	handle, found, err := r.cleanupState.Get(ctx, object)
 	if err != nil {
 		observation.HandleErr = err
 		return cleanuphandle.Handle{}, observation, nil

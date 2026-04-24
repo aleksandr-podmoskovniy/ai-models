@@ -40,7 +40,7 @@ func directUploadProgress(state modelpackports.DirectUploadState) directUploadPr
 		switch state.Stage {
 		case modelpackports.DirectUploadStateStageStarting:
 			return directUploadProgressStatus{
-				Reason:   modelsv1alpha1.ModelConditionReasonPublicationStarted,
+				Reason:   modelsv1alpha1.ModelConditionReasonPublishing,
 				Progress: progress,
 				Message: fmt.Sprintf(
 					"controller started model artifact upload into the internal registry: %d/%d bytes uploaded",
@@ -50,7 +50,7 @@ func directUploadProgress(state modelpackports.DirectUploadState) directUploadPr
 			}
 		case modelpackports.DirectUploadStateStageResumed:
 			return directUploadProgressStatus{
-				Reason:   modelsv1alpha1.ModelConditionReasonPublicationResumed,
+				Reason:   modelsv1alpha1.ModelConditionReasonPublishing,
 				Progress: progress,
 				Message: fmt.Sprintf(
 					"controller resumed model artifact upload into the internal registry: %d/%d bytes uploaded",
@@ -60,7 +60,7 @@ func directUploadProgress(state modelpackports.DirectUploadState) directUploadPr
 			}
 		case modelpackports.DirectUploadStateStageSealing:
 			return directUploadProgressStatus{
-				Reason:   modelsv1alpha1.ModelConditionReasonPublicationSealing,
+				Reason:   modelsv1alpha1.ModelConditionReasonPublishing,
 				Progress: progress,
 				Message: fmt.Sprintf(
 					"controller is verifying and sealing the current model artifact layer in the internal registry after %d/%d uploaded bytes",
@@ -70,7 +70,7 @@ func directUploadProgress(state modelpackports.DirectUploadState) directUploadPr
 			}
 		default:
 			return directUploadProgressStatus{
-				Reason:   modelsv1alpha1.ModelConditionReasonPublicationUploading,
+				Reason:   modelsv1alpha1.ModelConditionReasonPublishing,
 				Progress: progress,
 				Message: fmt.Sprintf(
 					"controller is publishing the model artifact: %d/%d bytes uploaded into the internal registry",
@@ -84,7 +84,7 @@ func directUploadProgress(state modelpackports.DirectUploadState) directUploadPr
 	if len(state.CompletedLayers) > 0 {
 		if state.PlannedLayerCount > 0 {
 			return directUploadProgressStatus{
-				Reason:   modelsv1alpha1.ModelConditionReasonPublicationCommitted,
+				Reason:   modelsv1alpha1.ModelConditionReasonPublishing,
 				Progress: progress,
 				Message: fmt.Sprintf(
 					"controller is publishing the model artifact: %d/%d layer(s) already committed into the internal registry",
@@ -94,7 +94,7 @@ func directUploadProgress(state modelpackports.DirectUploadState) directUploadPr
 			}
 		}
 		return directUploadProgressStatus{
-			Reason:   modelsv1alpha1.ModelConditionReasonPublicationCommitted,
+			Reason:   modelsv1alpha1.ModelConditionReasonPublishing,
 			Progress: progress,
 			Message: fmt.Sprintf(
 				"controller is publishing the model artifact: %d layer(s) already committed into the internal registry",

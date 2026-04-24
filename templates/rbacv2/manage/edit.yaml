@@ -1,0 +1,23 @@
+{{- if (include "ai-models.isEnabled" .) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  labels:
+    heritage: deckhouse
+    module: ai-models
+    rbac.deckhouse.io/aggregate-to-kubernetes-as: manager
+    rbac.deckhouse.io/kind: manage
+    rbac.deckhouse.io/level: module
+    rbac.deckhouse.io/namespace: {{ include "ai-models.namespace" . }}
+  name: d8:manage:permission:module:ai-models:edit
+rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models", "clustermodels"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["deckhouse.io"]
+    resources: ["moduleconfigs"]
+    resourceNames: ["ai-models"]
+    verbs: ["create", "update", "patch", "delete"]
+{{- end }}

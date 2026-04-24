@@ -17,14 +17,14 @@ limitations under the License.
 package sourcefetch
 
 import (
-	"archive/tar"
 	"archive/zip"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func safeExtractTar(archivePath, destination string) error {
@@ -34,10 +34,11 @@ func safeExtractTar(archivePath, destination string) error {
 	}
 	defer file.Close()
 
-	reader, err := newTarReader(archivePath, file)
+	reader, closeArchive, err := archiveio.NewClosableTarReader(archivePath, file)
 	if err != nil {
 		return err
 	}
+	defer func() { _ = closeArchive() }()
 
 	for {
 		header, err := reader.Next()
@@ -48,28 +49,13 @@ func safeExtractTar(archivePath, destination string) error {
 			return err
 		}
 
-		target, err := archiveTargetPath(destination, header.Name)
+		target, err := archiveio.TargetPath(destination, header.Name)
 		if err != nil {
 			return err
 		}
-		if err := extractTarEntry(reader, header, target); err != nil {
+		if err := archiveio.ExtractTarEntry(reader, header, target); err != nil {
 			return err
 		}
-	}
-}
-
-func extractTarEntry(reader *tar.Reader, header *tar.Header, target string) error {
-	switch header.Typeflag {
-	case tar.TypeDir:
-		return os.MkdirAll(target, 0o755)
-	case tar.TypeReg, tar.TypeRegA:
-		return writeExtractedFile(target, reader)
-	case tar.TypeSymlink:
-		return fmt.Errorf("refusing to extract symbolic link tar entry %q", header.Name)
-	case tar.TypeLink:
-		return fmt.Errorf("refusing to extract hard link tar entry %q", header.Name)
-	default:
-		return fmt.Errorf("refusing to extract unsupported tar entry %q", header.Name)
 	}
 }
 
@@ -81,7 +67,7 @@ func safeExtractZip(archivePath, destination string) error {
 	defer archive.Close()
 
 	for _, file := range archive.File {
-		target, err := archiveTargetPath(destination, file.Name)
+		target, err := archiveio.TargetPath(destination, file.Name)
 		if err != nil {
 			return err
 		}
@@ -91,7 +77,7 @@ func safeExtractZip(archivePath, destination string) error {
 			}
 			continue
 		}
-		if isZipSymlink(file) {
+		if archiveio.IsZipSymlink(file) {
 			return fmt.Errorf("refusing to extract symbolic link zip entry %q", file.Name)
 		}
 
@@ -99,7 +85,7 @@ func safeExtractZip(archivePath, destination string) error {
 		if err != nil {
 			return err
 		}
-		if err := writeExtractedFile(target, reader); err != nil {
+		if err := archiveio.WriteExtractedFile(target, reader); err != nil {
 			reader.Close()
 			return err
 		}
@@ -109,41 +95,6 @@ func safeExtractZip(archivePath, destination string) error {
 	}
 
 	return nil
-}
-
-func archiveTargetPath(destination, name string) (string, error) {
-	relative, err := archiveRelativePath(name)
-	if err != nil {
-		return "", err
-	}
-	if relative == "." {
-		return destination, nil
-	}
-	return filepath.Join(destination, relative), nil
-}
-
-func archiveRelativePath(name string) (string, error) {
-	rawName := strings.TrimSpace(strings.ReplaceAll(name, "\\", "/"))
-	if rawName == "" {
-		return "", errors.New("archive entry name must not be empty")
-	}
-
-	parts := strings.Split(rawName, "/")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		switch part {
-		case "", ".":
-			continue
-		case "..":
-			return "", fmt.Errorf("refusing to extract archive entry outside of destination: %q", name)
-		default:
-			result = append(result, part)
-		}
-	}
-	if len(result) == 0 {
-		return ".", nil
-	}
-	return filepath.Join(result...), nil
 }
 
 func normalizeExtractedRoot(destination string) (string, error) {

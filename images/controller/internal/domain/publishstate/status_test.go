@@ -66,7 +66,7 @@ func TestProjectStatusRunningUsesObservationMessage(t *testing.T) {
 		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		Observation{
 			Phase:           OperationPhaseRunning,
-			ConditionReason: modelsv1alpha1.ModelConditionReasonPublicationUploading,
+			ConditionReason: modelsv1alpha1.ModelConditionReasonPublishing,
 			Message:         "123/456 bytes uploaded into the internal registry",
 		},
 	)
@@ -75,11 +75,11 @@ func TestProjectStatusRunningUsesObservationMessage(t *testing.T) {
 	}
 
 	artifactResolved := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionArtifactResolved))
-	if artifactResolved == nil || artifactResolved.Message != "123/456 bytes uploaded into the internal registry" || artifactResolved.Reason != string(modelsv1alpha1.ModelConditionReasonPublicationUploading) {
+	if artifactResolved == nil || artifactResolved.Message != "123/456 bytes uploaded into the internal registry" || artifactResolved.Reason != string(modelsv1alpha1.ModelConditionReasonPublishing) {
 		t.Fatalf("unexpected artifact resolved condition %#v", artifactResolved)
 	}
 	ready := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionReady))
-	if ready == nil || ready.Message != "123/456 bytes uploaded into the internal registry" || ready.Reason != string(modelsv1alpha1.ModelConditionReasonPublicationUploading) {
+	if ready == nil || ready.Message != "123/456 bytes uploaded into the internal registry" || ready.Reason != string(modelsv1alpha1.ModelConditionReasonPublishing) {
 		t.Fatalf("unexpected ready condition %#v", ready)
 	}
 }
@@ -94,7 +94,7 @@ func TestProjectStatusRunningNonUploadProjectsPublicProgress(t *testing.T) {
 		modelsv1alpha1.ModelSourceTypeHuggingFace,
 		Observation{
 			Phase:           OperationPhaseRunning,
-			ConditionReason: modelsv1alpha1.ModelConditionReasonPublicationUploading,
+			ConditionReason: modelsv1alpha1.ModelConditionReasonPublishing,
 			Progress:        "37%",
 			Message:         "384/1024 bytes uploaded into the internal registry",
 		},
@@ -148,11 +148,6 @@ func TestProjectStatusRunningUploadWithSession(t *testing.T) {
 				Repository:   "registry.example/upload",
 				ExternalURL:  "https://ai-models.example.com/upload/token",
 				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				TokenSecretRef: &modelsv1alpha1.UploadTokenSecretReference{
-					Namespace: "team-a",
-					Name:      "upload-token",
-					Key:       "authorizationHeaderValue",
-				},
 			},
 		},
 	)
@@ -162,7 +157,7 @@ func TestProjectStatusRunningUploadWithSession(t *testing.T) {
 	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhaseWaitForUpload; got != want {
 		t.Fatalf("unexpected phase %q", got)
 	}
-	if projection.Status.Upload == nil || projection.Status.Upload.InClusterURL != "http://upload-a.d8-ai-models.svc:8444/upload/token" || projection.Status.Upload.TokenSecretRef == nil {
+	if projection.Status.Upload == nil || projection.Status.Upload.InClusterURL != "http://upload-a.d8-ai-models.svc:8444/upload/token" {
 		t.Fatalf("unexpected upload status %#v", projection.Status.Upload)
 	}
 	if got, want := projection.Status.Progress, "17%"; got != want {

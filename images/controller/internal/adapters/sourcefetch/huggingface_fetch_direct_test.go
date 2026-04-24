@@ -17,7 +17,6 @@ limitations under the License.
 package sourcefetch
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,18 +27,9 @@ import (
 )
 
 func TestFetchRemoteModelHuggingFacePlansDirectSafetensorsObjectSourceWithoutMirror(t *testing.T) {
-	previousInfoFetcher := fetchHuggingFaceInfoFunc
-	previousBaseURL := huggingFaceBaseURL
-	t.Cleanup(func() {
-		fetchHuggingFaceInfoFunc = previousInfoFetcher
-		huggingFaceBaseURL = previousBaseURL
-	})
-
 	configPayload := []byte(`{"architectures":["LlamaForCausalLM"]}`)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if got, want := request.Header.Get("Authorization"), "Bearer hf-token"; got != want {
-			t.Fatalf("unexpected authorization header %q", got)
-		}
+		requireHuggingFaceAuth(t, request)
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/owner/model/resolve/deadbeef/config.json":
 			writer.Header().Set("Content-Type", "application/json")
@@ -60,22 +50,10 @@ func TestFetchRemoteModelHuggingFacePlansDirectSafetensorsObjectSourceWithoutMir
 	}))
 	defer server.Close()
 
-	fetchHuggingFaceInfoFunc = func(context.Context, string, string, string) (HuggingFaceInfo, error) {
-		return HuggingFaceInfo{
-			ID:          "owner/model",
-			SHA:         "deadbeef",
-			PipelineTag: "text-generation",
-			License:     "apache-2.0",
-			Files:       []string{"config.json", "model.safetensors"},
-		}, nil
-	}
-	huggingFaceBaseURL = server.URL
+	stubDefaultHuggingFaceInfo(t)
+	withHuggingFaceBaseURL(t, server.URL)
 
-	result, err := FetchRemoteModel(t.Context(), RemoteOptions{
-		URL:                      "https://huggingface.co/owner/model?revision=main",
-		HFToken:                  "hf-token",
-		SkipLocalMaterialization: true,
-	})
+	result, err := fetchTestHuggingFaceRemote(t, nil)
 	if err != nil {
 		t.Fatalf("FetchRemoteModel() error = %v", err)
 	}
@@ -107,17 +85,8 @@ func TestFetchRemoteModelHuggingFacePlansDirectSafetensorsObjectSourceWithoutMir
 }
 
 func TestFetchRemoteModelHuggingFaceGGUFPlansDirectObjectSourceWithoutMirror(t *testing.T) {
-	previousInfoFetcher := fetchHuggingFaceInfoFunc
-	previousBaseURL := huggingFaceBaseURL
-	t.Cleanup(func() {
-		fetchHuggingFaceInfoFunc = previousInfoFetcher
-		huggingFaceBaseURL = previousBaseURL
-	})
-
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if got, want := request.Header.Get("Authorization"), "Bearer hf-token"; got != want {
-			t.Fatalf("unexpected authorization header %q", got)
-		}
+		requireHuggingFaceAuth(t, request)
 		switch {
 		case request.Method == http.MethodHead && request.URL.Path == "/owner/model/resolve/deadbeef/deepseek-r1-8b-q4_k_m.gguf":
 			writer.Header().Set("Content-Length", "42")
@@ -129,22 +98,10 @@ func TestFetchRemoteModelHuggingFaceGGUFPlansDirectObjectSourceWithoutMirror(t *
 	}))
 	defer server.Close()
 
-	fetchHuggingFaceInfoFunc = func(context.Context, string, string, string) (HuggingFaceInfo, error) {
-		return HuggingFaceInfo{
-			ID:          "owner/model",
-			SHA:         "deadbeef",
-			PipelineTag: "text-generation",
-			License:     "apache-2.0",
-			Files:       []string{"deepseek-r1-8b-q4_k_m.gguf"},
-		}, nil
-	}
-	huggingFaceBaseURL = server.URL
+	stubDefaultHuggingFaceInfo(t, "deepseek-r1-8b-q4_k_m.gguf")
+	withHuggingFaceBaseURL(t, server.URL)
 
-	result, err := FetchRemoteModel(t.Context(), RemoteOptions{
-		URL:                      "https://huggingface.co/owner/model?revision=main",
-		HFToken:                  "hf-token",
-		SkipLocalMaterialization: true,
-	})
+	result, err := fetchTestHuggingFaceRemote(t, nil)
 	if err != nil {
 		t.Fatalf("FetchRemoteModel() error = %v", err)
 	}
@@ -167,19 +124,10 @@ func TestFetchRemoteModelHuggingFaceGGUFPlansDirectObjectSourceWithoutMirror(t *
 }
 
 func TestHuggingFaceObjectSourceReaderUsesIdentityEncodingAndToleratesMissingContentLengthOnGet(t *testing.T) {
-	previousInfoFetcher := fetchHuggingFaceInfoFunc
-	previousBaseURL := huggingFaceBaseURL
-	t.Cleanup(func() {
-		fetchHuggingFaceInfoFunc = previousInfoFetcher
-		huggingFaceBaseURL = previousBaseURL
-	})
-
 	configPayload := []byte(`{"architectures":["TinyModel"]}`)
 	modelPayload := []byte("safetensors-body")
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if got, want := request.Header.Get("Authorization"), "Bearer hf-token"; got != want {
-			t.Fatalf("unexpected authorization header %q", got)
-		}
+		requireHuggingFaceAuth(t, request)
 		if got, want := request.Header.Get("Accept-Encoding"), "identity"; got != want {
 			t.Fatalf("unexpected Accept-Encoding header %q", got)
 		}
@@ -210,22 +158,10 @@ func TestHuggingFaceObjectSourceReaderUsesIdentityEncodingAndToleratesMissingCon
 	}))
 	defer server.Close()
 
-	fetchHuggingFaceInfoFunc = func(context.Context, string, string, string) (HuggingFaceInfo, error) {
-		return HuggingFaceInfo{
-			ID:          "owner/model",
-			SHA:         "deadbeef",
-			PipelineTag: "text-generation",
-			License:     "apache-2.0",
-			Files:       []string{"config.json", "model.safetensors"},
-		}, nil
-	}
-	huggingFaceBaseURL = server.URL
+	stubDefaultHuggingFaceInfo(t)
+	withHuggingFaceBaseURL(t, server.URL)
 
-	result, err := FetchRemoteModel(t.Context(), RemoteOptions{
-		URL:                      "https://huggingface.co/owner/model?revision=main",
-		HFToken:                  "hf-token",
-		SkipLocalMaterialization: true,
-	})
+	result, err := fetchTestHuggingFaceRemote(t, nil)
 	if err != nil {
 		t.Fatalf("FetchRemoteModel() error = %v", err)
 	}
@@ -254,12 +190,10 @@ func TestHuggingFaceObjectSourceReaderUsesIdentityEncodingAndToleratesMissingCon
 func TestHuggingFaceObjectSourceReaderOpenReadRangeUsesContentRangeLength(t *testing.T) {
 	reader := huggingFaceHTTPObjectReader{
 		httpClient: http.DefaultClient,
-		token:      "hf-token",
+		token:      testHuggingFaceToken,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if got, want := request.Header.Get("Authorization"), "Bearer hf-token"; got != want {
-			t.Fatalf("unexpected authorization header %q", got)
-		}
+		requireHuggingFaceAuth(t, request)
 		if got, want := request.Header.Get("Accept-Encoding"), "identity"; got != want {
 			t.Fatalf("unexpected Accept-Encoding header %q", got)
 		}

@@ -36,7 +36,7 @@ func TestPublicationRequestForModel(t *testing.T) {
 		},
 	}
 
-	request, err := PublicationRequest(object, modelsv1alpha1.ModelSpec{})
+	request, err := PublicationRequest(object, modelsv1alpha1.ModelSpec{}, nil)
 	if err != nil {
 		t.Fatalf("PublicationRequest() error = %v", err)
 	}
@@ -58,7 +58,7 @@ func TestPublicationRequestForClusterModel(t *testing.T) {
 		},
 	}
 
-	request, err := PublicationRequest(object, modelsv1alpha1.ModelSpec{})
+	request, err := PublicationRequest(object, modelsv1alpha1.ModelSpec{}, nil)
 	if err != nil {
 		t.Fatalf("PublicationRequest() error = %v", err)
 	}

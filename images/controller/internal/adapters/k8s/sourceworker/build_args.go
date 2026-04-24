@@ -19,7 +19,6 @@ package sourceworker
 import (
 	"strings"
 
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"k8s.io/apimachinery/pkg/types"
@@ -27,7 +26,7 @@ import (
 
 func buildArgs(
 	request publicationports.Request,
-	plan publicationapp.SourceWorkerPlan,
+	plan SourceWorkerPlan,
 	artifactURI string,
 	options Options,
 ) []string {
@@ -40,7 +39,7 @@ func buildArgs(
 	return append(args, sourceArgs(plan, request.Owner.UID, options.ObjectStorage.Bucket, options.SourceFetch)...)
 }
 
-func sourceArgs(plan publicationapp.SourceWorkerPlan, ownerUID types.UID, rawBucket string, modes ...publicationports.SourceFetchMode) []string {
+func sourceArgs(plan SourceWorkerPlan, ownerUID types.UID, rawBucket string, modes ...publicationports.SourceFetchMode) []string {
 	if plan.HuggingFace != nil {
 		mode := publicationports.SourceFetchModeDirect
 		if len(modes) > 0 {
@@ -54,7 +53,7 @@ func sourceArgs(plan publicationapp.SourceWorkerPlan, ownerUID types.UID, rawBuc
 	return nil
 }
 
-func huggingFaceArgs(source *publicationapp.HuggingFaceSourcePlan) []string {
+func huggingFaceArgs(source *HuggingFaceSourcePlan) []string {
 	args := []string{"--hf-model-id", source.RepoID}
 	if strings.TrimSpace(source.Revision) != "" {
 		args = append(args, "--revision", source.Revision)
@@ -62,7 +61,7 @@ func huggingFaceArgs(source *publicationapp.HuggingFaceSourcePlan) []string {
 	return args
 }
 
-func uploadArgs(source *publicationapp.UploadSourcePlan) []string {
+func uploadArgs(source *UploadSourcePlan) []string {
 	args := []string{
 		"--upload-stage-bucket", source.Stage.Bucket,
 		"--upload-stage-key", source.Stage.Key,

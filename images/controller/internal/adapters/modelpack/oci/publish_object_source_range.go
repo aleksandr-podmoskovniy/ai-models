@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 type objectSourceArchiveSegment struct {
@@ -55,7 +56,7 @@ func openRangedObjectSourceLayer(
 func buildObjectSourceArchiveSegments(layer modelpackports.PublishLayer) ([]objectSourceArchiveSegment, error) {
 	segments := make([]objectSourceArchiveSegment, 0, len(layer.ObjectSource.Files)+1)
 	for _, file := range layer.ObjectSource.Files {
-		targetPath, err := archiveRelativePath(file.TargetPath)
+		targetPath, err := archiveio.RelativePath(file.TargetPath)
 		if err != nil {
 			return nil, err
 		}

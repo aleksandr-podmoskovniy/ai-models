@@ -22,7 +22,6 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	auditapp "github.com/deckhouse/ai-models/controller/internal/application/publishaudit"
-	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -103,12 +102,8 @@ func TestModelReconcilerPublishesReadyStatusFromSucceededWorker(t *testing.T) {
 		t.Fatal("worker must not be deleted before ready status is persisted")
 	}
 
-	var annotated modelsv1alpha1.Model
-	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &annotated); err != nil {
-		t.Fatalf("Get(model) error = %v", err)
-	}
-	if _, found, err := cleanuphandle.FromObject(&annotated); err != nil || !found {
-		t.Fatalf("expected cleanup handle annotation after first reconcile, found=%v err=%v", found, err)
+	if _, found, err := reconciler.cleanupState.Get(context.Background(), model); err != nil || !found {
+		t.Fatalf("expected internal cleanup state after first reconcile, found=%v err=%v", found, err)
 	}
 
 	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{

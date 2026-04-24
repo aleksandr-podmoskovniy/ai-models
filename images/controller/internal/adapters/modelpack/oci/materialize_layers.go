@@ -30,6 +30,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func decodeManifestLayers(manifest map[string]any) ([]publishLayerDescriptor, error) {
@@ -120,7 +121,7 @@ func extractRawLayer(stream io.Reader, destination, targetPath string) error {
 	if err != nil {
 		return err
 	}
-	return writeExtractedFile(target, stream)
+	return archiveio.WriteExtractedFile(target, stream)
 }
 
 func extractArchiveLayer(
@@ -179,18 +180,18 @@ func extractTar(tr *tar.Reader, extractDir string) error {
 			return err
 		}
 
-		target, err := archiveTargetPath(extractDir, header.Name)
+		target, err := archiveio.TargetPath(extractDir, header.Name)
 		if err != nil {
 			return err
 		}
-		if err := extractTarEntry(tr, header, target); err != nil {
+		if err := archiveio.ExtractTarEntry(tr, header, target); err != nil {
 			return err
 		}
 	}
 }
 
 func materializeTargetPath(destination, layerPath string) (string, error) {
-	relative, err := archiveRelativePath(layerPath)
+	relative, err := archiveio.RelativePath(layerPath)
 	if err != nil {
 		return "", err
 	}

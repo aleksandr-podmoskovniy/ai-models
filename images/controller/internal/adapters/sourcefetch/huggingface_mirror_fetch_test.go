@@ -17,30 +17,16 @@ limitations under the License.
 package sourcefetch
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	sourcemirrorports "github.com/deckhouse/ai-models/controller/internal/ports/sourcemirror"
 )
 
 func TestFetchRemoteModelHuggingFaceUsesSourceMirrorStreamingPublish(t *testing.T) {
-	previousInfoFetcher := fetchHuggingFaceInfoFunc
-	previousBaseURL := huggingFaceBaseURL
-	previousProfileSummaryFetcher := fetchHuggingFaceProfileSummaryFunc
-	t.Cleanup(func() {
-		fetchHuggingFaceInfoFunc = previousInfoFetcher
-		huggingFaceBaseURL = previousBaseURL
-		fetchHuggingFaceProfileSummaryFunc = previousProfileSummaryFetcher
-	})
-
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if got, want := request.Header.Get("Authorization"), "Bearer hf-token"; got != want {
-			t.Fatalf("unexpected authorization header %q", got)
-		}
+		requireHuggingFaceAuth(t, request)
 		switch request.URL.Path {
 		case "/owner/model/resolve/deadbeef/config.json":
 			_, _ = writer.Write([]byte(`{"architectures":["LlamaForCausalLM"]}`))
@@ -52,36 +38,13 @@ func TestFetchRemoteModelHuggingFaceUsesSourceMirrorStreamingPublish(t *testing.
 	}))
 	defer server.Close()
 
-	fetchHuggingFaceInfoFunc = func(context.Context, string, string, string) (HuggingFaceInfo, error) {
-		return HuggingFaceInfo{
-			ID:          "owner/model",
-			SHA:         "deadbeef",
-			PipelineTag: "text-generation",
-			License:     "apache-2.0",
-			Files:       []string{"config.json", "model.safetensors"},
-		}, nil
-	}
-	huggingFaceBaseURL = server.URL
-	fetchHuggingFaceProfileSummaryFunc = func(context.Context, RemoteOptions, string, string, modelsv1alpha1.ModelInputFormat, []string) (*RemoteProfileSummary, error) {
-		return &RemoteProfileSummary{
-			ConfigPayload: []byte(`{"architectures":["LlamaForCausalLM"]}`),
-			WeightBytes:   14,
-		}, nil
-	}
+	stubDefaultHuggingFaceInfo(t)
+	withHuggingFaceBaseURL(t, server.URL)
+	stubHuggingFaceProfileSummary(t, defaultHuggingFaceProfileSummary(), nil)
 
 	mirrorStore := &fakeSourceMirrorStore{}
 	mirrorClient := newFakeMirrorUploadStaging(t)
-	result, err := FetchRemoteModel(t.Context(), RemoteOptions{
-		URL:                      "https://huggingface.co/owner/model?revision=main",
-		HFToken:                  "hf-token",
-		SkipLocalMaterialization: true,
-		SourceMirror: &SourceMirrorOptions{
-			Bucket:     "artifacts",
-			Client:     mirrorClient,
-			Store:      mirrorStore,
-			BasePrefix: "raw/1111-2222/source-url/.mirror",
-		},
-	})
+	result, err := fetchTestHuggingFaceRemote(t, newTestSourceMirrorOptions(mirrorClient, mirrorStore))
 	if err != nil {
 		t.Fatalf("FetchRemoteModel() error = %v", err)
 	}
@@ -107,39 +70,12 @@ func TestFetchRemoteModelHuggingFaceUsesSourceMirrorStreamingPublish(t *testing.
 }
 
 func TestFetchRemoteModelHuggingFaceSourceMirrorFailsWhenRemoteProfileSummaryCannotBeResolved(t *testing.T) {
-	previousInfoFetcher := fetchHuggingFaceInfoFunc
-	previousProfileSummaryFetcher := fetchHuggingFaceProfileSummaryFunc
-	t.Cleanup(func() {
-		fetchHuggingFaceInfoFunc = previousInfoFetcher
-		fetchHuggingFaceProfileSummaryFunc = previousProfileSummaryFetcher
-	})
-
-	fetchHuggingFaceInfoFunc = func(context.Context, string, string, string) (HuggingFaceInfo, error) {
-		return HuggingFaceInfo{
-			ID:          "owner/model",
-			SHA:         "deadbeef",
-			PipelineTag: "text-generation",
-			License:     "apache-2.0",
-			Files:       []string{"config.json", "model.safetensors"},
-		}, nil
-	}
-	fetchHuggingFaceProfileSummaryFunc = func(context.Context, RemoteOptions, string, string, modelsv1alpha1.ModelInputFormat, []string) (*RemoteProfileSummary, error) {
-		return nil, errors.New("summary unavailable")
-	}
+	stubDefaultHuggingFaceInfo(t)
+	stubUnavailableHuggingFaceProfileSummary(t)
 
 	mirrorStore := &fakeSourceMirrorStore{}
 	mirrorClient := newFakeMirrorUploadStaging(t)
-	_, err := FetchRemoteModel(t.Context(), RemoteOptions{
-		URL:                      "https://huggingface.co/owner/model?revision=main",
-		HFToken:                  "hf-token",
-		SkipLocalMaterialization: true,
-		SourceMirror: &SourceMirrorOptions{
-			Bucket:     "artifacts",
-			Client:     mirrorClient,
-			Store:      mirrorStore,
-			BasePrefix: "raw/1111-2222/source-url/.mirror",
-		},
-	})
+	_, err := fetchTestHuggingFaceRemote(t, newTestSourceMirrorOptions(mirrorClient, mirrorStore))
 	if err == nil {
 		t.Fatal("expected missing remote profile summary to fail mirrored publish source planning")
 	}

@@ -29,15 +29,13 @@ func buildUploadStatus(
 	artifactURI string,
 	options Options,
 	sessionID string,
-	tokenSecretRef modelsv1alpha1.UploadTokenSecretReference,
 	expiresAt metav1.Time,
 ) modelsv1alpha1.ModelUploadStatus {
 	return modelsv1alpha1.ModelUploadStatus{
-		ExpiresAt:      &expiresAt,
-		Repository:     strings.TrimSpace(artifactURI),
-		ExternalURL:    buildExternalUploadURL(options.Gateway.PublicHost, sessionID),
-		InClusterURL:   buildInClusterUploadURL(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID),
-		TokenSecretRef: &tokenSecretRef,
+		ExpiresAt:    &expiresAt,
+		Repository:   strings.TrimSpace(artifactURI),
+		ExternalURL:  buildExternalUploadURL(options.Gateway.PublicHost, sessionID),
+		InClusterURL: buildInClusterUploadURL(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID),
 	}
 }
 

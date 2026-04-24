@@ -14,9 +14,9 @@ Current phase-2 baseline:
 - public API group: `ai.deckhouse.io`;
 - initial version: `v1alpha1`;
 - shared `Model` / `ClusterModel` types live under `api/core/v1alpha1/`;
-- upload-driven objects expose staging upload contract via `status.upload`,
-  with upload URLs plus a `tokenSecretRef`; raw bearer values must not be
-  exposed in public status;
+- upload-driven objects expose staging upload contract via `status.upload`
+  with upload URLs only; raw bearer values and token Secret references must not
+  be exposed in public status;
 - upload-driven and long-running publication flows can expose one bounded
   public progress indicator via top-level `status.progress`, following the
   same UX shape used in `virtualization` when the controller has an explicit

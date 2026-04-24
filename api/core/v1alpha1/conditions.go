@@ -30,11 +30,7 @@ type ModelConditionReason string
 const (
 	ModelConditionReasonPending                   ModelConditionReason = "Pending"
 	ModelConditionReasonWaitingForUserUpload      ModelConditionReason = "WaitingForUserUpload"
-	ModelConditionReasonPublicationStarted        ModelConditionReason = "PublicationStarted"
-	ModelConditionReasonPublicationUploading      ModelConditionReason = "PublicationUploading"
-	ModelConditionReasonPublicationResumed        ModelConditionReason = "PublicationResumed"
-	ModelConditionReasonPublicationSealing        ModelConditionReason = "PublicationSealing"
-	ModelConditionReasonPublicationCommitted      ModelConditionReason = "PublicationCommitted"
+	ModelConditionReasonPublishing                ModelConditionReason = "Publishing"
 	ModelConditionReasonArtifactPublished         ModelConditionReason = "ArtifactPublished"
 	ModelConditionReasonPublicationFailed         ModelConditionReason = "PublicationFailed"
 	ModelConditionReasonUnsupportedSource         ModelConditionReason = "UnsupportedSource"

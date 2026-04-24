@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func describeObjectSourcePublishLayer(
@@ -82,34 +83,9 @@ func describeArchiveObjectSourcePublishLayer(
 	layer modelpackports.PublishLayer,
 	mediaType string,
 ) (publishLayerDescriptor, error) {
-	diffHasher := sha256.New()
-	blobHasher := sha256.New()
-	counter := &countWriter{}
-	compressedSink := io.MultiWriter(blobHasher, counter)
-
-	archiveWriter, err := newArchiveWriter(compressedSink, layer.Compression)
-	if err != nil {
-		return publishLayerDescriptor{}, err
-	}
-	tarSink := io.MultiWriter(diffHasher, archiveWriter)
-	if err := writeLayerArchiveFromObjectSource(ctx, tarSink, layer); err != nil {
-		_ = archiveWriter.Close()
-		return publishLayerDescriptor{}, err
-	}
-	if err := archiveWriter.Close(); err != nil {
-		return publishLayerDescriptor{}, err
-	}
-
-	return publishLayerDescriptor{
-		Digest:      "sha256:" + hex.EncodeToString(blobHasher.Sum(nil)),
-		DiffID:      "sha256:" + hex.EncodeToString(diffHasher.Sum(nil)),
-		Size:        counter.n,
-		MediaType:   mediaType,
-		TargetPath:  filepath.ToSlash(strings.TrimSpace(layer.TargetPath)),
-		Base:        layer.Base,
-		Format:      layer.Format,
-		Compression: normalizedArchiveCompression(layer.Compression),
-	}, nil
+	return describeGeneratedArchiveLayer(layer, mediaType, func(writer io.Writer) error {
+		return writeLayerArchiveFromObjectSource(ctx, writer, layer)
+	})
 }
 
 func openObjectSourceLayerRange(
@@ -128,32 +104,9 @@ func openObjectSourceLayerRange(
 		return openRangedObjectSourceLayer(ctx, layer, reader, offset, length)
 	}
 
-	reader, writer := io.Pipe()
-	go func() {
-		archiveWriter, openErr := newArchiveWriter(writer, layer.Compression)
-		if openErr != nil {
-			_ = writer.CloseWithError(openErr)
-			return
-		}
-		writeErr := writeLayerArchiveFromObjectSource(ctx, archiveWriter, layer)
-		closeErr := archiveWriter.Close()
-		if writeErr != nil {
-			_ = writer.CloseWithError(writeErr)
-			return
-		}
-		_ = writer.CloseWithError(closeErr)
-	}()
-
-	stream := &archivePipeStream{reader: reader}
-	body := io.Reader(stream.reader)
-	if offset > 0 {
-		body = &offsetReader{reader: body, offset: offset}
-	}
-	if length >= 0 {
-		body = io.LimitReader(body, length)
-	}
-
-	return &archiveRangeReader{body: body, stream: stream}, nil
+	return openGeneratedArchiveLayerRange(layer, offset, length, func(writer io.Writer) error {
+		return writeLayerArchiveFromObjectSource(ctx, writer, layer)
+	})
 }
 
 func openRawObjectSourceLayerRange(
@@ -230,7 +183,7 @@ func validateObjectSourceLayer(layer modelpackports.PublishLayer) error {
 		if file.SizeBytes < 0 {
 			return fmt.Errorf("object source files[%d] size must not be negative", index)
 		}
-		normalizedTarget, err := archiveRelativePath(file.TargetPath)
+		normalizedTarget, err := archiveio.RelativePath(file.TargetPath)
 		if err != nil {
 			return fmt.Errorf("object source files[%d] target path is invalid: %w", index, err)
 		}
@@ -261,7 +214,7 @@ func validateRawObjectSourceLayer(layer modelpackports.PublishLayer) error {
 	if file.SizeBytes < 0 {
 		return errors.New("object source files[0] size must not be negative")
 	}
-	normalizedTarget, err := archiveRelativePath(file.TargetPath)
+	normalizedTarget, err := archiveio.RelativePath(file.TargetPath)
 	if err != nil {
 		return fmt.Errorf("object source files[0] target path is invalid: %w", err)
 	}
@@ -282,7 +235,7 @@ func writeLayerArchiveFromObjectSource(ctx context.Context, writer io.Writer, la
 			return err
 		}
 
-		targetPath, err := archiveRelativePath(file.TargetPath)
+		targetPath, err := archiveio.RelativePath(file.TargetPath)
 		if err != nil {
 			_ = object.Body.Close()
 			return err

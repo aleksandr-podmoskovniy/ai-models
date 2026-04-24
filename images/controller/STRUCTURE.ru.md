@@ -44,7 +44,6 @@ images/controller/
       ingestadmission/
     application/
       deletion/
-      publishplan/
       publishobserve/
       sourceadmission/
       publishaudit/
@@ -139,10 +138,10 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
 
 ### Application
 
-- `internal/application/publishplan/` — execution planning:
-  source worker vs upload session.
-- `internal/application/publishobserve/` — observation mapping and
-  status-mutation planning.
+- `internal/application/publishobserve/` — runtime observation mapping and
+  public status-mutation planning. Controller-local runtime-mode selection
+  stays in `controllers/catalogstatus`; concrete source-worker plan shaping
+  stays in `adapters/k8s/sourceworker`.
 - `internal/application/sourceadmission/` — cheap preflight for `source.url`.
 - `internal/application/publishaudit/` — append-only audit planning.
 - `internal/application/deletion/` — delete-time policy seam.
@@ -305,8 +304,8 @@ runtime semantics или status logic, это уже не support.
 Текущий live pattern:
 
 - `publishobserve` split на source-worker runtime observation, upload-session
-  observation, fail-closed/runtime-error proofs, reconcile gate, status
-  mutation и thin helper seam вместо одного mixed ensure-runtime file;
+  observation и status mutation; runtime-mode gate теперь controller-local в
+  `catalogstatus`, а source-worker plan shaping живёт в K8s adapter;
 - `ingestadmission` split на common invariants, upload-session validation,
   upload probe classification and probe-shape validation instead of one mixed
   upload test file;

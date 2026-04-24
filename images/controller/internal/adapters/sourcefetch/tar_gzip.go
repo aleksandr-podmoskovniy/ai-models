@@ -20,62 +20,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"io"
-	"os"
 	"path/filepath"
-	"strings"
-
-	"github.com/klauspost/compress/zstd"
 )
-
-func newTarReader(path string, stream io.Reader) (*tar.Reader, error) {
-	reader, closeReader, err := newClosableTarReader(path, stream)
-	if err != nil {
-		return nil, err
-	}
-	_ = closeReader
-	return reader, nil
-}
-
-func newClosableTarReader(path string, stream io.Reader) (*tar.Reader, func() error, error) {
-	lowerPath := strings.ToLower(strings.TrimSpace(path))
-	if strings.HasSuffix(lowerPath, ".tar.gz") || strings.HasSuffix(lowerPath, ".tgz") {
-		gzipReader, err := gzip.NewReader(stream)
-		if err != nil {
-			return nil, nil, err
-		}
-		return tar.NewReader(gzipReader), gzipReader.Close, nil
-	}
-	if strings.HasSuffix(lowerPath, ".tar.zst") || strings.HasSuffix(lowerPath, ".tar.zstd") || strings.HasSuffix(lowerPath, ".tzst") {
-		decoder, err := zstd.NewReader(stream)
-		if err != nil {
-			return nil, nil, err
-		}
-		return tar.NewReader(decoder), func() error {
-			decoder.Close()
-			return nil
-		}, nil
-	}
-	return tar.NewReader(stream), func() error { return nil }, nil
-}
-
-func isTarArchive(path string) bool {
-	lowerPath := strings.ToLower(strings.TrimSpace(path))
-	return strings.HasSuffix(lowerPath, ".tar") ||
-		strings.HasSuffix(lowerPath, ".tar.gz") ||
-		strings.HasSuffix(lowerPath, ".tgz") ||
-		strings.HasSuffix(lowerPath, ".tar.zst") ||
-		strings.HasSuffix(lowerPath, ".tar.zstd") ||
-		strings.HasSuffix(lowerPath, ".tzst")
-}
-
-func isZipArchive(path string) bool {
-	return strings.HasSuffix(path, ".zip")
-}
-
-func isZipSymlink(file interface{ Mode() os.FileMode }) bool {
-	return file.Mode()&os.ModeSymlink != 0
-}
 
 func writeGzipTar(buffer *bytes.Buffer, name string, content []byte) error {
 	gzipWriter := gzip.NewWriter(buffer)

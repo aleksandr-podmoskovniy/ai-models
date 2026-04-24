@@ -1,0 +1,83 @@
+{{- if (include "ai-models.isEnabled" .) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: User
+  name: d8:user-authz:ai-models:user
+  {{- include "helm_lib_module_labels" (list .) | nindent 2 }}
+rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models", "clustermodels"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: PrivilegedUser
+  name: d8:user-authz:ai-models:privileged-user
+  {{- include "helm_lib_module_labels" (list .) | nindent 2 }}
+rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models", "clustermodels"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: Editor
+  name: d8:user-authz:ai-models:editor
+  {{- include "helm_lib_module_labels" (list .) | nindent 2 }}
+rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["clustermodels"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: Admin
+  name: d8:user-authz:ai-models:admin
+  {{- include "helm_lib_module_labels" (list .) | nindent 2 }}
+rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["clustermodels"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: ClusterEditor
+  name: d8:user-authz:ai-models:cluster-editor
+  {{- include "helm_lib_module_labels" (list .) | nindent 2 }}
+rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["clustermodels"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: ClusterAdmin
+  name: d8:user-authz:ai-models:cluster-admin
+  {{- include "helm_lib_module_labels" (list .) | nindent 2 }}
+rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models", "clustermodels"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+{{- end }}

@@ -28,6 +28,13 @@
 - что считается reusable core и что остаётся project-specific overlay;
 - какие machine-checkable guardrails должны быть прогнаны.
 
+Для DKP user-facing API/auth/RBAC/exposure/runtime entrypoint tasks дополнительно:
+- какие access levels/personas покрываются;
+- где scope namespaced, а где cluster-wide;
+- какие verbs разрешены;
+- какие sensitive paths намеренно запрещены;
+- какие проверки доказывают RBAC coverage.
+
 Для baseline-porting tasks дополнительно:
 - из какого repo взят baseline;
 - какие reusable surfaces копируются;

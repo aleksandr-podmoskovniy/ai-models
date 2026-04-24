@@ -61,12 +61,12 @@ func SetStatus(object client.Object, status modelsv1alpha1.ModelStatus) error {
 	}
 }
 
-func PublicationRequest(object client.Object, spec modelsv1alpha1.ModelSpec) (publicationports.Request, error) {
+func PublicationRequest(
+	object client.Object,
+	spec modelsv1alpha1.ModelSpec,
+	uploadStage *cleanuphandle.UploadStagingHandle,
+) (publicationports.Request, error) {
 	kind, err := KindFor(object)
-	if err != nil {
-		return publicationports.Request{}, err
-	}
-	uploadStage, err := uploadStageFromObject(object, spec)
 	if err != nil {
 		return publicationports.Request{}, err
 	}
@@ -105,19 +105,4 @@ func PublicationRequest(object client.Object, spec modelsv1alpha1.ModelSpec) (pu
 	default:
 		return publicationports.Request{}, fmt.Errorf("unsupported model object type %T", object)
 	}
-}
-
-func uploadStageFromObject(object client.Object, spec modelsv1alpha1.ModelSpec) (*cleanuphandle.UploadStagingHandle, error) {
-	if object == nil || spec.Source.Upload == nil {
-		return nil, nil
-	}
-
-	handle, found, err := cleanuphandle.FromObject(object)
-	if err != nil {
-		return nil, err
-	}
-	if !found || handle.Kind != cleanuphandle.KindUploadStaging {
-		return nil, nil
-	}
-	return handle.UploadStaging, nil
 }

@@ -20,7 +20,6 @@ import (
 	"errors"
 	"strings"
 
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
@@ -43,7 +42,7 @@ func Build(
 
 func buildWithPlan(
 	request publicationports.Request,
-	sourcePlan publicationapp.SourceWorkerPlan,
+	sourcePlan SourceWorkerPlan,
 	options Options,
 	projectedAuthSecretName string,
 	directUploadStateSecretName string,
@@ -79,7 +78,7 @@ func buildWithPlan(
 }
 
 func validateProjectedAuthSecretName(
-	plan publicationapp.SourceWorkerPlan,
+	plan SourceWorkerPlan,
 	projectedAuthSecretName string,
 ) error {
 	if !sourceAuthRequired(plan) {
@@ -91,6 +90,6 @@ func validateProjectedAuthSecretName(
 	return nil
 }
 
-func sourceAuthRequired(plan publicationapp.SourceWorkerPlan) bool {
+func sourceAuthRequired(plan SourceWorkerPlan) bool {
 	return plan.HuggingFace != nil && plan.HuggingFace.AuthSecretRef != nil
 }

@@ -22,10 +22,12 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func listTarArchiveFilesFromReader(path string, stream io.Reader) ([]tarArchiveFile, string, error) {
-	reader, closeArchive, err := newClosableTarReader(path, stream)
+	reader, closeArchive, err := archiveio.NewClosableTarReader(path, stream)
 	if err != nil {
 		return nil, "", err
 	}
@@ -64,7 +66,7 @@ func listTarArchiveFilesFromReader(path string, stream io.Reader) ([]tarArchiveF
 }
 
 func classifyArchiveEntry(header *tar.Header) (string, bool, error) {
-	relative, err := archiveRelativePath(header.Name)
+	relative, err := archiveio.RelativePath(header.Name)
 	if err != nil {
 		return "", false, err
 	}

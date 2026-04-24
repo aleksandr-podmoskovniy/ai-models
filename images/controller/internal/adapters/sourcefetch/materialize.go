@@ -82,21 +82,6 @@ func hasGGUFMagic(path string) (bool, error) {
 	}
 }
 
-func writeExtractedFile(target string, reader io.Reader) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
-	}
-	stream, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(stream, reader); err != nil {
-		stream.Close()
-		return err
-	}
-	return stream.Close()
-}
-
 func copyFile(sourcePath, target string) error {
 	source, err := os.Open(sourcePath)
 	if err != nil {

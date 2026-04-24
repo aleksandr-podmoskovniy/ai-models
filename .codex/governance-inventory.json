@@ -79,7 +79,8 @@
       "path": ".agents/skills/k8s-api-design/SKILL.md",
       "must_include": [
         "No internal transport/storage/output format leaked into public `spec`.",
-        "No placeholder API knob kept “for later”."
+        "No placeholder API knob kept “for later”.",
+        "For DKP user-facing resources, state RBAC access-level coverage"
       ]
     },
     {
@@ -103,6 +104,7 @@
       "path": ".agents/skills/platform-runtime-integration/SKILL.md",
       "must_include": [
         "No local convenience option that bypasses a DKP global mechanism",
+        "Keep DKP user-facing RBAC coverage aligned",
         "No observability contract that exists only in logs or chat"
       ]
     },
@@ -111,7 +113,8 @@
       "path": ".agents/skills/review-gate/SKILL.md",
       "must_include": [
         "check them as one instruction system",
-        "no lower-level file contradicts a higher-level rule"
+        "no lower-level file contradicts a higher-level rule",
+        "for any DKP user-facing API/auth/exposure/RBAC/runtime entrypoint change"
       ]
     },
     {
@@ -119,6 +122,7 @@
       "path": ".agents/skills/task-intake-and-slicing/SKILL.md",
       "must_include": [
         "make it a dedicated governance bundle",
+        "include DKP user-facing RBAC coverage",
         "archive stale/finished or oversized active bundles"
       ]
     },
@@ -137,7 +141,8 @@
       "path": ".codex/agents/api-designer.toml",
       "sandbox_mode": "read-only",
       "must_include": [
-        "Treat dead public knobs, internal output-format leakage, and unstable conditions as real findings"
+        "Treat dead public knobs, internal output-format leakage, and unstable conditions as real findings",
+        "review access-level coverage"
       ]
     },
     {
@@ -153,7 +158,8 @@
       "path": ".codex/agents/integration-architect.toml",
       "sandbox_mode": "read-only",
       "must_include": [
-        "always answer the byte-path, copy-count, and runtime-footprint questions explicitly."
+        "always answer the byte-path, copy-count, and runtime-footprint questions explicitly.",
+        "For RBAC changes, review Deckhouse access-level wiring"
       ]
     },
     {
@@ -178,7 +184,8 @@
       "path": ".codex/agents/reviewer.toml",
       "sandbox_mode": "read-only",
       "must_include": [
-        "review them as one instruction system and treat contradictions across layers as real findings."
+        "review them as one instruction system and treat contradictions across layers as real findings.",
+        "missing access-level coverage"
       ]
     },
     {
@@ -187,6 +194,7 @@
       "sandbox_mode": "workspace-write",
       "must_include": [
         "archive stale or oversized active bundles instead of creating sibling sources of truth.",
+        "For DKP user-facing API/auth/RBAC/exposure/runtime entrypoint tasks",
         "require consistency checks across all touched instruction layers."
       ]
     }
@@ -199,6 +207,7 @@
         "## Engineering doctrine",
         "### Portable reusable baseline",
         "## Workflow governance",
+        "DKP user-facing RBAC coverage",
         "make lint-codex-governance"
       ]
     },
@@ -214,6 +223,7 @@
         "## Porting pattern",
         "Files that must be reviewed and rewritten during porting:",
         ".codex/governance-inventory.json",
+        "explicit DKP user-facing RBAC coverage",
         "make lint-codex-governance"
       ]
     },
@@ -224,6 +234,7 @@
         "это отдельный governance bundle",
         "что остаётся reusable core;",
         "source repo baseline;",
+        "access levels/personas",
         "make lint-codex-governance"
       ]
     },
@@ -232,6 +243,7 @@
       "must_include": [
         "Для workflow/governance tasks дополнительно:",
         "что считается reusable core и что остаётся project-specific overlay;",
+        "Для DKP user-facing API/auth/RBAC/exposure/runtime entrypoint tasks дополнительно:",
         "Для baseline-porting tasks дополнительно:",
         "### 2. Orchestration",
         "Для workflow/governance tasks сюда входит `make lint-codex-governance`."
@@ -241,6 +253,7 @@
       "path": "docs/development/REVIEW_CHECKLIST.ru.md",
       "must_include": [
         "## Workflow governance",
+        "## RBAC и доступы",
         "`make lint-codex-governance` прогнан",
         "не противоречат `AGENTS.md` и `.codex/README.md`",
         "reusable core остаётся переносимым",

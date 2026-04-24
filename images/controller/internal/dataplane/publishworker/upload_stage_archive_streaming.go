@@ -18,19 +18,14 @@ package publishworker
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"strings"
 
-	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	ggufprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/gguf"
-	safetensorsprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/safetensors"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
-	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
-	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func tryPublishUploadStageStreamingArchive(
@@ -46,7 +41,7 @@ func tryPublishUploadStageStreamingArchive(
 	if err != nil {
 		return publicationartifact.Result{}, false, err
 	}
-	if !isRemoteArchiveUploadPath(fileName) {
+	if !isArchiveUploadPath(fileName) {
 		return publicationartifact.Result{}, false, nil
 	}
 
@@ -54,59 +49,27 @@ func tryPublishUploadStageStreamingArchive(
 	if err != nil {
 		return publicationartifact.Result{}, false, err
 	}
-	if inspection.InputFormat != modelsv1alpha1.ModelInputFormatSafetensors &&
-		inspection.InputFormat != modelsv1alpha1.ModelInputFormatGGUF {
+	if !supportsArchiveUpload(inspection) {
 		return publicationartifact.Result{}, false, nil
 	}
 
-	layerCompression := uploadArchiveLayerCompression(fileName)
-	logger.Info(
-		"upload stage archive object-source path selected",
-		slog.String("resolvedInputFormat", string(inspection.InputFormat)),
-		slog.String("uploadStageFileName", fileName),
-		slog.Int("selectedFileCount", len(inspection.SelectedFiles)),
-		slog.String("archiveRootPrefix", strings.TrimSpace(inspection.RootPrefix)),
-		slog.String("archiveLayerCompression", string(layerCompression)),
-	)
-
-	preResolved, err := resolveArchiveInspectionSummary(options, inspection)
-	if err != nil {
-		return publicationartifact.Result{}, false, err
-	}
-	publishLayers := []modelpackports.PublishLayer{
-		{
-			SourcePath:  strings.TrimSpace(options.UploadStage.Key),
-			TargetPath:  modelpackports.MaterializedModelPathName,
-			Base:        modelpackports.LayerBaseModel,
-			Format:      modelpackports.LayerFormatTar,
-			Compression: layerCompression,
-			Archive: &modelpackports.PublishArchiveSource{
-				StripPathPrefix: inspection.RootPrefix,
-				SelectedFiles:   append([]string(nil), inspection.SelectedFiles...),
-				Reader: uploadStagingObjectReader{
-					bucket: strings.TrimSpace(options.UploadStage.Bucket),
-					reader: options.UploadStaging,
-				},
-				SizeBytes: archiveSize,
-			},
+	result, err := publishUploadArchive(ctx, options, logger, uploadArchivePublication{
+		sourcePath:      strings.TrimSpace(options.UploadStage.Key),
+		artifactURI:     rawURI(options.UploadStage.Bucket, options.UploadStage.Key),
+		compressionPath: fileName,
+		inspection:      inspection,
+		reader: uploadStagingObjectReader{
+			bucket: strings.TrimSpace(options.UploadStage.Bucket),
+			reader: options.UploadStaging,
 		},
-	}
-	resolvedProfile, publishResult, err := resolveAndPublishWithLayers(
-		ctx,
-		options,
-		rawURI(options.UploadStage.Bucket, options.UploadStage.Key),
-		inspection.InputFormat,
-		sourceProfileInput{Task: options.Task},
-		publishLayers,
-		&preResolved,
-	)
+		sizeBytes:  archiveSize,
+		logMessage: "upload stage archive object-source path selected",
+		logArgs:    []any{slog.String("uploadStageFileName", fileName)},
+	})
 	if err != nil {
 		return publicationartifact.Result{}, false, err
 	}
-	if err := cleanupStagedUploadObject(ctx, options, logger); err != nil {
-		return publicationartifact.Result{}, false, err
-	}
-	return buildUploadResult(options, resolvedProfile, publishResult), true, nil
+	return result, true, nil
 }
 
 func inspectUploadStageArchive(
@@ -118,7 +81,7 @@ func inspectUploadStageArchive(
 	bucket := strings.TrimSpace(options.UploadStage.Bucket)
 	key := strings.TrimSpace(options.UploadStage.Key)
 
-	if isZipArchiveUploadPath(fileName) {
+	if archiveio.IsZipArchive(fileName) {
 		rangeReader, ok := options.UploadStaging.(uploadstagingports.RangeReader)
 		if !ok {
 			return sourcefetch.ArchiveInspection{}, 0, nil
@@ -130,13 +93,18 @@ func inspectUploadStageArchive(
 		inspection, err := sourcefetch.InspectZipModelArchiveReaderAt(
 			fileName,
 			stat.SizeBytes,
-			uploadStageArchiveReaderAt{
-				ctx:         ctx,
-				bucket:      bucket,
-				key:         key,
-				sizeBytes:   stat.SizeBytes,
-				rangeReader: rangeReader,
-			},
+			archiveio.NewRangeReaderAt(ctx, key, stat.SizeBytes, func(ctx context.Context, sourcePath string, offset, length int64) (io.ReadCloser, error) {
+				output, err := rangeReader.OpenReadRange(ctx, uploadstagingports.OpenReadRangeInput{
+					Bucket: bucket,
+					Key:    sourcePath,
+					Offset: offset,
+					Length: length,
+				})
+				if err != nil {
+					return nil, err
+				}
+				return output.Body, nil
+			}),
 			options.InputFormat,
 		)
 		return inspection, stat.SizeBytes, err
@@ -150,89 +118,4 @@ func inspectUploadStageArchive(
 		return output.Body, nil
 	}, options.InputFormat)
 	return inspection, 0, err
-}
-
-func resolveArchiveInspectionSummary(
-	options Options,
-	inspection sourcefetch.ArchiveInspection,
-) (publicationdata.ResolvedProfile, error) {
-	switch inspection.InputFormat {
-	case modelsv1alpha1.ModelInputFormatSafetensors:
-		return safetensorsprofile.ResolveSummary(safetensorsprofile.SummaryInput{
-			ConfigPayload: inspection.ConfigPayload,
-			WeightBytes:   inspection.WeightBytes,
-			Task:          options.Task,
-		})
-	case modelsv1alpha1.ModelInputFormatGGUF:
-		return ggufprofile.ResolveSummary(ggufprofile.SummaryInput{
-			ModelFileName:  inspection.ModelFile,
-			ModelSizeBytes: inspection.ModelFileSize,
-			Task:           options.Task,
-		})
-	default:
-		return publicationdata.ResolvedProfile{}, errors.New("unsupported archive inspection format")
-	}
-}
-
-func isRemoteArchiveUploadPath(uploadPath string) bool {
-	lowerPath := strings.ToLower(strings.TrimSpace(uploadPath))
-	return strings.HasSuffix(lowerPath, ".tar") ||
-		strings.HasSuffix(lowerPath, ".tar.gz") ||
-		strings.HasSuffix(lowerPath, ".tgz") ||
-		strings.HasSuffix(lowerPath, ".tar.zst") ||
-		strings.HasSuffix(lowerPath, ".tar.zstd") ||
-		strings.HasSuffix(lowerPath, ".tzst") ||
-		strings.HasSuffix(lowerPath, ".zip")
-}
-
-func isZipArchiveUploadPath(uploadPath string) bool {
-	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(uploadPath)), ".zip")
-}
-
-type uploadStageArchiveReaderAt struct {
-	ctx         context.Context
-	bucket      string
-	key         string
-	sizeBytes   int64
-	rangeReader uploadstagingports.RangeReader
-}
-
-func (r uploadStageArchiveReaderAt) ReadAt(p []byte, offset int64) (int, error) {
-	if len(p) == 0 {
-		return 0, nil
-	}
-	if offset < 0 || offset >= r.sizeBytes {
-		return 0, io.EOF
-	}
-
-	length := int64(len(p))
-	if remaining := r.sizeBytes - offset; length > remaining {
-		length = remaining
-	}
-	output, err := r.rangeReader.OpenReadRange(r.ctx, uploadstagingports.OpenReadRangeInput{
-		Bucket: r.bucket,
-		Key:    r.key,
-		Offset: offset,
-		Length: length,
-	})
-	if err != nil {
-		return 0, err
-	}
-	defer output.Body.Close()
-
-	n, err := io.ReadFull(output.Body, p[:length])
-	switch err {
-	case nil:
-		if int64(n) < int64(len(p)) {
-			return n, io.EOF
-		}
-		return n, nil
-	case io.ErrUnexpectedEOF, io.EOF:
-		if n == 0 {
-			return 0, io.EOF
-		}
-		return n, io.EOF
-	default:
-		return n, err
-	}
 }

@@ -54,13 +54,13 @@ func TestObserveSourceWorker(t *testing.T) {
 		},
 		{
 			name:   "running worker projects running observation",
-			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodRunning, "", modelsv1alpha1.ModelConditionReasonPublicationUploading, "27%", "123/456 bytes uploaded", nil),
+			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodRunning, "", modelsv1alpha1.ModelConditionReasonPublishing, "27%", "123/456 bytes uploaded", nil),
 			assert: func(t *testing.T, got RuntimeObservationDecision) {
 				t.Helper()
 				if got.Observation.Phase != publicationdomain.OperationPhaseRunning {
 					t.Fatalf("unexpected phase %q", got.Observation.Phase)
 				}
-				if got.Observation.ConditionReason != modelsv1alpha1.ModelConditionReasonPublicationUploading {
+				if got.Observation.ConditionReason != modelsv1alpha1.ModelConditionReasonPublishing {
 					t.Fatalf("unexpected running reason %q", got.Observation.ConditionReason)
 				}
 				if got.Observation.Progress != "27%" {

@@ -76,19 +76,13 @@ func (c *Client) Load(ctx context.Context, name string) (Session, bool, error) {
 
 func (c *Client) SaveMultipart(ctx context.Context, name string, state uploadsessionruntime.SessionState) error {
 	return c.update(ctx, name, func(secret *corev1.Secret) error {
-		if err := setMultipartState(secret, state); err != nil {
-			return err
-		}
-		secret.Data[phaseKey] = []byte(string(PhaseUploading))
-		delete(secret.Data, failureMessageKey)
-		delete(secret.Data, stagedHandleKey)
-		return nil
+		return SaveMultipartSecret(secret, state)
 	})
 }
 
 func (c *Client) SaveMultipartParts(ctx context.Context, name string, parts []uploadsessionruntime.UploadedPart) error {
 	return c.update(ctx, name, func(secret *corev1.Secret) error {
-		return setUploadedParts(secret, parts)
+		return SetUploadedPartsSecret(secret, parts)
 	})
 }
 
@@ -149,28 +143,20 @@ func (c *Client) MarkCompleted(ctx context.Context, name string) error {
 }
 
 func (c *Client) MarkFailed(ctx context.Context, name string, message string) error {
-	return c.markTerminal(ctx, name, PhaseFailed, message)
+	return c.update(ctx, name, func(secret *corev1.Secret) error {
+		return markTerminalSecret(secret, PhaseFailed, message, true)
+	})
 }
 
 func (c *Client) MarkAborted(ctx context.Context, name string, message string) error {
-	return c.markTerminal(ctx, name, PhaseAborted, message)
+	return c.update(ctx, name, func(secret *corev1.Secret) error {
+		return markTerminalSecret(secret, PhaseAborted, message, true)
+	})
 }
 
 func (c *Client) MarkExpired(ctx context.Context, name string, message string) error {
-	return c.markTerminal(ctx, name, PhaseExpired, message)
-}
-
-func (c *Client) markTerminal(ctx context.Context, name string, phase Phase, message string) error {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return errors.New("upload session terminal message must not be empty")
-	}
 	return c.update(ctx, name, func(secret *corev1.Secret) error {
-		ensureData(secret)
-		delete(secret.Data, stagedHandleKey)
-		secret.Data[phaseKey] = []byte(string(phase))
-		secret.Data[failureMessageKey] = []byte(message)
-		return nil
+		return MarkExpiredSecret(secret, message)
 	})
 }
 

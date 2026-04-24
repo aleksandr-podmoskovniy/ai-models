@@ -21,7 +21,6 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -29,7 +28,7 @@ import (
 
 func buildPodSpec(
 	options Options,
-	sourcePlan publicationapp.SourceWorkerPlan,
+	sourcePlan SourceWorkerPlan,
 	projectedAuthSecretName string,
 	container corev1.Container,
 ) corev1.PodSpec {
@@ -44,7 +43,7 @@ func buildPodSpec(
 
 func buildContainer(
 	request publicationports.Request,
-	sourcePlan publicationapp.SourceWorkerPlan,
+	sourcePlan SourceWorkerPlan,
 	artifactURI string,
 	options Options,
 	projectedAuthSecretName string,
@@ -81,7 +80,7 @@ func buildLabels(owner publicationports.Owner) map[string]string {
 
 func buildEnv(
 	options Options,
-	plan publicationapp.SourceWorkerPlan,
+	plan SourceWorkerPlan,
 	projectedAuthSecretName string,
 	directUploadStateSecretName string,
 ) []corev1.EnvVar {
@@ -115,7 +114,7 @@ func buildEnv(
 	return env
 }
 
-func buildVolumeMounts(options Options, plan publicationapp.SourceWorkerPlan) []corev1.VolumeMount {
+func buildVolumeMounts(options Options, plan SourceWorkerPlan) []corev1.VolumeMount {
 	var extra []corev1.VolumeMount
 	if sourceUsesObjectStorage(plan, options) || publishUsesObjectStorageTrust(options) {
 		extra = storageprojection.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
@@ -125,7 +124,7 @@ func buildVolumeMounts(options Options, plan publicationapp.SourceWorkerPlan) []
 
 func buildVolumes(
 	options Options,
-	plan publicationapp.SourceWorkerPlan,
+	plan SourceWorkerPlan,
 	_ string,
 ) []corev1.Volume {
 	var extra []corev1.Volume
@@ -135,7 +134,7 @@ func buildVolumes(
 	return append(ociregistry.Volumes(options.OCIRegistryCASecretName), extra...)
 }
 
-func sourceUsesObjectStorage(plan publicationapp.SourceWorkerPlan, options Options) bool {
+func sourceUsesObjectStorage(plan SourceWorkerPlan, options Options) bool {
 	if plan.Upload != nil {
 		return true
 	}

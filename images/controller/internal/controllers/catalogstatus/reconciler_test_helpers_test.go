@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/cleanupstate"
 	"github.com/deckhouse/ai-models/controller/internal/ports/auditsink"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
@@ -51,12 +52,17 @@ func newModelReconcilerWithSink(
 		[]client.Object{&modelsv1alpha1.Model{}, &modelsv1alpha1.ClusterModel{}},
 		objects...,
 	)
+	cleanupState, err := cleanupstate.New(kubeClient, "d8-ai-models")
+	if err != nil {
+		t.Fatalf("cleanupstate.New() error = %v", err)
+	}
 
 	return &ModelReconciler{baseReconciler{
 		client:         kubeClient,
-		options:        Options{},
+		options:        Options{CleanupStateNamespace: "d8-ai-models"},
 		sourceWorkers:  sourceWorkers,
 		uploadSessions: uploadSessions,
+		cleanupState:   cleanupState,
 		auditSink:      auditSink,
 	}}, kubeClient
 }
@@ -86,12 +92,17 @@ func newClusterModelReconcilerWithSink(
 		[]client.Object{&modelsv1alpha1.Model{}, &modelsv1alpha1.ClusterModel{}},
 		objects...,
 	)
+	cleanupState, err := cleanupstate.New(kubeClient, "d8-ai-models")
+	if err != nil {
+		t.Fatalf("cleanupstate.New() error = %v", err)
+	}
 
 	return &ClusterModelReconciler{baseReconciler{
 		client:         kubeClient,
-		options:        Options{},
+		options:        Options{CleanupStateNamespace: "d8-ai-models"},
 		sourceWorkers:  sourceWorkers,
 		uploadSessions: uploadSessions,
+		cleanupState:   cleanupState,
 		auditSink:      auditSink,
 	}}, kubeClient
 }

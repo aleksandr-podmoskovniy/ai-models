@@ -22,7 +22,6 @@ import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	auditapp "github.com/deckhouse/ai-models/controller/internal/application/publishaudit"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishobserve"
-	publicationplan "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
@@ -32,13 +31,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func cleanupHandlePresent(object client.Object) (bool, error) {
-	_, found, err := cleanuphandle.FromObject(object)
-	return found, err
+func (r *baseReconciler) cleanupHandlePresent(ctx context.Context, object client.Object) (bool, error) {
+	return r.cleanupState.Exists(ctx, object)
 }
 
 func (r *baseReconciler) ensureCleanupHandle(ctx context.Context, object client.Object, handle cleanuphandle.Handle) (bool, error) {
-	existing, found, err := cleanuphandle.FromObject(object)
+	existing, found, err := r.cleanupState.Get(ctx, object)
 	if err != nil {
 		return false, err
 	}
@@ -46,39 +44,7 @@ func (r *baseReconciler) ensureCleanupHandle(ctx context.Context, object client.
 		return false, nil
 	}
 
-	updated := false
-	key := client.ObjectKeyFromObject(object)
-	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		latest := object.DeepCopyObject().(client.Object)
-		if err := r.client.Get(ctx, key, latest); err != nil {
-			return err
-		}
-
-		currentHandle, currentFound, err := cleanuphandle.FromObject(latest)
-		if err != nil {
-			return err
-		}
-		if currentFound && apiequality.Semantic.DeepEqual(currentHandle, handle) {
-			object.SetAnnotations(latest.GetAnnotations())
-			object.SetResourceVersion(latest.GetResourceVersion())
-			return nil
-		}
-		if err := cleanuphandle.SetOnObject(latest, handle); err != nil {
-			return err
-		}
-		if err := r.client.Update(ctx, latest); err != nil {
-			return err
-		}
-
-		object.SetAnnotations(latest.GetAnnotations())
-		object.SetResourceVersion(latest.GetResourceVersion())
-		updated = true
-		return nil
-	}); err != nil {
-		return false, err
-	}
-
-	return updated, nil
+	return r.cleanupState.Ensure(ctx, object, handle)
 }
 
 func (r *baseReconciler) updateStatus(
@@ -240,7 +206,7 @@ func (r *baseReconciler) applyRuntimeObservation(
 	spec modelsv1alpha1.ModelSpec,
 	current *modelsv1alpha1.ModelStatus,
 	sourceType modelsv1alpha1.ModelSourceType,
-	mode publicationplan.ExecutionMode,
+	mode runtimeMode,
 	decision publicationapp.RuntimeObservationDecision,
 	deleteFn func(context.Context) error,
 ) (ctrl.Result, error) {
@@ -266,7 +232,7 @@ func (r *baseReconciler) failPublication(
 	object client.Object,
 	current *modelsv1alpha1.ModelStatus,
 	sourceType modelsv1alpha1.ModelSourceType,
-	mode publicationplan.ExecutionMode,
+	mode runtimeMode,
 	message string,
 ) (ctrl.Result, error) {
 	plan, err := publicationapp.PlanFailedCatalogStatusMutation(*current, object.GetGeneration(), sourceType, message)

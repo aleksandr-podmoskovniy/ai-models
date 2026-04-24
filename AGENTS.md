@@ -47,6 +47,10 @@ publication/runtime baseline без возврата к backend-first narrative.
 - Не делать большие архитектурные изменения без явного плана.
 - Не редактировать upstream-артефакты без описанного patch/rebase процесса.
 - Не тащить в этап 1 задачи этапа 2 и 3 без явного решения в плане.
+- Любая задача, которая меняет DKP user-facing API, auth/exposure, RBAC
+  templates или runtime entrypoints, должна явно фиксировать
+  DKP user-facing RBAC coverage: access levels/personas, scope, verbs и
+  intentional deny paths.
 - Любая нетривиальная задача сначала превращается в task bundle в `plans/active/<slug>/`.
 - Repo-local workflow rules имеют строгий precedence:
   - `AGENTS.md`
@@ -132,7 +136,8 @@ publication/runtime baseline без возврата к backend-first narrative.
 7. После каждого slice выполнять узкие проверки.
 8. Перед завершением выполнить repo-level проверки.
 9. Обновить документацию, если изменились архитектура, процесс, API или эксплуатация.
-10. Завершить задачу через `review-gate`, а для substantial tasks с delegation дополнительно через `reviewer`.
+10. Для relevant API/auth/RBAC/exposure задач проверить RBAC coverage evidence.
+11. Завершить задачу через `review-gate`, а для substantial tasks с delegation дополнительно через `reviewer`.
 
 ## Workflow governance
 
@@ -165,7 +170,7 @@ Planning обязателен, если:
 - задача меняет больше одного каталога;
 - задача тянет архитектурное решение;
 - задача меняет контракт values/OpenAPI/API;
-- задача затрагивает publication backend/raw-ingest, auth, storage или
+- задача затрагивает publication backend/raw-ingest, auth/RBAC, storage или
   observability;
 - задача предполагает patching upstream.
 - задача меняет repo-local workflow/governance surface
@@ -185,7 +190,7 @@ Planning обязателен, если:
 Delegation обязателен, если:
 - задача меняет больше одной области репозитория и решение не является чисто механическим;
 - задача меняет module layout, build/publish shell, values/OpenAPI/API contract или stage boundary;
-- задача затрагивает auth, storage, ingress/TLS, observability, HA или global-vs-local ownership;
+- задача затрагивает auth/RBAC, storage, ingress/TLS, observability, HA или global-vs-local ownership;
 - задача связана с upstream patching, rebase или 3p packaging discipline;
 - задача проектирует или меняет `Model`, `ClusterModel`, status/conditions или controller boundaries.
 

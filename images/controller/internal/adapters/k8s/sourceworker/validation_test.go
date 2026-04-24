@@ -22,9 +22,9 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
@@ -57,24 +57,14 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 			wantErr: "source.url or source.upload",
 		},
 		{
-			name: "cluster scoped huggingface auth secret without namespace",
+			name: "cluster scoped huggingface auth secret is unsupported",
 			mutate: func(request *publicationports.Request) {
 				request.Owner.Namespace = ""
 				request.Identity.Scope = publication.ScopeCluster
 				request.Identity.Namespace = ""
 				request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
 			},
-			wantErr: "authSecretRef namespace",
-		},
-		{
-			name: "cluster scoped huggingface auth secret without namespace",
-			mutate: func(request *publicationports.Request) {
-				request.Owner.Namespace = ""
-				request.Identity.Scope = publication.ScopeCluster
-				request.Identity.Namespace = ""
-				request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "hf-auth"}
-			},
-			wantErr: "authSecretRef namespace",
+			wantErr: "authSecretRef is not supported for cluster-scoped owners",
 		},
 		{
 			name: "namespaced huggingface auth secret rejects foreign namespace",
@@ -189,7 +179,7 @@ func TestOptionsValidateRejectsMissingRequiredFields(t *testing.T) {
 			options := testOptions()
 			tc.mutate(&options)
 
-			err := validateOptions(publicationapp.SourceWorkerPlan{}, options)
+			err := validateOptions(SourceWorkerPlan{}, options)
 			if err == nil {
 				t.Fatal("expected validation error")
 			}
@@ -200,6 +190,29 @@ func TestOptionsValidateRejectsMissingRequiredFields(t *testing.T) {
 	}
 }
 
+func TestSourcePlanBuildsStagedUploadPlan(t *testing.T) {
+	t.Parallel()
+
+	request := testOperationRequest()
+	request.Spec.Source = modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}}
+	request.UploadStage = &cleanuphandle.UploadStagingHandle{
+		Bucket:   "ai-models",
+		Key:      "raw/1111-2222/model.gguf",
+		FileName: "model.gguf",
+	}
+
+	got, err := sourcePlan(request)
+	if err != nil {
+		t.Fatalf("sourcePlan() error = %v", err)
+	}
+	if got.SourceType != modelsv1alpha1.ModelSourceTypeUpload || got.Upload == nil {
+		t.Fatalf("unexpected source plan %#v", got)
+	}
+	if got.Upload.Stage != *request.UploadStage {
+		t.Fatalf("upload stage = %#v, want %#v", got.Upload.Stage, *request.UploadStage)
+	}
+}
+
 func TestOptionsValidateDirectHuggingFaceDoesNotRequireObjectStorage(t *testing.T) {
 	t.Parallel()
 
@@ -207,9 +220,9 @@ func TestOptionsValidateDirectHuggingFaceDoesNotRequireObjectStorage(t *testing.
 	options.SourceFetch = publicationports.SourceFetchModeDirect
 	options.ObjectStorage = storageprojection.Options{}
 
-	plan := publicationapp.SourceWorkerPlan{
+	plan := SourceWorkerPlan{
 		SourceType: modelsv1alpha1.ModelSourceTypeHuggingFace,
-		HuggingFace: &publicationapp.HuggingFaceSourcePlan{
+		HuggingFace: &HuggingFaceSourcePlan{
 			RepoID: "owner/model",
 		},
 	}
@@ -226,9 +239,9 @@ func TestOptionsValidateMirrorHuggingFaceRequiresObjectStorage(t *testing.T) {
 	options.SourceFetch = publicationports.SourceFetchModeMirror
 	options.ObjectStorage = storageprojection.Options{}
 
-	plan := publicationapp.SourceWorkerPlan{
+	plan := SourceWorkerPlan{
 		SourceType: modelsv1alpha1.ModelSourceTypeHuggingFace,
-		HuggingFace: &publicationapp.HuggingFaceSourcePlan{
+		HuggingFace: &HuggingFaceSourcePlan{
 			RepoID: "owner/model",
 		},
 	}
@@ -252,9 +265,9 @@ func TestOptionsValidateRequiresUploadEndpoint(t *testing.T) {
 		CASecretName: "ai-models-artifacts-ca",
 	}
 
-	plan := publicationapp.SourceWorkerPlan{
+	plan := SourceWorkerPlan{
 		SourceType: modelsv1alpha1.ModelSourceTypeHuggingFace,
-		HuggingFace: &publicationapp.HuggingFaceSourcePlan{
+		HuggingFace: &HuggingFaceSourcePlan{
 			RepoID: "owner/model",
 		},
 	}

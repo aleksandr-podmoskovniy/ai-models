@@ -23,7 +23,6 @@ import (
 	"fmt"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -36,7 +35,7 @@ func (s *Service) ensureProjectedAuthSecret(
 	ctx context.Context,
 	ownerObject client.Object,
 	owner publicationports.Owner,
-	plan publicationapp.SourceWorkerPlan,
+	plan SourceWorkerPlan,
 ) (string, error) {
 	authRef := sourceAuthSecretRef(plan)
 	if authRef == nil {
@@ -73,8 +72,8 @@ func (s *Service) ensureProjectedAuthSecret(
 
 func (s *Service) projectedAuthSecretData(
 	ctx context.Context,
-	plan publicationapp.SourceWorkerPlan,
-	ref publicationapp.SourceAuthSecretRef,
+	plan SourceWorkerPlan,
+	ref SourceAuthSecretRef,
 ) (map[string][]byte, error) {
 	sourceSecret := &corev1.Secret{}
 	if err := s.client.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: ref.Namespace}, sourceSecret); err != nil {
@@ -95,7 +94,7 @@ func (s *Service) projectedAuthSecretData(
 	}
 }
 
-func sourceAuthSecretRef(plan publicationapp.SourceWorkerPlan) *publicationapp.SourceAuthSecretRef {
+func sourceAuthSecretRef(plan SourceWorkerPlan) *SourceAuthSecretRef {
 	switch {
 	case plan.HuggingFace != nil:
 		return plan.HuggingFace.AuthSecretRef

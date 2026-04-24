@@ -34,6 +34,7 @@ const (
 	uploadSessionServicePrefix     = "ai-model-upload-"
 	uploadSessionSecretPrefix      = "ai-model-upload-auth-"
 	uploadSessionTokenSecretPrefix = "ai-model-upload-token-"
+	cleanupHandleSecretPrefix      = "ai-model-cleanup-state-"
 	cleanupJobPrefix               = "ai-model-cleanup-"
 	uploadStagingPrefix            = "raw"
 
@@ -127,6 +128,10 @@ func UploadSessionSecretName(uid types.UID) (string, error) {
 
 func UploadSessionTokenSecretName(uid types.UID) (string, error) {
 	return PrefixedName(uploadSessionTokenSecretPrefix, uid)
+}
+
+func CleanupHandleSecretName(uid types.UID) (string, error) {
+	return PrefixedName(cleanupHandleSecretPrefix, uid)
 }
 
 func CleanupJobName(uid types.UID) (string, error) {

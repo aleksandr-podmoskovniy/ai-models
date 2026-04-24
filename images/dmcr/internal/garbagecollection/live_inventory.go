@@ -22,17 +22,16 @@ import (
 	"fmt"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 )
 
-const cleanupHandleAnnotationKey = "ai.deckhouse.io/cleanup-handle"
-
-var (
-	modelGVR        = schema.GroupVersionResource{Group: "ai.deckhouse.io", Version: "v1alpha1", Resource: "models"}
-	clusterModelGVR = schema.GroupVersionResource{Group: "ai.deckhouse.io", Version: "v1alpha1", Resource: "clustermodels"}
+const (
+	cleanupStateAppName  = "ai-models-cleanup-state"
+	cleanupHandleDataKey = "cleanupHandle"
+	appNameLabelKey      = "app.kubernetes.io/name"
+	ownerKindLabelKey    = "ai.deckhouse.io/owner-kind"
 )
 
 type cleanupHandleSnapshot struct {
@@ -46,78 +45,52 @@ type cleanupHandleBackendSnapshot struct {
 	SourceMirrorPrefix       string `json:"sourceMirrorPrefix,omitempty"`
 }
 
-func DiscoverLivePrefixes(ctx context.Context, client dynamic.Interface, ignoreDeletingOwners bool) (livePrefixSet, error) {
+func DiscoverLivePrefixes(ctx context.Context, client kubernetes.Interface, namespace string, _ bool) (livePrefixSet, error) {
 	if client == nil {
-		return livePrefixSet{}, fmt.Errorf("dynamic client must not be nil")
+		return livePrefixSet{}, fmt.Errorf("kubernetes client must not be nil")
+	}
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		return livePrefixSet{}, fmt.Errorf("cleanup state namespace must not be empty")
 	}
 
 	live := newLivePrefixSet()
-	if err := collectLivePrefixesForResource(ctx, client, modelGVR, true, ignoreDeletingOwners, &live); err != nil {
+	secrets, err := client.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: appNameLabelKey + "=" + cleanupStateAppName,
+	})
+	if err != nil {
 		return livePrefixSet{}, err
 	}
-	if err := collectLivePrefixesForResource(ctx, client, clusterModelGVR, false, ignoreDeletingOwners, &live); err != nil {
-		return livePrefixSet{}, err
+	for _, secret := range secrets.Items {
+		if err := collectLivePrefixesFromSecret(&secret, &live); err != nil {
+			return livePrefixSet{}, err
+		}
 	}
 	return live, nil
 }
 
-func collectLivePrefixesForResource(
-	ctx context.Context,
-	client dynamic.Interface,
-	gvr schema.GroupVersionResource,
-	namespaced bool,
-	ignoreDeletingOwners bool,
-	live *livePrefixSet,
-) error {
-	resource := client.Resource(gvr)
-	var (
-		list *unstructured.UnstructuredList
-		err  error
-	)
-
-	if namespaced {
-		list, err = resource.Namespace(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = resource.List(ctx, metav1.ListOptions{})
-	}
-	if err != nil {
-		return fmt.Errorf("list %s: %w", gvr.Resource, err)
-	}
-
-	for _, item := range list.Items {
-		if ignoreDeletingOwners && item.GetDeletionTimestamp() != nil {
-			continue
-		}
-		if namespaced {
-			live.modelCount++
-		} else {
-			live.clusterModelCount++
-		}
-		if err := collectLivePrefixesFromObject(item.GetNamespace(), item.GetName(), item.GetAnnotations(), live); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func collectLivePrefixesFromObject(
-	namespace string,
-	name string,
-	annotations map[string]string,
-	live *livePrefixSet,
-) error {
+func collectLivePrefixesFromSecret(secret *corev1.Secret, live *livePrefixSet) error {
 	if live == nil {
 		return fmt.Errorf("live prefix set must not be nil")
 	}
+	if secret == nil {
+		return nil
+	}
+	switch strings.TrimSpace(secret.Labels[ownerKindLabelKey]) {
+	case "Model":
+		live.modelCount++
+	case "ClusterModel":
+		live.clusterModelCount++
+	}
 
-	rawHandle := strings.TrimSpace(annotations[cleanupHandleAnnotationKey])
+	rawHandle := strings.TrimSpace(string(secret.Data[cleanupHandleDataKey]))
 	if rawHandle == "" {
 		return nil
 	}
 
 	var handle cleanupHandleSnapshot
 	if err := json.Unmarshal([]byte(rawHandle), &handle); err != nil {
-		return fmt.Errorf("decode cleanup handle for %s: %w", objectRef(namespace, name), err)
+		return fmt.Errorf("decode cleanup state %s/%s: %w", secret.Namespace, secret.Name, err)
 	}
 
 	if strings.TrimSpace(handle.Kind) != "BackendArtifact" || handle.Backend == nil {
@@ -133,11 +106,4 @@ func collectLivePrefixesFromObject(
 		live.addRaw(prefix)
 	}
 	return nil
-}
-
-func objectRef(namespace, name string) string {
-	if strings.TrimSpace(namespace) == "" {
-		return strings.TrimSpace(name)
-	}
-	return strings.TrimSpace(namespace) + "/" + strings.TrimSpace(name)
 }

@@ -169,6 +169,9 @@ func (r *baseReconciler) maybeRemoveDeleteFinalizer(
 	if err := r.deletePublicationRuntimeResources(ctx, runtime.object); err != nil {
 		return ctrl.Result{}, true, err
 	}
+	if err := r.cleanupState.Delete(ctx, runtime.object); err != nil {
+		return ctrl.Result{}, true, err
+	}
 	controllerutil.RemoveFinalizer(runtime.object, Finalizer)
 	return ctrl.Result{}, true, r.client.Update(ctx, runtime.object)
 }

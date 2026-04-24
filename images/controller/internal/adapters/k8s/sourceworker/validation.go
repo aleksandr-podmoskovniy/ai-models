@@ -18,11 +18,13 @@ package sourceworker
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
 type Options struct {
@@ -30,6 +32,27 @@ type Options struct {
 	LogFormat            string
 	LogLevel             string
 	MaxConcurrentWorkers int
+}
+
+type SourceWorkerPlan struct {
+	SourceType  modelsv1alpha1.ModelSourceType
+	HuggingFace *HuggingFaceSourcePlan
+	Upload      *UploadSourcePlan
+}
+
+type SourceAuthSecretRef struct {
+	Namespace string
+	Name      string
+}
+
+type HuggingFaceSourcePlan struct {
+	RepoID        string
+	Revision      string
+	AuthSecretRef *SourceAuthSecretRef
+}
+
+type UploadSourcePlan struct {
+	Stage cleanuphandle.UploadStagingHandle
 }
 
 func normalizeOptions(options Options) Options {
@@ -48,7 +71,7 @@ func normalizeOptions(options Options) Options {
 	return options
 }
 
-func validateOptions(plan publicationapp.SourceWorkerPlan, options Options) error {
+func validateOptions(plan SourceWorkerPlan, options Options) error {
 	if err := validateServiceOptions(options); err != nil {
 		return err
 	}
@@ -68,14 +91,14 @@ func validateServiceOptions(options Options) error {
 	return nil
 }
 
-func sourcePlan(request publicationports.Request) (publicationapp.SourceWorkerPlan, error) {
+func sourcePlan(request publicationports.Request) (SourceWorkerPlan, error) {
 	if err := validateOwner(request.Owner); err != nil {
-		return publicationapp.SourceWorkerPlan{}, err
+		return SourceWorkerPlan{}, err
 	}
 	if err := request.Identity.Validate(); err != nil {
-		return publicationapp.SourceWorkerPlan{}, err
+		return SourceWorkerPlan{}, err
 	}
-	return publicationapp.PlanSourceWorker(request.Spec, request.Owner.Namespace, request.UploadStage)
+	return planSourceWorker(request.Spec, request.Owner.Namespace, request.UploadStage)
 }
 
 func validateOwner(owner publicationports.Owner) error {
@@ -89,4 +112,74 @@ func validateOwner(owner publicationports.Owner) error {
 	default:
 		return nil
 	}
+}
+
+func planSourceWorker(
+	spec modelsv1alpha1.ModelSpec,
+	ownerNamespace string,
+	uploadStage *cleanuphandle.UploadStagingHandle,
+) (SourceWorkerPlan, error) {
+	sourceType, err := spec.Source.DetectType()
+	if err != nil {
+		return SourceWorkerPlan{}, err
+	}
+	plan := SourceWorkerPlan{SourceType: sourceType}
+
+	switch sourceType {
+	case modelsv1alpha1.ModelSourceTypeHuggingFace:
+		repoID, revision, err := modelsv1alpha1.ParseHuggingFaceURL(spec.Source.URL)
+		if err != nil {
+			return SourceWorkerPlan{}, err
+		}
+		authSecretRef, err := resolveSourceAuthSecretRef(spec.Source.AuthSecretRef, ownerNamespace, "huggingFace")
+		if err != nil {
+			return SourceWorkerPlan{}, err
+		}
+		plan.HuggingFace = &HuggingFaceSourcePlan{
+			RepoID:        repoID,
+			Revision:      revision,
+			AuthSecretRef: authSecretRef,
+		}
+		return plan, nil
+	case modelsv1alpha1.ModelSourceTypeUpload:
+		if uploadStage == nil {
+			return SourceWorkerPlan{}, errors.New("source worker upload source requires a staged upload handle")
+		}
+		plan.Upload = &UploadSourcePlan{Stage: *uploadStage}
+		return plan, nil
+	default:
+		return SourceWorkerPlan{}, fmt.Errorf("source worker does not support source type %q", sourceType)
+	}
+}
+
+func resolveSourceAuthSecretRef(ref *modelsv1alpha1.SecretReference, ownerNamespace, sourceKind string) (*SourceAuthSecretRef, error) {
+	if ref == nil {
+		return nil, nil
+	}
+
+	name := strings.TrimSpace(ref.Name)
+	if name == "" {
+		return nil, fmt.Errorf("source worker %s authSecretRef name must not be empty", sourceKind)
+	}
+
+	namespace := strings.TrimSpace(ref.Namespace)
+	resolvedOwnerNamespace := strings.TrimSpace(ownerNamespace)
+	if resolvedOwnerNamespace != "" {
+		switch {
+		case namespace == "":
+			namespace = resolvedOwnerNamespace
+		case namespace != resolvedOwnerNamespace:
+			return nil, fmt.Errorf("source worker %s authSecretRef namespace must match owner namespace %q", sourceKind, resolvedOwnerNamespace)
+		}
+	} else {
+		return nil, fmt.Errorf("source worker %s authSecretRef is not supported for cluster-scoped owners", sourceKind)
+	}
+	if namespace == "" {
+		return nil, fmt.Errorf("source worker %s authSecretRef namespace must not be empty", sourceKind)
+	}
+
+	return &SourceAuthSecretRef{
+		Namespace: namespace,
+		Name:      name,
+	}, nil
 }

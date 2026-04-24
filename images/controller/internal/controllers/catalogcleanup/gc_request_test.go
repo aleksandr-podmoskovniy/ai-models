@@ -56,6 +56,9 @@ func TestBuildDMCRGCRequestSecretIncludesSharedOwnerLabels(t *testing.T) {
 	if secret.Annotations[dmcrGCSwitchAnnotationKey] == "" {
 		t.Fatal("expected delete-triggered request to be armed immediately")
 	}
+	if secret.Annotations[dmcrGCRequestedAnnotationKey] != secret.Annotations[dmcrGCSwitchAnnotationKey] {
+		t.Fatalf("expected requested-at and switch timestamps to match, got %#v", secret.Annotations)
+	}
 	if got := string(secret.Data[dmcrGCDirectUploadTokenKey]); got != "" {
 		t.Fatalf("unexpected direct-upload session token payload %q", got)
 	}
@@ -83,6 +86,10 @@ func TestEnsureGarbageCollectionRequestRefreshesMetadataOnExistingSecret(t *test
 			},
 		},
 		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			dmcrGCDirectUploadTokenKey: []byte("old-token"),
+			"extra":                    []byte("keep"),
+		},
 	}
 	reconciler, kubeClient := newModelReconciler(t, model, existing)
 
@@ -111,6 +118,15 @@ func TestEnsureGarbageCollectionRequestRefreshesMetadataOnExistingSecret(t *test
 	}
 	if updated.Annotations[dmcrGCSwitchAnnotationKey] == "" {
 		t.Fatalf("expected active switch annotation to be set, got %#v", updated.Annotations)
+	}
+	if updated.Annotations[dmcrGCRequestedAnnotationKey] != updated.Annotations[dmcrGCSwitchAnnotationKey] {
+		t.Fatalf("expected requested-at and switch timestamps to match, got %#v", updated.Annotations)
+	}
+	if _, found := updated.Data[dmcrGCDirectUploadTokenKey]; found {
+		t.Fatalf("expected stale direct-upload token to be removed, got %#v", updated.Data)
+	}
+	if got, want := string(updated.Data["extra"]), "keep"; got != want {
+		t.Fatalf("unexpected preserved data %q", got)
 	}
 }
 

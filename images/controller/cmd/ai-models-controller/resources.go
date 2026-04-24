@@ -17,7 +17,10 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -79,4 +82,31 @@ func buildPublicationWorkerResources(
 			corev1.ResourceEphemeralStorage: limitEphemeral,
 		},
 	}, nil
+}
+
+func parseMatchLabelsJSON(raw string) (map[string]string, error) {
+	raw = normalizeMatchLabelsJSON(raw)
+	labels := map[string]string{}
+	if err := json.Unmarshal([]byte(raw), &labels); err != nil {
+		return nil, fmt.Errorf("parse matchLabels json: %w", err)
+	}
+	return labels, nil
+}
+
+func normalizeMatchLabelsJSON(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if len(raw) < 2 {
+		return raw
+	}
+	if raw[0] == '"' && raw[len(raw)-1] == '"' {
+		unquoted, err := strconv.Unquote(raw)
+		if err == nil {
+			return unquoted
+		}
+		return raw[1 : len(raw)-1]
+	}
+	if raw[0] == '\'' && raw[len(raw)-1] == '\'' {
+		return raw[1 : len(raw)-1]
+	}
+	return raw
 }

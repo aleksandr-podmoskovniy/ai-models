@@ -18,6 +18,7 @@ package catalogstatus
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -35,7 +36,11 @@ func (r *ModelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if err := r.client.Get(ctx, req.NamespacedName, &object); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	operationRequest, err := modelobject.PublicationRequest(&object, object.Spec)
+	uploadStage, err := r.cleanupState.UploadStage(ctx, &object)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	operationRequest, err := modelobject.PublicationRequest(&object, object.Spec, uploadStage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -48,7 +53,11 @@ func (r *ClusterModelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := r.client.Get(ctx, req.NamespacedName, &object); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	operationRequest, err := modelobject.PublicationRequest(&object, object.Spec)
+	uploadStage, err := r.cleanupState.UploadStage(ctx, &object)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	operationRequest, err := modelobject.PublicationRequest(&object, object.Spec, uploadStage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -63,19 +72,19 @@ func (r *baseReconciler) reconcileObject(
 	status *modelsv1alpha1.ModelStatus,
 	request publicationports.Request,
 ) (ctrl.Result, error) {
-	hasHandle, err := cleanupHandlePresent(object)
+	hasHandle, err := r.cleanupHandlePresent(ctx, object)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	decision, err := publicationapp.DecideCatalogStatusReconcile(publicationapp.CatalogStatusReconcileInput{
-		Deleting:           !object.GetDeletionTimestamp().IsZero(),
-		Source:             spec.Source,
-		UploadStagePresent: request.UploadStage != nil,
-		Current:            *status,
-		Generation:         object.GetGeneration(),
-		HasCleanupHandle:   hasHandle,
-	})
+	decision, err := decideCatalogStatusReconcile(
+		!object.GetDeletionTimestamp().IsZero(),
+		spec.Source,
+		request.UploadStage != nil,
+		*status,
+		object.GetGeneration(),
+		hasHandle,
+	)
 	if err != nil {
 		if modelsv1alpha1.IsUnsupportedRemoteSourceError(err) {
 			return r.failUnsupportedSource(ctx, object, status, err.Error())
@@ -86,17 +95,82 @@ func (r *baseReconciler) reconcileObject(
 		return ctrl.Result{}, nil
 	}
 
-	result, err := publicationapp.EnsureRuntimeObservation(publicationapp.EnsureRuntimeObservationInput{
-		Context:        ctx,
-		Owner:          object,
-		Request:        request,
-		Mode:           decision.Mode,
-		SourceWorkers:  r.sourceWorkers,
-		UploadSessions: r.uploadSessions,
-		Now:            time.Now().UTC(),
-	})
+	result, err := r.ensureRuntimeObservation(ctx, object, request, decision.Mode)
 	if err != nil {
 		return r.failPublication(ctx, object, status, decision.SourceType, decision.Mode, err.Error())
 	}
 	return r.applyRuntimeObservation(ctx, object, spec, status, decision.SourceType, decision.Mode, result.Decision, result.DeleteFn)
+}
+
+func (r *baseReconciler) ensureRuntimeObservation(
+	ctx context.Context,
+	object client.Object,
+	request publicationports.Request,
+	mode runtimeMode,
+) (runtimeObservationResult, error) {
+	switch mode {
+	case runtimeModeSourceWorker:
+		return r.ensureSourceWorkerObservation(ctx, object, request)
+	case runtimeModeUpload:
+		return r.ensureUploadSessionObservation(ctx, object, request)
+	default:
+		return runtimeObservationResult{}, fmt.Errorf("unsupported publication runtime mode %q", mode)
+	}
+}
+
+type runtimeObservationResult struct {
+	Decision publicationapp.RuntimeObservationDecision
+	DeleteFn func(context.Context) error
+}
+
+func (r *baseReconciler) ensureSourceWorkerObservation(
+	ctx context.Context,
+	object client.Object,
+	request publicationports.Request,
+) (runtimeObservationResult, error) {
+	if r.sourceWorkers == nil {
+		return runtimeObservationResult{}, fmt.Errorf("source worker runtime must not be nil")
+	}
+
+	handle, _, err := r.sourceWorkers.GetOrCreate(ctx, object, request)
+	if err != nil {
+		return runtimeObservationResult{}, err
+	}
+
+	decision, err := publicationapp.ObserveSourceWorker(request, handle)
+	if err != nil {
+		return runtimeObservationResult{}, err
+	}
+
+	var deleteFn func(context.Context) error
+	if handle != nil {
+		deleteFn = handle.Delete
+	}
+	return runtimeObservationResult{Decision: decision, DeleteFn: deleteFn}, nil
+}
+
+func (r *baseReconciler) ensureUploadSessionObservation(
+	ctx context.Context,
+	object client.Object,
+	request publicationports.Request,
+) (runtimeObservationResult, error) {
+	if r.uploadSessions == nil {
+		return runtimeObservationResult{}, fmt.Errorf("upload session runtime must not be nil")
+	}
+
+	handle, _, err := r.uploadSessions.GetOrCreate(ctx, object, request)
+	if err != nil {
+		return runtimeObservationResult{}, err
+	}
+
+	decision, err := publicationapp.ObserveUploadSession(request, handle, time.Now().UTC())
+	if err != nil {
+		return runtimeObservationResult{}, err
+	}
+
+	var deleteFn func(context.Context) error
+	if handle != nil {
+		deleteFn = handle.Delete
+	}
+	return runtimeObservationResult{Decision: decision, DeleteFn: deleteFn}, nil
 }

@@ -276,33 +276,14 @@ spec:
                     type: string
                   repository:
                     type: string
-                  tokenSecretRef:
-                    description: |-
-                      UploadTokenSecretReference points to a Secret key containing the complete
-                      Authorization header value for the active upload session.
-                    properties:
-                      key:
-                        minLength: 1
-                        type: string
-                      name:
-                        minLength: 1
-                        type: string
-                      namespace:
-                        minLength: 1
-                        type: string
-                    required:
-                    - key
-                    - name
-                    type: object
                 type: object
             type: object
         required:
         - spec
         type: object
         x-kubernetes-validations:
-        - message: spec.source.authSecretRef.namespace is required for ClusterModel
-          rule: '!has(self.spec.source.authSecretRef) || (has(self.spec.source.authSecretRef.namespace)
-            && size(self.spec.source.authSecretRef.namespace) > 0)'
+        - message: spec.source.authSecretRef is not supported for ClusterModel
+          rule: '!has(self.spec.source.authSecretRef)'
     served: true
     storage: true
     subresources:

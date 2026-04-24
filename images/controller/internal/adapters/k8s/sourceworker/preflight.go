@@ -18,7 +18,7 @@ package sourceworker
 
 import (
 	"context"
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
+
 	"github.com/deckhouse/ai-models/controller/internal/application/sourceadmission"
 	"github.com/deckhouse/ai-models/controller/internal/domain/ingestadmission"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
@@ -27,7 +27,7 @@ import (
 func (s *Service) preflight(
 	ctx context.Context,
 	request publicationports.Request,
-	_ publicationapp.SourceWorkerPlan,
+	_ SourceWorkerPlan,
 ) error {
 	return sourceadmission.Preflight(ctx, sourceadmission.PreflightInput{
 		Owner: ingestadmission.OwnerBinding{

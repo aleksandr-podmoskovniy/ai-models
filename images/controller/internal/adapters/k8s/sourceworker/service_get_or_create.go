@@ -22,7 +22,6 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/directuploadstate"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
@@ -34,7 +33,7 @@ func (s *Service) prepareRequestState(
 	ctx context.Context,
 	owner client.Object,
 	request publicationports.Request,
-	plan publicationapp.SourceWorkerPlan,
+	plan SourceWorkerPlan,
 ) (*corev1.Secret, modelpackports.DirectUploadState, error) {
 	if err := s.preflight(ctx, request, plan); err != nil {
 		return nil, modelpackports.DirectUploadState{}, err
@@ -84,7 +83,7 @@ func (s *Service) prepareProjectedDependencies(
 	ctx context.Context,
 	owner client.Object,
 	requestOwner publicationports.Owner,
-	plan publicationapp.SourceWorkerPlan,
+	plan SourceWorkerPlan,
 ) (Options, string, error) {
 	projectedAuthSecretName, err := s.ensureProjectedAuthSecret(ctx, owner, requestOwner, plan)
 	if err != nil {

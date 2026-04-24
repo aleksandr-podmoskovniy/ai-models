@@ -159,6 +159,7 @@ func runActiveRequestCycle(
 	if err != nil {
 		return true, err
 	}
+	policy.cleanupStateNamespace = options.RequestNamespace
 	slog.Default().Info(
 		"dmcr garbage collection requested",
 		slog.Int("request_count", len(activeSecrets)),

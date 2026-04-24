@@ -19,7 +19,6 @@ package garbagecollection
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -338,45 +337,4 @@ func TestRunRequestCycleDeletesActiveRequestsAndLogs(t *testing.T) {
 	if got := entries[1]["registry_output"]; got != "gc-ok" {
 		t.Fatalf("registry_output = %v, want gc-ok", got)
 	}
-}
-
-func decodeJSONLogLines(t *testing.T, payload []byte) []map[string]any {
-	t.Helper()
-
-	lines := bytes.Split(bytes.TrimSpace(payload), []byte("\n"))
-	entries := make([]map[string]any, 0, len(lines))
-	for _, line := range lines {
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
-		entry := map[string]any{}
-		if err := json.Unmarshal(line, &entry); err != nil {
-			t.Fatalf("json.Unmarshal(%q) error = %v", string(line), err)
-		}
-		entries = append(entries, entry)
-	}
-	return entries
-}
-
-func assertLogMessage(t *testing.T, entries []map[string]any, message string) {
-	t.Helper()
-
-	for _, entry := range entries {
-		if entry["msg"] == message {
-			return
-		}
-	}
-	t.Fatalf("log message %q not found in %#v", message, entries)
-}
-
-func replaceAttrForTest(_ []string, attr slog.Attr) slog.Attr {
-	switch attr.Key {
-	case slog.TimeKey:
-		attr.Key = "ts"
-	case slog.LevelKey:
-		attr.Value = slog.StringValue("info")
-	case slog.MessageKey:
-		attr.Key = "msg"
-	}
-	return attr
 }

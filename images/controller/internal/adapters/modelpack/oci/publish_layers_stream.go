@@ -77,32 +77,9 @@ func openArchiveLayerRange(layer modelpackports.PublishLayer, offset, length int
 		return nil, err
 	}
 
-	reader, writer := io.Pipe()
-	go func() {
-		archiveWriter, openErr := newArchiveWriter(writer, layer.Compression)
-		if openErr != nil {
-			_ = writer.CloseWithError(openErr)
-			return
-		}
-		writeErr := writeLayerArchive(archiveWriter, layer.SourcePath, layer.TargetPath, info)
-		closeErr := archiveWriter.Close()
-		if writeErr != nil {
-			_ = writer.CloseWithError(writeErr)
-			return
-		}
-		_ = writer.CloseWithError(closeErr)
-	}()
-
-	stream := &archivePipeStream{reader: reader}
-	body := io.Reader(stream.reader)
-	if offset > 0 {
-		body = &offsetReader{reader: body, offset: offset}
-	}
-	if length >= 0 {
-		body = io.LimitReader(body, length)
-	}
-
-	return &archiveRangeReader{body: body, stream: stream}, nil
+	return openGeneratedArchiveLayerRange(layer, offset, length, func(writer io.Writer) error {
+		return writeLayerArchive(writer, layer.SourcePath, layer.TargetPath, info)
+	})
 }
 
 func newArchiveWriter(writer io.Writer, compression modelpackports.LayerCompression) (closeWriter, error) {

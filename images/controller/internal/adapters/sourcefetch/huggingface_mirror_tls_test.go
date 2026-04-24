@@ -20,30 +20,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	sourcemirrorports "github.com/deckhouse/ai-models/controller/internal/ports/sourcemirror"
 )
 
 func TestMirrorHuggingFaceSnapshotFilesUsesCustomUploadHTTPClient(t *testing.T) {
-	previousBaseURL := huggingFaceBaseURL
-	t.Cleanup(func() { huggingFaceBaseURL = previousBaseURL })
-
 	hfServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.WriteHeader(http.StatusOK)
 		_, _ = writer.Write([]byte("tensor-payload"))
 	}))
 	defer hfServer.Close()
-	huggingFaceBaseURL = hfServer.URL
+	withHuggingFaceBaseURL(t, hfServer.URL)
 
 	mirrorClient, uploadHTTPClient := newFakeMirrorUploadStagingTLS(t)
-	snapshot := &SourceMirrorSnapshot{
-		Locator: sourcemirrorports.SnapshotLocator{
-			Provider: "huggingface",
-			Subject:  "owner/model",
-			Revision: "deadbeef",
-		},
-		CleanupPrefix: "raw/1111-2222/source-url/.mirror/huggingface/owner/model/deadbeef",
-	}
+	snapshot := newTestSourceMirrorSnapshot()
 	store := &fakeSourceMirrorStore{}
 
 	err := mirrorHuggingFaceSnapshotFiles(t.Context(), &SourceMirrorOptions{
@@ -51,13 +39,13 @@ func TestMirrorHuggingFaceSnapshotFilesUsesCustomUploadHTTPClient(t *testing.T) 
 		Client:           mirrorClient,
 		UploadHTTPClient: uploadHTTPClient,
 		Store:            store,
-		BasePrefix:       "raw/1111-2222/source-url/.mirror",
-	}, "owner/model", "deadbeef", "hf-token", []string{"model.safetensors"}, snapshot)
+		BasePrefix:       testSourceMirrorBasePrefix,
+	}, testHuggingFaceSubject, testHuggingFaceRevision, testHuggingFaceToken, []string{"model.safetensors"}, snapshot)
 	if err != nil {
 		t.Fatalf("mirrorHuggingFaceSnapshotFiles() error = %v", err)
 	}
 
-	key := sourcemirrorports.SnapshotFileObjectKey(snapshot.CleanupPrefix, "model.safetensors")
+	key := snapshot.CleanupPrefix + "/files/model.safetensors"
 	if got, want := string(mirrorClient.objects["artifacts/"+key]), "tensor-payload"; got != want {
 		t.Fatalf("unexpected mirrored object payload %q", got)
 	}

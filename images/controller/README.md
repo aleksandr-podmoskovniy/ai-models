@@ -248,8 +248,8 @@ Current phase-2 slice implemented here:
   session phases and rejects any late multipart mutation attempts instead of
   letting the preserved manifest imply a still-open upload; user-facing upload
   auth is Bearer-only, token-bearing query URLs are no longer part of the
-  projected status contract, and the raw header value is delivered only through
-  the token handoff Secret referenced by `status.upload.tokenSecretRef`;
+  projected status contract, and token handoff Secrets remain internal
+  controller/runtime state;
 - `internal/dataplane/artifactcleanup` for the controller-owned published
   artifact removal runtime;
 - `internal/publishedsnapshot` for immutable published-artifact snapshots used
@@ -265,8 +265,10 @@ Current phase-2 slice implemented here:
   publication now project one top-level `status.progress` percent string from
   machine-readable runtime progress instead of forcing operators to infer
   progress from `conditions[*].message`;
-- `internal/application/publishplan` for source-worker and upload-session
-  planning use cases;
+- `internal/application/publishobserve` for runtime observation mapping and
+  public status mutation planning; source-worker Pod plan shaping is adapter
+  code in `internal/adapters/k8s/sourceworker`, and runtime-mode selection is
+  controller-local orchestration in `internal/controllers/catalogstatus`;
 - `internal/application/publishaudit` for append-only internal audit/event
   planning: one-time lifecycle edge detection and message shaping for upload
   session issue, source fetch start, direct-or-mirrored `HuggingFace`
@@ -319,7 +321,7 @@ Current phase-2 slice implemented here:
   instead of inside reconciler files;
 - `internal/controllers/catalogstatus` for thin `Model` / `ClusterModel`
   publication lifecycle ownership: calling application use cases and
-  persisting planned status / cleanup-handle mutations without an intermediate
+  persisting planned status plus internal cleanup state without an intermediate
   persisted bus; successful runtime cleanup-handle handoff now also keeps the
   runtime object alive until the post-status reconcile that projects final
   state, and upload-source reconciles sync the session lifecycle through
@@ -338,7 +340,7 @@ Current phase-2 slice implemented here:
 Naming rule:
 - do not keep four different packages named `publication` across
   `application/`, `domain/`, `ports/` and `internal/`; role-based names such
-  as `publishplan`, `publishstate`, `publishop`, `publishedsnapshot`, and
+  as `publishobserve`, `publishstate`, `publishop`, `publishedsnapshot`, and
   `publicationartifact` are required so the tree stays explicit and closer to
   virtualization-style ownership.
 

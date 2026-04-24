@@ -25,15 +25,8 @@ import (
 )
 
 func TestFetchHuggingFaceProfileSummarySafetensors(t *testing.T) {
-	previousBaseURL := huggingFaceBaseURL
-	t.Cleanup(func() {
-		huggingFaceBaseURL = previousBaseURL
-	})
-
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if got, want := request.Header.Get("Authorization"), "Bearer hf-token"; got != want {
-			t.Fatalf("unexpected authorization header %q", got)
-		}
+		requireHuggingFaceAuth(t, request)
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/owner/model/resolve/deadbeef/config.json":
 			writer.Header().Set("Content-Type", "application/json")
@@ -50,9 +43,9 @@ func TestFetchHuggingFaceProfileSummarySafetensors(t *testing.T) {
 	}))
 	defer server.Close()
 
-	huggingFaceBaseURL = server.URL
+	withHuggingFaceBaseURL(t, server.URL)
 	summary, err := fetchHuggingFaceProfileSummary(t.Context(), RemoteOptions{
-		HFToken: "hf-token",
+		HFToken: testHuggingFaceToken,
 	}, "owner/model", "deadbeef", modelsv1alpha1.ModelInputFormatSafetensors, []string{
 		"config.json",
 		"model-00001-of-00002.safetensors",
@@ -73,15 +66,8 @@ func TestFetchHuggingFaceProfileSummarySafetensors(t *testing.T) {
 }
 
 func TestFetchHuggingFaceProfileSummaryGGUF(t *testing.T) {
-	previousBaseURL := huggingFaceBaseURL
-	t.Cleanup(func() {
-		huggingFaceBaseURL = previousBaseURL
-	})
-
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if got, want := request.Header.Get("Authorization"), "Bearer hf-token"; got != want {
-			t.Fatalf("unexpected authorization header %q", got)
-		}
+		requireHuggingFaceAuth(t, request)
 		switch {
 		case request.Method == http.MethodHead && request.URL.Path == "/owner/model/resolve/deadbeef/deepseek-r1-8b-q4_k_m.gguf":
 			writer.Header().Set("Content-Length", "42")
@@ -93,9 +79,9 @@ func TestFetchHuggingFaceProfileSummaryGGUF(t *testing.T) {
 	}))
 	defer server.Close()
 
-	huggingFaceBaseURL = server.URL
+	withHuggingFaceBaseURL(t, server.URL)
 	summary, err := fetchHuggingFaceProfileSummary(t.Context(), RemoteOptions{
-		HFToken: "hf-token",
+		HFToken: testHuggingFaceToken,
 	}, "owner/model", "deadbeef", modelsv1alpha1.ModelInputFormatGGUF, []string{
 		"deepseek-r1-8b-q4_k_m.gguf",
 	})

@@ -28,6 +28,14 @@
 - Значения и шаблоны согласованы.
 - Не появилось случайных root-level файлов или каталогов.
 
+## RBAC и доступы
+- Для DKP user-facing API/auth/RBAC/exposure/runtime entrypoint change явно
+  перечислены access levels/personas, scope, verbs и intentional deny paths.
+- User-facing RBAC не выдаёт случайно доступ к `status`, `finalizers`,
+  Secret'ам, exec, port-forward или internal runtime resources.
+- Service-account RBAC не aggregate-ится в человеческие роли.
+- Выполнены релевантные render/kubeconform/access-review проверки.
+
 ## Internal Backend Integration
 - Внутренний backend остаётся внутренним сервисом модуля, а не публичным API.
 - Storage, auth, monitoring и logging подключены через платформенные механизмы.

@@ -22,14 +22,17 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/cleanupstate"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
+	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestEnsureCleanupHandleRetriesOnConflict(t *testing.T) {
+func TestEnsureCleanupHandleStoresInternalSecret(t *testing.T) {
 	t.Parallel()
 
 	model := testModel()
@@ -40,11 +43,11 @@ func TestEnsureCleanupHandleRetriesOnConflict(t *testing.T) {
 		[]client.Object{&modelsv1alpha1.Model{}, &modelsv1alpha1.ClusterModel{}},
 		model,
 	)
-	kubeClient := &conflictOnceClient{
-		Client:           baseClient,
-		conflictOnUpdate: true,
+	cleanupState, err := cleanupstate.New(baseClient, "d8-ai-models")
+	if err != nil {
+		t.Fatalf("cleanupstate.New() error = %v", err)
 	}
-	reconciler := &baseReconciler{client: kubeClient}
+	reconciler := &baseReconciler{client: baseClient, cleanupState: cleanupState}
 
 	handle := cleanuphandle.Handle{
 		Kind: cleanuphandle.KindBackendArtifact,
@@ -63,18 +66,23 @@ func TestEnsureCleanupHandleRetriesOnConflict(t *testing.T) {
 		t.Fatalf("ensureCleanupHandle() error = %v", err)
 	}
 	if !updated {
-		t.Fatal("expected cleanup handle update to succeed after conflict retry")
-	}
-	if kubeClient.updateCalls < 2 {
-		t.Fatalf("expected retry after conflict, update calls = %d", kubeClient.updateCalls)
+		t.Fatal("expected cleanup handle state to be created")
 	}
 
-	var stored modelsv1alpha1.Model
-	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &stored); err != nil {
-		t.Fatalf("Get(model) error = %v", err)
+	name, err := resourcenames.CleanupHandleSecretName(model.GetUID())
+	if err != nil {
+		t.Fatalf("CleanupHandleSecretName() error = %v", err)
 	}
-	if _, found, err := cleanuphandle.FromObject(&stored); err != nil || !found {
-		t.Fatalf("expected stored cleanup handle, found=%v err=%v", found, err)
+	var secret corev1.Secret
+	if err := baseClient.Get(context.Background(), client.ObjectKey{Name: name, Namespace: "d8-ai-models"}, &secret); err != nil {
+		t.Fatalf("Get(cleanup state secret) error = %v", err)
+	}
+	stored, err := cleanuphandle.Decode(string(secret.Data[cleanupstate.DataKey]))
+	if err != nil {
+		t.Fatalf("Decode(cleanup state) error = %v", err)
+	}
+	if stored.Backend == nil || stored.Backend.Reference != handle.Backend.Reference {
+		t.Fatalf("unexpected cleanup handle %#v", stored)
 	}
 }
 

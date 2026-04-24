@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func FetchHuggingFaceInfo(ctx context.Context, repoID, revision, token string) (HuggingFaceInfo, error) {
@@ -90,7 +92,7 @@ func huggingFaceRepoPath(repoID string) (string, error) {
 }
 
 func cleanRemoteRelativePath(path string) (string, error) {
-	return archiveRelativePath(strings.ReplaceAll(path, "\\", "/"))
+	return archiveio.RelativePath(strings.ReplaceAll(path, "\\", "/"))
 }
 
 func ResolveHuggingFaceRevision(info HuggingFaceInfo, requested string) string {

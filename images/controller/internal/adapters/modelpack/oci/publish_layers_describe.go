@@ -211,34 +211,9 @@ func describeArchivePublishLayer(
 	info os.FileInfo,
 	mediaType string,
 ) (publishLayerDescriptor, error) {
-	diffHasher := sha256.New()
-	blobHasher := sha256.New()
-	counter := &countWriter{}
-	compressedSink := io.MultiWriter(blobHasher, counter)
-
-	archiveWriter, err := newArchiveWriter(compressedSink, layer.Compression)
-	if err != nil {
-		return publishLayerDescriptor{}, err
-	}
-	tarSink := io.MultiWriter(diffHasher, archiveWriter)
-	if err := writeLayerArchive(tarSink, layer.SourcePath, layer.TargetPath, info); err != nil {
-		_ = archiveWriter.Close()
-		return publishLayerDescriptor{}, err
-	}
-	if err := archiveWriter.Close(); err != nil {
-		return publishLayerDescriptor{}, err
-	}
-
-	return publishLayerDescriptor{
-		Digest:      "sha256:" + hex.EncodeToString(blobHasher.Sum(nil)),
-		DiffID:      "sha256:" + hex.EncodeToString(diffHasher.Sum(nil)),
-		Size:        counter.n,
-		MediaType:   mediaType,
-		TargetPath:  filepath.ToSlash(strings.TrimSpace(layer.TargetPath)),
-		Base:        layer.Base,
-		Format:      layer.Format,
-		Compression: normalizedArchiveCompression(layer.Compression),
-	}, nil
+	return describeGeneratedArchiveLayer(layer, mediaType, func(writer io.Writer) error {
+		return writeLayerArchive(writer, layer.SourcePath, layer.TargetPath, info)
+	})
 }
 
 func publishedModelPath(layers []publishLayerDescriptor) string {

@@ -6,6 +6,7 @@ sandbox_mode = "read-only"
 developer_instructions = """
 Review managed runtime integration boundaries only.
 Focus on auth, ingress, TLS, storage, HA, observability, global-vs-local ownership, and third-party component packaging shape.
+For RBAC changes, review Deckhouse access-level wiring, global-vs-local grants, and whether module-local grants widen sensitive paths.
 Do not edit files.
 Return concrete findings, risks, and recommendations.
 Say explicitly whether generic integration boundaries are clear enough for implementation or whether backend/API review is still needed.

@@ -19,11 +19,13 @@ package uploadsession
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsessionstate"
-	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
+	"github.com/deckhouse/ai-models/controller/internal/domain/ingestadmission"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -35,16 +37,15 @@ func (s *Service) materializeSession(
 	ctx context.Context,
 	owner client.Object,
 	request publicationports.Request,
-	plan publicationapp.UploadSessionPlan,
 ) (*corev1.Secret, *uploadsessionstate.Session, string, bool, error) {
-	sessionSecret, rawToken, created, err := s.ensureSecret(ctx, owner, request, plan)
+	sessionSecret, rawToken, created, err := s.ensureSecret(ctx, owner, request)
 	if err != nil {
 		return nil, nil, "", false, err
 	}
 	session, err := uploadsessionstate.SessionFromSecret(sessionSecret)
 	if err != nil {
 		if errors.Is(err, uploadsessionstate.ErrTokenHashMissing) {
-			sessionSecret, rawToken, created, err = s.recreateStaleSessionSecret(ctx, owner, request, plan, sessionSecret)
+			sessionSecret, rawToken, created, err = s.recreateStaleSessionSecret(ctx, owner, request, sessionSecret)
 			if err != nil {
 				return nil, nil, "", false, err
 			}
@@ -66,7 +67,6 @@ func (s *Service) ensureSecret(
 	ctx context.Context,
 	owner client.Object,
 	request publicationports.Request,
-	plan publicationapp.UploadSessionPlan,
 ) (*corev1.Secret, string, bool, error) {
 	ownerUID := request.Owner.UID
 	name, err := resourcenames.UploadSessionSecretName(ownerUID)
@@ -115,7 +115,6 @@ func (s *Service) recreateStaleSessionSecret(
 	ctx context.Context,
 	owner client.Object,
 	request publicationports.Request,
-	plan publicationapp.UploadSessionPlan,
 	secret *corev1.Secret,
 ) (*corev1.Secret, string, bool, error) {
 	if secret == nil {
@@ -126,7 +125,7 @@ func (s *Service) recreateStaleSessionSecret(
 	}); err != nil {
 		return nil, "", false, err
 	}
-	recreated, rawToken, created, err := s.ensureSecret(ctx, owner, request, plan)
+	recreated, rawToken, created, err := s.ensureSecret(ctx, owner, request)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -164,14 +163,25 @@ func (s *Service) ensureExplicitTerminalPhase(
 	return session, nil
 }
 
-func requestPlan(request publicationports.Request) (publicationapp.UploadSessionPlan, error) {
-	return publicationapp.IssueUploadSession(publicationapp.UploadSessionIssueRequest{
-		OwnerUID:       string(request.Owner.UID),
-		OwnerKind:      request.Owner.Kind,
-		OwnerName:      request.Owner.Name,
-		OwnerNamespace: request.Owner.Namespace,
-		Identity:       request.Identity,
-		Source:         request.Spec.Source,
+func validateRequest(request publicationports.Request) error {
+	if err := request.Validate(); err != nil {
+		return err
+	}
+	sourceType, err := request.Spec.Source.DetectType()
+	if err != nil {
+		return err
+	}
+	if sourceType != modelsv1alpha1.ModelSourceTypeUpload {
+		return fmt.Errorf("upload session only supports source type %q", modelsv1alpha1.ModelSourceTypeUpload)
+	}
+	return ingestadmission.ValidateUploadSession(ingestadmission.UploadSession{
+		Owner: ingestadmission.OwnerBinding{
+			Kind:      request.Owner.Kind,
+			Name:      request.Owner.Name,
+			Namespace: request.Owner.Namespace,
+			UID:       string(request.Owner.UID),
+		},
+		Identity: request.Identity,
 	})
 }
 

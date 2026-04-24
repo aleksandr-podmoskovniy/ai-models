@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 )
 
 type AutoCleanupResult struct {
@@ -36,6 +36,7 @@ type cleanupPolicy struct {
 	directUploadStaleAge               time.Duration
 	allowImmediateDirectUploadCleanup  bool
 	ignoreDeletingOwners               bool
+	cleanupStateNamespace              string
 }
 
 type autoCleanupFunc func(context.Context, string, string, time.Duration, cleanupPolicy) (AutoCleanupResult, error)
@@ -43,7 +44,7 @@ type autoCleanupFunc func(context.Context, string, string, time.Duration, cleanu
 var autoCleanupRunner autoCleanupFunc = autoCleanupWithPolicy
 
 func Check(ctx context.Context, configPath string) (Report, error) {
-	dynamicClient, err := NewInClusterDynamicClient()
+	client, err := NewInClusterClient()
 	if err != nil {
 		return Report{}, err
 	}
@@ -53,7 +54,7 @@ func Check(ctx context.Context, configPath string) (Report, error) {
 		return Report{}, err
 	}
 
-	return BuildReport(ctx, dynamicClient, store, rootDirectory)
+	return BuildReport(ctx, client, cleanupStateNamespace(cleanupPolicy{}), store, rootDirectory)
 }
 
 func AutoCleanup(
@@ -72,7 +73,7 @@ func autoCleanupWithPolicy(
 	gcTimeout time.Duration,
 	policy cleanupPolicy,
 ) (AutoCleanupResult, error) {
-	dynamicClient, err := NewInClusterDynamicClient()
+	client, err := NewInClusterClient()
 	if err != nil {
 		return AutoCleanupResult{}, err
 	}
@@ -82,7 +83,7 @@ func autoCleanupWithPolicy(
 		return AutoCleanupResult{}, err
 	}
 
-	report, err := BuildReportWithPolicy(ctx, dynamicClient, store, rootDirectory, policy)
+	report, err := BuildReportWithPolicy(ctx, client, store, rootDirectory, policy)
 	if err != nil {
 		return AutoCleanupResult{}, err
 	}
@@ -116,32 +117,33 @@ func autoCleanupWithPolicy(
 
 func BuildReport(
 	ctx context.Context,
-	dynamicClient dynamic.Interface,
+	client kubernetes.Interface,
+	cleanupNamespace string,
 	store prefixStore,
 	rootDirectory string,
 ) (Report, error) {
-	return BuildReportWithPolicy(ctx, dynamicClient, store, rootDirectory, cleanupPolicy{})
+	return BuildReportWithPolicy(ctx, client, store, rootDirectory, cleanupPolicy{cleanupStateNamespace: cleanupNamespace})
 }
 
 func BuildReportWithPolicy(
 	ctx context.Context,
-	dynamicClient dynamic.Interface,
+	client kubernetes.Interface,
 	store prefixStore,
 	rootDirectory string,
 	policy cleanupPolicy,
 ) (Report, error) {
-	return buildReportWithClock(ctx, dynamicClient, store, rootDirectory, time.Now().UTC(), policy)
+	return buildReportWithClock(ctx, client, store, rootDirectory, time.Now().UTC(), policy)
 }
 
 func buildReportWithClock(
 	ctx context.Context,
-	dynamicClient dynamic.Interface,
+	client kubernetes.Interface,
 	store prefixStore,
 	rootDirectory string,
 	now time.Time,
 	policy cleanupPolicy,
 ) (Report, error) {
-	live, err := DiscoverLivePrefixes(ctx, dynamicClient, policy.ignoreDeletingOwners)
+	live, err := DiscoverLivePrefixes(ctx, client, cleanupStateNamespace(policy), policy.ignoreDeletingOwners)
 	if err != nil {
 		return Report{}, err
 	}

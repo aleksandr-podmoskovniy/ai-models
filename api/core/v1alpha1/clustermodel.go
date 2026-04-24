@@ -28,7 +28,7 @@ const (
 // +genclient
 // +genclient:nonNamespaced
 // +kubebuilder:object:root=true
-// +kubebuilder:validation:XValidation:rule="!has(self.spec.source.authSecretRef) || (has(self.spec.source.authSecretRef.namespace) && size(self.spec.source.authSecretRef.namespace) > 0)",message="spec.source.authSecretRef.namespace is required for ClusterModel"
+// +kubebuilder:validation:XValidation:rule="!has(self.spec.source.authSecretRef)",message="spec.source.authSecretRef is not supported for ClusterModel"
 // +kubebuilder:metadata:labels={heritage=deckhouse,module=ai-models}
 // +kubebuilder:resource:categories={ai-models},scope=Cluster,singular=clustermodel
 // +kubebuilder:subresource:status

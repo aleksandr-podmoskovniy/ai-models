@@ -22,6 +22,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func TestSafeExtractTarRejectsSymbolicLinks(t *testing.T) {
@@ -122,7 +124,7 @@ func TestUnpackArchiveExtractsRegularCheckpointArchive(t *testing.T) {
 func TestArchiveRelativePathRejectsTraversal(t *testing.T) {
 	t.Parallel()
 
-	if _, err := archiveRelativePath("../escape.txt"); err == nil {
+	if _, err := archiveio.RelativePath("../escape.txt"); err == nil {
 		t.Fatal("expected traversal error")
 	}
 }

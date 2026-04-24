@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	publicationplan "github.com/deckhouse/ai-models/controller/internal/application/publishplan"
 	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,7 +32,7 @@ type uploadSessionPhaseSync struct {
 }
 
 func (r *baseReconciler) planUploadSessionPhaseSync(
-	mode publicationplan.ExecutionMode,
+	mode runtimeMode,
 	ownerUID types.UID,
 	sourceType modelsv1alpha1.ModelSourceType,
 	observation publicationdomain.Observation,
@@ -47,7 +46,7 @@ func (r *baseReconciler) planUploadSessionPhaseSync(
 	}
 
 	switch mode {
-	case publicationplan.ExecutionModeUpload:
+	case runtimeModeUpload:
 		if observation.Phase == publicationdomain.OperationPhaseStaged {
 			return uploadSessionPhaseSync{
 				ApplyOnCleanupRequeue: true,
@@ -56,7 +55,7 @@ func (r *baseReconciler) planUploadSessionPhaseSync(
 				},
 			}
 		}
-	case publicationplan.ExecutionModeSourceWorker:
+	case runtimeModeSourceWorker:
 		switch desired.Phase {
 		case modelsv1alpha1.ModelPhasePublishing:
 			return uploadSessionPhaseSync{
@@ -119,7 +118,7 @@ func uploadSessionFailureMessage(
 
 func planFailedUploadSessionPhaseSync(
 	r *baseReconciler,
-	mode publicationplan.ExecutionMode,
+	mode runtimeMode,
 	ownerUID types.UID,
 	sourceType modelsv1alpha1.ModelSourceType,
 	desired modelsv1alpha1.ModelStatus,

@@ -60,11 +60,11 @@ func TestServiceDeleteRemovesSessionAndTokenSecrets(t *testing.T) {
 	if !apierrors.IsNotFound(err) {
 		t.Fatalf("expected session secret to be deleted, got err=%v", err)
 	}
-	tokenRef := handle.UploadStatus.TokenSecretRef
-	if tokenRef == nil {
-		t.Fatal("expected upload token secret ref")
+	tokenSecretName, tokenSecretNamespace, err := tokenSecretObjectKey(owner.UID, owner.Namespace, "d8-ai-models")
+	if err != nil {
+		t.Fatalf("tokenSecretObjectKey() error = %v", err)
 	}
-	err = kubeClient.Get(context.Background(), client.ObjectKey{Name: tokenRef.Name, Namespace: tokenRef.Namespace}, &corev1.Secret{})
+	err = kubeClient.Get(context.Background(), client.ObjectKey{Name: tokenSecretName, Namespace: tokenSecretNamespace}, &corev1.Secret{})
 	if !apierrors.IsNotFound(err) {
 		t.Fatalf("expected token secret to be deleted, got err=%v", err)
 	}

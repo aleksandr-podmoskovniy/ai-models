@@ -24,7 +24,9 @@ description: Use for Kubernetes and DKP API design: CRD boundaries, scope, spec/
 2. Use stable naming and stable condition reasons.
 3. Make scope, ownership, and deletion semantics explicit.
 4. Keep internal backend details behind the public API.
-5. Prefer boring, stable API semantics over clever shortcuts.
+5. For DKP user-facing resources, state RBAC access-level coverage: personas,
+   namespaced vs cluster-wide scope, allowed verbs, and denied subresources.
+6. Prefer boring, stable API semantics over clever shortcuts.
 
 ## Hard rules
 
@@ -32,6 +34,8 @@ description: Use for Kubernetes and DKP API design: CRD boundaries, scope, spec/
 - No conditions whose reasons/messages are unstable by design.
 - No mixed ownership between `spec`, `status`, and hidden backend state.
 - No placeholder API knob kept “for later”.
+- No user-facing RBAC plan that grants status/finalizers or internal runtime
+  state by accident.
 
 ## Output
 

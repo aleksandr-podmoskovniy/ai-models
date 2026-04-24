@@ -17,6 +17,7 @@ limitations under the License.
 package garbagecollection
 
 import (
+	"os"
 	"strings"
 	"time"
 )
@@ -38,6 +39,7 @@ const (
 	DefaultExecutorLeaseName      = "dmcr-gc-executor"
 	DefaultExecutorLeaseDuration  = 45 * time.Second
 	DefaultExecutorRenewInterval  = 15 * time.Second
+	defaultCleanupStateNamespace  = "d8-ai-models"
 )
 
 type Options struct {
@@ -91,4 +93,14 @@ func applyDefaultOptions(options Options) Options {
 		options.ExecutorLeaseRenewInterval = DefaultExecutorRenewInterval
 	}
 	return options
+}
+
+func cleanupStateNamespace(policy cleanupPolicy) string {
+	if namespace := strings.TrimSpace(policy.cleanupStateNamespace); namespace != "" {
+		return namespace
+	}
+	if namespace := strings.TrimSpace(os.Getenv("POD_NAMESPACE")); namespace != "" {
+		return namespace
+	}
+	return defaultCleanupStateNamespace
 }

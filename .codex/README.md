@@ -116,6 +116,8 @@ Engineering expectations carried by this baseline:
 - no wrapper-on-wrapper architecture
 - test methodology by decision surface, not by helper accretion
 - explicit review of governance changes as a first-class scope
+- explicit DKP user-facing RBAC coverage for relevant API/auth/exposure/runtime
+  entrypoint tasks
 - portable core over disguised module-specific prose
 
 Machine-checkable governance baseline:

@@ -73,10 +73,6 @@ func TestServiceGetOrCreateCreatesSharedGatewaySessionSecret(t *testing.T) {
 	if !strings.Contains(handle.UploadStatus.InClusterURL, "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/") {
 		t.Fatalf("unexpected in-cluster URL %q", handle.UploadStatus.InClusterURL)
 	}
-	if handle.UploadStatus.TokenSecretRef == nil || handle.UploadStatus.TokenSecretRef.Namespace != "team-a" || handle.UploadStatus.TokenSecretRef.Key != TokenSecretAuthorizationHeaderKey {
-		t.Fatalf("unexpected token secret ref %#v", handle.UploadStatus.TokenSecretRef)
-	}
-
 	secret := &corev1.Secret{}
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: mustUploadSessionSecret(t, owner.UID).Name, Namespace: "d8-ai-models"}, secret); err != nil {
 		t.Fatalf("Get(secret) error = %v", err)
@@ -91,8 +87,12 @@ func TestServiceGetOrCreateCreatesSharedGatewaySessionSecret(t *testing.T) {
 	if _, found := secret.Data["token"]; found {
 		t.Fatalf("raw upload token must not be stored in session secret: %#v", secret.Data)
 	}
+	tokenSecretName, tokenSecretNamespace, err := tokenSecretObjectKey(owner.UID, owner.Namespace, "d8-ai-models")
+	if err != nil {
+		t.Fatalf("tokenSecretObjectKey() error = %v", err)
+	}
 	tokenSecret := &corev1.Secret{}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: handle.UploadStatus.TokenSecretRef.Name, Namespace: "team-a"}, tokenSecret); err != nil {
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: tokenSecretName, Namespace: tokenSecretNamespace}, tokenSecret); err != nil {
 		t.Fatalf("Get(token secret) error = %v", err)
 	}
 	if got := string(tokenSecret.Data[TokenSecretAuthorizationHeaderKey]); !strings.HasPrefix(got, "Bearer ") {
@@ -134,9 +134,6 @@ func TestServiceGetOrCreateReusesTokenSecretForExistingSession(t *testing.T) {
 	if handle.UploadStatus.InClusterURL != owner.Status.Upload.InClusterURL {
 		t.Fatalf("expected persisted in-cluster URL to be reused, got %q", handle.UploadStatus.InClusterURL)
 	}
-	if handle.UploadStatus.TokenSecretRef == nil || *handle.UploadStatus.TokenSecretRef != *owner.Status.Upload.TokenSecretRef {
-		t.Fatalf("expected persisted token secret ref to be reused, got %#v", handle.UploadStatus.TokenSecretRef)
-	}
 }
 
 func TestServiceGetOrCreateRecreatesStaleSecretWithoutTokenHash(t *testing.T) {
@@ -175,9 +172,6 @@ func TestServiceGetOrCreateRecreatesStaleSecretWithoutTokenHash(t *testing.T) {
 	if handle == nil {
 		t.Fatal("expected upload session handle")
 	}
-	if handle.UploadStatus.TokenSecretRef == nil {
-		t.Fatal("expected recreated session to expose token secret ref")
-	}
 	if handle.UploadStatus.InClusterURL != "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222" {
 		t.Fatalf("unexpected recreated in-cluster URL %q", handle.UploadStatus.InClusterURL)
 	}
@@ -192,8 +186,12 @@ func TestServiceGetOrCreateRecreatesStaleSecretWithoutTokenHash(t *testing.T) {
 	if _, found := updatedSecret.Data["tokenHash"]; !found {
 		t.Fatalf("expected recreated secret to persist tokenHash, got %#v", updatedSecret.Data)
 	}
+	tokenSecretName, tokenSecretNamespace, err := tokenSecretObjectKey(owner.UID, owner.Namespace, "d8-ai-models")
+	if err != nil {
+		t.Fatalf("tokenSecretObjectKey() error = %v", err)
+	}
 	updatedTokenSecret := &corev1.Secret{}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: handle.UploadStatus.TokenSecretRef.Name, Namespace: handle.UploadStatus.TokenSecretRef.Namespace}, updatedTokenSecret); err != nil {
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: tokenSecretName, Namespace: tokenSecretNamespace}, updatedTokenSecret); err != nil {
 		t.Fatalf("Get(updated token secret) error = %v", err)
 	}
 	if got := string(updatedTokenSecret.Data[TokenSecretAuthorizationHeaderKey]); got == "Bearer existing-token" {

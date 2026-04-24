@@ -173,7 +173,7 @@ func TestBuildReportKeepsFreshMultipartUploadAgeBoundedWhileOwnerIsDeleting(t *t
 			"namespace":         "team-a",
 			"deletionTimestamp": metav1.NewTime(now).Format(time.RFC3339),
 			"annotations": map[string]any{
-				cleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deleting/1111"}}`,
+				legacyCleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deleting/1111"}}`,
 			},
 		},
 	}}
@@ -206,22 +206,9 @@ func TestBuildReportMarksFreshMultipartUploadStaleWhenDeleteTriggeredPolicyIgnor
 			partCount:   9,
 		},
 	)
-	deletingModel := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "ai.deckhouse.io/v1alpha1",
-		"kind":       "Model",
-		"metadata": map[string]any{
-			"name":              "deleting-model",
-			"namespace":         "team-a",
-			"deletionTimestamp": metav1.NewTime(now).Format(time.RFC3339),
-			"annotations": map[string]any{
-				cleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deleting/1111"}}`,
-			},
-		},
-	}}
-
 	report, err := buildReportWithClock(
 		context.Background(),
-		newFakeDynamicClient(t, deletingModel),
+		newFakeDynamicClient(t),
 		store,
 		"dmcr",
 		now,

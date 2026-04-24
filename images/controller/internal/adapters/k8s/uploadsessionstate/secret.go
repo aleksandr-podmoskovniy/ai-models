@@ -117,7 +117,7 @@ func NewSecret(spec SessionSpec) (*corev1.Secret, error) {
 		stagingKeyPrefixKey: []byte(strings.TrimSpace(spec.StagingKeyPrefix)),
 		phaseKey:            []byte(string(PhaseIssued)),
 	}
-	if err := setToken(secretDataAccessor{data: data}, spec.Token); err != nil {
+	if err := storeTokenHash(data, spec.Token); err != nil {
 		return nil, err
 	}
 	if spec.ExpectedSizeBytes > 0 {
@@ -240,17 +240,103 @@ func SessionFromSecret(secret *corev1.Secret) (*Session, error) {
 	return session, nil
 }
 
-func ExpiresAtFromSecret(secret *corev1.Secret) (metav1.Time, error) {
+func MarkUploadedSecret(secret *corev1.Secret, handle cleanuphandle.Handle) error {
 	if secret == nil {
-		return metav1.Time{}, errors.New("upload session secret must not be nil")
+		return errors.New("upload session secret must not be nil")
 	}
-	raw := strings.TrimSpace(secret.Annotations[ExpiresAtAnnotationKey])
-	if raw == "" {
-		return metav1.Time{}, errors.New("upload session expiry annotation is missing")
+	if err := handle.Validate(); err != nil {
+		return err
 	}
-	value, err := time.Parse(time.RFC3339, raw)
+	encoded, err := cleanuphandle.Encode(handle)
 	if err != nil {
-		return metav1.Time{}, fmt.Errorf("parse upload session expiry: %w", err)
+		return err
 	}
-	return metav1.NewTime(value.UTC()), nil
+	ensureData(secret)
+	secret.Data[phaseKey] = []byte(string(PhaseUploaded))
+	secret.Data[stagedHandleKey] = []byte(encoded)
+	delete(secret.Data, failureMessageKey)
+	return nil
+}
+
+func MarkPublishingSecret(secret *corev1.Secret) error {
+	if secret == nil {
+		return errors.New("upload session secret must not be nil")
+	}
+	phase, err := phaseFromSecret(secret)
+	if err != nil {
+		return err
+	}
+	switch phase {
+	case PhaseCompleted, PhaseFailed, PhaseAborted, PhaseExpired:
+		return nil
+	default:
+	}
+	ensureData(secret)
+	secret.Data[phaseKey] = []byte(string(PhasePublishing))
+	delete(secret.Data, failureMessageKey)
+	return nil
+}
+
+func MarkCompletedSecret(secret *corev1.Secret) error {
+	if secret == nil {
+		return errors.New("upload session secret must not be nil")
+	}
+	phase, err := phaseFromSecret(secret)
+	if err != nil {
+		return err
+	}
+	switch phase {
+	case PhaseFailed, PhaseAborted, PhaseExpired:
+		return nil
+	default:
+	}
+	ensureData(secret)
+	secret.Data[phaseKey] = []byte(string(PhaseCompleted))
+	delete(secret.Data, failureMessageKey)
+	delete(secret.Data, stagedHandleKey)
+	return nil
+}
+
+func MarkPublishingFailedSecret(secret *corev1.Secret, message string) error {
+	if secret == nil {
+		return errors.New("upload session secret must not be nil")
+	}
+	phase, err := phaseFromSecret(secret)
+	if err != nil {
+		return err
+	}
+	switch phase {
+	case PhaseCompleted, PhaseAborted, PhaseExpired:
+		return nil
+	default:
+	}
+	return markTerminalSecret(secret, PhaseFailed, message, false)
+}
+
+func MarkExpiredSecret(secret *corev1.Secret, message string) error {
+	return markTerminalSecret(secret, PhaseExpired, message, true)
+}
+
+func phaseFromSecret(secret *corev1.Secret) (Phase, error) {
+	if secret == nil {
+		return "", errors.New("upload session secret must not be nil")
+	}
+	return parsePhase(secret.Data[phaseKey])
+}
+
+func markTerminalSecret(secret *corev1.Secret, phase Phase, message string, clearStagedHandle bool) error {
+	if secret == nil {
+		return errors.New("upload session secret must not be nil")
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return errors.New("upload session terminal message must not be empty")
+	}
+	ensureData(secret)
+	if clearStagedHandle {
+		delete(secret.Data, stagedHandleKey)
+	}
+	secret.Data[phaseKey] = []byte(string(phase))
+	secret.Data[failureMessageKey] = []byte(message)
+	return nil
 }

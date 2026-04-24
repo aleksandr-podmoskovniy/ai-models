@@ -83,7 +83,7 @@ func runningSourceWorkerHandle() *publicationports.SourceWorkerHandle {
 		"publish-worker",
 		corev1.PodRunning,
 		"",
-		modelsv1alpha1.ModelConditionReasonPublicationUploading,
+		modelsv1alpha1.ModelConditionReasonPublishing,
 		"37%",
 		"384/1024 bytes uploaded into the internal registry",
 		nil,
@@ -116,11 +116,6 @@ func runningUploadSessionHandle() *publicationports.UploadSessionHandle {
 			Repository:   "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/550e8400-e29b-41d4-a716-446655440111:published",
 			ExternalURL:  "https://ai-models.example.com/upload/token",
 			InClusterURL: "http://upload-worker.d8-ai-models.svc:8444/upload/token",
-			TokenSecretRef: &modelsv1alpha1.UploadTokenSecretReference{
-				Namespace: "team-a",
-				Name:      "upload-token",
-				Key:       "authorizationHeaderValue",
-			},
 		},
 		nil,
 	)

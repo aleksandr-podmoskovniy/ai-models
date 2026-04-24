@@ -19,25 +19,23 @@ package garbagecollection
 import (
 	"context"
 	"testing"
-	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
-func TestCollectLivePrefixesFromObjectUsesExplicitPrefixes(t *testing.T) {
+func TestCollectLivePrefixesFromSecretUsesExplicitPrefixes(t *testing.T) {
 	t.Parallel()
 
 	live := newLivePrefixSet()
-	annotations := map[string]string{
-		cleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/model/1111","sourceMirrorPrefix":"raw/1111/source-url/.mirror/huggingface/owner/model/deadbeef"}}`,
+	secret := &corev1.Secret{
+		Data: map[string][]byte{
+			cleanupHandleDataKey: []byte(`{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/model/1111","sourceMirrorPrefix":"raw/1111/source-url/.mirror/huggingface/owner/model/deadbeef"}}`),
+		},
 	}
 
-	if err := collectLivePrefixesFromObject("team-a", "model-a", annotations, &live); err != nil {
-		t.Fatalf("collectLivePrefixesFromObject() error = %v", err)
+	if err := collectLivePrefixesFromSecret(secret, &live); err != nil {
+		t.Fatalf("collectLivePrefixesFromSecret() error = %v", err)
 	}
 	if _, found := live.repositoryPrefixes["dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/model/1111"]; !found {
 		t.Fatal("expected repository prefix to be collected")
@@ -47,38 +45,27 @@ func TestCollectLivePrefixesFromObjectUsesExplicitPrefixes(t *testing.T) {
 	}
 }
 
-func TestCollectLivePrefixesFromObjectFallsBackToReference(t *testing.T) {
+func TestCollectLivePrefixesFromSecretFallsBackToReference(t *testing.T) {
 	t.Parallel()
 
 	live := newLivePrefixSet()
-	annotations := map[string]string{
-		cleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"reference":"dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/cluster/gemma/2222@sha256:deadbeef"}}`,
+	secret := &corev1.Secret{
+		Data: map[string][]byte{
+			cleanupHandleDataKey: []byte(`{"kind":"BackendArtifact","backend":{"reference":"dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/cluster/gemma/2222@sha256:deadbeef"}}`),
+		},
 	}
 
-	if err := collectLivePrefixesFromObject("", "gemma", annotations, &live); err != nil {
-		t.Fatalf("collectLivePrefixesFromObject() error = %v", err)
+	if err := collectLivePrefixesFromSecret(secret, &live); err != nil {
+		t.Fatalf("collectLivePrefixesFromSecret() error = %v", err)
 	}
 	if _, found := live.repositoryPrefixes["dmcr/docker/registry/v2/repositories/ai-models/catalog/cluster/gemma/2222"]; !found {
 		t.Fatal("expected fallback repository prefix to be collected")
 	}
 }
 
-func TestDiscoverLivePrefixesSkipsDeletingObjectsWhenRequested(t *testing.T) {
+func TestDiscoverLivePrefixesReadsCleanupStateSecrets(t *testing.T) {
 	t.Parallel()
 
-	now := metav1.NewTime(time.Unix(1_700_000_000, 0).UTC())
-	deletingModel := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "ai.deckhouse.io/v1alpha1",
-		"kind":       "Model",
-		"metadata": map[string]any{
-			"name":              "deleting-model",
-			"namespace":         "team-a",
-			"deletionTimestamp": now.Format(time.RFC3339),
-			"annotations": map[string]any{
-				cleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deleting/1111"}}`,
-			},
-		},
-	}}
 	liveModel := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "ai.deckhouse.io/v1alpha1",
 		"kind":       "Model",
@@ -86,30 +73,19 @@ func TestDiscoverLivePrefixesSkipsDeletingObjectsWhenRequested(t *testing.T) {
 			"name":      "live-model",
 			"namespace": "team-a",
 			"annotations": map[string]any{
-				cleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/live/2222"}}`,
+				legacyCleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/live/2222"}}`,
 			},
 		},
 	}}
 
-	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
-		runtime.NewScheme(),
-		map[schema.GroupVersionResource]string{
-			modelGVR:        "ModelList",
-			clusterModelGVR: "ClusterModelList",
-		},
-		deletingModel,
-		liveModel,
-	)
+	client := newFakeDynamicClient(t, liveModel)
 
-	live, err := DiscoverLivePrefixes(context.Background(), client, true)
+	live, err := DiscoverLivePrefixes(context.Background(), client, defaultCleanupStateNamespace, true)
 	if err != nil {
 		t.Fatalf("DiscoverLivePrefixes() error = %v", err)
 	}
 	if live.modelCount != 1 {
-		t.Fatalf("expected only non-deleting model to count as live owner, got %d", live.modelCount)
-	}
-	if _, found := live.repositoryPrefixes["dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deleting/1111"]; found {
-		t.Fatal("did not expect deleting model repository prefix to stay protected")
+		t.Fatalf("expected one model cleanup state, got %d", live.modelCount)
 	}
 	if _, found := live.repositoryPrefixes["dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/live/2222"]; !found {
 		t.Fatal("expected live model repository prefix to stay protected")
