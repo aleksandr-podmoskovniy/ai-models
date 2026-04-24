@@ -53,13 +53,35 @@ func mustUploadSessionSecret(t *testing.T, ownerUID types.UID) *corev1.Secret {
 	return secret
 }
 
+func mustUploadTokenSecret(t *testing.T, ownerUID types.UID, namespace string, token string) *corev1.Secret {
+	t.Helper()
+	name, err := resourcenames.UploadSessionTokenSecretName(ownerUID)
+	if err != nil {
+		t.Fatalf("UploadSessionTokenSecretName() error = %v", err)
+	}
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			TokenSecretAuthorizationHeaderKey: []byte("Bearer " + token),
+		},
+	}
+}
+
 func testUploadStatus() modelsv1alpha1.ModelUploadStatus {
 	expiresAt := metav1.NewTime(time.Date(2030, 4, 10, 13, 0, 0, 0, time.UTC))
 	return modelsv1alpha1.ModelUploadStatus{
-		ExpiresAt:                &expiresAt,
-		Repository:               "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/1111-2222:published",
-		ExternalURL:              "https://ai-models.example.com/v1/upload/ai-model-upload-auth-1111-2222",
-		InClusterURL:             "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222",
-		AuthorizationHeaderValue: "Bearer existing-token",
+		ExpiresAt:    &expiresAt,
+		Repository:   "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/1111-2222:published",
+		ExternalURL:  "https://ai-models.example.com/v1/upload/ai-model-upload-auth-1111-2222",
+		InClusterURL: "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222",
+		TokenSecretRef: &modelsv1alpha1.UploadTokenSecretReference{
+			Namespace: "team-a",
+			Name:      "ai-model-upload-token-1111-2222",
+			Key:       TokenSecretAuthorizationHeaderKey,
+		},
 	}
 }

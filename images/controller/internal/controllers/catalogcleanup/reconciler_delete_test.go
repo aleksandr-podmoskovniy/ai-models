@@ -150,6 +150,14 @@ func TestModelReconcilerDeletesInFlightPublicationRuntimeBeforeRemovingFinalizer
 	if err != nil {
 		t.Fatalf("OCIRegistryCASecretName() error = %v", err)
 	}
+	uploadSessionSecretName, err := resourcenames.UploadSessionSecretName(model.GetUID())
+	if err != nil {
+		t.Fatalf("UploadSessionSecretName() error = %v", err)
+	}
+	uploadTokenSecretName, err := resourcenames.UploadSessionTokenSecretName(model.GetUID())
+	if err != nil {
+		t.Fatalf("UploadSessionTokenSecretName() error = %v", err)
+	}
 
 	reconciler, kubeClient := newModelReconciler(
 		t,
@@ -158,6 +166,8 @@ func TestModelReconcilerDeletesInFlightPublicationRuntimeBeforeRemovingFinalizer
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: stateSecretName, Namespace: "d8-ai-models"}},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: authSecretName, Namespace: "d8-ai-models"}},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: caSecretName, Namespace: "d8-ai-models"}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: uploadSessionSecretName, Namespace: "d8-ai-models"}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: uploadTokenSecretName, Namespace: model.Namespace}},
 	)
 
 	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)})
@@ -175,6 +185,8 @@ func TestModelReconcilerDeletesInFlightPublicationRuntimeBeforeRemovingFinalizer
 		{Name: stateSecretName, Namespace: "d8-ai-models"},
 		{Name: authSecretName, Namespace: "d8-ai-models"},
 		{Name: caSecretName, Namespace: "d8-ai-models"},
+		{Name: uploadSessionSecretName, Namespace: "d8-ai-models"},
+		{Name: uploadTokenSecretName, Namespace: model.Namespace},
 	} {
 		if err := kubeClient.Get(context.Background(), key, &corev1.Secret{}); err != nil && !apierrors.IsNotFound(err) && key.Name != podName {
 			t.Fatalf("expected resource %s/%s to be deleted, got err=%v", key.Namespace, key.Name, err)

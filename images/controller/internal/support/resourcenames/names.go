@@ -24,17 +24,18 @@ import (
 )
 
 const (
-	sourceWorkerPodPrefix         = "ai-model-publish-"
-	sourceWorkerAuthSecretPrefix  = "ai-model-publish-auth-"
-	sourceWorkerStateSecretPrefix = "ai-model-publish-state-"
-	ociRegistryAuthSecretPrefix   = "ai-model-oci-auth-"
-	ociRegistryCASecretPrefix     = "ai-model-oci-ca-"
-	runtimeImagePullSecretPrefix  = "ai-model-runtime-pull-"
-	uploadSessionPodPrefix        = "ai-model-upload-"
-	uploadSessionServicePrefix    = "ai-model-upload-"
-	uploadSessionSecretPrefix     = "ai-model-upload-auth-"
-	cleanupJobPrefix              = "ai-model-cleanup-"
-	uploadStagingPrefix           = "raw"
+	sourceWorkerPodPrefix          = "ai-model-publish-"
+	sourceWorkerAuthSecretPrefix   = "ai-model-publish-auth-"
+	sourceWorkerStateSecretPrefix  = "ai-model-publish-state-"
+	ociRegistryAuthSecretPrefix    = "ai-model-oci-auth-"
+	ociRegistryCASecretPrefix      = "ai-model-oci-ca-"
+	runtimeImagePullSecretPrefix   = "ai-model-runtime-pull-"
+	uploadSessionPodPrefix         = "ai-model-upload-"
+	uploadSessionServicePrefix     = "ai-model-upload-"
+	uploadSessionSecretPrefix      = "ai-model-upload-auth-"
+	uploadSessionTokenSecretPrefix = "ai-model-upload-token-"
+	cleanupJobPrefix               = "ai-model-cleanup-"
+	uploadStagingPrefix            = "raw"
 
 	AppNameLabelKey        = "app.kubernetes.io/name"
 	OwnerKindLabelKey      = "ai.deckhouse.io/owner-kind"
@@ -122,6 +123,10 @@ func UploadSessionServiceName(uid types.UID) (string, error) {
 
 func UploadSessionSecretName(uid types.UID) (string, error) {
 	return PrefixedName(uploadSessionSecretPrefix, uid)
+}
+
+func UploadSessionTokenSecretName(uid types.UID) (string, error) {
+	return PrefixedName(uploadSessionTokenSecretPrefix, uid)
 }
 
 func CleanupJobName(uid types.UID) (string, error) {

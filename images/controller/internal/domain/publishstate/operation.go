@@ -69,7 +69,7 @@ func SameUploadStatus(current, desired *modelsv1alpha1.ModelUploadStatus) bool {
 	if current.Repository != desired.Repository ||
 		current.ExternalURL != desired.ExternalURL ||
 		current.InClusterURL != desired.InClusterURL ||
-		current.AuthorizationHeaderValue != desired.AuthorizationHeaderValue {
+		!sameUploadTokenSecretRef(current.TokenSecretRef, desired.TokenSecretRef) {
 		return false
 	}
 	switch {
@@ -79,5 +79,18 @@ func SameUploadStatus(current, desired *modelsv1alpha1.ModelUploadStatus) bool {
 		return false
 	default:
 		return current.ExpiresAt.Equal(desired.ExpiresAt)
+	}
+}
+
+func sameUploadTokenSecretRef(current, desired *modelsv1alpha1.UploadTokenSecretReference) bool {
+	switch {
+	case current == nil && desired == nil:
+		return true
+	case current == nil || desired == nil:
+		return false
+	default:
+		return current.Namespace == desired.Namespace &&
+			current.Name == desired.Name &&
+			current.Key == desired.Key
 	}
 }

@@ -45,6 +45,14 @@ func TestIsTerminalOperationPhase(t *testing.T) {
 	}
 }
 
+func testUploadTokenSecretRef(name string) *modelsv1alpha1.UploadTokenSecretReference {
+	return &modelsv1alpha1.UploadTokenSecretReference{
+		Namespace: "team-a",
+		Name:      name,
+		Key:       "authorizationHeaderValue",
+	}
+}
+
 func TestSameUploadStatus(t *testing.T) {
 	t.Parallel()
 
@@ -61,72 +69,72 @@ func TestSameUploadStatus(t *testing.T) {
 		{
 			name: "equal",
 			current: &modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:              "https://ai-models.example.com/upload/token",
-				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:               "registry.example/upload",
-				AuthorizationHeaderValue: "Bearer token-a",
-				ExpiresAt:                &now,
+				ExternalURL:    "https://ai-models.example.com/upload/token",
+				InClusterURL:   "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:     "registry.example/upload",
+				TokenSecretRef: testUploadTokenSecretRef("upload-token-a"),
+				ExpiresAt:      &now,
 			},
 			desired: &modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:              "https://ai-models.example.com/upload/token",
-				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:               "registry.example/upload",
-				AuthorizationHeaderValue: "Bearer token-a",
-				ExpiresAt:                &now,
+				ExternalURL:    "https://ai-models.example.com/upload/token",
+				InClusterURL:   "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:     "registry.example/upload",
+				TokenSecretRef: testUploadTokenSecretRef("upload-token-a"),
+				ExpiresAt:      &now,
 			},
 			want: true,
 		},
 		{
 			name: "external URL differs",
 			current: &modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:              "https://ai-models.example.com/upload/a",
-				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:               "registry.example/upload",
-				AuthorizationHeaderValue: "Bearer token-a",
-				ExpiresAt:                &now,
+				ExternalURL:    "https://ai-models.example.com/upload/a",
+				InClusterURL:   "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:     "registry.example/upload",
+				TokenSecretRef: testUploadTokenSecretRef("upload-token-a"),
+				ExpiresAt:      &now,
 			},
 			desired: &modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:              "https://ai-models.example.com/upload/b",
-				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:               "registry.example/upload",
-				AuthorizationHeaderValue: "Bearer token-a",
-				ExpiresAt:                &now,
+				ExternalURL:    "https://ai-models.example.com/upload/b",
+				InClusterURL:   "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:     "registry.example/upload",
+				TokenSecretRef: testUploadTokenSecretRef("upload-token-a"),
+				ExpiresAt:      &now,
 			},
 			want: false,
 		},
 		{
-			name: "authorization header differs",
+			name: "token secret ref differs",
 			current: &modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:              "https://ai-models.example.com/upload/token",
-				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:               "registry.example/upload",
-				AuthorizationHeaderValue: "Bearer token-a",
-				ExpiresAt:                &now,
+				ExternalURL:    "https://ai-models.example.com/upload/token",
+				InClusterURL:   "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:     "registry.example/upload",
+				TokenSecretRef: testUploadTokenSecretRef("upload-token-a"),
+				ExpiresAt:      &now,
 			},
 			desired: &modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:              "https://ai-models.example.com/upload/token",
-				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:               "registry.example/upload",
-				AuthorizationHeaderValue: "Bearer token-b",
-				ExpiresAt:                &now,
+				ExternalURL:    "https://ai-models.example.com/upload/token",
+				InClusterURL:   "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:     "registry.example/upload",
+				TokenSecretRef: testUploadTokenSecretRef("upload-token-b"),
+				ExpiresAt:      &now,
 			},
 			want: false,
 		},
 		{
 			name: "expiry differs",
 			current: &modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:              "https://ai-models.example.com/upload/token",
-				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:               "registry.example/upload",
-				AuthorizationHeaderValue: "Bearer token-a",
-				ExpiresAt:                &now,
+				ExternalURL:    "https://ai-models.example.com/upload/token",
+				InClusterURL:   "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:     "registry.example/upload",
+				TokenSecretRef: testUploadTokenSecretRef("upload-token-a"),
+				ExpiresAt:      &now,
 			},
 			desired: &modelsv1alpha1.ModelUploadStatus{
-				ExternalURL:              "https://ai-models.example.com/upload/token",
-				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				Repository:               "registry.example/upload",
-				AuthorizationHeaderValue: "Bearer token-a",
-				ExpiresAt:                &later,
+				ExternalURL:    "https://ai-models.example.com/upload/token",
+				InClusterURL:   "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				Repository:     "registry.example/upload",
+				TokenSecretRef: testUploadTokenSecretRef("upload-token-a"),
+				ExpiresAt:      &later,
 			},
 			want: false,
 		},

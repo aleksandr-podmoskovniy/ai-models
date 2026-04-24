@@ -185,11 +185,12 @@ Current phase-2 slice implemented here:
   human-readable condition text;
 - `internal/adapters/k8s/uploadsession` for controller-owned upload session
   supplements:
-  one short-lived session `Secret` per upload plus user-facing upload URL
-  projection and a separate Bearer authorization header value for
-  `spec.source.upload`, while the shared gateway footprint now lives in the
-  controller deployment shell instead of per-upload runtime objects; the
-  package also implements the shared upload-session runtime port directly,
+  one short-lived hash-only session `Secret` per upload plus a separate
+  owner-scoped token handoff `Secret` referenced from `status.upload` for
+  `spec.source.upload`; raw Bearer values are not projected into public model
+  status, while the shared gateway footprint now lives in the controller
+  deployment shell instead of per-upload runtime objects; the package also
+  implements the shared upload-session runtime port directly,
   consumes the shared `publishop.Request` without local request wrappers or a
   separate request-mapping file, and does not keep a second runtime-proxy
   layer or constructor path over the same concrete adapter; upload-session
@@ -246,8 +247,9 @@ Current phase-2 slice implemented here:
   handoff, the gateway now also treats `publishing/completed` as closed
   session phases and rejects any late multipart mutation attempts instead of
   letting the preserved manifest imply a still-open upload; user-facing upload
-  auth is Bearer-only, and token-bearing query URLs are no longer part of the
-  projected status contract;
+  auth is Bearer-only, token-bearing query URLs are no longer part of the
+  projected status contract, and the raw header value is delivered only through
+  the token handoff Secret referenced by `status.upload.tokenSecretRef`;
 - `internal/dataplane/artifactcleanup` for the controller-owned published
   artifact removal runtime;
 - `internal/publishedsnapshot` for immutable published-artifact snapshots used

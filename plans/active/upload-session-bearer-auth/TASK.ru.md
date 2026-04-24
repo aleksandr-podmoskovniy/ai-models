@@ -1,45 +1,51 @@
 ## 1. Заголовок
 
-Upload-session без токена в URL
+Upload-session без raw bearer в публичном статусе
 
 ## 2. Контекст
 
-Текущий `status.upload` публикует `externalURL` и `inClusterURL` уже с
-`?token=...` внутри. Это упрощает клиентскую сторону, но делает токен частью
-URL и создаёт лишний риск утечки через ingress/proxy/access-логи, shell-history
-и copy/paste.
+Изначальный slice убрал `?token=...` из `status.upload.externalURL` и
+`status.upload.inClusterURL`, но raw bearer остался в
+`status.upload.authorizationHeaderValue`. Это всё ещё делает upload-token
+доступным каждому субъекту, который может читать `Model`/`ClusterModel`.
 
-Сам upload-gateway уже умеет принимать `Authorization: Bearer ...`, поэтому
-нужно убрать токен из URL-поверхности и сделать Bearer-заголовок единственным
-нормальным контрактом для user-facing upload-session path.
+Сами upload-session runtime Secrets уже хранят только hash токена. Нужно
+сохранить это свойство и вынести user-facing raw bearer в отдельный
+owner-scoped Secret, на который статус будет ссылаться без раскрытия значения.
 
 ## 3. Постановка задачи
 
-Нужно перевести upload-session контракт на безопасную выдачу:
+Нужно довести upload-session контракт до безопасной выдачи:
 
 - `status.upload.externalURL` и `status.upload.inClusterURL` больше не содержат
   токен в query string;
-- `status.upload` явно отдаёт отдельное поле для Bearer-аутентификации;
+- `status.upload` больше не содержит raw bearer value;
+- raw bearer доступен через отдельный Secret и фиксированный key;
 - upload-gateway больше не принимает `?token=` как рабочий способ
   аутентификации;
-- controller runtime, status projection, тесты и документация синхронизированы
-  с новым контрактом.
+- controller runtime, status projection, cleanup, тесты и документация
+  синхронизированы с новым контрактом;
+- legacy recovery из token-bearing URL и другие доказанно неиспользуемые
+  остатки в upload-session boundary удалены.
 
 ## 4. Scope
 
-- обновить `ModelUploadStatus` под Bearer-only выдачу;
+- обновить `ModelUploadStatus` под Secret-reference выдачу;
 - переделать `k8s/uploadsession` status shaping и token recovery;
 - переделать upload-session dataplane auth на Bearer-only;
+- добавить/поддержать отдельный token handoff Secret;
+- удалить legacy query-token recovery внутри upload-session boundary;
 - обновить unit/integration-style tests для нового контракта;
 - обновить docs/evidence, где описан upload-session UX.
 
 ## 5. Non-goals
 
 - не менять сам multipart staging flow;
-- не проектировать отдельный Secret-based token handoff;
 - не менять `DMCR` direct-upload flow;
 - не добавлять новый public spec knob для выбора auth-режима;
 - не трогать workload delivery и runtime topology.
+- не делать broad rewrite всего controller/DMCR кода без отдельного
+  defendable slice и проверки использования;
 
 ## 6. Затрагиваемые области
 
@@ -48,6 +54,7 @@ URL и создаёт лишний риск утечки через ingress/prox
 - `api/README.md`
 - `images/controller/internal/adapters/k8s/uploadsession/*`
 - `images/controller/internal/adapters/k8s/uploadsessionstate/*`
+- `images/controller/internal/controllers/catalogcleanup/*`
 - `images/controller/internal/dataplane/uploadsession/*`
 - `images/controller/internal/domain/publishstate/*`
 - `images/controller/internal/controllers/catalogstatus/*`
@@ -60,21 +67,28 @@ URL и создаёт лишний риск утечки через ingress/prox
 
 - `status.upload.externalURL` и `status.upload.inClusterURL` публикуются без
   query-токена.
-- В `status.upload` есть отдельное явное поле для значения
+- В `status.upload` нет поля с raw bearer value.
+- В `status.upload` есть ссылка на Secret и key, где лежит значение
   `Authorization: Bearer ...`.
+- Runtime session Secret по-прежнему не хранит raw upload token.
+- Token handoff Secret удаляется вместе с upload-session runtime state.
 - upload-session runtime принимает Bearer-заголовок и не принимает query-token
   как валидный путь аутентификации.
 - Активная upload-session продолжает корректно проецироваться в статус и
-  повторный reconcile не теряет токен.
+  повторный reconcile не ротирует токен без причины.
 - Узкие тесты вокруг `uploadsession`, `publishstate`, `publishobserve` и
   `catalogstatus` проходят.
-- Документация не обещает URL с токеном.
+- Документация не обещает URL с токеном или raw bearer в статусе.
+- Audit legacy cleanup удаляет только код, который доказанно не участвует в
+  текущем контракте.
 
 ## 8. Риски
 
 - если изменить только status shaping и не изменить runtime auth, получится
   несогласованный контракт;
-- если убрать token recovery без замены, повторный reconcile начнёт каждый раз
-  ротировать токен;
+- если убрать token recovery без Secret handoff, повторный reconcile начнёт
+  каждый раз ротировать токен;
 - если забыть обновить status equality tests и projection tests, репозиторий
   останется в drift между API и runtime.
+- если попытаться вычистить "всё legacy" одним diff, высокий риск удалить
+  compatibility/test evidence или phase-2 подготовку без доказательства.

@@ -135,6 +135,7 @@ func TestCanonicalResourceNames(t *testing.T) {
 		{name: "upload session pod", fn: UploadSessionPodName, prefix: "ai-model-upload-"},
 		{name: "upload session service", fn: UploadSessionServiceName, prefix: "ai-model-upload-"},
 		{name: "upload session secret", fn: UploadSessionSecretName, prefix: "ai-model-upload-auth-"},
+		{name: "upload session token secret", fn: UploadSessionTokenSecretName, prefix: "ai-model-upload-token-"},
 		{name: "cleanup job", fn: CleanupJobName, prefix: "ai-model-cleanup-"},
 	}
 

@@ -26,7 +26,7 @@ import (
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
-	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
+	"github.com/deckhouse/ai-models/controller/internal/support/uploadsessiontoken"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -75,11 +75,15 @@ func (s *Service) buildHandle(
 	uploadStatus := modelsv1alpha1.ModelUploadStatus{}
 	progress := ""
 	if phase == corev1.PodRunning {
-		rawToken, err = s.resolveActiveSessionToken(ctx, owner, secret, artifactURI, session, rawToken)
+		rawToken, err = s.resolveActiveSessionToken(ctx, owner, secret, session, rawToken)
 		if err != nil {
 			return nil, err
 		}
-		uploadStatus = buildUploadStatus(artifactURI, s.options, session.Name, rawToken, session.ExpiresAt)
+		tokenSecretRef, err := s.ensureTokenSecret(ctx, owner, session, rawToken)
+		if err != nil {
+			return nil, err
+		}
+		uploadStatus = buildUploadStatus(artifactURI, s.options, session.Name, tokenSecretRef, session.ExpiresAt)
 		progress = localUploadProgress(session)
 	}
 
@@ -90,8 +94,14 @@ func (s *Service) buildHandle(
 		progress,
 		uploadStatus,
 		func(ctx context.Context) error {
+			tokenSecretName, tokenSecretNamespace, err := tokenSecretObjectKey(owner.GetUID(), owner.GetNamespace(), s.options.Runtime.Namespace)
+			if err != nil {
+				return err
+			}
 			return ownedresource.DeleteAll(ctx, s.client, &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: session.Name, Namespace: s.options.Runtime.Namespace},
+			}, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: tokenSecretName, Namespace: tokenSecretNamespace},
 			})
 		},
 	), nil
@@ -101,7 +111,6 @@ func (s *Service) resolveActiveSessionToken(
 	ctx context.Context,
 	owner client.Object,
 	secret *corev1.Secret,
-	artifactURI string,
 	session *uploadsessionstate.Session,
 	rawToken string,
 ) (string, error) {
@@ -115,15 +124,13 @@ func (s *Service) resolveActiveSessionToken(
 		return rawToken, nil
 	}
 
-	currentStatus, err := modelobject.GetStatus(owner)
-	if err != nil {
+	if token, ok, err := s.tokenFromHandoffSecret(ctx, owner, session); err != nil {
 		return "", err
-	}
-	if token, ok := tokenFromPersistedUploadStatus(currentStatus.Upload, artifactURI, s.options, session.Name, session.ExpiresAt); ok {
+	} else if ok {
 		return token, nil
 	}
 
-	rawToken, err = randomToken()
+	rawToken, err := randomToken()
 	if err != nil {
 		return "", err
 	}
@@ -133,5 +140,6 @@ func (s *Service) resolveActiveSessionToken(
 	if err := s.client.Update(ctx, secret); err != nil {
 		return "", err
 	}
+	session.UploadTokenHash = uploadsessiontoken.Hash(rawToken)
 	return rawToken, nil
 }

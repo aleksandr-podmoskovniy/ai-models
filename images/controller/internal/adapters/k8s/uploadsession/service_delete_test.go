@@ -22,12 +22,13 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestServiceDeleteRemovesOnlySessionSecret(t *testing.T) {
+func TestServiceDeleteRemovesSessionAndTokenSecrets(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
@@ -56,7 +57,15 @@ func TestServiceDeleteRemovesOnlySessionSecret(t *testing.T) {
 	}
 
 	err = kubeClient.Get(context.Background(), client.ObjectKey{Name: secret.Name, Namespace: secret.Namespace}, &corev1.Secret{})
-	if client.IgnoreNotFound(err) != nil || err == nil {
-		t.Fatalf("expected secret to be deleted, got err=%v", err)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("expected session secret to be deleted, got err=%v", err)
+	}
+	tokenRef := handle.UploadStatus.TokenSecretRef
+	if tokenRef == nil {
+		t.Fatal("expected upload token secret ref")
+	}
+	err = kubeClient.Get(context.Background(), client.ObjectKey{Name: tokenRef.Name, Namespace: tokenRef.Namespace}, &corev1.Secret{})
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("expected token secret to be deleted, got err=%v", err)
 	}
 }

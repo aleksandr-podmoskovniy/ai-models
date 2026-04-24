@@ -57,7 +57,7 @@ func (r *baseReconciler) observeDelete(
 		return cleanuphandle.Handle{}, observation, nil
 	}
 	if !found {
-		runtimeResources, err := r.observePublicationRuntimeResources(ctx, object.GetUID())
+		runtimeResources, err := r.observePublicationRuntimeResources(ctx, object)
 		if err != nil {
 			return cleanuphandle.Handle{}, deletionapp.FinalizeDeleteInput{}, err
 		}

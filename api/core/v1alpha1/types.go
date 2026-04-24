@@ -71,11 +71,22 @@ type ResolvedSourceStatus struct {
 }
 
 type ModelUploadStatus struct {
-	ExpiresAt                *metav1.Time `json:"expiresAt,omitempty"`
-	Repository               string       `json:"repository,omitempty"`
-	ExternalURL              string       `json:"externalURL,omitempty"`
-	InClusterURL             string       `json:"inClusterURL,omitempty"`
-	AuthorizationHeaderValue string       `json:"authorizationHeaderValue,omitempty"`
+	ExpiresAt      *metav1.Time                `json:"expiresAt,omitempty"`
+	Repository     string                      `json:"repository,omitempty"`
+	ExternalURL    string                      `json:"externalURL,omitempty"`
+	InClusterURL   string                      `json:"inClusterURL,omitempty"`
+	TokenSecretRef *UploadTokenSecretReference `json:"tokenSecretRef,omitempty"`
+}
+
+// UploadTokenSecretReference points to a Secret key containing the complete
+// Authorization header value for the active upload session.
+type UploadTokenSecretReference struct {
+	// +kubebuilder:validation:MinLength=1
+	Namespace string `json:"namespace,omitempty"`
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// +kubebuilder:validation:MinLength=1
+	Key string `json:"key"`
 }
 
 type ModelArtifactStatus struct {

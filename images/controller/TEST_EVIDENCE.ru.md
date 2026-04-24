@@ -409,7 +409,7 @@ paths и test surfaces.
 - Decision surface:
   - controller-owned session issuance/reuse
   - top-level local-upload progress shaping
-  - bearer-only status projection and token reuse
+  - bearer-only Secret-reference status projection and token reuse
   - secret-backed phase persistence
   - persisted expected-size and multipart uploaded-part accounting
   - controller phase sync for `publishing/completed/failed`

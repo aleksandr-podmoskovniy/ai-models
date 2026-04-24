@@ -15,8 +15,8 @@ Current phase-2 baseline:
 - initial version: `v1alpha1`;
 - shared `Model` / `ClusterModel` types live under `api/core/v1alpha1/`;
 - upload-driven objects expose staging upload contract via `status.upload`,
-  with upload URLs and a separate bearer authorization header value instead of
-  query-token URLs;
+  with upload URLs plus a `tokenSecretRef`; raw bearer values must not be
+  exposed in public status;
 - upload-driven and long-running publication flows can expose one bounded
   public progress indicator via top-level `status.progress`, following the
   same UX shape used in `virtualization` when the controller has an explicit

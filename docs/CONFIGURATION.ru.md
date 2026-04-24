@@ -69,7 +69,8 @@ cleanup candidates уже есть и нет другого active или queued
   - `Direct`:
     remote `source.url` идёт напрямую из canonical remote source boundary;
 - `spec.source.upload` использует controller-owned upload-session path и
-  остаётся на своей отдельной staged object boundary;
+  остаётся на своей отдельной staged object boundary; upload URL публикуются в
+  status, а raw Bearer header value хранится в указанном token Secret;
 - все пути публикуют OCI `ModelPack` артефакты во внутренний `DMCR`;
 - потоковые multi-file remote входы публикуются как одна ограниченная bundle-
   упаковка для мелких companion-файлов плюс отдельные raw-слои для крупных

@@ -41,9 +41,11 @@ func (r publicationRuntimeResources) Present() bool {
 
 func (r *baseReconciler) observePublicationRuntimeResources(
 	ctx context.Context,
-	ownerUID types.UID,
+	object client.Object,
 ) (publicationRuntimeResources, error) {
 	namespace := r.runtimeNamespace()
+	ownerUID := object.GetUID()
+	ownerNamespace := object.GetNamespace()
 
 	sourceWorkerObjects, err := sourceWorkerRuntimeObjects(ownerUID, namespace)
 	if err != nil {
@@ -54,7 +56,7 @@ func (r *baseReconciler) observePublicationRuntimeResources(
 		return publicationRuntimeResources{}, err
 	}
 
-	uploadSessionObjects, err := uploadSessionRuntimeObjects(ownerUID, namespace)
+	uploadSessionObjects, err := uploadSessionRuntimeObjects(ownerUID, namespace, ownerNamespace)
 	if err != nil {
 		return publicationRuntimeResources{}, err
 	}
@@ -69,14 +71,16 @@ func (r *baseReconciler) observePublicationRuntimeResources(
 	}, nil
 }
 
-func (r *baseReconciler) deletePublicationRuntimeResources(ctx context.Context, ownerUID types.UID) error {
+func (r *baseReconciler) deletePublicationRuntimeResources(ctx context.Context, object client.Object) error {
 	namespace := r.runtimeNamespace()
+	ownerUID := object.GetUID()
+	ownerNamespace := object.GetNamespace()
 
 	sourceWorkerObjects, err := sourceWorkerRuntimeObjects(ownerUID, namespace)
 	if err != nil {
 		return err
 	}
-	uploadSessionObjects, err := uploadSessionRuntimeObjects(ownerUID, namespace)
+	uploadSessionObjects, err := uploadSessionRuntimeObjects(ownerUID, namespace, ownerNamespace)
 	if err != nil {
 		return err
 	}
@@ -140,12 +144,21 @@ func sourceWorkerRuntimeObjects(ownerUID types.UID, namespace string) ([]client.
 	}, nil
 }
 
-func uploadSessionRuntimeObjects(ownerUID types.UID, namespace string) ([]client.Object, error) {
+func uploadSessionRuntimeObjects(ownerUID types.UID, runtimeNamespace, ownerNamespace string) ([]client.Object, error) {
 	secretName, err := resourcenames.UploadSessionSecretName(ownerUID)
 	if err != nil {
 		return nil, err
 	}
+	tokenSecretName, err := resourcenames.UploadSessionTokenSecretName(ownerUID)
+	if err != nil {
+		return nil, err
+	}
+	tokenSecretNamespace := strings.TrimSpace(ownerNamespace)
+	if tokenSecretNamespace == "" {
+		tokenSecretNamespace = strings.TrimSpace(runtimeNamespace)
+	}
 	return []client.Object{
-		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: namespace}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: runtimeNamespace}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: tokenSecretName, Namespace: tokenSecretNamespace}},
 	}, nil
 }

@@ -144,11 +144,15 @@ func TestProjectStatusRunningUploadWithSession(t *testing.T) {
 			Phase:    OperationPhaseRunning,
 			Progress: "17%",
 			Upload: &modelsv1alpha1.ModelUploadStatus{
-				ExpiresAt:                &expiresAt,
-				Repository:               "registry.example/upload",
-				ExternalURL:              "https://ai-models.example.com/upload/token",
-				InClusterURL:             "http://upload-a.d8-ai-models.svc:8444/upload/token",
-				AuthorizationHeaderValue: "Bearer token-a",
+				ExpiresAt:    &expiresAt,
+				Repository:   "registry.example/upload",
+				ExternalURL:  "https://ai-models.example.com/upload/token",
+				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				TokenSecretRef: &modelsv1alpha1.UploadTokenSecretReference{
+					Namespace: "team-a",
+					Name:      "upload-token",
+					Key:       "authorizationHeaderValue",
+				},
 			},
 		},
 	)
@@ -158,7 +162,7 @@ func TestProjectStatusRunningUploadWithSession(t *testing.T) {
 	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhaseWaitForUpload; got != want {
 		t.Fatalf("unexpected phase %q", got)
 	}
-	if projection.Status.Upload == nil || projection.Status.Upload.InClusterURL != "http://upload-a.d8-ai-models.svc:8444/upload/token" || projection.Status.Upload.AuthorizationHeaderValue != "Bearer token-a" {
+	if projection.Status.Upload == nil || projection.Status.Upload.InClusterURL != "http://upload-a.d8-ai-models.svc:8444/upload/token" || projection.Status.Upload.TokenSecretRef == nil {
 		t.Fatalf("unexpected upload status %#v", projection.Status.Upload)
 	}
 	if got, want := projection.Status.Progress, "17%"; got != want {

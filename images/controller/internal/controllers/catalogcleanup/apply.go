@@ -78,7 +78,7 @@ func (r *baseReconciler) maybeDeletePublicationRuntimeResources(
 	if !enabled {
 		return ctrl.Result{}, false, nil
 	}
-	if err := r.deletePublicationRuntimeResources(ctx, object.GetUID()); err != nil {
+	if err := r.deletePublicationRuntimeResources(ctx, object); err != nil {
 		return r.failDeleteStatus(ctx, object, err)
 	}
 	return ctrl.Result{}, false, nil
@@ -166,7 +166,7 @@ func (r *baseReconciler) maybeRemoveDeleteFinalizer(
 	if !enabled {
 		return ctrl.Result{}, false, nil
 	}
-	if err := r.deletePublicationRuntimeResources(ctx, runtime.object.GetUID()); err != nil {
+	if err := r.deletePublicationRuntimeResources(ctx, runtime.object); err != nil {
 		return ctrl.Result{}, true, err
 	}
 	controllerutil.RemoveFinalizer(runtime.object, Finalizer)

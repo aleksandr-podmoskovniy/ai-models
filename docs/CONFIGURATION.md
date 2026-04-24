@@ -69,7 +69,8 @@ The public runtime path for models is now controller-owned:
     remote `source.url` is consumed directly from the canonical remote source
     boundary;
 - `spec.source.upload` uses the controller-owned upload-session path and stays
-  on its own staged object boundary;
+  on its own staged object boundary; upload URLs are projected in status, while
+  the raw Bearer header value is stored in the referenced token Secret;
 - all paths publish OCI `ModelPack` artifacts into the internal `DMCR`;
 - streamable multi-file remote inputs publish as one bounded companion bundle
   plus dedicated raw layers for large model payloads, instead of repacking the

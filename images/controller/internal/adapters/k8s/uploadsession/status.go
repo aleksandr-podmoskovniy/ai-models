@@ -29,15 +29,15 @@ func buildUploadStatus(
 	artifactURI string,
 	options Options,
 	sessionID string,
-	token string,
+	tokenSecretRef modelsv1alpha1.UploadTokenSecretReference,
 	expiresAt metav1.Time,
 ) modelsv1alpha1.ModelUploadStatus {
 	return modelsv1alpha1.ModelUploadStatus{
-		ExpiresAt:                &expiresAt,
-		Repository:               strings.TrimSpace(artifactURI),
-		ExternalURL:              buildExternalUploadURL(options.Gateway.PublicHost, sessionID),
-		InClusterURL:             buildInClusterUploadURL(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID),
-		AuthorizationHeaderValue: buildAuthorizationHeaderValue(token),
+		ExpiresAt:      &expiresAt,
+		Repository:     strings.TrimSpace(artifactURI),
+		ExternalURL:    buildExternalUploadURL(options.Gateway.PublicHost, sessionID),
+		InClusterURL:   buildInClusterUploadURL(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID),
+		TokenSecretRef: &tokenSecretRef,
 	}
 }
 
@@ -82,63 +82,12 @@ func buildExternalUploadURLBase(publicHost, sessionID string) string {
 	return fmt.Sprintf("https://%s%s", publicHost, sessionPath(sessionID))
 }
 
-func tokenFromPersistedUploadStatus(
-	status *modelsv1alpha1.ModelUploadStatus,
-	artifactURI string,
-	options Options,
-	sessionID string,
-	expiresAt metav1.Time,
-) (string, bool) {
-	if status == nil || status.ExpiresAt == nil {
-		return "", false
-	}
-	if strings.TrimSpace(status.Repository) != strings.TrimSpace(artifactURI) {
-		return "", false
-	}
-	if !status.ExpiresAt.Equal(&expiresAt) {
-		return "", false
-	}
-
-	if token, ok := tokenFromAuthorizationHeaderValue(status.AuthorizationHeaderValue); ok {
-		return token, true
-	}
-
-	if token, ok := tokenFromLegacyUploadURL(status.InClusterURL, buildInClusterUploadURLBase(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID)); ok {
-		return token, true
-	}
-	if token, ok := tokenFromLegacyUploadURL(status.ExternalURL, buildExternalUploadURLBase(options.Gateway.PublicHost, sessionID)); ok {
-		return token, true
-	}
-
-	return "", false
-}
-
 func tokenFromAuthorizationHeaderValue(value string) (string, bool) {
 	value = strings.TrimSpace(value)
 	if !strings.HasPrefix(value, "Bearer ") {
 		return "", false
 	}
 	token := strings.TrimSpace(strings.TrimPrefix(value, "Bearer "))
-	if token == "" {
-		return "", false
-	}
-	return token, true
-}
-
-func tokenFromLegacyUploadURL(rawURL, expectedBase string) (string, bool) {
-	rawURL = strings.TrimSpace(rawURL)
-	expectedBase = strings.TrimSpace(expectedBase)
-	if rawURL == "" || expectedBase == "" {
-		return "", false
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return "", false
-	}
-	if strings.TrimSpace(parsed.Scheme)+"://"+strings.TrimSpace(parsed.Host)+strings.TrimSpace(parsed.Path) != expectedBase {
-		return "", false
-	}
-	token := strings.TrimSpace(parsed.Query().Get("token"))
 	if token == "" {
 		return "", false
 	}
