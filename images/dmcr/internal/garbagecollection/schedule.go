@@ -217,7 +217,6 @@ func ensureScheduledRequest(
 		}
 		secretCopy.Annotations[RequestQueuedAtAnnotationKey] = queuedAt.UTC().Format(time.RFC3339Nano)
 		delete(secretCopy.Annotations, switchAnnotationKey)
-		delete(secretCopy.Annotations, doneAnnotationKey)
 		_, err = client.CoreV1().Secrets(namespace).Update(ctx, secretCopy, metav1.UpdateOptions{})
 		if err != nil {
 			return fmt.Errorf("update scheduled dmcr garbage-collection request: %w", err)

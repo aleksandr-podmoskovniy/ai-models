@@ -94,16 +94,19 @@ Current phase-2 slice implemented here:
   `LocalStorageClass` rendering for the forthcoming node-local cache runtime;
 - `internal/controllers/workloaddelivery` for controller-owned adoption of
   annotated `Deployment` / `StatefulSet` / `DaemonSet` / `CronJob`
-  workloads: it resolves `Model` or `ClusterModel`, reuses the shared
-  `k8s/modeldelivery` service, writes resolved artifact plus delivery
-  mode/reason annotations onto `PodTemplateSpec`, auto-injects a managed local
-  bridge volume when
+  workloads: its bounded admission hook adds an ai-models scheduling gate to
+  opt-in `Deployment` / `StatefulSet` / `DaemonSet` pod templates before the
+  first rollout, then the controller
+  resolves `Model` or `ClusterModel`, reuses the shared `k8s/modeldelivery`
+  service, writes resolved artifact plus delivery mode/reason annotations onto
+  `PodTemplateSpec`, removes the scheduling gate in the same patch,
+  auto-injects a managed local bridge volume when
   node-cache substrate is enabled and the workload did not bring a cache mount,
   fail-closes when user-provided `/data/modelcache` storage topology is invalid
   instead of inventing a second storage contract,
-  and stays controller-driven instead of introducing generic mutating or
-  validating admission hooks for foreign workload kinds; watch scope is now
-  narrow to opt-in or already-managed workloads plus referenced
+  and keeps side-effecting registry Secret projection controller-driven instead
+  of moving it into admission; watch scope is now narrow to opt-in or
+  already-managed workloads plus referenced
   `Model` / `ClusterModel` objects;
 - `internal/controllers/nodecachesubstrate` for ai-models-owned managed local
   storage substrate: it keeps one `LVMVolumeGroupSet` plus one
@@ -333,8 +336,8 @@ Current phase-2 slice implemented here:
   top-level annotations `ai.deckhouse.io/model` and
   `ai.deckhouse.io/clustermodel`; this controller intentionally stays
   on mutable workload templates (`Deployment`, `StatefulSet`, `DaemonSet`,
-  `CronJob`) and does not pretend that direct `Job` mutation is safe after
-  creation;
+  `CronJob`), uses admission only for the scheduling gate, and does not pretend
+  that direct `Job` mutation is safe after creation;
 - `internal/bootstrap` for manager/bootstrap wiring.
 
 Naming rule:

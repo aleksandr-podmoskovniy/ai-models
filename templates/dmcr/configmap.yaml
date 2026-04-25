@@ -17,11 +17,6 @@ data:
         blobdescriptor: inmemory
       delete:
         enabled: true
-{{- if eq (include "ai-models.dmcrGarbageCollectionModeEnabled" . | trim) "true" }}
-      maintenance:
-        readonly:
-          enabled: true
-{{- end }}
       redirect:
         disable: true
       sealeds3:

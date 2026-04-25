@@ -57,7 +57,9 @@ When the scheduled loop starts after the configured schedule tick, it performs a
 report-only startup check and retries transient check failures. If stale cleanup
 candidates already exist and no other GC request is active or queued, it queues
 the regular scheduled request; it does not run destructive cleanup directly and
-still uses the normal maintenance/read-only debounce.
+still goes through the normal coalescing debounce. The cleanup cycle uses an
+internal zero-rollout maintenance gate with runtime ack quorum rather than
+changing the DMCR Pod template.
 
 The public runtime path for models is now controller-owned:
 

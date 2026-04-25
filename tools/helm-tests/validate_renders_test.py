@@ -51,6 +51,8 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: ai-models-dmcr-auth
+  annotations:
+    ai.deckhouse.io/dmcr-pod-secret-checksum: auth/bootstrap
 stringData:
   write.password: "writer"
   write.htpasswd: |
@@ -66,6 +68,12 @@ metadata:
         documents = MODULE._parse_secret_documents(content)
         self.assertEqual(len(documents), 1)
         self.assertEqual(documents[0]["metadata"]["name"], "ai-models-dmcr-auth")
+        self.assertEqual(
+            documents[0]["metadata"]["annotations"][
+                "ai.deckhouse.io/dmcr-pod-secret-checksum"
+            ],
+            "auth/bootstrap",
+        )
         self.assertEqual(documents[0]["stringData"]["write.password"], "writer")
         self.assertEqual(
             documents[0]["stringData"]["write.htpasswd"], "ai-models:$2y$example"
@@ -127,6 +135,105 @@ stringData:
             errors = MODULE.validate_render(render_path)
 
         self.assertEqual(errors, [])
+
+    def test_validate_render_accepts_dmcr_restart_checksum_contract(self) -> None:
+        expected_checksum = hashlib.sha256(
+            b"auth/bootstrap\ntls/bootstrap"
+        ).hexdigest()
+        content = """---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-models-dmcr-tls
+  annotations:
+    ai.deckhouse.io/dmcr-pod-secret-checksum: tls/bootstrap
+stringData:
+  tls.crt: cert
+  tls.key: key
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-models-dmcr-auth
+  annotations:
+    ai.deckhouse.io/dmcr-pod-secret-checksum: auth/bootstrap
+stringData:
+  write.password: writer
+  read.password: reader
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-models-dmcr-auth-write
+stringData:
+  password: writer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dmcr
+spec:
+  template:
+    metadata:
+      annotations:
+        checksum/secret: "{expected_checksum}"
+""".format(
+            expected_checksum=expected_checksum
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE.validate_render(render_path)
+
+        self.assertEqual(errors, [])
+
+    def test_validate_render_rejects_dmcr_restart_checksum_drift(self) -> None:
+        content = """---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-models-dmcr-tls
+  annotations:
+    ai.deckhouse.io/dmcr-pod-secret-checksum: tls/bootstrap
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-models-dmcr-auth
+  annotations:
+    ai.deckhouse.io/dmcr-pod-secret-checksum: auth/bootstrap
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-models-dmcr-ca
+  annotations:
+    ai.deckhouse.io/dmcr-pod-secret-checksum: forbidden
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dmcr
+spec:
+  template:
+    metadata:
+      annotations:
+        checksum/secret: wrong
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE.validate_render(render_path)
+
+        self.assertEqual(
+            errors,
+            [
+                "helm-template-test.yaml: Deployment/dmcr checksum/secret does not match DMCR runtime Secret restart annotations",
+                "helm-template-test.yaml: ai-models-dmcr-ca must not participate in Deployment/dmcr restart checksum",
+            ],
+        )
 
     def test_validate_render_rejects_too_long_port_name(self) -> None:
         content = """---

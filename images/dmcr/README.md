@@ -21,16 +21,16 @@ productized DMCR cleanup surface:
 - `dmcr` serves the internal registry over HTTPS;
 - `dmcr-cleaner` runs as an always-on loop in the same Pod during normal
   operation;
-- controller delete flow creates armed internal GC requests immediately after
-  registry artifact removal, so model deletion does not sit behind the
-  scheduled debounce window;
+- controller delete flow queues internal GC requests after registry artifact
+  removal; the always-on cleaner coalesces them before a physical cleanup
+  cycle;
 - delete-triggered GC requests can also snapshot the deleted owner's current
   unfinished direct-upload session token, so the maintenance cycle may reclaim
-  that exact orphan session prefix immediately instead of waiting for the
-  generic session-age window;
+  that exact orphan session prefix instead of waiting for the generic
+  session-age window;
 - model finalizer still does not wait for physical GC to finish before
-  disappearing; physical bytes are reclaimed by the maintenance cycle that the
-  delete flow just armed;
+  disappearing; physical bytes are reclaimed by a later coalesced cleanup
+  cycle;
 - public `dmcr.gc.schedule` can enqueue periodic stale-sweep requests even
   without a concrete delete event;
 - at startup, the scheduled loop performs a report-only stale check, retries
@@ -41,8 +41,9 @@ productized DMCR cleanup surface:
   repository/source-mirror prefixes plus orphan direct-upload object prefixes
   and open direct-upload multipart uploads, and `dmcr-cleaner gc auto-cleanup`
   for the same sweep followed by registry `garbage-collect`;
-- `dmcr-cleaner` coalesces queued requests, arms one maintenance/read-only
-  cycle after the internal debounce window for scheduled sweep, removes stale
+- `dmcr-cleaner` coalesces queued requests, activates a cluster-visible
+  zero-rollout maintenance gate after the internal debounce window, waits for
+  pod-local runtime ack quorum, removes stale
   repository/source-mirror prefixes plus orphan unsealed direct-upload
   object prefixes older than the bounded session window, separately aborts
   stale open direct-upload multipart uploads, and for delete-triggered
@@ -56,9 +57,9 @@ productized DMCR cleanup surface:
 - after registry `garbage-collect`, `dmcr-cleaner` reruns direct-upload orphan
   cleanup for prefixes that were protected before GC and may have become
   orphaned only after canonical blob metadata was removed;
-- `dmcr-cleaner gc run` uses an internal Kubernetes `Lease` so only one
-  replica owns scheduled enqueue and active cleanup while other `DMCR` replicas
-  stay as standby executors;
+- `dmcr-cleaner gc run` uses internal Kubernetes `Lease` objects so only one
+  replica owns scheduled enqueue and active cleanup, while all replicas mirror
+  maintenance state and publish pod-scoped runtime acks before destructive GC;
 - `dmcr-cleaner` writes repo-owned structured JSON lifecycle logs under the
   `dmcr-garbage-collection` logger; the main `dmcr` process stays on upstream
   logging behavior.

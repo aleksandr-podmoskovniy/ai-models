@@ -27,7 +27,6 @@ const (
 	RequestLabelValue             = "true"
 	RequestQueuedAtAnnotationKey  = "ai.deckhouse.io/dmcr-gc-requested-at"
 	switchAnnotationKey           = "ai.deckhouse.io/dmcr-gc-switch"
-	doneAnnotationKey             = "ai.deckhouse.io/dmcr-gc-done"
 	directUploadModeAnnotationKey = "ai.deckhouse.io/dmcr-gc-direct-upload-mode"
 	directUploadModeImmediate     = "immediate-orphan-cleanup"
 	directUploadTokenDataKey      = "direct-upload-session-token"
@@ -39,22 +38,35 @@ const (
 	DefaultExecutorLeaseName      = "dmcr-gc-executor"
 	DefaultExecutorLeaseDuration  = 45 * time.Second
 	DefaultExecutorRenewInterval  = 15 * time.Second
+	DefaultMaintenanceGateName    = "dmcr-gc-maintenance"
+	DefaultMaintenanceGateDelay   = 10 * time.Second
+	DefaultMaintenanceGateMargin  = time.Minute
+	DefaultMaintenanceGateFile    = "/run/dmcr-maintenance/gate.json"
+	DefaultGateMirrorInterval     = time.Second
+	DefaultMaintenanceAckTTL      = 5 * time.Second
 	defaultCleanupStateNamespace  = "d8-ai-models"
 )
 
 type Options struct {
-	RequestNamespace           string
-	RequestLabelSelector       string
-	RegistryBinary             string
-	ConfigPath                 string
-	GCTimeout                  time.Duration
-	RescanInterval             time.Duration
-	ActivationDelay            time.Duration
-	Schedule                   string
-	ExecutorLeaseName          string
-	ExecutorIdentity           string
-	ExecutorLeaseDuration      time.Duration
-	ExecutorLeaseRenewInterval time.Duration
+	RequestNamespace              string
+	RequestLabelSelector          string
+	RegistryBinary                string
+	ConfigPath                    string
+	GCTimeout                     time.Duration
+	RescanInterval                time.Duration
+	ActivationDelay               time.Duration
+	Schedule                      string
+	ExecutorLeaseName             string
+	ExecutorIdentity              string
+	ExecutorLeaseDuration         time.Duration
+	ExecutorLeaseRenewInterval    time.Duration
+	MaintenanceGateName           string
+	MaintenanceGateDuration       time.Duration
+	MaintenanceGateDelay          time.Duration
+	MaintenanceGateFile           string
+	MaintenanceGateMirrorInterval time.Duration
+	MaintenanceGateAckQuorum      int
+	MaintenanceGateAckTTL         time.Duration
 }
 
 func DefaultRequestLabelSelector() string {
@@ -91,6 +103,31 @@ func applyDefaultOptions(options Options) Options {
 	}
 	if options.ExecutorLeaseRenewInterval <= 0 {
 		options.ExecutorLeaseRenewInterval = DefaultExecutorRenewInterval
+	}
+	if strings.TrimSpace(options.MaintenanceGateName) == "" {
+		options.MaintenanceGateName = DefaultMaintenanceGateName
+	}
+	minGateDuration := options.GCTimeout + DefaultMaintenanceGateMargin
+	if options.MaintenanceGateDuration < minGateDuration {
+		options.MaintenanceGateDuration = minGateDuration
+	}
+	if options.MaintenanceGateDelay < 0 {
+		options.MaintenanceGateDelay = 0
+	}
+	if options.MaintenanceGateDelay == 0 {
+		options.MaintenanceGateDelay = DefaultMaintenanceGateDelay
+	}
+	if strings.TrimSpace(options.MaintenanceGateFile) == "" {
+		options.MaintenanceGateFile = DefaultMaintenanceGateFile
+	}
+	if options.MaintenanceGateMirrorInterval <= 0 {
+		options.MaintenanceGateMirrorInterval = DefaultGateMirrorInterval
+	}
+	if options.MaintenanceGateAckQuorum <= 0 {
+		options.MaintenanceGateAckQuorum = 1
+	}
+	if options.MaintenanceGateAckTTL <= 0 {
+		options.MaintenanceGateAckTTL = DefaultMaintenanceAckTTL
 	}
 	return options
 }

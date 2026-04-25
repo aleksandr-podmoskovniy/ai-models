@@ -38,6 +38,7 @@ DISALLOWED_RENDER_MARKERS = (
 )
 
 MAX_PORT_NAME_LENGTH = 15
+DMCR_RESTART_CHECKSUM_ANNOTATION = "ai.deckhouse.io/dmcr-pod-secret-checksum"
 
 
 def _find_secret(
@@ -99,8 +100,8 @@ def _skip_nested_block(lines: list[str], index: int, parent_indent: int) -> int:
 
 def _parse_yaml_block_map(
     lines: list[str], index: int, parent_indent: int
-) -> tuple[dict[str, str], int]:
-    data: dict[str, str] = {}
+) -> tuple[dict[str, object], int]:
+    data: dict[str, object] = {}
     while index < len(lines):
         line = lines[index]
         if not line.strip():
@@ -138,7 +139,8 @@ def _parse_yaml_block_map(
             continue
 
         if rest == "":
-            index = _skip_nested_block(lines, index + 1, indent)
+            nested, index = _parse_yaml_block_map(lines, index + 1, indent)
+            data[key] = nested
             continue
 
         data[key] = _parse_inline_scalar(rest)
@@ -147,13 +149,14 @@ def _parse_yaml_block_map(
     return data, index
 
 
-def _parse_secret_documents(content: str) -> list[dict[object, object]]:
+def _parse_render_documents(content: str) -> list[dict[object, object]]:
     documents: list[dict[object, object]] = []
     for raw_document in _split_yaml_documents(content):
         lines = raw_document.splitlines()
         kind = ""
-        metadata: dict[str, str] = {}
-        string_data: dict[str, str] = {}
+        metadata: dict[str, object] = {}
+        spec: dict[str, object] = {}
+        string_data: dict[str, object] = {}
         index = 0
         while index < len(lines):
             line = lines[index]
@@ -172,16 +175,53 @@ def _parse_secret_documents(content: str) -> list[dict[object, object]]:
             if stripped == "metadata:":
                 metadata, index = _parse_yaml_block_map(lines, index + 1, 0)
                 continue
+            if stripped == "spec:":
+                spec, index = _parse_yaml_block_map(lines, index + 1, 0)
+                continue
             if stripped == "stringData:":
                 string_data, index = _parse_yaml_block_map(lines, index + 1, 0)
                 continue
             index += 1
 
-        if kind == "Secret" and metadata.get("name"):
-            documents.append(
-                {"kind": "Secret", "metadata": metadata, "stringData": string_data}
-            )
+        if kind and metadata.get("name"):
+            document: dict[str, object] = {"kind": kind, "metadata": metadata}
+            if spec:
+                document["spec"] = spec
+            if string_data:
+                document["stringData"] = string_data
+            documents.append(document)
     return documents
+
+
+def _parse_secret_documents(content: str) -> list[dict[object, object]]:
+    return [
+        document
+        for document in _parse_render_documents(content)
+        if document.get("kind") == "Secret"
+    ]
+
+
+def _find_document(
+    documents: list[dict[object, object]], kind: str, name: str
+) -> dict[object, object] | None:
+    for document in documents:
+        metadata = document.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        if document.get("kind") == kind and metadata.get("name") == name:
+            return document
+    return None
+
+
+def _nested_string(mapping: object, *keys: str) -> str | None:
+    current = mapping
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    if not isinstance(current, str):
+        return None
+    return current
 
 
 def _expect_string_data(
@@ -298,6 +338,70 @@ def _validate_dmcr_auth_consistency(path: Path, content: str) -> list[str]:
                 expected_password=read_password,
             )
         )
+
+    return errors
+
+
+def _validate_dmcr_secret_restart_contract(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    documents = _parse_render_documents(content)
+
+    deployment = _find_document(documents, "Deployment", "dmcr")
+    auth_secret = _find_document(documents, "Secret", "ai-models-dmcr-auth")
+    tls_secret = _find_document(documents, "Secret", "ai-models-dmcr-tls")
+    if not deployment or not auth_secret or not tls_secret:
+        return errors
+
+    auth_checksum = _nested_string(
+        auth_secret, "metadata", "annotations", DMCR_RESTART_CHECKSUM_ANNOTATION
+    )
+    tls_checksum = _nested_string(
+        tls_secret, "metadata", "annotations", DMCR_RESTART_CHECKSUM_ANNOTATION
+    )
+    deployment_checksum = _nested_string(
+        deployment,
+        "spec",
+        "template",
+        "metadata",
+        "annotations",
+        "checksum/secret",
+    )
+
+    if not auth_checksum:
+        errors.append(
+            f"{path.name}: ai-models-dmcr-auth is missing {DMCR_RESTART_CHECKSUM_ANNOTATION}"
+        )
+    if not tls_checksum:
+        errors.append(
+            f"{path.name}: ai-models-dmcr-tls is missing {DMCR_RESTART_CHECKSUM_ANNOTATION}"
+        )
+    if not deployment_checksum:
+        errors.append(f"{path.name}: Deployment/dmcr is missing checksum/secret")
+    if not auth_checksum or not tls_checksum or not deployment_checksum:
+        return errors
+
+    expected_deployment_checksum = hashlib.sha256(
+        f"{auth_checksum}\n{tls_checksum}".encode("utf-8")
+    ).hexdigest()
+    if deployment_checksum != expected_deployment_checksum:
+        errors.append(
+            f"{path.name}: Deployment/dmcr checksum/secret does not match DMCR runtime Secret restart annotations"
+        )
+
+    for secret_name in (
+        "ai-models-dmcr-auth-write",
+        "ai-models-dmcr-auth-read",
+        "ai-models-dmcr-ca",
+    ):
+        secret = _find_document(documents, "Secret", secret_name)
+        if not secret:
+            continue
+        if _nested_string(
+            secret, "metadata", "annotations", DMCR_RESTART_CHECKSUM_ANNOTATION
+        ):
+            errors.append(
+                f"{path.name}: {secret_name} must not participate in Deployment/dmcr restart checksum"
+            )
 
     return errors
 
@@ -508,6 +612,7 @@ def validate_render(path: Path) -> list[str]:
     errors.extend(_validate_dmcr_secret_delete_rbac(path, content))
     errors.extend(_validate_node_cache_runtime_plane(path, content))
     errors.extend(_validate_dmcr_auth_consistency(path, content))
+    errors.extend(_validate_dmcr_secret_restart_contract(path, content))
 
     return errors
 

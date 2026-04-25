@@ -27,6 +27,7 @@ func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest s
 		return errors.New("runtime delivery pod template must not be nil")
 	}
 
+	RemoveSchedulingGate(template)
 	template.Spec.InitContainers = upsertContainer(template.Spec.InitContainers, rendered.InitContainer)
 	template.Spec.Containers = upsertRuntimeEnv(template.Spec.Containers, rendered.RuntimeEnv)
 	template.Spec.Volumes = upsertVolumes(template.Spec.Volumes, rendered.Volumes)

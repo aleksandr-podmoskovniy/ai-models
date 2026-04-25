@@ -32,7 +32,7 @@ spec:
         app.kubernetes.io/component: dmcr
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/dmcr/configmap.yaml") . | sha256sum }}
-        checksum/secret: {{ include (print $.Template.BasePath "/dmcr/secret.yaml") . | sha256sum }}
+        checksum/secret: {{ include "ai-models.dmcrPodSecretChecksum" . }}
         kubectl.kubernetes.io/default-container: dmcr
     spec:
       {{- if (include "ai-models.hasRegistrySecret" .) }}
@@ -63,6 +63,8 @@ spec:
                   key: salt
             - name: OTEL_TRACES_EXPORTER
               value: none
+            - name: DMCR_MAINTENANCE_GATE_FILE
+              value: /run/dmcr-maintenance/gate.json
             - name: REGISTRY_STORAGE_SEALEDS3_ACCESSKEY
               valueFrom:
                 secretKeyRef:
@@ -114,6 +116,8 @@ spec:
             - name: dmcr-auth
               mountPath: /auth
               readOnly: true
+            - name: dmcr-maintenance-gate
+              mountPath: /run/dmcr-maintenance
             {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
             - name: artifacts-ca
               mountPath: /etc/ai-models/artifacts-ca
@@ -144,6 +148,8 @@ spec:
               value: /etc/ssl/docker/tls.crt
             - name: DMCR_DIRECT_UPLOAD_TLS_KEY_FILE
               value: /etc/ssl/docker/tls.key
+            - name: DMCR_MAINTENANCE_GATE_FILE
+              value: /run/dmcr-maintenance/gate.json
             - name: DMCR_STORAGE_S3_BUCKET
               value: {{ include "ai-models.artifactsBucket" . | quote }}
             - name: DMCR_STORAGE_S3_REGION
@@ -196,6 +202,8 @@ spec:
             - name: dmcr-tls
               mountPath: /etc/ssl/docker
               readOnly: true
+            - name: dmcr-maintenance-gate
+              mountPath: /run/dmcr-maintenance
             {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
             - name: artifacts-ca
               mountPath: /etc/ai-models/artifacts-ca
@@ -231,10 +239,15 @@ spec:
             - --request-namespace={{ include "ai-models.namespace" . }}
             - --request-label-selector={{ include "ai-models.dmcrGCRequestLabelKey" . }}=true
             - --garbage-collection-timeout=10m
+            - --maintenance-gate-ack-quorum={{ $replicas }}
             - {{ printf "--schedule=%s" (include "ai-models.dmcrGCSchedule" . | trim) | quote }}
           env:
             - name: LOG_FORMAT
               value: json
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: REGISTRY_HTTP_SECRET
               valueFrom:
                 secretKeyRef:
@@ -274,6 +287,8 @@ spec:
             - name: dmcr-auth
               mountPath: /auth
               readOnly: true
+            - name: dmcr-maintenance-gate
+              mountPath: /run/dmcr-maintenance
             - name: dmcr-kube-api-access
               mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               readOnly: true
@@ -295,6 +310,9 @@ spec:
             items:
               - key: htpasswd
                 path: htpasswd
+        - name: dmcr-maintenance-gate
+          emptyDir:
+            medium: Memory
         {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
         - name: artifacts-ca
           secret:

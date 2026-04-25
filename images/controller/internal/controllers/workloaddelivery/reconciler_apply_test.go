@@ -22,7 +22,6 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
-	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -74,6 +73,9 @@ func TestDeploymentReconcilerAppliesRuntimeDelivery(t *testing.T) {
 	if !hasRuntimeEnv(updated.Spec.Template.Spec.Containers, modeldelivery.ModelFamilyEnv) {
 		t.Fatalf("expected runtime env %q", modeldelivery.ModelFamilyEnv)
 	}
+	if modeldelivery.HasSchedulingGate(&updated.Spec.Template) {
+		t.Fatalf("did not expect scheduling gate %q after delivery apply", modeldelivery.SchedulingGateName)
+	}
 	if got, want := len(updated.Spec.Template.Spec.ImagePullSecrets), 1; got != want {
 		t.Fatalf("image pull secrets count = %d, want %d", got, want)
 	}
@@ -83,51 +85,6 @@ func TestDeploymentReconcilerAppliesRuntimeDelivery(t *testing.T) {
 	}
 	assertProjectedAuthSecretExists(t, kubeClient, workload.Namespace, workload.UID)
 	assertProjectedRuntimeImagePullSecretExists(t, kubeClient, workload.Namespace, workload.UID)
-}
-
-func TestDeploymentReconcilerClearsStaleManagedStateWhileReferencedModelIsPending(t *testing.T) {
-	t.Parallel()
-
-	model := pendingModel()
-	workload := annotatedDeployment(map[string]string{ModelAnnotation: model.Name}, 1, corev1.VolumeSource{
-		EmptyDir: &corev1.EmptyDirVolumeSource{},
-	})
-	workload.Spec.Template.Annotations = map[string]string{modeldelivery.ResolvedDigestAnnotation: "sha256:old"}
-	workload.Spec.Template.Spec.InitContainers = []corev1.Container{{Name: modeldelivery.DefaultInitContainerName}}
-
-	authSecretName, err := resourcenames.OCIRegistryAuthSecretName(workload.UID)
-	if err != nil {
-		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
-	}
-	projectedAuth := testkit.NewOCIRegistryWriteAuthSecret(workload.Namespace, authSecretName)
-	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName), projectedAuth)
-
-	result := reconcileDeployment(t, reconciler, workload)
-	if result != (ctrl.Result{}) {
-		t.Fatalf("unexpected reconcile result %#v", result)
-	}
-
-	var cleaned deployment
-	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &cleaned); err != nil {
-		t.Fatalf("Get(cleaned deployment) error = %v", err)
-	}
-	if hasInitContainer(cleaned.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
-		t.Fatalf("did not expect init container %q while model is pending", modeldelivery.DefaultInitContainerName)
-	}
-	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDigestAnnotation]; found {
-		t.Fatal("did not expect resolved digest annotation while model is pending")
-	}
-	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]; found {
-		t.Fatal("did not expect resolved artifact URI annotation while model is pending")
-	}
-	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]; found {
-		t.Fatal("did not expect resolved delivery mode annotation while model is pending")
-	}
-	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]; found {
-		t.Fatal("did not expect resolved delivery reason annotation while model is pending")
-	}
-	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
-	assertProjectedRuntimeImagePullSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
 }
 
 func TestDeploymentReconcilerInjectsManagedLocalCacheWhenWorkloadHasNoMount(t *testing.T) {

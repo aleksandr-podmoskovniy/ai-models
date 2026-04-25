@@ -27,5 +27,6 @@ import (
 
 func main() {
 	configureCommands()
+	registerMaintenanceGate()
 	_ = registry.RootCmd.Execute()
 }

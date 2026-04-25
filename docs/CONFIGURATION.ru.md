@@ -58,7 +58,9 @@ repository prefix, source-mirror prefix и orphan direct-upload prefix без
 report-only startup check и повторяет его при transient failures. Если stale
 cleanup candidates уже есть и нет другого active или queued GC request, loop
 ставит обычный scheduled request; он не запускает destructive cleanup напрямую
-и всё равно проходит через штатный maintenance/read-only debounce.
+и всё равно проходит через штатный coalescing debounce. Cleanup cycle использует
+внутренний zero-rollout maintenance gate с runtime ack quorum, а не изменение
+Pod template `DMCR`.
 
 Публичный runtime path для моделей теперь controller-owned:
 

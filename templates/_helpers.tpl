@@ -185,14 +185,6 @@ memory: 64Mi
 ai.deckhouse.io/dmcr-gc-request
 {{- end -}}
 
-{{- define "ai-models.dmcrGCSwitchAnnotationKey" -}}
-ai.deckhouse.io/dmcr-gc-switch
-{{- end -}}
-
-{{- define "ai-models.dmcrGCDoneAnnotationKey" -}}
-ai.deckhouse.io/dmcr-gc-done
-{{- end -}}
-
 {{- define "ai-models.dmcrGCSchedule" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $dmcr := (index $moduleValues "dmcr") | default dict -}}
@@ -201,17 +193,6 @@ ai.deckhouse.io/dmcr-gc-done
 {{- index $gc "schedule" -}}
 {{- else -}}
 */20 * * * *
-{{- end -}}
-{{- end -}}
-
-{{- define "ai-models.dmcrGarbageCollectionModeEnabled" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $internal := (index $moduleValues "internal") | default dict -}}
-{{- $dmcr := (index $internal "dmcr") | default dict -}}
-{{- if and (hasKey $dmcr "garbageCollectionModeEnabled") (index $dmcr "garbageCollectionModeEnabled") -}}
-true
-{{- else -}}
-false
 {{- end -}}
 {{- end -}}
 
@@ -314,6 +295,81 @@ ai-models-dmcr-tls
 ai-models-dmcr-ca
 {{- end -}}
 
+{{- define "ai-models.dmcrSecretRestartChecksumAnnotationKey" -}}
+ai.deckhouse.io/dmcr-pod-secret-checksum
+{{- end -}}
+
+{{- define "ai-models.dmcrExistingPodSecretChecksum" -}}
+{{- $namespace := include "ai-models.namespace" . -}}
+{{- $deployment := default (dict) (lookup "apps/v1" "Deployment" $namespace (include "ai-models.dmcrName" .)) -}}
+{{- $spec := get $deployment "spec" | default (dict) -}}
+{{- $template := get $spec "template" | default (dict) -}}
+{{- $metadata := get $template "metadata" | default (dict) -}}
+{{- $annotations := get $metadata "annotations" | default (dict) -}}
+{{- get $annotations "checksum/secret" | default "" -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrSecretAnnotatedChecksum" -}}
+{{- $root := index . 0 -}}
+{{- $secretName := index . 1 -}}
+{{- $secret := default (dict) (lookup "v1" "Secret" (include "ai-models.namespace" $root) $secretName) -}}
+{{- $metadata := get $secret "metadata" | default (dict) -}}
+{{- $annotations := get $metadata "annotations" | default (dict) -}}
+{{- get $annotations (include "ai-models.dmcrSecretRestartChecksumAnnotationKey" $root) | default "" -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrMissingSecretChecksum" -}}
+{{- $root := index . 0 -}}
+{{- $part := index . 1 -}}
+{{- $previous := include "ai-models.dmcrExistingPodSecretChecksum" $root | trim -}}
+{{- if $previous -}}
+{{- sha256sum (printf "%s/recovered\n%s" $part $previous) -}}
+{{- else -}}
+{{- printf "%s/bootstrap" $part -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrAuthSecretRestartChecksum" -}}
+{{- $namespace := include "ai-models.namespace" . -}}
+{{- $secretName := include "ai-models.dmcrAuthSecretName" . -}}
+{{- $annotated := include "ai-models.dmcrSecretAnnotatedChecksum" (list . $secretName) | trim -}}
+{{- if $annotated -}}
+{{- $annotated -}}
+{{- else -}}
+{{- $data := get (default (dict) (lookup "v1" "Secret" $namespace $secretName)) "data" | default (dict) -}}
+{{- $salt := get $data "salt" | default "" | b64dec | trim -}}
+{{- $writePassword := get $data "write.password" | default "" | b64dec | trim -}}
+{{- $readPassword := get $data "read.password" | default "" | b64dec | trim -}}
+{{- if or $salt $writePassword $readPassword -}}
+{{- printf "%s\n%s\n%s\n%s\n%s" (sha256sum $salt) (include "ai-models.dmcrPasswordChecksum" $writePassword | trim) (include "ai-models.dmcrPasswordChecksum" $readPassword | trim) (include "ai-models.dmcrWriteAuthUsername" . | trim) (include "ai-models.dmcrReadAuthUsername" . | trim) | sha256sum -}}
+{{- else -}}
+{{- include "ai-models.dmcrMissingSecretChecksum" (list . "auth") -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrTLSSecretRestartChecksum" -}}
+{{- $namespace := include "ai-models.namespace" . -}}
+{{- $secretName := include "ai-models.dmcrTLSSecretName" . -}}
+{{- $annotated := include "ai-models.dmcrSecretAnnotatedChecksum" (list . $secretName) | trim -}}
+{{- if $annotated -}}
+{{- $annotated -}}
+{{- else -}}
+{{- $data := get (default (dict) (lookup "v1" "Secret" $namespace $secretName)) "data" | default (dict) -}}
+{{- $tlsCert := get $data "tls.crt" | default "" | b64dec | trim -}}
+{{- $tlsKey := get $data "tls.key" | default "" | b64dec | trim -}}
+{{- if or $tlsCert $tlsKey -}}
+{{- printf "%s\n%s" (sha256sum $tlsCert) (sha256sum $tlsKey) | sha256sum -}}
+{{- else -}}
+{{- include "ai-models.dmcrMissingSecretChecksum" (list . "tls") -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ai-models.dmcrPodSecretChecksum" -}}
+{{- printf "%s\n%s" (include "ai-models.dmcrAuthSecretRestartChecksum" . | trim) (include "ai-models.dmcrTLSSecretRestartChecksum" . | trim) | sha256sum -}}
+{{- end -}}
+
 {{- define "ai-models.artifactsPlatformCASecretName" -}}
 ai-models-artifacts-platform-ca
 {{- end -}}
@@ -413,6 +469,14 @@ true
 
 {{- define "ai-models.controllerUploadPort" -}}
 8444
+{{- end -}}
+
+{{- define "ai-models.controllerWebhookPort" -}}
+9443
+{{- end -}}
+
+{{- define "ai-models.controllerWebhookTLSSecretName" -}}
+ai-models-controller-webhook-tls
 {{- end -}}
 
 {{- define "ai-models.controllerLeaderElectionID" -}}

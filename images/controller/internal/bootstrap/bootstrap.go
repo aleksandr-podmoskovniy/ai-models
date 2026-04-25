@@ -43,9 +43,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 const defaultControllerCacheSyncTimeout = 10 * time.Minute
+const defaultWebhookCertDir = "/tmp/k8s-webhook-server/serving-certs"
+const defaultWebhookPort = 9443
 
 type Options struct {
 	CleanupJobs        catalogcleanup.Options
@@ -59,6 +62,8 @@ type Options struct {
 type RuntimeOptions struct {
 	MetricsBindAddress      string
 	HealthProbeBindAddress  string
+	WebhookCertDir          string
+	WebhookPort             int
 	LeaderElection          bool
 	LeaderElectionID        string
 	LeaderElectionNamespace string
@@ -164,6 +169,7 @@ func (a *App) setupManager(mgr ctrl.Manager) error {
 	if err := nodecachesubstrate.SetupWithManager(mgr, a.logger, a.nodeCacheSubstrate); err != nil {
 		return err
 	}
+	workloadDeliveryEnabled := a.workloadDelivery.Enabled()
 	if err := workloaddelivery.SetupWithManager(mgr, a.workloadDelivery); err != nil {
 		return err
 	}
@@ -191,6 +197,14 @@ func (a *App) setupManager(mgr ctrl.Manager) error {
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return err
 	}
+	if workloadDeliveryEnabled {
+		if err := mgr.AddHealthzCheck("webhook", mgr.GetWebhookServer().StartedChecker()); err != nil {
+			return err
+		}
+		if err := mgr.AddReadyzCheck("webhook", mgr.GetWebhookServer().StartedChecker()); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -200,6 +214,8 @@ func (a *App) logRuntimeConfiguration() {
 		"controller bootstrap ready",
 		slog.String("metricsBindAddress", a.runtime.MetricsBindAddress),
 		slog.String("healthProbeBindAddress", a.runtime.HealthProbeBindAddress),
+		slog.String("webhookCertDir", a.runtime.WebhookCertDir),
+		slog.Int("webhookPort", a.runtime.WebhookPort),
 		slog.Bool("leaderElection", a.runtime.LeaderElection),
 		slog.String("leaderElectionID", a.runtime.LeaderElectionID),
 		slog.String("leaderElectionNamespace", a.runtime.LeaderElectionNamespace),
@@ -246,6 +262,12 @@ func normalizeRuntimeOptions(options RuntimeOptions) RuntimeOptions {
 	if strings.TrimSpace(options.HealthProbeBindAddress) == "" {
 		options.HealthProbeBindAddress = ":8081"
 	}
+	if strings.TrimSpace(options.WebhookCertDir) == "" {
+		options.WebhookCertDir = defaultWebhookCertDir
+	}
+	if options.WebhookPort == 0 {
+		options.WebhookPort = defaultWebhookPort
+	}
 	if strings.TrimSpace(options.LeaderElectionID) == "" {
 		options.LeaderElectionID = "ai-models-controller.deckhouse.io"
 	}
@@ -273,6 +295,10 @@ func managerOptions(scheme *runtime.Scheme, logger *slog.Logger, runtimeOptions 
 		LeaderElectionID:              runtimeOptions.LeaderElectionID,
 		LeaderElectionNamespace:       runtimeOptions.LeaderElectionNamespace,
 		LeaderElectionReleaseOnCancel: true,
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port:    runtimeOptions.WebhookPort,
+			CertDir: runtimeOptions.WebhookCertDir,
+		}),
 		Controller: config.Controller{
 			CacheSyncTimeout: defaultControllerCacheSyncTimeout,
 			RecoverPanic:     ptr.To(true),

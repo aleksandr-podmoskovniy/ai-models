@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -64,8 +63,8 @@ func TestModelReconcilerEnqueuesGarbageCollectionRequestAndRemovesFinalizerAfter
 	if requestSecret.Annotations[dmcrGCRequestedAnnotationKey] == "" {
 		t.Fatalf("expected queued request annotation on garbage-collection request secret, got %#v", requestSecret.Annotations)
 	}
-	if requestSecret.Annotations[dmcrGCSwitchAnnotationKey] == "" {
-		t.Fatalf("expected delete-triggered garbage-collection request to be armed immediately, got %#v", requestSecret.Annotations)
+	if requestSecret.Annotations[dmcrGCSwitchAnnotationKey] != "" {
+		t.Fatalf("expected delete-triggered garbage-collection request to stay queued, got %#v", requestSecret.Annotations)
 	}
 	if got, want := string(requestSecret.Data[dmcrGCDirectUploadTokenKey]), sessionToken; got != want {
 		t.Fatalf("expected delete-triggered garbage-collection request to snapshot current direct-upload session token %q, got %q", want, got)
@@ -100,41 +99,5 @@ func TestModelReconcilerRemovesFinalizerWhenQueuedGarbageCollectionRequestAlread
 		}
 	} else if controllerutil.ContainsFinalizer(&updated, Finalizer) {
 		t.Fatal("expected finalizer to be removed when queued garbage-collection request already exists")
-	}
-}
-
-func TestModelReconcilerRemovesFinalizerWhenCompletedGarbageCollectionSecretAlreadyExists(t *testing.T) {
-	t.Parallel()
-
-	model := newDeletingModel()
-	setCleanupHandle(t, model, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef")
-	jobName := cleanupJobName(t, model)
-	gcSecret := completedGCSecret("d8-ai-models", model.GetUID())
-	reconciler, kubeClient := newModelReconciler(t, model, completedJob("d8-ai-models", jobName), gcSecret)
-
-	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)}); err != nil {
-		t.Fatalf("Reconcile() error = %v", err)
-	}
-
-	var updated modelsv1alpha1.Model
-	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(model), &updated); err != nil {
-		if !apierrors.IsNotFound(err) {
-			t.Fatalf("Get(model) error = %v", err)
-		}
-	} else if controllerutil.ContainsFinalizer(&updated, Finalizer) {
-		t.Fatal("expected finalizer to be removed after completed cleanup when legacy completed garbage-collection secret already exists")
-	}
-
-	var requestSecret corev1.Secret
-	key := client.ObjectKey{Namespace: "d8-ai-models", Name: dmcrGCRequestSecretName(model.GetUID())}
-	if err := kubeClient.Get(context.Background(), key, &requestSecret); err != nil {
-		t.Fatalf("expected legacy garbage-collection request secret to remain untouched, got err=%v", err)
-	}
-	registrySecretName, err := resourcenames.OCIRegistryAuthSecretName(model.GetUID())
-	if err != nil {
-		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
-	}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: registrySecretName, Namespace: "d8-ai-models"}, &corev1.Secret{}); !apierrors.IsNotFound(err) {
-		t.Fatalf("expected projected OCI auth secret to be deleted, got err=%v", err)
 	}
 }

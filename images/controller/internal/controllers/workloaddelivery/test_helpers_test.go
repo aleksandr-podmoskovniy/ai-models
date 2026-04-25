@@ -112,6 +112,22 @@ func readyModel() *modelsv1alpha1.Model {
 	return model
 }
 
+func readyClusterModel() *modelsv1alpha1.ClusterModel {
+	model := testkit.NewClusterModel()
+	model.Name = "cluster-gemma"
+	model.Status = modelsv1alpha1.ModelStatus{
+		Phase: modelsv1alpha1.ModelPhaseReady,
+		Artifact: &modelsv1alpha1.ModelArtifactStatus{
+			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
+			URI:       testArtifactURI,
+			Digest:    testDigest,
+			MediaType: "application/vnd.cncf.model.manifest.v1+json",
+		},
+		Resolved: &modelsv1alpha1.ModelResolvedStatus{Family: "gemma"},
+	}
+	return model
+}
+
 func pendingModel() *modelsv1alpha1.Model {
 	model := testkit.NewModel()
 	model.Name = "gemma"

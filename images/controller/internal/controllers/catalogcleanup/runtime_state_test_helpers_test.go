@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
@@ -72,19 +71,6 @@ func requestedGCSecret(namespace string, ownerUID types.UID) *corev1.Secret {
 		Kind: modelsv1alpha1.ModelKind,
 		Name: "deepseek-r1",
 	}, "")
-	return secret
-}
-
-func activeGCSecret(namespace string, ownerUID types.UID) *corev1.Secret {
-	secret := requestedGCSecret(namespace, ownerUID)
-	delete(secret.Annotations, dmcrGCRequestedAnnotationKey)
-	secret.Annotations[dmcrGCSwitchAnnotationKey] = time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
-	return secret
-}
-
-func completedGCSecret(namespace string, ownerUID types.UID) *corev1.Secret {
-	secret := activeGCSecret(namespace, ownerUID)
-	secret.Annotations[dmcrGCDoneAnnotationKey] = time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
 	return secret
 }
 

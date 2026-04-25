@@ -175,22 +175,6 @@ func TestFinalizeDeleteBackendArtifactLifecycle(t *testing.T) {
 			},
 		},
 		{
-			name: "completed cleanup and garbage collection still removes finalizer",
-			input: FinalizeDeleteInput{
-				HasFinalizer:           true,
-				HandleFound:            true,
-				HandleKind:             cleanuphandle.KindBackendArtifact,
-				JobState:               CleanupJobStateComplete,
-				GarbageCollectionState: GarbageCollectionStateComplete,
-			},
-			assert: func(t *testing.T, got FinalizeDeleteDecision) {
-				t.Helper()
-				if !got.RemoveFinalizer || got.DeleteGarbageCollectionRequest || got.UpdateStatus {
-					t.Fatalf("unexpected decision %#v", got)
-				}
-			},
-		},
-		{
 			name: "unsupported job state fails closed",
 			input: FinalizeDeleteInput{
 				HasFinalizer: true,

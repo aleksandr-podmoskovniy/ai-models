@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/deckhouse/ai-models/dmcr/internal/directupload"
+	"github.com/deckhouse/ai-models/dmcr/internal/maintenance"
 )
 
 const (
@@ -82,6 +84,18 @@ func main() {
 	}
 	if err := service.SetVerificationPolicy(verificationPolicy); err != nil {
 		log.Fatal(err)
+	}
+	maintenanceChecker, err := maintenance.NewFileCheckerFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	service.SetMaintenanceChecker(maintenanceChecker)
+	observer, err := maintenance.NewFileAckObserverFromEnv("direct-upload", 0)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if observer != nil {
+		observer.Start(context.Background())
 	}
 
 	server, err := directupload.NewServer(

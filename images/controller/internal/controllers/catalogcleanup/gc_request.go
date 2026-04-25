@@ -36,7 +36,6 @@ const (
 	dmcrGCRequestLabelValue      = "true"
 	dmcrGCRequestedAnnotationKey = "ai.deckhouse.io/dmcr-gc-requested-at"
 	dmcrGCSwitchAnnotationKey    = "ai.deckhouse.io/dmcr-gc-switch"
-	dmcrGCDoneAnnotationKey      = "ai.deckhouse.io/dmcr-gc-done"
 	dmcrGCDirectUploadModeKey    = "ai.deckhouse.io/dmcr-gc-direct-upload-mode"
 	dmcrGCDirectUploadModeFast   = "immediate-orphan-cleanup"
 	dmcrGCDirectUploadTokenKey   = "direct-upload-session-token"
@@ -60,20 +59,19 @@ func buildDMCRGCRequestSecret(namespace string, owner cleanupJobOwner, directUpl
 		},
 		Type: corev1.SecretTypeOpaque,
 	}
-	armDMCRGCRequestSecret(secret, owner, directUploadSessionToken)
+	queueDMCRGCRequestSecret(secret, owner, directUploadSessionToken)
 	return secret
 }
 
-func armDMCRGCRequestSecret(secret *corev1.Secret, owner cleanupJobOwner, directUploadSessionToken string) {
+func queueDMCRGCRequestSecret(secret *corev1.Secret, owner cleanupJobOwner, directUploadSessionToken string) {
 	requestedAt := time.Now().UTC().Format(dmcrGCRequestTimestampRFC)
 	secret.Labels = mergeLabels(secret.Labels, garbageCollectionRequestLabels(owner))
 	if secret.Annotations == nil {
 		secret.Annotations = make(map[string]string, 3)
 	}
 	secret.Annotations[dmcrGCRequestedAnnotationKey] = requestedAt
-	secret.Annotations[dmcrGCSwitchAnnotationKey] = requestedAt
+	delete(secret.Annotations, dmcrGCSwitchAnnotationKey)
 	secret.Annotations[dmcrGCDirectUploadModeKey] = dmcrGCDirectUploadModeFast
-	delete(secret.Annotations, dmcrGCDoneAnnotationKey)
 
 	token := strings.TrimSpace(directUploadSessionToken)
 	if token != "" {
@@ -102,9 +100,6 @@ func observeDMCRGCRequestState(secret *corev1.Secret) deletionapp.GarbageCollect
 	if secret.Annotations[dmcrGCRequestedAnnotationKey] != "" {
 		return deletionapp.GarbageCollectionStateQueued
 	}
-	if secret.Annotations[dmcrGCDoneAnnotationKey] != "" {
-		return deletionapp.GarbageCollectionStateComplete
-	}
 	return deletionapp.GarbageCollectionStateMissing
 }
 
@@ -122,7 +117,7 @@ func (r *baseReconciler) ensureGarbageCollectionRequest(ctx context.Context, own
 	case err != nil:
 		return err
 	default:
-		armDMCRGCRequestSecret(&existing, owner, sessionToken)
+		queueDMCRGCRequestSecret(&existing, owner, sessionToken)
 		return r.client.Update(ctx, &existing)
 	}
 }

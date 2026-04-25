@@ -20,6 +20,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/deckhouse/ai-models/dmcr/internal/maintenance"
 )
 
 const DefaultBlobPartSizeBytes int64 = 8 << 20
@@ -34,6 +36,7 @@ type Service struct {
 	partSizeBytes      int64
 	sessionTTL         time.Duration
 	verificationPolicy VerificationPolicy
+	maintenanceChecker maintenance.Checker
 	now                func() time.Time
 }
 
@@ -74,4 +77,8 @@ func (s *Service) SetVerificationPolicy(policy VerificationPolicy) error {
 	}
 	s.verificationPolicy = normalized
 	return nil
+}
+
+func (s *Service) SetMaintenanceChecker(checker maintenance.Checker) {
+	s.maintenanceChecker = checker
 }

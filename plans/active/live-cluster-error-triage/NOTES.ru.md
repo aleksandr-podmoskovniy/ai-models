@@ -849,3 +849,138 @@
   - DMCR Role has `get,list,create,update,patch,delete` on internal Secrets;
   - direct-upload readiness/liveness probes are HTTPS `/healthz`;
   - human-facing `ai-models:*` roles do not grant `secrets`.
+
+## 16. ARC runner CephFS mount recovery on 2026-04-24
+
+- failing object:
+  - `arc-runners/ai-models-runners-f2cpk-runner-z8z5j`;
+  - shared PVC `arc-runners/ai-models-runners-cache`;
+  - PV `pvc-a3e24a47-3a32-4b3d-aa7c-d3fcc8ff8067`;
+  - storage class `ceph-fs-nvme-sc`;
+  - CSI driver `cephfs.csi.ceph.com`.
+- failure signal:
+  - `MountVolume.MountDevice failed`;
+  - `rpc error: code = Aborted`;
+  - `an operation with the given Volume ID ... already exists`.
+- root cause observed in CSI logs:
+  - CephFS node-plugin had a stuck `NodeStageVolume` call for the same volume
+    for more than 42 minutes.
+- recovery actions:
+  - temporarily patched
+    `arc-runners/AutoscalingRunnerSet/ai-models-runners` to `maxRunners=0`;
+  - pending ephemeral runners disappeared and runner churn stopped;
+  - restarted CephFS CSI node-plugin pods on affected nodes `k8s-w2` and
+    `k8s-w4`;
+  - returned `maxRunners=2`.
+- validation:
+  - temporary probe pods mounted `ai-models-runners-cache` successfully on
+    `k8s-w2` and `k8s-w4`;
+  - probes reached `Running` and were deleted afterwards;
+  - ARC created fresh runner pods after re-enable;
+  - runner on `k8s-w4` reached `2/2 Running`;
+  - runner on `k8s-w3` started normally and did not hit `FailedMount`.
+- remaining unrelated storage noise:
+  - separate RBD mount issues remain visible for monitoring/trivy PVCs and are
+    not part of the ARC CephFS runner recovery.
+
+## 17. Fresh tiny model publication smoke on 2026-04-24
+
+### 17.1 Preflight after module update
+
+- `d8-ai-models` live state:
+  - `ai-models-controller`: 2 pods, `3/3 Running`, zero restarts;
+  - `dmcr`: 2 pods, `4/4 Running`, zero restarts;
+  - rendered direct-upload probes are HTTPS `GET /healthz`;
+  - `system:serviceaccount:d8-ai-models:dmcr` can create internal Secrets.
+- no current `Model` or `ClusterModel` resources existed before the smoke;
+- no `ai.deckhouse.io/dmcr-gc-request=true` Secrets existed before the smoke;
+- direct-upload TLS EOF probe noise was not reproduced.
+
+### 17.2 Model publication
+
+- created namespaced smoke model:
+  - namespace: `ai-models-smoke`;
+  - resource: `models.ai.deckhouse.io/v1alpha1`;
+  - name: `tiny-random-phi-registry-20260424152425`;
+  - source: `https://huggingface.co/hf-internal-testing/tiny-random-PhiForCausalLM`.
+- controller events:
+  - `15:24:26Z` `RemoteFetchStarted`;
+  - `15:24:42Z` `PublicationSucceeded`.
+- publication worker:
+  - pod `d8-ai-models/ai-model-publish-53f5393e-994a-42b9-adfc-0f0044c1673a`
+    was scheduled, pulled the module image, started and exited before log
+    collection;
+  - the stage is confirmed by model status, events, controller logs and DMCR
+    registry readback.
+- final status:
+  - `phase: Ready`;
+  - `artifact.digest:
+    sha256:430809d43231b77dd8b4e64ec098976d77b6081838f23dd2328adbc36fbd6526`;
+  - `artifact.sizeBytes: 382119`;
+  - `artifact.uri:
+    dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/ai-models-smoke/tiny-random-phi-registry-20260424152425/53f5393e-994a-42b9-adfc-0f0044c1673a@sha256:430809d43231b77dd8b4e64ec098976d77b6081838f23dd2328adbc36fbd6526`;
+  - resolved model family: `phi`;
+  - resolved format: `Safetensors`;
+  - resolved architecture: `PhiForCausalLM`;
+  - all observed public conditions were `True`.
+
+### 17.3 Registry readback
+
+- independent in-cluster registry check used DMCR read credentials and module
+  CA without printing secret values;
+- manifest request returned `HTTP 200` and `734` bytes;
+- first blob request returned `HTTP 200` and `231` bytes;
+- materializer later read the manifest/config/layers from DMCR successfully;
+- DMCR logs include one expected `HEAD blob unknown` during publication blob
+  existence probing, followed by successful `GET` requests;
+- no `RequestTimeTooSkewed`, `SlowDown`, `timeout`, `panic`, `500` or `503`
+  entries were observed in sampled `dmcr`, `dmcr-direct-upload` or
+  `dmcr-garbage-collection` logs during the smoke window.
+
+### 17.4 Workload delivery
+
+- created smoke consumer deployment:
+  - namespace: `ai-models-smoke`;
+  - name: `tiny-random-phi-registry-20260424152425-consumer`;
+  - annotation: `ai.deckhouse.io/model:
+    tiny-random-phi-registry-20260424152425`;
+  - writable cache mount: `/data/modelcache`.
+- controller applied runtime delivery:
+  - mode: `MaterializeBridge`;
+  - reason: `WorkloadCacheVolume`;
+  - digest:
+    `sha256:430809d43231b77dd8b4e64ec098976d77b6081838f23dd2328adbc36fbd6526`;
+  - env injected into workload:
+    `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`,
+    `AI_MODELS_MODEL_FAMILY`.
+- rollout result:
+  - deployment reached `1/1` available;
+  - active pod
+    `tiny-random-phi-registry-20260424152425-consumer-65f68cccb98pjw`
+    is `Running` on `k8s-w3.apiac.ru`;
+  - materializer completed in about `697ms` from start to ready marker.
+- materialized files under `/data/modelcache/model`:
+  - `config.json`;
+  - `generation_config.json`;
+  - `merges.txt`;
+  - `model.safetensors`;
+  - `special_tokens_map.json`;
+  - `tokenizer.json`;
+  - `tokenizer_config.json`;
+  - `vocab.json`.
+- marker file records:
+  - media type `application/vnd.cncf.model.manifest.v1+json`;
+  - family `phi`;
+  - ready timestamp `2026-04-24T15:30:07Z`.
+
+### 17.5 Residual observations
+
+- legacy API group `models.ai-models.deckhouse.io` is still installed but was
+  empty for this smoke; the new smoke object exists only under
+  `models.ai.deckhouse.io`.
+- controller-side delivery is eventual:
+  - the initial deployment revision briefly created an unmaterialized pod and
+    emitted a stale `BackOff` event;
+  - the controller patched the workload and the final revision is healthy.
+- no GC request Secrets were created by this positive smoke.
+- smoke resources were left in place intentionally for follow-up inspection.

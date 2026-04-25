@@ -24,6 +24,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/deckhouse/ai-models/dmcr/internal/maintenance"
 )
 
 type startRequest struct {
@@ -68,6 +70,9 @@ func (s *Service) Handler() http.Handler {
 				http.Error(writer, err.Error(), http.StatusUnauthorized)
 				return
 			}
+			if isMutationRequest(request) && maintenance.RejectWriteIfActive(writer, request, s.maintenanceChecker) {
+				return
+			}
 		}
 		mux.ServeHTTP(writer, request)
 	})
@@ -87,6 +92,13 @@ func (s *Service) authorize(request *http.Request) error {
 		return errors.New("unauthorized")
 	}
 	return nil
+}
+
+func isMutationRequest(request *http.Request) bool {
+	if request == nil || !strings.HasPrefix(request.URL.Path, "/v2/blob-uploads") {
+		return false
+	}
+	return request.Method != http.MethodGet && request.Method != http.MethodHead
 }
 
 func (s *Service) handleStart(writer http.ResponseWriter, request *http.Request) {

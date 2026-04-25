@@ -27,6 +27,7 @@ spec:
         {{- include "ai-models.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: controller
       annotations:
+        checksum/webhook-tls: {{ include (print $.Template.BasePath "/controller/webhook.yaml") . | sha256sum }}
         kubectl.kubernetes.io/default-container: controller
     spec:
       {{- if (include "ai-models.hasRegistrySecret" .) }}
@@ -130,6 +131,14 @@ spec:
             - name: artifacts-ca
               mountPath: /etc/ai-models/artifacts-ca
               readOnly: true
+            - name: webhook-tls
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+          {{- else }}
+          volumeMounts:
+            - name: webhook-tls
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
           {{- end }}
           ports:
             - name: metrics
@@ -137,6 +146,9 @@ spec:
               protocol: TCP
             - name: health
               containerPort: {{ include "ai-models.controllerHealthPort" . | int }}
+              protocol: TCP
+            - name: webhook
+              containerPort: {{ include "ai-models.controllerWebhookPort" . | int }}
               protocol: TCP
           livenessProbe:
             httpGet:
@@ -244,5 +256,13 @@ spec:
         - name: artifacts-ca
           secret:
             secretName: {{ include "ai-models.artifactsMountedCASecretName" . }}
+        - name: webhook-tls
+          secret:
+            secretName: {{ include "ai-models.controllerWebhookTLSSecretName" . }}
+      {{- else }}
+      volumes:
+        - name: webhook-tls
+          secret:
+            secretName: {{ include "ai-models.controllerWebhookTLSSecretName" . }}
       {{- end }}
 {{- end }}

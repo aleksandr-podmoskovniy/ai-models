@@ -122,6 +122,40 @@ publication/runtime path.
 - direct-upload probe log noise убран через HTTPS health endpoint;
 - внешние cluster-wide проблемы отделены от module defects.
 
+### Slice 7. Fresh tiny model publication smoke after module update
+
+Цель:
+
+- создать маленький namespaced `Model`, пройти source resolution,
+  publication worker, upload/sealing в `DMCR` и проверить public status/artifact
+  signal по каждому этапу.
+
+Проверки:
+
+- preflight `kubectl get pods -n d8-ai-models`;
+- `kubectl apply` маленького `Model` в `ai-models-smoke`;
+- watch `Model.status.phase`, `conditions`, `artifact`;
+- inspect controller logs;
+- inspect publication worker pod/logs;
+- inspect `dmcr` logs for registry write/read and storage health;
+- verify no GC/request storm and no fresh `FailedMount` side effects.
+
+Артефакт результата:
+
+- зафиксирован end-to-end результат: `Ready` с `status.artifact.uri` или
+  точный failing stage с логами.
+
+Результат:
+
+- tiny namespaced `Model` in `models.ai.deckhouse.io/v1alpha1` reached
+  `Ready`;
+- source fetch, publish worker, DMCR registry readback and workload
+  `MaterializeBridge` delivery are confirmed end-to-end;
+- no fresh DMCR S3/time-skew/timeout/probe-error storm was observed during
+  the smoke window;
+- legacy `models.ai-models.deckhouse.io` CRD remains installed but has no
+  smoke object.
+
 ## 4. Rollback point
 
 После Slice 1 можно остановиться с чистым live diagnosis без дополнительных

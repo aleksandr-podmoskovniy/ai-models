@@ -25,6 +25,6 @@ func NewRootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newPauseCommand(), newGCCommand())
+	root.AddCommand(newGCCommand())
 	return root
 }

@@ -92,14 +92,17 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	}); err != nil {
 		return err
 	}
-	return setupCronJobController(mgr, baseReconciler{
+	if err := setupCronJobController(mgr, baseReconciler{
 		client:   mgr.GetClient(),
 		reader:   mgr.GetAPIReader(),
 		delivery: deliveryService,
 		options:  options,
 		logger:   controllerLogger("CronJob"),
 		recorder: mgr.GetEventRecorderFor(cronJobControllerName),
-	})
+	}); err != nil {
+		return err
+	}
+	return setupAdmission(mgr)
 }
 
 func setupDeploymentController(mgr ctrl.Manager, base baseReconciler) error {

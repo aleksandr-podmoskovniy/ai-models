@@ -164,7 +164,7 @@ func (r *baseReconciler) prepareDeliveryResolution(
 		return resolution, true, nil
 	}
 
-	if err := r.removeManagedDelivery(ctx, object, original, template); err != nil {
+	if err := r.keepManagedDeliveryPending(ctx, object, original, template); err != nil {
 		return Resolution{}, false, err
 	}
 	r.recorder.Event(object, "Normal", "ModelDeliveryPending", resolution.Message)

@@ -19,7 +19,6 @@ package catalogcleanup
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -53,11 +52,8 @@ func TestBuildDMCRGCRequestSecretIncludesSharedOwnerLabels(t *testing.T) {
 	if secret.Annotations[dmcrGCRequestedAnnotationKey] == "" {
 		t.Fatal("expected queued-request annotation on garbage-collection request secret")
 	}
-	if secret.Annotations[dmcrGCSwitchAnnotationKey] == "" {
-		t.Fatal("expected delete-triggered request to be armed immediately")
-	}
-	if secret.Annotations[dmcrGCRequestedAnnotationKey] != secret.Annotations[dmcrGCSwitchAnnotationKey] {
-		t.Fatalf("expected requested-at and switch timestamps to match, got %#v", secret.Annotations)
+	if secret.Annotations[dmcrGCSwitchAnnotationKey] != "" {
+		t.Fatalf("expected delete-triggered request to stay queued, got %#v", secret.Annotations)
 	}
 	if got := string(secret.Data[dmcrGCDirectUploadTokenKey]); got != "" {
 		t.Fatalf("unexpected direct-upload session token payload %q", got)
@@ -82,7 +78,7 @@ func TestEnsureGarbageCollectionRequestRefreshesMetadataOnExistingSecret(t *test
 				"extra": "keep",
 			},
 			Annotations: map[string]string{
-				dmcrGCDoneAnnotationKey: time.Now().UTC().Format(dmcrGCRequestTimestampRFC),
+				dmcrGCSwitchAnnotationKey: "2026-04-10T00:00:00Z",
 			},
 		},
 		Type: corev1.SecretTypeOpaque,
@@ -110,17 +106,11 @@ func TestEnsureGarbageCollectionRequestRefreshesMetadataOnExistingSecret(t *test
 	if got, want := updated.Labels[resourcenames.OwnerUIDLabelKey], string(owner.UID); got != want {
 		t.Fatalf("unexpected owner UID label %q", got)
 	}
-	if updated.Annotations[dmcrGCDoneAnnotationKey] != "" {
-		t.Fatalf("expected done annotation to be removed, got %#v", updated.Annotations)
-	}
 	if updated.Annotations[dmcrGCRequestedAnnotationKey] == "" {
 		t.Fatalf("expected queued-request annotation to be set, got %#v", updated.Annotations)
 	}
-	if updated.Annotations[dmcrGCSwitchAnnotationKey] == "" {
-		t.Fatalf("expected active switch annotation to be set, got %#v", updated.Annotations)
-	}
-	if updated.Annotations[dmcrGCRequestedAnnotationKey] != updated.Annotations[dmcrGCSwitchAnnotationKey] {
-		t.Fatalf("expected requested-at and switch timestamps to match, got %#v", updated.Annotations)
+	if updated.Annotations[dmcrGCSwitchAnnotationKey] != "" {
+		t.Fatalf("expected refreshed request to stay queued, got %#v", updated.Annotations)
 	}
 	if _, found := updated.Data[dmcrGCDirectUploadTokenKey]; found {
 		t.Fatalf("expected stale direct-upload token to be removed, got %#v", updated.Data)

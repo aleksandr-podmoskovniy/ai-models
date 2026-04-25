@@ -50,6 +50,9 @@ func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeld
 	options = modeldelivery.NormalizeServiceOptions(options)
 
 	changed := false
+	if modeldelivery.RemoveSchedulingGate(template) {
+		changed = true
+	}
 	initContainers, removedInit := removeContainerByName(template.Spec.InitContainers, options.Render.InitContainerName)
 	if removedInit {
 		template.Spec.InitContainers = initContainers
@@ -104,6 +107,9 @@ func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldeli
 		return true
 	}
 	if modeldelivery.HasManagedRuntimeEnv(template.Spec.Containers) {
+		return true
+	}
+	if modeldelivery.HasSchedulingGate(template) {
 		return true
 	}
 	if hasContainerByName(template.Spec.InitContainers, options.Render.InitContainerName) {

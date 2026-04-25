@@ -47,8 +47,7 @@ type registryConfig struct {
 }
 
 type registryStorageConfig struct {
-	Maintenance registryMaintenanceConfig `yaml:"maintenance"`
-	SealedS3    registrySealedS3Config    `yaml:"sealeds3"`
+	SealedS3 registrySealedS3Config `yaml:"sealeds3"`
 }
 
 type registrySealedS3Config struct {
@@ -59,14 +58,6 @@ type registrySealedS3Config struct {
 	ForcePathStyle bool   `yaml:"forcepathstyle"`
 	Secure         bool   `yaml:"secure"`
 	SkipVerify     bool   `yaml:"skipverify"`
-}
-
-type registryMaintenanceConfig struct {
-	Readonly registryReadonlyConfig `yaml:"readonly"`
-}
-
-type registryReadonlyConfig struct {
-	Enabled bool `yaml:"enabled"`
 }
 
 func LoadStorageConfig(configPath string) (S3StorageConfig, error) {
@@ -100,14 +91,6 @@ func LoadStorageConfig(configPath string) (S3StorageConfig, error) {
 		SecretKey:     secretKey,
 		CAFile:        strings.TrimSpace(os.Getenv(AWSCABundleEnv)),
 	}, nil
-}
-
-func registryMaintenanceModeEnabled(configPath string) (bool, error) {
-	config, err := loadRegistryConfig(configPath)
-	if err != nil {
-		return false, err
-	}
-	return config.Storage.Maintenance.Readonly.Enabled, nil
 }
 
 func loadRegistryConfig(configPath string) (registryConfig, error) {

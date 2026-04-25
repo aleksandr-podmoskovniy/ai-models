@@ -410,12 +410,14 @@ paths и test surfaces.
 
 - Decision surface:
   - workload mutation for runtime delivery
+  - managed scheduling gate helpers for deterministic first rollout handoff
   - storage topology checks
   - managed local bridge volume injection
   - cache-root, digest, delivery-mode and delivery-reason annotations
   - stable workload-facing runtime env projection and cleanup
 - Primary evidence:
   - `render_test.go`
+  - `scheduling_gate_test.go`
   - `service_apply_test.go`
   - `service_topology_test.go`
   - `service_validation_test.go`
@@ -570,6 +572,8 @@ paths и test surfaces.
 - `nodecacheruntime`:
   - `reconciler_test.go`
 - `workloaddelivery`:
+  - `admission_test.go`
+  - `reconciler_delivery_gate_test.go`
   - `annotations_test.go`
   - `options_test.go`
   - `predicate_test.go`

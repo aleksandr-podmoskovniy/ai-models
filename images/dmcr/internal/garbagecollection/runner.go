@@ -18,6 +18,7 @@ package garbagecollection
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -27,11 +28,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/deckhouse/ai-models/dmcr/internal/maintenance"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
+
+var errMaintenanceGateAckQuorumNotReady = errors.New("dmcr maintenance gate ack quorum is not ready")
 
 func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) error {
 	if client == nil {
@@ -57,12 +61,19 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 		slog.String("schedule", strings.TrimSpace(options.Schedule)),
 		slog.String("executor_lease", options.ExecutorLeaseName),
 		slog.String("executor_identity", executorLease.identity),
+		slog.String("maintenance_gate", options.MaintenanceGateName),
 	)
 
 	signalContext, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	for {
+		if err := syncMaintenanceGateMirror(signalContext, client, options); err != nil {
+			slog.Default().Warn("dmcr maintenance gate mirror sync failed", slog.Any("error", err))
+		}
+		if err := syncMaintenanceGateAckMirror(signalContext, client, options); err != nil {
+			slog.Default().Warn("dmcr maintenance gate ack mirror sync failed", slog.Any("error", err))
+		}
 		handled, err := executorLease.RunIfHolder(signalContext, func(leaseContext context.Context) (bool, error) {
 			return runLoopStep(leaseContext, client, options, schedulePlanner, time.Now)
 		})
@@ -76,6 +87,9 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 					waitDuration = scheduleWait
 				}
 			}
+			if options.MaintenanceGateMirrorInterval > 0 && options.MaintenanceGateMirrorInterval < waitDuration {
+				waitDuration = options.MaintenanceGateMirrorInterval
+			}
 			select {
 			case <-signalContext.Done():
 				slog.Default().Info("dmcr garbage collection loop stopped")
@@ -85,6 +99,36 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 			}
 		}
 	}
+}
+
+func syncMaintenanceGateMirror(ctx context.Context, client kubernetes.Interface, options Options) error {
+	if strings.TrimSpace(options.MaintenanceGateFile) == "" {
+		return nil
+	}
+	mirror, err := maintenance.NewFileMirror(client, options.RequestNamespace, options.MaintenanceGateName, options.MaintenanceGateFile)
+	if err != nil {
+		return err
+	}
+	return mirror.Sync(ctx)
+}
+
+func syncMaintenanceGateAckMirror(ctx context.Context, client kubernetes.Interface, options Options) error {
+	if strings.TrimSpace(options.MaintenanceGateFile) == "" || strings.TrimSpace(options.MaintenanceGateName) == "" {
+		return nil
+	}
+	mirror, err := maintenance.NewAckMirror(
+		client,
+		options.RequestNamespace,
+		options.MaintenanceGateName,
+		options.ExecutorIdentity,
+		options.MaintenanceGateFile,
+		maintenance.RuntimeAckComponents,
+		options.MaintenanceGateAckTTL,
+	)
+	if err != nil {
+		return err
+	}
+	return mirror.Sync(ctx)
 }
 
 func runLoopStep(
@@ -118,13 +162,6 @@ func runRequestCycle(
 	}
 	activeSecrets := activeRequestSecrets(requestSecrets)
 	if len(activeSecrets) > 0 {
-		maintenanceModeEnabled, err := registryMaintenanceModeEnabled(options.ConfigPath)
-		if err != nil {
-			return false, err
-		}
-		if !maintenanceModeEnabled {
-			return false, nil
-		}
 		return runActiveRequestCycle(ctx, client, options, activeSecrets)
 	}
 
@@ -154,12 +191,33 @@ func runActiveRequestCycle(
 	options Options,
 	activeSecrets []corev1.Secret,
 ) (bool, error) {
+	cycleCtx, cancel := context.WithTimeout(ctx, options.GCTimeout)
+	defer cancel()
+
 	requestNames := secretNames(activeSecrets)
 	policy, err := cleanupPolicyForActiveRequests(options.ConfigPath, activeSecrets)
 	if err != nil {
 		return true, err
 	}
 	policy.cleanupStateNamespace = options.RequestNamespace
+	releaseGate, err := activateMaintenanceGate(cycleCtx, client, options, requestNames)
+	if err != nil {
+		if errors.Is(err, errMaintenanceGateAckQuorumNotReady) {
+			slog.Default().Warn("dmcr maintenance gate ack quorum is not ready", slog.Any("request_names", requestNames))
+			return false, nil
+		}
+		return true, err
+	}
+	if releaseGate != nil {
+		defer func() {
+			if err := releaseGate(context.Background()); err != nil {
+				slog.Default().Warn("dmcr maintenance gate release failed", slog.Any("error", err))
+			}
+			if err := syncMaintenanceGateMirror(context.Background(), client, options); err != nil {
+				slog.Default().Warn("dmcr maintenance gate mirror sync failed", slog.Any("error", err))
+			}
+		}()
+	}
 	slog.Default().Info(
 		"dmcr garbage collection requested",
 		slog.Int("request_count", len(activeSecrets)),
@@ -168,7 +226,7 @@ func runActiveRequestCycle(
 		slog.Int("targeted_direct_upload_multipart_upload_count", len(policy.targetDirectUploadMultipartUploads)),
 	)
 
-	result, cleanupErr := autoCleanupRunner(ctx, options.ConfigPath, options.RegistryBinary, options.GCTimeout, policy)
+	result, cleanupErr := autoCleanupRunner(cycleCtx, options.ConfigPath, options.RegistryBinary, options.GCTimeout, policy)
 	if cleanupErr != nil {
 		return true, cleanupErr
 	}
@@ -198,6 +256,106 @@ func runActiveRequestCycle(
 	)
 
 	return true, nil
+}
+
+func activateMaintenanceGate(
+	ctx context.Context,
+	client kubernetes.Interface,
+	options Options,
+	requestNames []string,
+) (func(context.Context) error, error) {
+	name := strings.TrimSpace(options.MaintenanceGateName)
+	if name == "" {
+		return nil, nil
+	}
+	gate, err := maintenance.NewLeaseGate(client, options.RequestNamespace, name, options.ExecutorIdentity, options.MaintenanceGateDuration)
+	if err != nil {
+		return nil, err
+	}
+	sequence, release, err := gate.Activate(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("activate dmcr maintenance gate: %w", err)
+	}
+	if err := syncMaintenanceGateMirror(ctx, client, options); err != nil {
+		_ = release(context.Background())
+		return nil, err
+	}
+	if err := waitMaintenanceGateAckQuorum(ctx, client, options, sequence); err != nil {
+		_ = release(context.Background())
+		_ = syncMaintenanceGateMirror(context.Background(), client, options)
+		return nil, err
+	}
+	slog.Default().Info(
+		"dmcr maintenance gate activated",
+		slog.String("maintenance_gate", name),
+		slog.String("sequence", sequence),
+		slog.Any("request_names", requestNames),
+	)
+	if options.MaintenanceGateAckQuorum <= 0 && options.MaintenanceGateDelay > 0 {
+		timer := time.NewTimer(options.MaintenanceGateDelay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			_ = release(context.Background())
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return func(releaseContext context.Context) error {
+		err := release(releaseContext)
+		if err == nil {
+			slog.Default().Info("dmcr maintenance gate released", slog.String("maintenance_gate", name))
+		}
+		return err
+	}, nil
+}
+
+func waitMaintenanceGateAckQuorum(ctx context.Context, client kubernetes.Interface, options Options, sequence string) error {
+	if options.MaintenanceGateAckQuorum <= 0 {
+		return nil
+	}
+	deadline := time.Now().UTC().Add(options.MaintenanceGateDelay)
+	for {
+		if err := syncMaintenanceGateAckMirror(ctx, client, options); err != nil {
+			slog.Default().Warn("dmcr maintenance gate local ack mirror sync failed", slog.Any("error", err))
+		}
+		count, err := maintenance.AckQuorumReady(
+			ctx,
+			client,
+			options.RequestNamespace,
+			options.MaintenanceGateName,
+			sequence,
+			options.MaintenanceGateAckQuorum,
+			time.Now().UTC(),
+		)
+		if err != nil {
+			return err
+		}
+		if count >= options.MaintenanceGateAckQuorum {
+			slog.Default().Info(
+				"dmcr maintenance gate ack quorum reached",
+				slog.String("maintenance_gate", options.MaintenanceGateName),
+				slog.String("sequence", sequence),
+				slog.Int("ack_count", count),
+				slog.Int("ack_quorum", options.MaintenanceGateAckQuorum),
+			)
+			return nil
+		}
+		if !time.Now().UTC().Before(deadline) {
+			return fmt.Errorf("%w: got %d of %d acks for sequence %s", errMaintenanceGateAckQuorumNotReady, count, options.MaintenanceGateAckQuorum, sequence)
+		}
+		waitDuration := options.MaintenanceGateMirrorInterval
+		if waitDuration <= 0 || waitDuration > 500*time.Millisecond {
+			waitDuration = 500 * time.Millisecond
+		}
+		timer := time.NewTimer(waitDuration)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func listRequestSecrets(ctx context.Context, client kubernetes.Interface, namespace, labelSelector string) ([]corev1.Secret, error) {
@@ -299,7 +457,6 @@ func armQueuedRequests(
 		if secretCopy.Annotations == nil {
 			secretCopy.Annotations = make(map[string]string, 3)
 		}
-		delete(secretCopy.Annotations, doneAnnotationKey)
 		secretCopy.Annotations[switchAnnotationKey] = armedAt.Format(time.RFC3339Nano)
 
 		if _, err := client.CoreV1().Secrets(namespace).Update(ctx, secretCopy, metav1.UpdateOptions{}); err != nil {

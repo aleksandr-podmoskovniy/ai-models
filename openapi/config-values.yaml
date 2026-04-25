@@ -88,7 +88,7 @@ properties:
     type: object
     additionalProperties: false
     description: |
-      Stable DMCR maintenance settings exposed by ai-models.
+      Stable DMCR cleanup scheduling settings exposed by ai-models.
       These settings productize the stale sweep for published repository
       metadata, source-mirror prefixes, and orphan direct-upload residue
       without exposing internal secret-driven maintenance choreography as a

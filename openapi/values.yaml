@@ -55,7 +55,7 @@ properties:
         default: true
   dmcr:
     type: object
-    description: Stable DMCR maintenance settings exposed by ai-models.
+    description: Stable DMCR cleanup scheduling settings exposed by ai-models.
     additionalProperties: false
     default:
       gc:
@@ -232,11 +232,10 @@ properties:
         additionalProperties: true
       dmcr:
         type: object
-        description: Stable module-level DMCR cleanup settings plus runtime-only maintenance mode state.
+        description: Stable module-level DMCR cleanup settings.
         default:
           gc:
             schedule: "*/20 * * * *"
-          garbageCollectionModeEnabled: false
         properties:
           gc:
             type: object
@@ -247,9 +246,6 @@ properties:
               schedule:
                 type: string
                 default: "*/20 * * * *"
-          garbageCollectionModeEnabled:
-            type: boolean
-            default: false
         additionalProperties: false
       publicationRuntime:
         type: object

@@ -38,7 +38,6 @@ const (
 	GarbageCollectionStateMissing   GarbageCollectionState = "Missing"
 	GarbageCollectionStateQueued    GarbageCollectionState = "Queued"
 	GarbageCollectionStateRequested GarbageCollectionState = "Requested"
-	GarbageCollectionStateComplete  GarbageCollectionState = "Complete"
 )
 
 type FinalizeDeleteInput struct {
@@ -148,7 +147,7 @@ func garbageCollectionProgressDecision(state GarbageCollectionState) FinalizeDel
 	switch state {
 	case GarbageCollectionStateMissing:
 		return enqueueGarbageCollectionAndRemoveFinalizerDecision()
-	case GarbageCollectionStateQueued, GarbageCollectionStateRequested, GarbageCollectionStateComplete:
+	case GarbageCollectionStateQueued, GarbageCollectionStateRequested:
 		return removeFinalizerDecision()
 	default:
 		return failureDecision(modelsv1alpha1.ModelConditionReasonFailed, "registry garbage collection entered an unsupported state")
