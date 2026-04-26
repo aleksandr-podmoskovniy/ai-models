@@ -24,6 +24,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	appsv1 "k8s.io/api/apps/v1"
@@ -56,19 +57,32 @@ func newDeploymentReconciler(t *testing.T, objects ...client.Object) (*baseRecon
 }
 
 func newDeploymentReconcilerWithManagedCache(t *testing.T, objects ...client.Object) (*baseReconciler, client.Client) {
+	objects = append(objects, readyNodeCacheRuntimeNode())
 	return newDeploymentReconcilerWithOptions(t, modeldelivery.ServiceOptions{
 		Render: modeldelivery.Options{
 			RuntimeImage: "example.com/ai-models/controller-runtime:dev",
 		},
 		ManagedCache: modeldelivery.ManagedCacheOptions{
-			Enabled:          true,
-			StorageClassName: "ai-models-node-cache",
-			VolumeSize:       "32Gi",
+			Enabled: true,
+			NodeSelector: map[string]string{
+				"ai.deckhouse.io/node-cache":       "true",
+				nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue,
+			},
 		},
 		RegistrySourceNamespace:      testRegistryNamespace,
 		RegistrySourceAuthSecretName: testRegistryAuthName,
 		RuntimeImagePullSecretName:   testRuntimePullSecret,
 	}, objects...)
+}
+
+func readyNodeCacheRuntimeNode() *corev1.Node {
+	return &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+		Name: "worker-a",
+		Labels: map[string]string{
+			"ai.deckhouse.io/node-cache":       "true",
+			nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue,
+		},
+	}}
 }
 
 func newDeploymentReconcilerWithOptions(t *testing.T, serviceOptions modeldelivery.ServiceOptions, objects ...client.Object) (*baseReconciler, client.Client) {

@@ -23,69 +23,45 @@ import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 )
 
-func TestCleanupJobProgressDecision(t *testing.T) {
+func TestCleanupOperationProgressDecision(t *testing.T) {
 	t.Parallel()
 
-	messages := cleanupJobMessages{
-		created:     "job created",
-		running:     "job running",
-		failed:      "job failed",
-		unsupported: "job unsupported",
+	messages := cleanupOperationMessages{
+		started:     "cleanup started",
+		unsupported: "cleanup unsupported",
 	}
 
 	tests := []struct {
 		name        string
-		jobState    CleanupJobState
+		state       CleanupOperationState
 		want        FinalizeDeleteDecision
 		wantHandled bool
 	}{
 		{
-			name:     "missing job creates pending decision",
-			jobState: CleanupJobStateMissing,
+			name:  "missing cleanup runs operation",
+			state: CleanupOperationStateMissing,
 			want: FinalizeDeleteDecision{
-				CreateJob:     true,
+				RunCleanup:    true,
 				UpdateStatus:  true,
 				StatusReason:  modelsv1alpha1.ModelConditionReasonPending,
-				StatusMessage: "job created",
+				StatusMessage: "cleanup started",
 				Requeue:       true,
 			},
 			wantHandled: true,
 		},
 		{
-			name:     "running job keeps pending decision",
-			jobState: CleanupJobStateRunning,
-			want: FinalizeDeleteDecision{
-				UpdateStatus:  true,
-				StatusReason:  modelsv1alpha1.ModelConditionReasonPending,
-				StatusMessage: "job running",
-				Requeue:       true,
-			},
-			wantHandled: true,
-		},
-		{
-			name:     "failed job fails closed",
-			jobState: CleanupJobStateFailed,
-			want: FinalizeDeleteDecision{
-				UpdateStatus:  true,
-				StatusReason:  modelsv1alpha1.ModelConditionReasonFailed,
-				StatusMessage: "job failed",
-				Requeue:       true,
-			},
-			wantHandled: true,
-		},
-		{
-			name:        "completed job delegates to next phase",
-			jobState:    CleanupJobStateComplete,
+			name:        "completed cleanup delegates to next phase",
+			state:       CleanupOperationStateComplete,
 			want:        FinalizeDeleteDecision{},
 			wantHandled: false,
 		},
 		{
-			name:     "unsupported job state fails closed",
-			jobState: CleanupJobState("Unknown"),
+			name:  "unsupported cleanup state fails closed",
+			state: CleanupOperationState("Unknown"),
 			want: FinalizeDeleteDecision{
 				UpdateStatus:  true,
 				StatusReason:  modelsv1alpha1.ModelConditionReasonFailed,
-				StatusMessage: "job unsupported",
+				StatusMessage: "cleanup unsupported",
 				Requeue:       true,
 			},
 			wantHandled: true,
@@ -97,7 +73,7 @@ func TestCleanupJobProgressDecision(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, handled := cleanupJobProgressDecision(tt.jobState, messages)
+			got, handled := cleanupOperationProgressDecision(tt.state, messages)
 			if handled != tt.wantHandled {
 				t.Fatalf("handled = %v, want %v", handled, tt.wantHandled)
 			}

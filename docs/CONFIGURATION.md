@@ -81,6 +81,21 @@ The public runtime path for models is now controller-owned:
 - archive inputs stay on the archive-source streaming path and do not create an
   extracted success-only checkpoint tree.
 
+RBAC follows the Deckhouse `user-authz` and `rbacv2` split:
+
+- legacy `user-authz` grants read-only `Model` / `ClusterModel` visibility at
+  `User`, write access to namespaced `Model` at `Editor`, and write access to
+  cluster-wide `ClusterModel` only at `ClusterEditor`;
+- `PrivilegedUser`, `Admin`, and `ClusterAdmin` do not add extra ai-models
+  verbs until the module has a safe user-facing resource for those levels;
+- `rbacv2/use` is limited to namespaced `Model`, so namespaced RoleBindings do
+  not imply access to cluster-scoped `ClusterModel`;
+- `rbacv2/manage` is the cluster-persona path for `Model`, `ClusterModel`, and
+  the `ai-models` `ModuleConfig`;
+- human-facing module roles intentionally do not grant `status`, `finalizers`,
+  Secret access, pod logs, exec, attach, port-forward, or internal runtime
+  objects.
+
 The default is `artifacts.sourceFetchMode=Direct`.
 
 The trade-off is explicit:
@@ -172,9 +187,8 @@ The public model API is also intentionally minimal. Users specify only
 `spec.source`; format, task, and other model metadata are calculated by the
 controller from the actual model contents and projected into `status.resolved`.
 
-`nodeCache` is the first landed slice of the node-local cache workstream. In
-the current state it owns the managed local-storage substrate plus the current
-local materialize-bridge volume contract:
+`nodeCache` owns the managed local-storage substrate and the workload-facing
+SharedDirect delivery contract:
 
 - ai-models can keep one managed `LVMVolumeGroupSet` over
   `sds-node-configurator`;
@@ -182,64 +196,102 @@ local materialize-bridge volume contract:
   ready managed `LVMVolumeGroup` objects;
 - enabling this slice removes the need to create that `LocalStorageClass`
   manually.
+- enabling this slice now fails render unless `sds-node-configurator-crd`,
+  `sds-node-configurator`, `sds-local-volume-crd`, and `sds-local-volume` are
+  present in `global.enabledModules`.
 
 The current bounded contract is:
 
 - `nodeCache.enabled` enables the managed substrate controller;
 - `nodeCache.maxSize` becomes the per-node thin-pool budget;
-- `nodeCache.fallbackVolumeSize` defines the managed local ephemeral volume
-  size that the current workload delivery path auto-injects at
-  `/data/modelcache` for the transition materialize-bridge path when an
-  annotated workload does not bring its own cache volume;
 - `nodeCache.sharedVolumeSize` defines the per-node shared cache volume
   requested by the controller-owned stable runtime Pod/PVC over the managed
   `LocalStorageClass`;
+- the node-cache runtime eviction budget is capped by
+  `nodeCache.sharedVolumeSize`, and `nodeCache.sharedVolumeSize` must not be
+  larger than `nodeCache.maxSize`;
 - `nodeCache.storageClassName`, `nodeCache.volumeGroupSetName`,
   `nodeCache.volumeGroupNameOnNode`, and `nodeCache.thinPoolName` define the
   ai-models-owned substrate object names;
-- `nodeCache.nodeSelector` and `nodeCache.blockDeviceSelector` are `matchLabels`
-  maps used to select substrate nodes and block devices.
+- `nodeCache.nodeSelector` and `nodeCache.blockDeviceSelector` are required
+  `matchLabels` maps used to select substrate nodes and block devices.
 
-This slice still does not replace the live workload delivery path with a
-workload-facing node-shared mount service. Workloads still materialize through
-controller-owned `materialize-artifact` into `/data/modelcache`, but now:
+With `nodeCache.enabled=true`, workloads that do not bring an explicit cache
+volume are cut over to the node-cache SharedDirect path:
 
-- the current materialize-bridge path can auto-inject a local generic
-  ephemeral volume over the managed `LocalStorageClass` when the workload does
-  not bring its own cache topology;
-- managed workloads now also get controller-projected registry access for the
-  bridge runtime itself: the init-container image pull secret is copied into
-  the workload namespace together with the OCI read auth/CA supplements, so the
-  materialize bridge no longer depends on a manually pre-created secret next to
-  every consumer workload;
-- workloads now get one stable runtime-facing model delivery contract via
+- the controller injects an inline CSI volume
+  `node-cache.ai-models.deckhouse.io` at `/data/modelcache`;
+- the injected CSI volume carries only immutable artifact attributes
+  (URI, digest, optional family), not storage-specific public API fields;
+- the controller propagates `nodeCache.nodeSelector` into managed workload
+  pod templates and fails on conflicts instead of scheduling them onto
+  unsupported nodes;
+- the controller also requires the dynamic
+  `ai.deckhouse.io/node-cache-runtime-ready=true` node label and keeps the
+  managed scheduling gate while no selected node has a ready runtime Pod and a
+  bound shared cache PVC;
+- the workload namespace no longer receives projected DMCR read Secret/CA or
+  bridge runtime imagePullSecret for the managed SharedDirect path;
+- workloads get one stable runtime-facing model delivery contract via
   `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`, and
-  `AI_MODELS_MODEL_FAMILY`; per-pod delivery still projects the stable
-  `/data/modelcache/model` entrypoint, while shared PVC bridge topology now
-  projects a digest-scoped path inside the shared store instead of relying on a
-  global cache-root `current` link;
+  `AI_MODELS_MODEL_FAMILY`; managed SharedDirect projects the stable
+  `/data/modelcache/model` entrypoint;
 - the controller now also writes managed `PodTemplateSpec` annotations with the
   selected delivery mode and the reason that mode was chosen, so the
-  materialize bridge no longer remains hidden runtime behavior;
+  node-cache runtime can discover desired artifacts from live Pods on its node;
 - `runtimehealth` metrics now aggregate managed top-level workloads by
   namespace, kind, delivery mode, and delivery reason, so operators can see
-  where workloads still use the transition materialize bridge and where they
-  already use the shared PVC bridge without scraping ad-hoc object lists;
-- `runtimehealth` now also exposes managed workload Pod counts, ready counts,
-  and waiting reasons for the `materialize-artifact` init container, so
-  `ImagePullBackOff` and similar bridge failures become machine-visible without
-  digging through Pod events by hand;
+  where workloads still use explicit legacy bridge storage and where they use
+  SharedDirect without scraping ad-hoc object lists;
 - ai-models now keeps a separate per-node shared cache plane as a
   controller-owned stable runtime Pod plus stable PVC over the managed
   `LocalStorageClass`; the shared volume size is controlled by
   `nodeCache.sharedVolumeSize`, and storage identity no longer depends on the
   node-agent pod lifecycle;
+- the cache runtime Pod does not use direct `spec.nodeName`: it is pinned to
+  the intended node through `kubernetes.io/hostname` node affinity, so the
+  Kubernetes scheduler can correctly choose a local LVM volume for a
+  `WaitForFirstConsumer` PVC;
+- the controller passes the `node-driver-registrar` image from the Deckhouse
+  common CSI image set into the runtime Pod, and the runtime Pod exposes the
+  kubelet-facing CSI socket
+  `/var/lib/kubelet/csi-plugins/node-cache.ai-models.deckhouse.io/csi.sock`;
+- the runtime container uses a dedicated internal `nodeCacheRuntime`
+  distroless image instead of the shared publication/materialize runtime image;
+- CSI NodePublish performs a read-only bind mount of the ready digest store
+  from the per-node shared cache PVC into the kubelet target path; if the
+  digest is not materialized yet, CSI returns transient `Unavailable` and
+  kubelet retries after prefetch;
+- CSI NodePublish fail-closes through `podInfoOnMount`: the mount is allowed
+  only for the live Pod on the same node that the controller already marked as
+  a managed SharedDirect Pod for the same digest;
 - `node-cache-runtime` derives the set of published artifacts required by live
-  managed Pods scheduled on the current node only for the future true
-  shared-direct mode; the current shared PVC bridge does not consume that
-  per-node plane yet, so node-local prefetch is still preparatory rather than
-  workload-facing delivery.
+  SharedDirect managed Pods scheduled on the current node and prefetches them
+  into the shared node-local digest store;
+- transient prefetch/materialization failures are retried per digest with
+  in-memory backoff, so one unavailable artifact does not restart the runtime
+  Pod or block other digests.
+
+Failure scenarios:
+
+- if SDS modules are not enabled in `global.enabledModules`, render fails
+  before module rollout;
+- if the SDS CRDs are actually absent from the cluster, the substrate
+  controller cannot create `LVMVolumeGroupSet` / `LocalStorageClass`, and the
+  node-cache layer will not become ready;
+- if a selected node has no local block device matching
+  `nodeCache.blockDeviceSelector`, the managed `LVMVolumeGroup` for that node
+  will not become ready, the `LocalStorageClass` will not include that node,
+  and the cache runtime PVC/Pod remain unscheduled or pending;
+- while no selected node has a ready runtime Pod and a bound shared cache PVC,
+  managed SharedDirect workload templates keep the ai-models scheduling gate
+  instead of rolling out Pods that would hang on CSI mount.
+
+Explicit workload-provided cache volumes remain a legacy bridge path for now:
+they still use `materialize-artifact` and the digest-scoped shared-PVC bridge
+logic where applicable. They are not the managed default path after this
+cutover.
 
 There is still no public cleanup or TTL knob yet: the workload-facing shared
-mount contract has not landed, so eviction policy remains internal runtime
+mount contract now exists, but eviction policy remains internal runtime
 behavior rather than a promised user-facing SLA.

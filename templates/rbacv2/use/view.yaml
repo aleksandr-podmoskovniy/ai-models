@@ -12,6 +12,6 @@ metadata:
   name: d8:use:capability:module:ai-models:view
 rules:
   - apiGroups: ["ai.deckhouse.io"]
-    resources: ["models", "clustermodels"]
+    resources: ["models"]
     verbs: ["get", "list", "watch"]
 {{- end }}

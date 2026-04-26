@@ -1,0 +1,13 @@
+{{- if and (include "ai-models.isEnabled" .) (eq (include "ai-models.nodeCacheEnabled" .) "true") }}
+---
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: {{ include "ai-models.nodeCacheCSIDriverName" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "node-cache-runtime")) | nindent 2 }}
+spec:
+  attachRequired: false
+  podInfoOnMount: true
+  volumeLifecycleModes:
+    - Ephemeral
+{{- end }}

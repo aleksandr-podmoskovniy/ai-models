@@ -29,6 +29,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
+	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -39,18 +40,10 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	application, err := New(logger, Options{
-		CleanupJobs: catalogcleanup.Options{
-			CleanupJob: catalogcleanup.CleanupJobOptions{
-				Namespace:             "d8-ai-models",
-				Image:                 "backend:latest",
-				OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-				ObjectStorage: storageprojection.Options{
-					Bucket:                "ai-models",
-					EndpointURL:           "https://s3.example.com",
-					Region:                "us-east-1",
-					UsePathStyle:          true,
-					CredentialsSecretName: "ai-models-artifacts",
-				},
+		Cleanup: catalogcleanup.Options{
+			Cleanup: catalogcleanup.CleanupOptions{
+				Namespace: "d8-ai-models",
+				Cleaner:   fakeBootstrapCleaner{},
 			},
 		},
 		PublicationRuntime: catalogstatus.Options{
@@ -97,6 +90,12 @@ func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
 
 type fakeBootstrapMultipartStager struct{}
 
+type fakeBootstrapCleaner struct{}
+
+func (fakeBootstrapCleaner) Cleanup(context.Context, cleanuphandle.Handle) error {
+	return nil
+}
+
 func (fakeBootstrapMultipartStager) StartMultipartUpload(context.Context, uploadstagingports.StartMultipartUploadInput) (uploadstagingports.StartMultipartUploadOutput, error) {
 	return uploadstagingports.StartMultipartUploadOutput{}, nil
 }
@@ -126,18 +125,10 @@ func TestNewAllowsCleanupOnlyRuntimeWithoutPublicationPlaneConfiguration(t *test
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	application, err := New(logger, Options{
-		CleanupJobs: catalogcleanup.Options{
-			CleanupJob: catalogcleanup.CleanupJobOptions{
-				Namespace:             "d8-ai-models",
-				Image:                 "backend:latest",
-				OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-				ObjectStorage: storageprojection.Options{
-					Bucket:                "ai-models",
-					EndpointURL:           "https://s3.example.com",
-					Region:                "us-east-1",
-					UsePathStyle:          true,
-					CredentialsSecretName: "ai-models-artifacts",
-				},
+		Cleanup: catalogcleanup.Options{
+			Cleanup: catalogcleanup.CleanupOptions{
+				Namespace: "d8-ai-models",
+				Cleaner:   fakeBootstrapCleaner{},
 			},
 		},
 	})
@@ -155,18 +146,10 @@ func TestNewAcceptsWorkloadDeliveryWithDefaultInitContainerName(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	_, err := New(logger, Options{
-		CleanupJobs: catalogcleanup.Options{
-			CleanupJob: catalogcleanup.CleanupJobOptions{
-				Namespace:             "d8-ai-models",
-				Image:                 "backend:latest",
-				OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-				ObjectStorage: storageprojection.Options{
-					Bucket:                "ai-models",
-					EndpointURL:           "https://s3.example.com",
-					Region:                "us-east-1",
-					UsePathStyle:          true,
-					CredentialsSecretName: "ai-models-artifacts",
-				},
+		Cleanup: catalogcleanup.Options{
+			Cleanup: catalogcleanup.CleanupOptions{
+				Namespace: "d8-ai-models",
+				Cleaner:   fakeBootstrapCleaner{},
 			},
 		},
 		WorkloadDelivery: workloaddelivery.Options{

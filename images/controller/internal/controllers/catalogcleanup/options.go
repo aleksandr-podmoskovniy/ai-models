@@ -35,7 +35,7 @@ const (
 )
 
 type Options struct {
-	CleanupJob       CleanupJobOptions
+	Cleanup          CleanupOptions
 	RuntimeNamespace string
 	RequeueAfter     time.Duration
 }
@@ -54,13 +54,13 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	if mgr == nil {
 		return errors.New("manager must not be nil")
 	}
-	if err := options.CleanupJob.Validate(); err != nil {
+	if err := options.Cleanup.Validate(); err != nil {
 		return err
 	}
 	if options.RequeueAfter <= 0 {
 		options.RequeueAfter = 5 * time.Second
 	}
-	cleanupState, err := cleanupstate.New(mgr.GetClient(), options.CleanupJob.Namespace)
+	cleanupState, err := cleanupstate.New(mgr.GetClient(), options.Cleanup.Namespace)
 	if err != nil {
 		return err
 	}

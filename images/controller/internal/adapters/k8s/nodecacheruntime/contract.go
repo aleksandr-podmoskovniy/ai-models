@@ -16,22 +16,35 @@ limitations under the License.
 
 package nodecacheruntime
 
+import "github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
+
 const (
 	ManagedLabelKey        = "ai.deckhouse.io/node-cache-runtime"
 	ManagedLabelValue      = "managed"
 	NodeNameAnnotationKey  = "ai.deckhouse.io/node-cache-runtime-node-name"
 	RuntimeNodeNameEnv     = "AI_MODELS_NODE_NAME"
 	DefaultContainerName   = "node-cache-runtime"
+	RegistrarContainerName = "node-driver-registrar"
 	registryCAPath         = "/etc/ai-models/registry-ca"
 	registryCAFilePath     = "/etc/ai-models/registry-ca/ca.crt"
 	registryCASecretVolume = "registry-ca"
 	cacheRootVolumeName    = "cache-root"
+	csiPluginVolumeName    = "plugin-dir"
+	csiRegistryVolumeName  = "registration-dir"
+	kubeletVolumeName      = "kubelet-dir"
+	deviceVolumeName       = "device-dir"
+	csiPluginMountPath     = "/csi"
+	csiRegistryMountPath   = "/registration"
+	kubeletHostPath        = "/var/lib/kubelet"
+	deviceHostPath         = "/dev"
 )
 
 type RuntimeSpec struct {
 	Namespace           string
 	NodeName            string
+	NodeHostname        string
 	RuntimeImage        string
+	CSIRegistrarImage   string
 	ImagePullSecretName string
 	ServiceAccountName  string
 	StorageClassName    string
@@ -42,4 +55,12 @@ type RuntimeSpec struct {
 	OCIInsecure         bool
 	OCIAuthSecretName   string
 	OCIRegistryCASecret string
+}
+
+func PodName(nodeName string) (string, error) {
+	return resourcenames.NodeCacheRuntimePodName(nodeName)
+}
+
+func PVCName(nodeName string) (string, error) {
+	return resourcenames.NodeCacheRuntimePVCName(nodeName)
 }

@@ -22,7 +22,11 @@ import (
 	// Blank imports register hook init() handlers.
 	_ "hooks/pkg/hooks/copy_custom_certificate"
 	_ "hooks/pkg/hooks/discover_dex_ca"
+	_ "hooks/pkg/hooks/generate_dmcr_auth"
+	_ "hooks/pkg/hooks/root_ca_discovery"
 	_ "hooks/pkg/hooks/sync_artifacts_secrets"
+	_ "hooks/pkg/hooks/tls_certificates_controller"
+	_ "hooks/pkg/hooks/tls_certificates_dmcr"
 )
 
 func init() {

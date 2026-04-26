@@ -20,26 +20,29 @@ import (
 	"fmt"
 	"strings"
 
+	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 )
 
-func ensureManagedCacheMount(template *corev1.PodTemplateSpec, options ServiceOptions) error {
+func ensureManagedCacheMount(template *corev1.PodTemplateSpec, options ServiceOptions, artifact publication.PublishedArtifact, family string) error {
 	managed := NormalizeManagedCacheOptions(options.ManagedCache)
 	if !managed.Enabled {
 		return nil
 	}
 
-	_, found, err := resolveCacheMount(template, options.Render.CacheMountPath)
-	if err != nil || found {
+	cacheMount, found, err := resolveCacheMount(template, options.Render.CacheMountPath)
+	if err != nil {
 		return err
 	}
+	if found && cacheMount.VolumeName != managed.VolumeName {
+		return nil
+	}
 
-	template.Spec.Volumes, err = upsertManagedCacheVolume(template.Spec.Volumes, managed)
+	template.Spec.Volumes, err = upsertManagedCacheVolume(template.Spec.Volumes, managed, artifact, family)
 	if err != nil {
+		return err
+	}
+	if err := ensureManagedNodeSelector(template, managed.NodeSelector); err != nil {
 		return err
 	}
 	template.Spec.Containers = ensureManagedCacheVolumeMounts(template.Spec.Containers, managed.VolumeName, options.Render.CacheMountPath)
@@ -86,8 +89,8 @@ func RemoveManagedCacheTemplateState(template *corev1.PodTemplateSpec, options S
 	return changed
 }
 
-func upsertManagedCacheVolume(volumes []corev1.Volume, options ManagedCacheOptions) ([]corev1.Volume, error) {
-	desired, err := managedCacheVolume(options)
+func upsertManagedCacheVolume(volumes []corev1.Volume, options ManagedCacheOptions, artifact publication.PublishedArtifact, family string) ([]corev1.Volume, error) {
+	desired, err := managedCacheVolume(options, artifact, family)
 	if err != nil {
 		return nil, err
 	}
@@ -95,45 +98,57 @@ func upsertManagedCacheVolume(volumes []corev1.Volume, options ManagedCacheOptio
 		if volumes[index].Name != desired.Name {
 			continue
 		}
-		if !equality.Semantic.DeepEqual(volumes[index], desired) {
-			return nil, fmt.Errorf("runtime delivery managed cache volume %q already exists with different source", desired.Name)
-		}
+		volumes[index] = desired
 		return volumes, nil
 	}
 	return append(volumes, desired), nil
 }
 
-func managedCacheVolume(options ManagedCacheOptions) (corev1.Volume, error) {
-	quantity, err := resource.ParseQuantity(strings.TrimSpace(options.VolumeSize))
-	if err != nil {
-		return corev1.Volume{}, fmt.Errorf("parse managed cache volume size: %w", err)
+func managedCacheVolume(options ManagedCacheOptions, artifact publication.PublishedArtifact, family string) (corev1.Volume, error) {
+	artifactURI := strings.TrimSpace(artifact.URI)
+	digest := strings.TrimSpace(artifact.Digest)
+	if artifactURI == "" || digest == "" {
+		return corev1.Volume{}, fmt.Errorf("runtime delivery managed cache CSI volume requires artifact URI and digest")
 	}
 
+	attributes := map[string]string{
+		nodeCacheCSIAttributeArtifactURI:    artifactURI,
+		nodeCacheCSIAttributeArtifactDigest: digest,
+	}
+	if family = strings.TrimSpace(family); family != "" {
+		attributes[nodeCacheCSIAttributeArtifactFamily] = family
+	}
 	return corev1.Volume{
 		Name: options.VolumeName,
 		VolumeSource: corev1.VolumeSource{
-			Ephemeral: &corev1.EphemeralVolumeSource{
-				VolumeClaimTemplate: &corev1.PersistentVolumeClaimTemplate{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							"ai.deckhouse.io/managed-by": "ai-models",
-							"ai.deckhouse.io/node-cache": "bridge",
-						},
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-						StorageClassName: ptr.To(options.StorageClassName),
-						VolumeMode:       ptr.To(corev1.PersistentVolumeFilesystem),
-						Resources: corev1.VolumeResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceStorage: quantity,
-							},
-						},
-					},
-				},
+			CSI: &corev1.CSIVolumeSource{
+				Driver:           NodeCacheCSIDriverName,
+				ReadOnly:         ptrBool(true),
+				VolumeAttributes: attributes,
 			},
 		},
 	}, nil
+}
+
+func ptrBool(value bool) *bool {
+	return &value
+}
+
+func ensureManagedNodeSelector(template *corev1.PodTemplateSpec, selector map[string]string) error {
+	if len(selector) == 0 {
+		return nil
+	}
+	if template.Spec.NodeSelector == nil {
+		template.Spec.NodeSelector = map[string]string{}
+	}
+	for key, value := range selector {
+		existing, found := template.Spec.NodeSelector[key]
+		if found && existing != value {
+			return fmt.Errorf("runtime delivery managed node-cache selector conflicts on %q: workload has %q, node-cache requires %q", key, existing, value)
+		}
+		template.Spec.NodeSelector[key] = value
+	}
+	return nil
 }
 
 func ensureManagedCacheVolumeMounts(containers []corev1.Container, volumeName, mountPath string) []corev1.Container {

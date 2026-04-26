@@ -23,15 +23,10 @@ import (
 )
 
 const (
-	cleanupJobAppName               = "ai-models-cleanup"
 	garbageCollectionRequestAppName = "ai-models-dmcr-gc-request"
 )
 
-func cleanupJobLabels(owner cleanupJobOwner) map[string]string {
-	return resourcenames.OwnerLabels(cleanupJobAppName, owner.Kind, owner.Name, owner.UID, owner.Namespace)
-}
-
-func garbageCollectionRequestLabels(owner cleanupJobOwner) map[string]string {
+func garbageCollectionRequestLabels(owner cleanupOwner) map[string]string {
 	labels := resourcenames.OwnerLabels(garbageCollectionRequestAppName, owner.Kind, owner.Name, owner.UID, owner.Namespace)
 	labels[dmcrGCRequestLabelKey] = dmcrGCRequestLabelValue
 	return labels

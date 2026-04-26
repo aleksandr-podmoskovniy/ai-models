@@ -458,6 +458,7 @@ func armQueuedRequests(
 			secretCopy.Annotations = make(map[string]string, 3)
 		}
 		secretCopy.Annotations[switchAnnotationKey] = armedAt.Format(time.RFC3339Nano)
+		secretCopy.Annotations[phaseAnnotationKey] = phaseArmed
 
 		if _, err := client.CoreV1().Secrets(namespace).Update(ctx, secretCopy, metav1.UpdateOptions{}); err != nil {
 			if apierrors.IsNotFound(err) {

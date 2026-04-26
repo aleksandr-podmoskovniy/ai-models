@@ -22,15 +22,18 @@ import (
 	"strings"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
-	corev1 "k8s.io/api/core/v1"
 )
 
 func RegistryAuthFromEnv(insecureEnv string) modelpackports.RegistryAuth {
+	return RegistryAuthFromEnvWithInsecure(EnvOrBool(insecureEnv, false))
+}
+
+func RegistryAuthFromEnvWithInsecure(insecure bool) modelpackports.RegistryAuth {
 	return modelpackports.RegistryAuth{
 		Username: EnvOr("AI_MODELS_OCI_USERNAME", ""),
 		Password: EnvOr("AI_MODELS_OCI_PASSWORD", ""),
 		CAFile:   EnvOr("AI_MODELS_OCI_CA_FILE", ""),
-		Insecure: EnvOrBool(insecureEnv, false),
+		Insecure: insecure,
 	}
 }
 
@@ -67,30 +70,6 @@ func EnvOrInt(name string, fallback int) int {
 		return fallback
 	}
 	return parsed
-}
-
-func PassThroughEnv(csv string) []corev1.EnvVar {
-	names := strings.Split(csv, ",")
-	result := make([]corev1.EnvVar, 0, len(names))
-	seen := map[string]struct{}{}
-
-	for _, raw := range names {
-		name := strings.TrimSpace(raw)
-		if name == "" {
-			continue
-		}
-		if _, duplicate := seen[name]; duplicate {
-			continue
-		}
-		value, ok := os.LookupEnv(name)
-		if !ok || value == "" {
-			continue
-		}
-		seen[name] = struct{}{}
-		result = append(result, corev1.EnvVar{Name: name, Value: value})
-	}
-
-	return result
 }
 
 func FallbackString(value, fallback string) string {

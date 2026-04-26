@@ -110,7 +110,7 @@ func (r *baseReconciler) runtimeNamespace() string {
 	if namespace := strings.TrimSpace(r.options.RuntimeNamespace); namespace != "" {
 		return namespace
 	}
-	return r.options.CleanupJob.Namespace
+	return r.options.Cleanup.Namespace
 }
 
 func sourceWorkerRuntimeObjects(ownerUID types.UID, namespace string) ([]client.Object, error) {

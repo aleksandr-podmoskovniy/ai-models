@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
@@ -32,8 +33,9 @@ import (
 )
 
 const (
-	AppName = "ai-models-cleanup-state"
-	DataKey = "cleanupHandle"
+	AppName                  = "ai-models-cleanup-state"
+	DataKey                  = "cleanupHandle"
+	CompletedAtAnnotationKey = "ai.deckhouse.io/cleanup-completed-at"
 )
 
 type Store struct {
@@ -72,6 +74,32 @@ func (s *Store) Get(ctx context.Context, owner client.Object) (cleanuphandle.Han
 func (s *Store) Exists(ctx context.Context, owner client.Object) (bool, error) {
 	_, found, err := s.Get(ctx, owner)
 	return found, err
+}
+
+func (s *Store) Completed(ctx context.Context, owner client.Object) (bool, error) {
+	secret, found, err := s.getSecret(ctx, owner)
+	if err != nil || !found {
+		return false, err
+	}
+	return strings.TrimSpace(secret.Annotations[CompletedAtAnnotationKey]) != "", nil
+}
+
+func (s *Store) MarkCompleted(ctx context.Context, owner client.Object) error {
+	secret, found, err := s.getSecret(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return errors.New("cleanup state secret not found")
+	}
+	if strings.TrimSpace(secret.Annotations[CompletedAtAnnotationKey]) != "" {
+		return nil
+	}
+	if secret.Annotations == nil {
+		secret.Annotations = map[string]string{}
+	}
+	secret.Annotations[CompletedAtAnnotationKey] = time.Now().UTC().Format(time.RFC3339Nano)
+	return s.client.Update(ctx, secret)
 }
 
 func (s *Store) UploadStage(ctx context.Context, owner client.Object) (*cleanuphandle.UploadStagingHandle, error) {

@@ -51,7 +51,7 @@ const defaultWebhookCertDir = "/tmp/k8s-webhook-server/serving-certs"
 const defaultWebhookPort = 9443
 
 type Options struct {
-	CleanupJobs        catalogcleanup.Options
+	Cleanup            catalogcleanup.Options
 	PublicationRuntime catalogstatus.Options
 	NodeCacheRuntime   nodecacheruntime.Options
 	NodeCacheSubstrate nodecachesubstrate.Options
@@ -71,7 +71,7 @@ type RuntimeOptions struct {
 
 type App struct {
 	logger             *slog.Logger
-	cleanupJobs        catalogcleanup.Options
+	cleanup            catalogcleanup.Options
 	publicationRuntime catalogstatus.Options
 	nodeCacheRuntime   nodecacheruntime.Options
 	nodeCacheSubstrate nodecachesubstrate.Options
@@ -83,7 +83,7 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 	if logger == nil {
 		return nil, errors.New("logger must not be nil")
 	}
-	if err := options.CleanupJobs.CleanupJob.Validate(); err != nil {
+	if err := options.Cleanup.Cleanup.Validate(); err != nil {
 		return nil, err
 	}
 	if err := options.PublicationRuntime.Validate(); err != nil {
@@ -102,7 +102,7 @@ func New(logger *slog.Logger, options Options) (*App, error) {
 	runtimeOptions := normalizeRuntimeOptions(options.Runtime)
 
 	return &App{
-		cleanupJobs:        options.CleanupJobs,
+		cleanup:            options.Cleanup,
 		publicationRuntime: options.PublicationRuntime,
 		nodeCacheRuntime:   options.NodeCacheRuntime,
 		nodeCacheSubstrate: options.NodeCacheSubstrate,
@@ -157,7 +157,7 @@ func buildManagerScheme() (*runtime.Scheme, error) {
 }
 
 func (a *App) setupManager(mgr ctrl.Manager) error {
-	if err := catalogcleanup.SetupWithManager(mgr, a.cleanupJobs); err != nil {
+	if err := catalogcleanup.SetupWithManager(mgr, a.cleanup); err != nil {
 		return err
 	}
 	if err := catalogstatus.SetupWithManager(mgr, a.publicationRuntime); err != nil {
@@ -219,8 +219,7 @@ func (a *App) logRuntimeConfiguration() {
 		slog.Bool("leaderElection", a.runtime.LeaderElection),
 		slog.String("leaderElectionID", a.runtime.LeaderElectionID),
 		slog.String("leaderElectionNamespace", a.runtime.LeaderElectionNamespace),
-		slog.String("cleanupJobNamespace", a.cleanupJobs.CleanupJob.Namespace),
-		slog.String("cleanupJobImage", a.cleanupJobs.CleanupJob.Image),
+		slog.String("cleanupNamespace", a.cleanup.Cleanup.Namespace),
 	)
 	if a.publicationRuntime.Enabled() {
 		a.logger.Info(

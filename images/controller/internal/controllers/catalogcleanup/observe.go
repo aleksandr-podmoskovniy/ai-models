@@ -21,8 +21,6 @@ import (
 
 	deletionapp "github.com/deckhouse/ai-models/controller/internal/application/deletion"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
-	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -67,16 +65,16 @@ func (r *baseReconciler) observeDelete(
 	observation.HandleFound = true
 	observation.HandleKind = handle.Kind
 
-	if !needsCleanupJobObservation(handle) {
+	if !needsCleanupObservation(handle) {
 		return handle, observation, nil
 	}
 
-	jobState, err := r.observeCleanupJobState(ctx, object.GetUID())
+	cleanupState, err := r.observeCleanupState(ctx, object)
 	if err != nil {
 		return cleanuphandle.Handle{}, deletionapp.FinalizeDeleteInput{}, err
 	}
-	observation.JobState = jobState
-	if needsGarbageCollectionObservation(handle, jobState) {
+	observation.CleanupState = cleanupState
+	if needsGarbageCollectionObservation(handle, cleanupState) {
 		gcState, err := r.observeGarbageCollectionState(ctx, object.GetUID())
 		if err != nil {
 			return cleanuphandle.Handle{}, deletionapp.FinalizeDeleteInput{}, err
@@ -107,40 +105,29 @@ func (r *baseReconciler) observeFinalizeDeleteFlow(
 	}, nil
 }
 
-func needsCleanupJobObservation(handle cleanuphandle.Handle) bool {
+func needsCleanupObservation(handle cleanuphandle.Handle) bool {
 	return handle.Kind == cleanuphandle.KindBackendArtifact || handle.Kind == cleanuphandle.KindUploadStaging
 }
 
 func needsGarbageCollectionObservation(
 	handle cleanuphandle.Handle,
-	jobState deletionapp.CleanupJobState,
+	cleanupState deletionapp.CleanupOperationState,
 ) bool {
-	return handle.Kind == cleanuphandle.KindBackendArtifact && jobState == deletionapp.CleanupJobStateComplete
+	return handle.Kind == cleanuphandle.KindBackendArtifact && cleanupState == deletionapp.CleanupOperationStateComplete
 }
 
-func (r *baseReconciler) observeCleanupJobState(
+func (r *baseReconciler) observeCleanupState(
 	ctx context.Context,
-	ownerUID types.UID,
-) (deletionapp.CleanupJobState, error) {
-	jobName, err := resourcenames.CleanupJobName(ownerUID)
+	object client.Object,
+) (deletionapp.CleanupOperationState, error) {
+	completed, err := r.cleanupState.Completed(ctx, object)
 	if err != nil {
 		return "", err
 	}
-
-	jobKey := client.ObjectKey{Namespace: r.options.CleanupJob.Namespace, Name: jobName}
-	var job batchv1.Job
-	switch err := r.client.Get(ctx, jobKey, &job); {
-	case apierrors.IsNotFound(err):
-		return deletionapp.CleanupJobStateMissing, nil
-	case err != nil:
-		return "", err
-	case isCleanupJobComplete(&job):
-		return deletionapp.CleanupJobStateComplete, nil
-	case isCleanupJobFailed(&job):
-		return deletionapp.CleanupJobStateFailed, nil
-	default:
-		return deletionapp.CleanupJobStateRunning, nil
+	if completed {
+		return deletionapp.CleanupOperationStateComplete, nil
 	}
+	return deletionapp.CleanupOperationStateMissing, nil
 }
 
 func (r *baseReconciler) observeGarbageCollectionState(
@@ -148,7 +135,7 @@ func (r *baseReconciler) observeGarbageCollectionState(
 	ownerUID types.UID,
 ) (deletionapp.GarbageCollectionState, error) {
 	var secret corev1.Secret
-	key := garbageCollectionRequestKey(r.options.CleanupJob.Namespace, ownerUID)
+	key := garbageCollectionRequestKey(r.options.Cleanup.Namespace, ownerUID)
 	switch err := r.client.Get(ctx, key, &secret); {
 	case apierrors.IsNotFound(err):
 		return deletionapp.GarbageCollectionStateMissing, nil

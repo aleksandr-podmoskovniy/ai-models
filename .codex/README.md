@@ -119,6 +119,18 @@ Engineering expectations carried by this baseline:
 - explicit DKP user-facing RBAC coverage for relevant API/auth/exposure/runtime
   entrypoint tasks
 - portable core over disguised module-specific prose
+- active contains only executable work surfaces; completed reviews, one-off
+  research, and historical logs belong in `plans/archive/<year>/`
+
+Active bundle hygiene:
+
+- `plans/active` is a work queue, not a project memory dump.
+- Reviewed/completed bundles move to `plans/archive/<year>/` when the slice is
+  closed.
+- One-off research or smoke-test bundles move to archive after their
+  recommendation is captured.
+- Long workstreams keep one canonical active continuation bundle; old context
+  is archived and linked from notes instead of copied forward.
 
 Machine-checkable governance baseline:
 
@@ -148,6 +160,11 @@ Cadence:
 - оставлять reusable core module-agnostic;
 - заменять product phase docs и project-specific overlays осознанно, а не
   переписывать под них generic core.
+
+For a sibling module such as `ai-inference`, start with the reusable baseline
+mechanics only. Replace `ai-models` overlays before the first product/runtime
+task; do not carry source-repo Model/ClusterModel, backend, or publication
+assumptions into reusable core.
 
 Files that must be reviewed and rewritten during porting:
 - `AGENTS.md`

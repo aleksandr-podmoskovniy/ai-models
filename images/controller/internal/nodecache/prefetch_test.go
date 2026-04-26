@@ -18,6 +18,7 @@ package nodecache
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -95,6 +96,86 @@ func TestRunRuntimeCycleProtectsDesiredDigestsFromEviction(t *testing.T) {
 	}
 	if _, err := Scan(cacheRoot); err != nil {
 		t.Fatalf("Scan() after runtime cycle error = %v", err)
+	}
+}
+
+func TestRunRuntimeCycleKeepsRunningWhenOneDigestPrefetchFails(t *testing.T) {
+	t.Parallel()
+
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	artifacts := []DesiredArtifact{
+		{ArtifactURI: "oci://example/model-bad@sha256:bad", Digest: "sha256:bad"},
+		{ArtifactURI: "oci://example/model-good@sha256:good", Digest: "sha256:good"},
+	}
+	loader := staticDesiredArtifactLoader{artifacts: artifacts}
+
+	err := runRuntimeCycle(context.Background(), RuntimeOptions{
+		Maintenance: MaintenanceOptions{
+			CacheRoot:         cacheRoot,
+			MaxTotalSizeBytes: 0,
+			MaxUnusedAge:      24 * time.Hour,
+			ScanInterval:      time.Minute,
+		},
+	}, loader, func(_ context.Context, artifact DesiredArtifact, destinationDir string) error {
+		if artifact.Digest == "sha256:bad" {
+			return errors.New("registry unavailable")
+		}
+		writeReadyMaterialization(t, destinationDir, artifact.Digest, time.Now().UTC())
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("runRuntimeCycle() error = %v", err)
+	}
+
+	if marker, err := ReadMarker(StorePath(cacheRoot, "sha256:good")); err != nil || marker == nil {
+		t.Fatalf("expected good digest to be ready, marker=%#v err=%v", marker, err)
+	}
+	if marker, err := ReadMarker(StorePath(cacheRoot, "sha256:bad")); err != nil || marker != nil {
+		t.Fatalf("expected bad digest to remain missing, marker=%#v err=%v", marker, err)
+	}
+}
+
+func TestEnsureDesiredArtifactsWithRetryBacksOffFailedDigest(t *testing.T) {
+	t.Parallel()
+
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
+	state := NewPrefetchRetryState(PrefetchRetryOptions{
+		InitialBackoff: time.Minute,
+		MaxBackoff:     5 * time.Minute,
+		Now:            func() time.Time { return now },
+	})
+	artifacts := []DesiredArtifact{{
+		ArtifactURI: "oci://example/model@sha256:retry",
+		Digest:      "sha256:retry",
+	}}
+
+	attempts := 0
+	run := func(context.Context, DesiredArtifact, string) error {
+		attempts++
+		return errors.New("registry unavailable")
+	}
+	if err := EnsureDesiredArtifactsWithRetry(context.Background(), cacheRoot, artifacts, run, state); err != nil {
+		t.Fatalf("first EnsureDesiredArtifactsWithRetry() error = %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts after first call = %d, want 1", attempts)
+	}
+
+	now = now.Add(30 * time.Second)
+	if err := EnsureDesiredArtifactsWithRetry(context.Background(), cacheRoot, artifacts, run, state); err != nil {
+		t.Fatalf("second EnsureDesiredArtifactsWithRetry() error = %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts during backoff = %d, want 1", attempts)
+	}
+
+	now = now.Add(31 * time.Second)
+	if err := EnsureDesiredArtifactsWithRetry(context.Background(), cacheRoot, artifacts, run, state); err != nil {
+		t.Fatalf("third EnsureDesiredArtifactsWithRetry() error = %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts after retry window = %d, want 2", attempts)
 	}
 }
 

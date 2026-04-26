@@ -19,6 +19,7 @@ package sourceworker
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -35,6 +36,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const sourceWorkerOwnerGenerationAnnotationKey = "ai.deckhouse.io/source-worker-owner-generation"
 
 type Service struct {
 	client  client.Client
@@ -77,7 +80,8 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 	if err != nil {
 		return nil, false, err
 	}
-	if handle, done, err := s.existingOrQueuedHandle(ctx, request.Owner.UID, directUploadState); err != nil {
+	ownerGeneration := normalizedOwnerGeneration(owner.GetGeneration())
+	if handle, done, err := s.existingOrQueuedHandle(ctx, request.Owner.UID, ownerGeneration, directUploadState); err != nil {
 		return nil, false, err
 	} else if done {
 		return handle, false, nil
@@ -92,6 +96,7 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 	if err != nil {
 		return nil, false, err
 	}
+	setSourceWorkerOwnerGeneration(pod, ownerGeneration)
 
 	created, err := ownedresource.CreateOrGet(ctx, s.client, s.scheme, owner, pod)
 	if err != nil {
@@ -137,7 +142,42 @@ func (s *Service) deleteResources(ctx context.Context, pod *corev1.Pod) error {
 	if err != nil {
 		return err
 	}
+	if shouldRetainWorkerPodLogs(pod) {
+		return ownedresource.DeleteAll(ctx, s.client, secret)
+	}
 	return ownedresource.DeleteAll(ctx, s.client, secret, pod)
+}
+
+func shouldRetainWorkerPodLogs(pod *corev1.Pod) bool {
+	return pod != nil && pod.Status.Phase == corev1.PodSucceeded
+}
+
+func setSourceWorkerOwnerGeneration(pod *corev1.Pod, ownerGeneration int64) {
+	if pod == nil {
+		return
+	}
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string, 1)
+	}
+	pod.Annotations[sourceWorkerOwnerGenerationAnnotationKey] = strconv.FormatInt(normalizedOwnerGeneration(ownerGeneration), 10)
+}
+
+func sourceWorkerOwnerGeneration(pod *corev1.Pod) (int64, error) {
+	if pod == nil {
+		return 0, errors.New("source worker pod must not be nil")
+	}
+	raw := strings.TrimSpace(pod.Annotations[sourceWorkerOwnerGenerationAnnotationKey])
+	if raw == "" {
+		return 0, errors.New("source worker owner generation annotation is missing")
+	}
+	generation, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	if generation <= 0 {
+		return 0, errors.New("source worker owner generation must be greater than zero")
+	}
+	return generation, nil
 }
 
 func (s *Service) lookupPod(ctx context.Context, ownerUID types.UID) (*corev1.Pod, bool, error) {

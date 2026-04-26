@@ -1,0 +1,15 @@
+global:
+  enabledModules:
+    - ai-models
+    - cert-manager
+    - sds-node-configurator-crd
+    - sds-node-configurator
+    - sds-local-volume-crd
+    - sds-local-volume
+aiModels:
+  nodeCache:
+    enabled: true
+    nodeSelector:
+      ai.deckhouse.io/node-cache: "true"
+    blockDeviceSelector:
+      ai.deckhouse.io/model-cache: "true"

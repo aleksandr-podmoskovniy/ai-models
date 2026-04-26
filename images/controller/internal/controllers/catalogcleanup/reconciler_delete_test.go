@@ -18,6 +18,7 @@ package catalogcleanup
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -50,36 +51,13 @@ func TestModelReconcilerMarksDeletingStatusOnInvalidCleanupHandle(t *testing.T) 
 	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonFailed)
 }
 
-func TestModelReconcilerCreatesCleanupJobOnDelete(t *testing.T) {
+func TestModelReconcilerRunsCleanupOperationOnDelete(t *testing.T) {
 	t.Parallel()
 
 	model := newDeletingModel()
 	setCleanupHandle(t, model, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef")
-	reconciler, kubeClient := newModelReconciler(t, model)
-
-	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)}); err != nil {
-		t.Fatalf("Reconcile() error = %v", err)
-	}
-
-	jobName := cleanupJobName(t, model)
-	assertCleanupJobExists(t, kubeClient, jobName)
-	registrySecretName, err := resourcenames.OCIRegistryAuthSecretName(model.GetUID())
-	if err != nil {
-		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
-	}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: registrySecretName, Namespace: "d8-ai-models"}, &corev1.Secret{}); err != nil {
-		t.Fatalf("expected projected OCI auth secret, got err=%v", err)
-	}
-	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonPending)
-}
-
-func TestModelReconcilerKeepsPendingStatusWhileCleanupJobRuns(t *testing.T) {
-	t.Parallel()
-
-	model := newDeletingModel()
-	setCleanupHandle(t, model, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef")
-	jobName := cleanupJobName(t, model)
-	reconciler, kubeClient := newModelReconciler(t, model, runningJob("d8-ai-models", jobName))
+	cleaner := &recordingCleaner{}
+	reconciler, kubeClient := newModelReconcilerWithCleaner(t, cleaner, model)
 
 	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)})
 	if err != nil {
@@ -88,17 +66,26 @@ func TestModelReconcilerKeepsPendingStatusWhileCleanupJobRuns(t *testing.T) {
 	if result.RequeueAfter != time.Second {
 		t.Fatalf("unexpected result %#v", result)
 	}
-
+	if got, want := len(cleaner.calls), 1; got != want {
+		t.Fatalf("cleanup calls = %d, want %d", got, want)
+	}
+	completed, err := reconciler.cleanupState.Completed(context.Background(), model)
+	if err != nil {
+		t.Fatalf("Completed() error = %v", err)
+	}
+	if !completed {
+		t.Fatal("expected cleanup state to be marked completed")
+	}
 	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonPending)
 }
 
-func TestModelReconcilerFailsClosedWhenCleanupJobFails(t *testing.T) {
+func TestModelReconcilerRetriesWhenCleanupOperationFails(t *testing.T) {
 	t.Parallel()
 
 	model := newDeletingModel()
 	setCleanupHandle(t, model, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef")
-	jobName := cleanupJobName(t, model)
-	reconciler, kubeClient := newModelReconciler(t, model, failedJob("d8-ai-models", jobName))
+	cleaner := &recordingCleaner{err: errors.New("registry unavailable")}
+	reconciler, kubeClient := newModelReconcilerWithCleaner(t, cleaner, model)
 
 	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)})
 	if err != nil {
@@ -106,6 +93,16 @@ func TestModelReconcilerFailsClosedWhenCleanupJobFails(t *testing.T) {
 	}
 	if result.RequeueAfter != time.Second {
 		t.Fatalf("unexpected result %#v", result)
+	}
+	if got, want := len(cleaner.calls), 1; got != want {
+		t.Fatalf("cleanup calls = %d, want %d", got, want)
+	}
+	completed, err := reconciler.cleanupState.Completed(context.Background(), model)
+	if err != nil {
+		t.Fatalf("Completed() error = %v", err)
+	}
+	if completed {
+		t.Fatal("did not expect failed cleanup to be marked completed")
 	}
 
 	assertCleanupCondition(t, kubeClient, model, modelsv1alpha1.ModelPhaseDeleting, modelsv1alpha1.ModelConditionReasonFailed)

@@ -20,11 +20,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	deletionapp "github.com/deckhouse/ai-models/controller/internal/application/deletion"
-	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
-	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -52,7 +48,7 @@ func (r *baseReconciler) applyFinalizeDeleteFlow(ctx context.Context, flow final
 	if result, handled, err := r.maybeDeletePublicationRuntimeResources(ctx, flow.runtime.object, flow.decision.DeleteRuntimeResources); handled || err != nil {
 		return result, err
 	}
-	if result, handled, err := r.maybeCreateCleanupJob(ctx, flow.runtime, flow.decision.CreateJob); handled || err != nil {
+	if result, handled, err := r.maybeRunCleanup(ctx, flow.runtime, flow.decision.RunCleanup); handled || err != nil {
 		return result, err
 	}
 	if result, handled, err := r.maybeEnsureGarbageCollectionRequest(ctx, flow.runtime, flow.decision.EnsureGarbageCollectionRequest); handled || err != nil {
@@ -84,7 +80,7 @@ func (r *baseReconciler) maybeDeletePublicationRuntimeResources(
 	return ctrl.Result{}, false, nil
 }
 
-func (r *baseReconciler) maybeCreateCleanupJob(
+func (r *baseReconciler) maybeRunCleanup(
 	ctx context.Context,
 	runtime finalizeDeleteRuntime,
 	enabled bool,
@@ -93,30 +89,14 @@ func (r *baseReconciler) maybeCreateCleanupJob(
 		return ctrl.Result{}, false, nil
 	}
 
-	options := r.options.CleanupJob
-	if runtime.handle.Kind == cleanuphandle.KindBackendArtifact {
-		projection, err := ociregistry.EnsureProjectedAccess(
-			ctx,
-			r.client,
-			r.scheme,
-			runtime.object,
-			r.options.CleanupJob.Namespace,
-			runtime.object.GetUID(),
-			r.options.CleanupJob.OCIRegistrySecretName,
-			r.options.CleanupJob.OCIRegistryCASecretName,
-		)
-		if err != nil {
-			return r.failDeleteStatus(ctx, runtime.object, err)
-		}
-		options.OCIRegistrySecretName = projection.AuthSecretName
-		options.OCIRegistryCASecretName = projection.CASecretName
-	}
-	job, err := buildCleanupJob(runtime.owner, runtime.handle, options)
-	if err != nil {
+	if err := runtime.handle.Validate(); err != nil {
 		return r.failDeleteStatus(ctx, runtime.object, err)
 	}
-	if err := r.client.Create(ctx, job); err != nil && !apierrors.IsAlreadyExists(err) {
-		return ctrl.Result{}, false, err
+	if err := r.options.Cleanup.Cleaner.Cleanup(ctx, runtime.handle); err != nil {
+		return r.failDeleteStatus(ctx, runtime.object, err)
+	}
+	if err := r.cleanupState.MarkCompleted(ctx, runtime.object); err != nil {
+		return r.failDeleteStatus(ctx, runtime.object, err)
 	}
 	return ctrl.Result{}, false, nil
 }
@@ -174,19 +154,6 @@ func (r *baseReconciler) maybeRemoveDeleteFinalizer(
 	}
 	controllerutil.RemoveFinalizer(runtime.object, Finalizer)
 	return ctrl.Result{}, true, r.client.Update(ctx, runtime.object)
-}
-
-func cleanupOwnerFor(object client.Object) (cleanupJobOwner, error) {
-	kind, err := modelobject.KindFor(object)
-	if err != nil {
-		return cleanupJobOwner{}, err
-	}
-	return cleanupJobOwner{
-		UID:       object.GetUID(),
-		Kind:      kind,
-		Name:      object.GetName(),
-		Namespace: object.GetNamespace(),
-	}, nil
 }
 
 func requeueResult(enabled bool, after time.Duration) ctrl.Result {

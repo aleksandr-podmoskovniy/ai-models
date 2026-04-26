@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	k8sadapters "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/nodecacheruntime"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -54,13 +55,73 @@ func TestReconcileCreatesRuntimeResourcesForSelectedNode(t *testing.T) {
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: "d8-ai-models", Name: "ai-models-node-cache-worker-a"}, &corev1.PersistentVolumeClaim{}); err != nil {
 		t.Fatalf("expected PVC, got err=%v", err)
 	}
+	node := &corev1.Node{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: "worker-a"}, node); err != nil {
+		t.Fatalf("Get(Node) error = %v", err)
+	}
+	if got := node.Labels[nodecache.RuntimeReadyNodeLabelKey]; got != "" {
+		t.Fatalf("did not expect runtime ready label before Pod/PVC readiness, got %q", got)
+	}
+}
+
+func TestReconcileLabelsNodeWhenRuntimePodAndPVCAreReady(t *testing.T) {
+	t.Parallel()
+
+	reconciler, kubeClient := newTestReconciler(t,
+		&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "worker-a",
+				Labels: map[string]string{"node-role.deckhouse.io/ai-models-cache": "enabled"},
+			},
+		},
+	)
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKey{Name: "worker-a"}}); err != nil {
+		t.Fatalf("initial Reconcile() error = %v", err)
+	}
+	pod := &corev1.Pod{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: "d8-ai-models", Name: "ai-models-node-cache-runtime-worker-a"}, pod); err != nil {
+		t.Fatalf("Get(Pod) error = %v", err)
+	}
+	pod.Spec.NodeName = "worker-a"
+	if err := kubeClient.Update(context.Background(), pod); err != nil {
+		t.Fatalf("Update(Pod spec) error = %v", err)
+	}
+	pod.Status.Phase = corev1.PodRunning
+	pod.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}
+	if err := kubeClient.Status().Update(context.Background(), pod); err != nil {
+		t.Fatalf("Update(Pod status) error = %v", err)
+	}
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: "d8-ai-models", Name: "ai-models-node-cache-worker-a"}, pvc); err != nil {
+		t.Fatalf("Get(PVC) error = %v", err)
+	}
+	pvc.Status.Phase = corev1.ClaimBound
+	if err := kubeClient.Status().Update(context.Background(), pvc); err != nil {
+		t.Fatalf("Update(PVC status) error = %v", err)
+	}
+
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKey{Name: "worker-a"}}); err != nil {
+		t.Fatalf("ready Reconcile() error = %v", err)
+	}
+
+	node := &corev1.Node{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: "worker-a"}, node); err != nil {
+		t.Fatalf("Get(Node) error = %v", err)
+	}
+	if got, want := node.Labels[nodecache.RuntimeReadyNodeLabelKey], nodecache.RuntimeReadyNodeLabelValue; got != want {
+		t.Fatalf("runtime ready label = %q, want %q", got, want)
+	}
 }
 
 func TestReconcileDeletesRuntimeResourcesForDeselectedNode(t *testing.T) {
 	t.Parallel()
 
 	reconciler, kubeClient := newTestReconciler(t,
-		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-a"}},
+		&corev1.Node{ObjectMeta: metav1.ObjectMeta{
+			Name:   "worker-a",
+			Labels: map[string]string{nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue},
+		}},
 		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "ai-models-node-cache-runtime-worker-a", Namespace: "d8-ai-models"}},
 		&corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "ai-models-node-cache-worker-a", Namespace: "d8-ai-models"}},
 	)
@@ -74,6 +135,13 @@ func TestReconcileDeletesRuntimeResourcesForDeselectedNode(t *testing.T) {
 	}
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: "d8-ai-models", Name: "ai-models-node-cache-worker-a"}, &corev1.PersistentVolumeClaim{}); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected PVC deletion, got err=%v", err)
+	}
+	node := &corev1.Node{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: "worker-a"}, node); err != nil {
+		t.Fatalf("Get(Node) error = %v", err)
+	}
+	if got := node.Labels[nodecache.RuntimeReadyNodeLabelKey]; got != "" {
+		t.Fatalf("expected runtime ready label to be removed, got %q", got)
 	}
 }
 
@@ -104,7 +172,11 @@ func newTestReconciler(t *testing.T, objects ...client.Object) (*Reconciler, cli
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatalf("AddToScheme(corev1) error = %v", err)
 	}
-	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&corev1.Pod{}, &corev1.PersistentVolumeClaim{}).
+		WithObjects(objects...).
+		Build()
 	service, err := k8sadapters.NewService(kubeClient, scheme)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -120,7 +192,7 @@ func newTestReconciler(t *testing.T, objects ...client.Object) (*Reconciler, cli
 			ServiceAccountName: "ai-models-node-cache-runtime",
 			StorageClassName:   "ai-models-node-cache",
 			SharedVolumeSize:   "64Gi",
-			MaxTotalSize:       "200Gi",
+			MaxTotalSize:       "64Gi",
 			MaxUnusedAge:       "24h",
 			ScanInterval:       "5m",
 			OCIAuthSecretName:  "ai-models-dmcr-auth-read",

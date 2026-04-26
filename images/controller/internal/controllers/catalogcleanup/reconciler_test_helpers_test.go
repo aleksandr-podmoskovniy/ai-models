@@ -17,25 +17,39 @@ limitations under the License.
 package catalogcleanup
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/cleanupstate"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type recordingCleaner struct {
+	calls []cleanuphandle.Handle
+	err   error
+}
+
+func (c *recordingCleaner) Cleanup(_ context.Context, handle cleanuphandle.Handle) error {
+	c.calls = append(c.calls, handle)
+	return c.err
+}
+
 func newModelReconciler(t *testing.T, objects ...client.Object) (*ModelReconciler, client.Client) {
 	t.Helper()
+	return newModelReconcilerWithCleaner(t, &recordingCleaner{}, objects...)
+}
 
-	scheme := testkit.NewScheme(t, batchv1.AddToScheme, corev1.AddToScheme)
+func newModelReconcilerWithCleaner(t *testing.T, cleaner ArtifactCleaner, objects ...client.Object) (*ModelReconciler, client.Client) {
+	t.Helper()
+
+	scheme := testkit.NewScheme(t, corev1.AddToScheme)
 	initialObjects := append([]client.Object{
 		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write"),
 	}, cleanupStateSecretsFromObjects(t, objects)...)
@@ -55,7 +69,7 @@ func newModelReconciler(t *testing.T, objects ...client.Object) (*ModelReconcile
 	return &ModelReconciler{baseReconciler{
 		client:       kubeClient,
 		scheme:       scheme,
-		options:      testCleanupOptions(),
+		options:      testCleanupOptions(cleaner),
 		cleanupState: cleanupState,
 	}}, kubeClient
 }
@@ -63,7 +77,7 @@ func newModelReconciler(t *testing.T, objects ...client.Object) (*ModelReconcile
 func newClusterModelReconciler(t *testing.T, objects ...client.Object) (*ClusterModelReconciler, client.Client) {
 	t.Helper()
 
-	scheme := testkit.NewScheme(t, batchv1.AddToScheme, corev1.AddToScheme)
+	scheme := testkit.NewScheme(t, corev1.AddToScheme)
 	initialObjects := append([]client.Object{
 		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write"),
 	}, cleanupStateSecretsFromObjects(t, objects)...)
@@ -83,24 +97,16 @@ func newClusterModelReconciler(t *testing.T, objects ...client.Object) (*Cluster
 	return &ClusterModelReconciler{baseReconciler{
 		client:       kubeClient,
 		scheme:       scheme,
-		options:      testCleanupOptions(),
+		options:      testCleanupOptions(&recordingCleaner{}),
 		cleanupState: cleanupState,
 	}}, kubeClient
 }
 
-func testCleanupOptions() Options {
+func testCleanupOptions(cleaner ArtifactCleaner) Options {
 	return Options{
-		CleanupJob: CleanupJobOptions{
-			Namespace:             "d8-ai-models",
-			Image:                 "backend:latest",
-			OCIRegistrySecretName: "ai-models-dmcr-auth-write",
-			ObjectStorage: storageprojection.Options{
-				Bucket:                "ai-models",
-				EndpointURL:           "https://s3.example.com",
-				Region:                "us-east-1",
-				UsePathStyle:          true,
-				CredentialsSecretName: "ai-models-artifacts",
-			},
+		Cleanup: CleanupOptions{
+			Namespace: "d8-ai-models",
+			Cleaner:   cleaner,
 		},
 		RuntimeNamespace: "d8-ai-models",
 		RequeueAfter:     time.Second,

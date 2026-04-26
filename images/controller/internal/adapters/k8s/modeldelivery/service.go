@@ -23,6 +23,7 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
+	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -86,19 +87,10 @@ func (s *Service) ApplyToPodTemplate(
 	request ApplyRequest,
 	template *corev1.PodTemplateSpec,
 ) (ApplyResult, error) {
-	if s == nil {
-		return ApplyResult{}, errors.New("runtime delivery service must not be nil")
-	}
-	if owner == nil {
-		return ApplyResult{}, errors.New("runtime delivery owner must not be nil")
-	}
-	if template == nil {
-		return ApplyResult{}, errors.New("runtime delivery pod template must not be nil")
-	}
-	if err := ensureManagedCacheMount(template, s.options); err != nil {
+	if err := validateApplyInputs(s, owner, template, request.Topology); err != nil {
 		return ApplyResult{}, err
 	}
-	if err := validateTopologyHints(request.Topology); err != nil {
+	if err := ensureManagedCacheMount(template, s.options, request.Artifact, request.ArtifactFamily); err != nil {
 		return ApplyResult{}, err
 	}
 
@@ -120,36 +112,22 @@ func (s *Service) ApplyToPodTemplate(
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	projection, err := ociregistry.EnsureProjectedAccessFromSourceNamespace(
-		ctx,
-		s.client,
-		s.scheme,
-		owner,
-		targetNamespace,
-		owner.GetUID(),
-		s.options.RegistrySourceNamespace,
-		s.options.RegistrySourceAuthSecretName,
-		s.options.RegistrySourceCASecretName,
-	)
+	if topology.Kind == CacheTopologyDirect {
+		if err := s.cleanupProjectedRuntimeAccess(ctx, owner, targetNamespace); err != nil {
+			return ApplyResult{}, err
+		}
+	}
+	projection, err := s.ensureRegistryProjection(ctx, owner, targetNamespace, topology.Kind)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-
-	runtimeImagePullSecretName := ""
-	if strings.TrimSpace(s.options.RuntimeImagePullSecretName) != "" {
-		runtimeImagePullSecretName, err = ociregistry.EnsureProjectedImagePullSecretFromSourceNamespace(
-			ctx,
-			s.client,
-			s.scheme,
-			owner,
-			targetNamespace,
-			owner.GetUID(),
-			s.options.RegistrySourceNamespace,
-			s.options.RuntimeImagePullSecretName,
-		)
-		if err != nil {
-			return ApplyResult{}, err
-		}
+	runtimeImagePullSecretName, err := s.runtimeImagePullSecretName(ctx, owner, targetNamespace, topology.Kind)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	readyNodes, err := s.readyNodesForTopology(ctx, topology.Kind)
+	if err != nil {
+		return ApplyResult{}, err
 	}
 
 	rendered, err := Render(Input{
@@ -168,6 +146,7 @@ func (s *Service) ApplyToPodTemplate(
 	if err := applyRendered(template, rendered, request.Artifact.Digest, topology.DeliveryMode, topology.DeliveryReason); err != nil {
 		return ApplyResult{}, err
 	}
+	applyReadyNodeSchedulingGate(template, topology.Kind, readyNodes)
 
 	return ApplyResult{
 		CacheMountPath:    topology.CacheMount.MountPath,
@@ -178,6 +157,87 @@ func (s *Service) ApplyToPodTemplate(
 		DeliveryMode:      topology.DeliveryMode,
 		DeliveryReason:    topology.DeliveryReason,
 	}, nil
+}
+
+func (s *Service) readyNodesForTopology(ctx context.Context, topologyKind CacheTopologyKind) (bool, error) {
+	if topologyKind != CacheTopologyDirect {
+		return true, nil
+	}
+	return s.hasManagedCacheReadyNode(ctx)
+}
+
+func applyReadyNodeSchedulingGate(template *corev1.PodTemplateSpec, topologyKind CacheTopologyKind, readyNodes bool) {
+	if topologyKind == CacheTopologyDirect && !readyNodes {
+		EnsureSchedulingGate(template)
+	}
+}
+
+func (s *Service) hasManagedCacheReadyNode(ctx context.Context) (bool, error) {
+	managed := NormalizeManagedCacheOptions(s.options.ManagedCache)
+	if !managed.Enabled || len(managed.NodeSelector) == 0 {
+		return true, nil
+	}
+	nodes := &corev1.NodeList{}
+	if err := s.client.List(ctx, nodes, client.MatchingLabels(managed.NodeSelector)); err != nil {
+		return false, err
+	}
+	return len(nodes.Items) > 0, nil
+}
+
+func validateApplyInputs(s *Service, owner client.Object, template *corev1.PodTemplateSpec, topology TopologyHints) error {
+	switch {
+	case s == nil:
+		return errors.New("runtime delivery service must not be nil")
+	case owner == nil:
+		return errors.New("runtime delivery owner must not be nil")
+	case template == nil:
+		return errors.New("runtime delivery pod template must not be nil")
+	default:
+		return validateTopologyHints(topology)
+	}
+}
+
+func (s *Service) ensureRegistryProjection(ctx context.Context, owner client.Object, targetNamespace string, topologyKind CacheTopologyKind) (ociregistry.Projection, error) {
+	if topologyKind == CacheTopologyDirect {
+		return ociregistry.Projection{}, nil
+	}
+	return ociregistry.EnsureProjectedAccessFromSourceNamespace(
+		ctx,
+		s.client,
+		s.scheme,
+		owner,
+		targetNamespace,
+		owner.GetUID(),
+		s.options.RegistrySourceNamespace,
+		s.options.RegistrySourceAuthSecretName,
+		s.options.RegistrySourceCASecretName,
+	)
+}
+
+func (s *Service) runtimeImagePullSecretName(ctx context.Context, owner client.Object, targetNamespace string, topologyKind CacheTopologyKind) (string, error) {
+	if topologyKind == CacheTopologyDirect {
+		return resourcenames.RuntimeImagePullSecretName(owner.GetUID())
+	}
+	if strings.TrimSpace(s.options.RuntimeImagePullSecretName) == "" {
+		return "", nil
+	}
+	return ociregistry.EnsureProjectedImagePullSecretFromSourceNamespace(
+		ctx,
+		s.client,
+		s.scheme,
+		owner,
+		targetNamespace,
+		owner.GetUID(),
+		s.options.RegistrySourceNamespace,
+		s.options.RuntimeImagePullSecretName,
+	)
+}
+
+func (s *Service) cleanupProjectedRuntimeAccess(ctx context.Context, owner client.Object, targetNamespace string) error {
+	if err := ociregistry.DeleteProjectedAccess(ctx, s.client, targetNamespace, owner.GetUID()); err != nil {
+		return err
+	}
+	return ociregistry.DeleteProjectedImagePullSecret(ctx, s.client, targetNamespace, owner.GetUID())
 }
 
 func NormalizeServiceOptions(options ServiceOptions) ServiceOptions {

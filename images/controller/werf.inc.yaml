@@ -45,6 +45,7 @@ shell:
     - export CGO_ENABLED=0
     - go build -ldflags="-s -w" -a -o /out/ai-models-controller ./cmd/ai-models-controller
     - go build -ldflags="-s -w" -a -o /out/ai-models-artifact-runtime ./cmd/ai-models-artifact-runtime
+    - go build -ldflags="-s -w" -a -o /out/ai-models-node-cache-runtime ./cmd/ai-models-node-cache-runtime
 ---
 image: controller
 final: true
@@ -75,3 +76,18 @@ imageSpec:
     workingDir: /app
     entrypoint:
       - /app/ai-models-artifact-runtime
+---
+image: node-cache-runtime
+final: true
+fromImage: distroless
+import:
+  - image: controller-build-artifact
+    add: /out/ai-models-node-cache-runtime
+    to: /app/ai-models-node-cache-runtime
+    after: install
+imageSpec:
+  config:
+    user: 64535
+    workingDir: /app
+    entrypoint:
+      - /app/ai-models-node-cache-runtime

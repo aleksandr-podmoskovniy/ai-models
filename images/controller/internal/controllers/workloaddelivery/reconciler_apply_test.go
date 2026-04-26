@@ -22,6 +22,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -87,7 +88,7 @@ func TestDeploymentReconcilerAppliesRuntimeDelivery(t *testing.T) {
 	assertProjectedRuntimeImagePullSecretExists(t, kubeClient, workload.Namespace, workload.UID)
 }
 
-func TestDeploymentReconcilerInjectsManagedLocalCacheWhenWorkloadHasNoMount(t *testing.T) {
+func TestDeploymentReconcilerInjectsManagedSharedDirectCacheWhenWorkloadHasNoMount(t *testing.T) {
 	t.Parallel()
 
 	model := readyModel()
@@ -103,13 +104,13 @@ func TestDeploymentReconcilerInjectsManagedLocalCacheWhenWorkloadHasNoMount(t *t
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &updated); err != nil {
 		t.Fatalf("Get(deployment) error = %v", err)
 	}
-	if !hasInitContainer(updated.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
-		t.Fatalf("expected init container %q", modeldelivery.DefaultInitContainerName)
+	if hasInitContainer(updated.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
+		t.Fatalf("did not expect init container %q for shared-direct delivery", modeldelivery.DefaultInitContainerName)
 	}
-	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]; got != string(modeldelivery.DeliveryModeMaterializeBridge) {
+	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]; got != string(modeldelivery.DeliveryModeSharedDirect) {
 		t.Fatalf("resolved delivery mode annotation = %q", got)
 	}
-	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]; got != string(modeldelivery.DeliveryReasonManagedBridgeVolume) {
+	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]; got != string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane) {
 		t.Fatalf("resolved delivery reason annotation = %q", got)
 	}
 	if len(updated.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 {
@@ -117,6 +118,65 @@ func TestDeploymentReconcilerInjectsManagedLocalCacheWhenWorkloadHasNoMount(t *t
 	}
 	if got, want := updated.Spec.Template.Spec.Containers[0].VolumeMounts[0].Name, modeldelivery.DefaultManagedCacheName; got != want {
 		t.Fatalf("managed cache volume name = %q, want %q", got, want)
+	}
+	if got, want := updated.Spec.Template.Spec.NodeSelector["ai.deckhouse.io/node-cache"], "true"; got != want {
+		t.Fatalf("node selector = %q, want %q", got, want)
+	}
+	if got, want := updated.Spec.Template.Spec.NodeSelector[nodecache.RuntimeReadyNodeLabelKey], nodecache.RuntimeReadyNodeLabelValue; got != want {
+		t.Fatalf("runtime ready selector = %q, want %q", got, want)
+	}
+	if modeldelivery.HasSchedulingGate(&updated.Spec.Template) {
+		t.Fatalf("did not expect scheduling gate when a ready node exists")
+	}
+	var volume corev1.Volume
+	found := false
+	for _, item := range updated.Spec.Template.Spec.Volumes {
+		if item.Name == modeldelivery.DefaultManagedCacheName {
+			volume = item
+			found = true
+			break
+		}
+	}
+	if !found || volume.CSI == nil {
+		t.Fatalf("expected managed shared-direct CSI volume, found=%t volume=%#v", found, volume)
+	}
+	if got, want := volume.CSI.Driver, modeldelivery.NodeCacheCSIDriverName; got != want {
+		t.Fatalf("CSI driver = %q, want %q", got, want)
+	}
+}
+
+func TestDeploymentReconcilerKeepsGateForManagedSharedDirectWithoutReadyNode(t *testing.T) {
+	t.Parallel()
+
+	model := readyModel()
+	workload := annotatedDeploymentWithoutCacheMount(map[string]string{ModelAnnotation: model.Name}, 1)
+	reconciler, kubeClient := newDeploymentReconcilerWithOptions(t, modeldelivery.ServiceOptions{
+		Render: modeldelivery.Options{
+			RuntimeImage: "example.com/ai-models/controller-runtime:dev",
+		},
+		ManagedCache: modeldelivery.ManagedCacheOptions{
+			Enabled: true,
+			NodeSelector: map[string]string{
+				"ai.deckhouse.io/node-cache":       "true",
+				nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue,
+			},
+		},
+		RegistrySourceNamespace:      testRegistryNamespace,
+		RegistrySourceAuthSecretName: testRegistryAuthName,
+		RuntimeImagePullSecretName:   testRuntimePullSecret,
+	}, model, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
+
+	result := reconcileDeployment(t, reconciler, workload)
+	if result != (ctrl.Result{}) {
+		t.Fatalf("unexpected reconcile result %#v", result)
+	}
+
+	var updated deployment
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &updated); err != nil {
+		t.Fatalf("Get(deployment) error = %v", err)
+	}
+	if !modeldelivery.HasSchedulingGate(&updated.Spec.Template) {
+		t.Fatalf("expected scheduling gate while no node-cache runtime ready node exists")
 	}
 }
 

@@ -17,11 +17,15 @@ limitations under the License.
 package main
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/sourceworker"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
+	modelpackoci "github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/oci"
+	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/bootstrap"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
@@ -29,9 +33,11 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecacheruntime"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecachesubstrate"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
+	"github.com/deckhouse/ai-models/controller/internal/dataplane/artifactcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const defaultDMCRReadAuthSecretName = "ai-models-dmcr-auth-read"
@@ -40,11 +46,7 @@ type managerConfig struct {
 	LogFormat string
 	LogLevel  string
 
-	CleanupJobImage               string
-	CleanupJobImagePullSecretName string
-	CleanupJobNamespace           string
-	CleanupJobServiceAccount      string
-	CleanupJobEnvPassThrough      string
+	CleanupNamespace string
 
 	PublicationWorkerImage                     string
 	PublicationWorkerImagePullSecretName       string
@@ -74,9 +76,10 @@ type managerConfig struct {
 	ArtifactsCASecretName          string
 
 	NodeCacheEnabled               bool
+	NodeCacheRuntimeImage          string
+	NodeCacheCSIRegistrarImage     string
 	NodeCacheMaxSize               string
 	NodeCacheSharedVolumeSize      string
-	NodeCacheFallbackVolumeSize    string
 	NodeCacheStorageClassName      string
 	NodeCacheVolumeGroupSetName    string
 	NodeCacheVolumeGroupNameOnNode string
@@ -98,19 +101,15 @@ func defaultManagerConfig() managerConfig {
 	return managerConfig{
 		LogFormat:                            cmdsupport.EnvOr(logFormatEnv, cmdsupport.DefaultLogFormat),
 		LogLevel:                             cmdsupport.EnvOr(logLevelEnv, cmdsupport.DefaultLogLevel),
-		CleanupJobImage:                      cmdsupport.EnvOr(cleanupJobImageEnv, ""),
-		CleanupJobImagePullSecretName:        cmdsupport.EnvOr(cleanupJobImagePullSecretEnv, ""),
-		CleanupJobNamespace:                  cmdsupport.EnvOr(cleanupJobNamespaceEnv, cmdsupport.EnvOr("POD_NAMESPACE", "d8-ai-models")),
-		CleanupJobServiceAccount:             cmdsupport.EnvOr(cleanupJobServiceAccountEnv, ""),
-		CleanupJobEnvPassThrough:             cmdsupport.EnvOr(cleanupJobEnvPassThroughEnv, defaultCleanupPassThrough),
-		PublicationWorkerImage:               cmdsupport.EnvOr(publicationWorkerImageEnv, cmdsupport.EnvOr(cleanupJobImageEnv, "")),
-		PublicationWorkerImagePullSecretName: cmdsupport.EnvOr(publicationWorkerImagePullSecretEnv, cmdsupport.EnvOr(cleanupJobImagePullSecretEnv, "")),
+		CleanupNamespace:                     cmdsupport.EnvOr(cleanupNamespaceEnv, cmdsupport.EnvOr("POD_NAMESPACE", "d8-ai-models")),
+		PublicationWorkerImage:               cmdsupport.EnvOr(publicationWorkerImageEnv, ""),
+		PublicationWorkerImagePullSecretName: cmdsupport.EnvOr(publicationWorkerImagePullSecretEnv, ""),
 		WorkloadDeliveryRuntimeImagePullSecretName: cmdsupport.EnvOr(
 			workloadDeliveryRuntimeImagePullSecretEnv,
-			cmdsupport.EnvOr(publicationWorkerImagePullSecretEnv, cmdsupport.EnvOr(cleanupJobImagePullSecretEnv, "")),
+			cmdsupport.EnvOr(publicationWorkerImagePullSecretEnv, ""),
 		),
-		PublicationWorkerNamespace:         cmdsupport.EnvOr(publicationWorkerNamespaceEnv, cmdsupport.EnvOr(cleanupJobNamespaceEnv, cmdsupport.EnvOr("POD_NAMESPACE", "d8-ai-models"))),
-		PublicationWorkerServiceAccount:    cmdsupport.EnvOr(publicationWorkerServiceAccountEnv, cmdsupport.EnvOr(cleanupJobServiceAccountEnv, "")),
+		PublicationWorkerNamespace:         cmdsupport.EnvOr(publicationWorkerNamespaceEnv, cmdsupport.EnvOr("POD_NAMESPACE", "d8-ai-models")),
+		PublicationWorkerServiceAccount:    cmdsupport.EnvOr(publicationWorkerServiceAccountEnv, ""),
 		PublicationOCIRepositoryPrefix:     cmdsupport.EnvOr(publicationOCIRepositoryPrefixEnv, ""),
 		PublicationOCIInsecure:             cmdsupport.EnvOrBool(publicationOCIInsecureEnv, false),
 		PublicationOCISecretName:           cmdsupport.EnvOr(publicationOCISecretEnv, ""),
@@ -132,9 +131,10 @@ func defaultManagerConfig() managerConfig {
 		ArtifactsCredentialsSecretName:     cmdsupport.EnvOr(artifactsCredentialsSecretEnv, ""),
 		ArtifactsCASecretName:              cmdsupport.EnvOr(artifactsCASecretEnv, ""),
 		NodeCacheEnabled:                   cmdsupport.EnvOrBool(nodeCacheEnabledEnv, false),
+		NodeCacheRuntimeImage:              cmdsupport.EnvOr(nodeCacheRuntimeImageEnv, ""),
+		NodeCacheCSIRegistrarImage:         cmdsupport.EnvOr(nodeCacheCSIRegistrarImageEnv, ""),
 		NodeCacheMaxSize:                   cmdsupport.EnvOr(nodeCacheMaxSizeEnv, "200Gi"),
 		NodeCacheSharedVolumeSize:          cmdsupport.EnvOr(nodeCacheSharedVolumeSizeEnv, nodecache.DefaultSharedVolumeSize),
-		NodeCacheFallbackVolumeSize:        cmdsupport.EnvOr(nodeCacheFallbackVolumeSizeEnv, "32Gi"),
 		NodeCacheStorageClassName:          cmdsupport.EnvOr(nodeCacheStorageClassNameEnv, "ai-models-node-cache"),
 		NodeCacheVolumeGroupSetName:        cmdsupport.EnvOr(nodeCacheVolumeGroupSetNameEnv, "ai-models-node-cache"),
 		NodeCacheVolumeGroupNameOnNode:     cmdsupport.EnvOr(nodeCacheVGNameOnNodeEnv, "ai-models-cache"),
@@ -157,11 +157,7 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags := cmdsupport.NewFlagSet("ai-models-controller")
 	flags.StringVar(&config.LogFormat, "log-format", config.LogFormat, "Log format: text or json.")
 	flags.StringVar(&config.LogLevel, "log-level", config.LogLevel, "Log level: debug, info, warn, or error.")
-	flags.StringVar(&config.CleanupJobImage, "cleanup-job-image", config.CleanupJobImage, "Runtime image used for cleanup Jobs.")
-	flags.StringVar(&config.CleanupJobImagePullSecretName, "cleanup-job-image-pull-secret-name", config.CleanupJobImagePullSecretName, "Optional imagePullSecret name used by cleanup Jobs.")
-	flags.StringVar(&config.CleanupJobNamespace, "cleanup-job-namespace", config.CleanupJobNamespace, "Namespace where cleanup Jobs are created.")
-	flags.StringVar(&config.CleanupJobServiceAccount, "cleanup-job-service-account", config.CleanupJobServiceAccount, "ServiceAccountName used by cleanup Jobs.")
-	flags.StringVar(&config.CleanupJobEnvPassThrough, "cleanup-job-env-pass-through", config.CleanupJobEnvPassThrough, "Comma-separated list of controller env vars copied into cleanup Jobs.")
+	flags.StringVar(&config.CleanupNamespace, "cleanup-namespace", config.CleanupNamespace, "Namespace used for controller-owned cleanup state and DMCR garbage-collection requests.")
 	flags.StringVar(&config.PublicationWorkerImage, "publication-worker-image", config.PublicationWorkerImage, "Runtime image used for publication worker Pods.")
 	flags.StringVar(&config.PublicationWorkerImagePullSecretName, "publication-worker-image-pull-secret-name", config.PublicationWorkerImagePullSecretName, "Optional imagePullSecret name used by publication worker Pods.")
 	flags.StringVar(&config.WorkloadDeliveryRuntimeImagePullSecretName, "workload-delivery-runtime-image-pull-secret-name", config.WorkloadDeliveryRuntimeImagePullSecretName, "Optional imagePullSecret name projected into managed workloads so the materialize bridge init container can pull the runtime image.")
@@ -188,9 +184,10 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.StringVar(&config.ArtifactsCredentialsSecretName, "artifacts-credentials-secret-name", config.ArtifactsCredentialsSecretName, "Secret with object storage accessKey/secretKey for upload staging.")
 	flags.StringVar(&config.ArtifactsCASecretName, "artifacts-ca-secret-name", config.ArtifactsCASecretName, "Optional Secret with ca.crt for upload staging object storage.")
 	flags.BoolVar(&config.NodeCacheEnabled, "node-cache-enabled", config.NodeCacheEnabled, "Enable ai-models-managed node-local cache substrate.")
+	flags.StringVar(&config.NodeCacheRuntimeImage, "node-cache-runtime-image", config.NodeCacheRuntimeImage, "Internal node-cache runtime image used by the managed CSI runtime pod.")
+	flags.StringVar(&config.NodeCacheCSIRegistrarImage, "node-cache-csi-registrar-image", config.NodeCacheCSIRegistrarImage, "node-driver-registrar image used by the managed node-cache CSI runtime pod.")
 	flags.StringVar(&config.NodeCacheMaxSize, "node-cache-max-size", config.NodeCacheMaxSize, "Per-node thin-pool size budget for managed node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheSharedVolumeSize, "node-cache-shared-volume-size", config.NodeCacheSharedVolumeSize, "Stable per-node shared cache PVC size used by the managed node-cache runtime plane.")
-	flags.StringVar(&config.NodeCacheFallbackVolumeSize, "node-cache-fallback-volume-size", config.NodeCacheFallbackVolumeSize, "Managed local ephemeral volume size injected into workloads for the current runtime delivery materialize-bridge path.")
 	flags.StringVar(&config.NodeCacheStorageClassName, "node-cache-storage-class-name", config.NodeCacheStorageClassName, "Managed LocalStorageClass name for node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheVolumeGroupSetName, "node-cache-volume-group-set-name", config.NodeCacheVolumeGroupSetName, "Managed LVMVolumeGroupSet name for node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheVolumeGroupNameOnNode, "node-cache-volume-group-name-on-node", config.NodeCacheVolumeGroupNameOnNode, "Actual VG name created on nodes for node-local cache substrate.")
@@ -207,14 +204,48 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	if err := flags.Parse(args); err != nil {
 		return managerConfig{}, 2, err
 	}
-	if _, err := parseMatchLabelsJSON(config.NodeCacheNodeSelectorJSON); err != nil {
+	nodeSelectorLabels, err := parseMatchLabelsJSON(config.NodeCacheNodeSelectorJSON)
+	if err != nil {
 		return managerConfig{}, 2, err
 	}
-	if _, err := parseMatchLabelsJSON(config.NodeCacheBlockDeviceJSON); err != nil {
+	blockDeviceSelectorLabels, err := parseMatchLabelsJSON(config.NodeCacheBlockDeviceJSON)
+	if err != nil {
 		return managerConfig{}, 2, err
+	}
+	if config.NodeCacheEnabled && len(nodeSelectorLabels) == 0 {
+		return managerConfig{}, 2, fmt.Errorf("node-cache-node-selector-json must not be empty when node cache is enabled")
+	}
+	if config.NodeCacheEnabled && len(blockDeviceSelectorLabels) == 0 {
+		return managerConfig{}, 2, fmt.Errorf("node-cache-block-device-selector-json must not be empty when node cache is enabled")
+	}
+	if config.NodeCacheEnabled && strings.TrimSpace(config.NodeCacheRuntimeImage) == "" {
+		return managerConfig{}, 2, fmt.Errorf("node-cache-runtime-image must not be empty when node cache is enabled")
+	}
+	if config.NodeCacheEnabled && strings.TrimSpace(config.NodeCacheCSIRegistrarImage) == "" {
+		return managerConfig{}, 2, fmt.Errorf("node-cache-csi-registrar-image must not be empty when node cache is enabled")
+	}
+	if config.NodeCacheEnabled {
+		if err := validateNodeCacheStorageSizes(config.NodeCacheMaxSize, config.NodeCacheSharedVolumeSize); err != nil {
+			return managerConfig{}, 2, err
+		}
 	}
 
 	return config, 0, nil
+}
+
+func validateNodeCacheStorageSizes(maxSizeValue, sharedVolumeSizeValue string) error {
+	maxSize, err := resource.ParseQuantity(strings.TrimSpace(maxSizeValue))
+	if err != nil {
+		return fmt.Errorf("node-cache-max-size must be a valid quantity")
+	}
+	sharedVolumeSize, err := resource.ParseQuantity(strings.TrimSpace(sharedVolumeSizeValue))
+	if err != nil {
+		return fmt.Errorf("node-cache-shared-volume-size must be a valid quantity")
+	}
+	if sharedVolumeSize.Cmp(maxSize) > 0 {
+		return fmt.Errorf("node-cache-shared-volume-size must not exceed node-cache-max-size")
+	}
+	return nil
 }
 
 func (c managerConfig) objectStorageOptions() storageprojection.Options {
@@ -229,23 +260,28 @@ func (c managerConfig) objectStorageOptions() storageprojection.Options {
 	}
 }
 
+func (c managerConfig) artifactCleaner() artifactcleanup.Cleaner {
+	return artifactcleanup.Cleaner{
+		Remover: modelpackoci.New(),
+		ObjectStorage: func() (artifactcleanup.ObjectStorageRemover, error) {
+			return uploadstagings3.New(cmdsupport.UploadStagingS3ConfigFromEnv())
+		},
+		ObjectStorageBucket: c.ArtifactsBucket,
+		RegistryAuth:        cmdsupport.RegistryAuthFromEnvWithInsecure(c.PublicationOCIInsecure),
+	}
+}
+
 func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) bootstrap.Options {
 	artifactsObjectStorage := c.objectStorageOptions()
 	nodeSelectorLabels, _ := parseMatchLabelsJSON(c.NodeCacheNodeSelectorJSON)
 	blockDeviceSelectorLabels, _ := parseMatchLabelsJSON(c.NodeCacheBlockDeviceJSON)
+	managedDeliveryNodeSelector := managedNodeCacheDeliverySelector(nodeSelectorLabels)
 
 	return bootstrap.Options{
-		CleanupJobs: catalogcleanup.Options{
-			CleanupJob: catalogcleanup.CleanupJobOptions{
-				Namespace:               c.CleanupJobNamespace,
-				Image:                   c.CleanupJobImage,
-				ImagePullSecretName:     c.CleanupJobImagePullSecretName,
-				ServiceAccountName:      c.CleanupJobServiceAccount,
-				OCIInsecure:             c.PublicationOCIInsecure,
-				OCIRegistrySecretName:   c.PublicationOCISecretName,
-				OCIRegistryCASecretName: c.PublicationOCICASecretName,
-				ObjectStorage:           artifactsObjectStorage,
-				Env:                     cleanupJobEnv(c.CleanupJobEnvPassThrough, c.LogFormat, c.LogLevel),
+		Cleanup: catalogcleanup.Options{
+			Cleanup: catalogcleanup.CleanupOptions{
+				Namespace: c.CleanupNamespace,
+				Cleaner:   c.artifactCleaner(),
 			},
 			RuntimeNamespace: c.PublicationWorkerNamespace,
 			RequeueAfter:     5 * time.Second,
@@ -255,9 +291,9 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 			RuntimeLogLevel:  c.LogLevel,
 			Runtime: sourceworker.RuntimeOptions{
 				Namespace:               c.PublicationWorkerNamespace,
-				Image:                   cmdsupport.FallbackString(c.PublicationWorkerImage, c.CleanupJobImage),
-				ImagePullSecretName:     cmdsupport.FallbackString(c.PublicationWorkerImagePullSecretName, c.CleanupJobImagePullSecretName),
-				ServiceAccountName:      cmdsupport.FallbackString(c.PublicationWorkerServiceAccount, c.CleanupJobServiceAccount),
+				Image:                   c.PublicationWorkerImage,
+				ImagePullSecretName:     c.PublicationWorkerImagePullSecretName,
+				ServiceAccountName:      c.PublicationWorkerServiceAccount,
 				OCIRepositoryPrefix:     c.PublicationOCIRepositoryPrefix,
 				OCIInsecure:             c.PublicationOCIInsecure,
 				OCIRegistrySecretName:   c.PublicationOCISecretName,
@@ -267,8 +303,8 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 				SourceFetch:             c.PublicationSourceFetchMode,
 				Resources:               resources,
 			},
-			MaxConcurrentWorkers: c.PublicationMaxConcurrentWorkers,
-			CleanupStateNamespace: c.CleanupJobNamespace,
+			MaxConcurrentWorkers:  c.PublicationMaxConcurrentWorkers,
+			CleanupStateNamespace: c.CleanupNamespace,
 			UploadGateway: catalogstatus.UploadGatewayOptions{
 				ServiceName: c.UploadServiceName,
 				PublicHost:  c.UploadPublicHost,
@@ -276,13 +312,14 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 		},
 		NodeCacheRuntime: nodecacheruntime.Options{
 			Enabled:             c.NodeCacheEnabled,
-			Namespace:           c.CleanupJobNamespace,
-			RuntimeImage:        cmdsupport.FallbackString(c.PublicationWorkerImage, c.CleanupJobImage),
-			ImagePullSecretName: cmdsupport.FallbackString(c.PublicationWorkerImagePullSecretName, c.CleanupJobImagePullSecretName),
+			Namespace:           c.CleanupNamespace,
+			RuntimeImage:        c.NodeCacheRuntimeImage,
+			CSIRegistrarImage:   c.NodeCacheCSIRegistrarImage,
+			ImagePullSecretName: c.PublicationWorkerImagePullSecretName,
 			ServiceAccountName:  nodecache.RuntimeServiceAccount,
 			StorageClassName:    c.NodeCacheStorageClassName,
 			SharedVolumeSize:    c.NodeCacheSharedVolumeSize,
-			MaxTotalSize:        c.NodeCacheMaxSize,
+			MaxTotalSize:        c.NodeCacheSharedVolumeSize,
 			MaxUnusedAge:        nodecache.DefaultMaxUnusedAge.String(),
 			ScanInterval:        nodecache.DefaultMaintenancePeriod.String(),
 			OCIInsecure:         c.PublicationOCIInsecure,
@@ -303,24 +340,23 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 		WorkloadDelivery: workloaddelivery.Options{
 			Service: modeldelivery.ServiceOptions{
 				Render: modeldelivery.Options{
-					RuntimeImage:   cmdsupport.FallbackString(c.PublicationWorkerImage, c.CleanupJobImage),
+					RuntimeImage:   c.PublicationWorkerImage,
 					LogFormat:      c.LogFormat,
 					LogLevel:       c.LogLevel,
 					OCIInsecure:    c.PublicationOCIInsecure,
 					CacheMountPath: modeldelivery.DefaultCacheMountPath,
 				},
 				ManagedCache: modeldelivery.ManagedCacheOptions{
-					Enabled:          c.NodeCacheEnabled,
-					StorageClassName: c.NodeCacheStorageClassName,
-					VolumeSize:       c.NodeCacheFallbackVolumeSize,
-					VolumeName:       modeldelivery.DefaultManagedCacheName,
+					Enabled:      c.NodeCacheEnabled,
+					VolumeName:   modeldelivery.DefaultManagedCacheName,
+					NodeSelector: managedDeliveryNodeSelector,
 				},
-				RegistrySourceNamespace:      cmdsupport.FallbackString(c.PublicationWorkerNamespace, c.CleanupJobNamespace),
+				RegistrySourceNamespace:      cmdsupport.FallbackString(c.PublicationWorkerNamespace, c.CleanupNamespace),
 				RegistrySourceAuthSecretName: defaultDMCRReadAuthSecretName,
 				RegistrySourceCASecretName:   c.PublicationOCICASecretName,
 				RuntimeImagePullSecretName: cmdsupport.FallbackString(
 					c.WorkloadDeliveryRuntimeImagePullSecretName,
-					cmdsupport.FallbackString(c.PublicationWorkerImagePullSecretName, c.CleanupJobImagePullSecretName),
+					c.PublicationWorkerImagePullSecretName,
 				),
 			},
 		},
@@ -332,4 +368,16 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 			LeaderElectionNamespace: c.LeaderElectionNamespace,
 		},
 	}
+}
+
+func managedNodeCacheDeliverySelector(nodeSelectorLabels map[string]string) map[string]string {
+	if len(nodeSelectorLabels) == 0 {
+		return nil
+	}
+	selector := make(map[string]string, len(nodeSelectorLabels)+1)
+	for key, value := range nodeSelectorLabels {
+		selector[key] = value
+	}
+	selector[nodecache.RuntimeReadyNodeLabelKey] = nodecache.RuntimeReadyNodeLabelValue
+	return selector
 }

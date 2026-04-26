@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
@@ -97,6 +98,12 @@ type directUploadAPIError struct {
 	Message    string
 }
 
+const (
+	directUploadAPIRequestAttempts  = 180
+	directUploadAPIInitialRetryWait = 100 * time.Millisecond
+	directUploadAPIMaxRetryWait     = 5 * time.Second
+)
+
 func (e *directUploadAPIError) Error() string {
 	if e == nil {
 		return "DMCR direct upload API error"
@@ -107,6 +114,10 @@ func (e *directUploadAPIError) Error() string {
 func isDirectUploadStatus(err error, statusCode int) bool {
 	var apiErr *directUploadAPIError
 	return errors.As(err, &apiErr) && apiErr.StatusCode == statusCode
+}
+
+func isTransientDirectUploadAPIError(err error) bool {
+	return isDirectUploadStatus(err, http.StatusServiceUnavailable)
 }
 
 func newDirectUploadClient(
@@ -251,12 +262,39 @@ func (c *directUploadClient) doJSON(
 	responseBody any,
 ) error {
 	endpoint := c.endpoint + requestPath
-	var body io.Reader
+	var payload []byte
 	if requestBody != nil {
-		payload, err := jsonMarshal(requestBody)
+		var err error
+		payload, err = jsonMarshal(requestBody)
 		if err != nil {
 			return err
 		}
+	}
+
+	retryWait := directUploadAPIInitialRetryWait
+	for attempt := 1; attempt <= directUploadAPIRequestAttempts; attempt++ {
+		err := c.doJSONOnce(ctx, method, endpoint, payload, requestBody != nil, responseBody)
+		if err == nil || !isTransientDirectUploadAPIError(err) || attempt == directUploadAPIRequestAttempts {
+			return err
+		}
+		if waitErr := sleepDirectUploadRetry(ctx, retryWait); waitErr != nil {
+			return fmt.Errorf("DMCR direct upload API retry stopped after transient failure: %w", errors.Join(err, waitErr))
+		}
+		retryWait = nextDirectUploadRetryWait(retryWait)
+	}
+	return nil
+}
+
+func (c *directUploadClient) doJSONOnce(
+	ctx context.Context,
+	method string,
+	endpoint string,
+	payload []byte,
+	hasRequestBody bool,
+	responseBody any,
+) error {
+	var body io.Reader
+	if hasRequestBody {
 		body = bytes.NewReader(payload)
 	}
 
@@ -264,7 +302,7 @@ func (c *directUploadClient) doJSON(
 	if err != nil {
 		return err
 	}
-	if requestBody != nil {
+	if hasRequestBody {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.SetBasicAuth(c.auth.Username, c.auth.Password)
@@ -288,4 +326,24 @@ func (c *directUploadClient) doJSON(
 		return fmt.Errorf("failed to decode DMCR direct upload API response: %w", err)
 	}
 	return nil
+}
+
+func sleepDirectUploadRetry(ctx context.Context, wait time.Duration) error {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func nextDirectUploadRetryWait(current time.Duration) time.Duration {
+	next := current * 2
+	if next > directUploadAPIMaxRetryWait {
+		return directUploadAPIMaxRetryWait
+	}
+	return next
 }

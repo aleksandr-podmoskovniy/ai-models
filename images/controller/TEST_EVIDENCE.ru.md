@@ -170,25 +170,38 @@ paths и test surfaces.
 ### Consumer-side materialization
 
 - Byte path:
-  - `published OCI artifact -> workload cache root`
+  - legacy explicit-volume bridge: `published OCI artifact -> workload cache root`
+  - managed node-cache path: `published OCI artifact -> per-node shared store -> kubelet-facing CSI bind mount -> workload-facing inline CSI mount`
 - Full-size local copies during successful materialization:
-  - `1`, inside the consumer-owned cache/storage surface
+  - legacy explicit-volume bridge: `1`, inside the consumer-owned
+    cache/storage surface
+  - managed node-cache path: `1` per node/digest in the node-cache PVC and `0`
+    extra full-size copies for additional workloads using the same digest on
+    that node
 - Primary evidence:
   - `internal/adapters/modelpack/oci/materialize_test.go`
   - `internal/adapters/k8s/modeldelivery/render_test.go`
   - `internal/adapters/k8s/modeldelivery/service_apply_test.go`
   - `internal/adapters/k8s/modeldelivery/service_test.go`
   - `internal/adapters/k8s/modeldelivery/service_topology_test.go`
+  - `internal/dataplane/nodecachecsi/server_test.go`
 - Proved properties:
   - publication-path zero-copy claims do not pretend away consumer-side cache
     materialization;
   - workload cache policy remains separate from publish-worker byte path;
   - workload-facing runtime contract is stable through
     `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`, and
-    `AI_MODELS_MODEL_FAMILY`; per-pod delivery now reads the stable
-    `/data/modelcache/model` projection, while shared PVC bridge topology
-    reads a digest-scoped path inside the shared store instead of depending on
-    a global `/data/modelcache/current` link.
+    `AI_MODELS_MODEL_FAMILY`; managed SharedDirect delivery now reads the
+    stable `/data/modelcache/model` projection from the inline CSI mount,
+    CSI returns transient `Unavailable` until the requested digest has a ready
+    marker and model path in the node shared store,
+    and NodePublish denies manual inline-CSI use unless the requesting Pod is
+    the managed SharedDirect Pod for that digest on the same node,
+    managed SharedDirect keeps the scheduling gate while no selected node has
+    the dynamic node-cache runtime ready label,
+    while explicit shared PVC bridge topology still reads a digest-scoped path
+    inside the shared store instead of depending on a global
+    `/data/modelcache/current` link.
 
 ## 2. Domain and application evidence
 
@@ -253,7 +266,7 @@ paths и test surfaces.
 
 - Decision surface:
   - cleanup finalizer ownership
-  - cleanup job / GC progress decision table
+  - cleanup operation / GC progress decision table
   - finalizer removal policy
 - Primary evidence:
   - `ensure_cleanup_finalizer_test.go`
@@ -412,7 +425,9 @@ paths и test surfaces.
   - workload mutation for runtime delivery
   - managed scheduling gate helpers for deterministic first rollout handoff
   - storage topology checks
-  - managed local bridge volume injection
+  - managed inline CSI SharedDirect volume injection
+  - node-cache node selector propagation and conflict rejection
+  - SharedDirect cleanup of stale projected registry auth/runtime pull secrets
   - cache-root, digest, delivery-mode and delivery-reason annotations
   - stable workload-facing runtime env projection and cleanup
 - Primary evidence:
@@ -458,8 +473,10 @@ paths и test surfaces.
 
 - Decision surface:
   - stable per-node runtime Pod/PVC shaping
+  - Deckhouse-style CSI node registration sidecar, socket hostPath and
+    bidirectional kubelet mount wiring
   - immutable published-artifact extraction from already-managed Pods on the
-    current node only for future true shared-direct delivery
+    current node for SharedDirect delivery
   - runtime-side loading of required published artifacts from live cluster
     truth without a dedicated mirror contract
 - Primary evidence:
@@ -467,6 +484,19 @@ paths и test surfaces.
   - `pod_test.go`
   - `pvc_test.go`
   - `service_test.go`
+
+### `internal/dataplane/nodecachecsi`
+
+- Decision surface:
+  - CSI Identity/Node service surface for `node-cache.ai-models.deckhouse.io`
+  - read-only bind mount of ready digest store into kubelet target path
+  - podInfo-based publish authorization against the requesting managed
+    SharedDirect Pod
+  - transient `Unavailable` for not-yet-prefetched digest
+  - idempotent publish/unpublish behavior
+  - last-used marker update on successful mount
+- Primary evidence:
+  - `server_test.go`
 
 ### Stable per-node node-cache runtime plane
 
@@ -476,16 +506,28 @@ paths и test surfaces.
   - module render keeps only service-account/RBAC surface for the runtime
     agent; legacy `DaemonSet` render is gone
   - stable per-node Pod/PVC contract over ai-models-owned `LocalStorageClass`
+  - workload-facing inline CSI driver identity render
+  - controller render passes non-empty `node-driver-registrar` image for the
+    kubelet-facing CSI node registration sidecar
+  - runtime Pod shape follows CSI node socket/registration hostPath pattern
   - maintenance env contract for shared cache-root
   - runtime-side live Pod lookup scoped to the current node
+  - per-digest retry/backoff for transient prefetch/materialization failures
+    without restarting the runtime process
+  - dedicated `nodeCacheRuntime` image/entrypoint separate from the shared
+    publication/materialize runtime image
+  - controller-owned runtime-ready Node label based on ready runtime Pod plus
+    bound shared cache PVC
   - DMCR read-auth projection for shared-store prefetch
-  - read-only Pod-list RBAC contract for the node-cache agent
+  - read-only Pod get/list RBAC contract for the node-cache agent
   - dedicated service-account contract for the node-cache agent
 - Primary evidence:
   - `pod_test.go`
   - `pvc_test.go`
   - `service_test.go`
   - `options_test.go`
+  - `internal/dataplane/nodecacheruntime/command_test.go`
+  - `internal/nodecache/prefetch_test.go`
   - `reconciler_test.go`
   - `tools/helm-tests/validate_renders_test.py`
   - `tools/helm-tests/validate-renders.py`

@@ -201,6 +201,9 @@ func TestRunRequestCycleArmsQueuedRequestsAndLogs(t *testing.T) {
 	if got := updated.Annotations[RequestQueuedAtAnnotationKey]; got == "" {
 		t.Fatal("expected queued request timestamp to stay on armed secret")
 	}
+	if got, want := updated.Annotations[phaseAnnotationKey], phaseArmed; got != want {
+		t.Fatalf("phase annotation = %q, want %q", got, want)
+	}
 
 	entries := decodeJSONLogLines(t, buffer.Bytes())
 	assertLogMessage(t, entries, "dmcr garbage collection maintenance cycle armed")

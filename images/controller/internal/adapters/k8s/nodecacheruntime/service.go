@@ -85,6 +85,31 @@ func (s *Service) Delete(ctx context.Context, namespace, nodeName string) error 
 	)
 }
 
+func (s *Service) RuntimeReady(ctx context.Context, namespace, nodeName string) (bool, error) {
+	podName, err := PodName(nodeName)
+	if err != nil {
+		return false, err
+	}
+	pvcName, err := PVCName(nodeName)
+	if err != nil {
+		return false, err
+	}
+
+	pod := &corev1.Pod{}
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: podName}, pod); err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
+	if !runtimePodReadyOnNode(pod, nodeName) {
+		return false, nil
+	}
+
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: pvcName}, pvc); err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
+	return pvc.Status.Phase == corev1.ClaimBound, nil
+}
+
 func (s *Service) createOrUpdateOwned(ctx context.Context, owner *corev1.Node, object client.Object, desired client.Object) error {
 	object.SetName(desired.GetName())
 	object.SetNamespace(desired.GetNamespace())
@@ -136,8 +161,37 @@ func (s *Service) createOrReplacePod(ctx context.Context, owner *corev1.Node, de
 func podMatchesDesired(existing, desired *corev1.Pod) bool {
 	return apiequality.Semantic.DeepEqual(existing.Labels, desired.Labels) &&
 		apiequality.Semantic.DeepEqual(existing.Annotations, desired.Annotations) &&
-		apiequality.Semantic.DeepEqual(existing.Spec, desired.Spec) &&
+		apiequality.Semantic.DeepEqual(podSpecForCompare(existing.Spec), podSpecForCompare(desired.Spec)) &&
 		apiequality.Semantic.DeepEqual(existing.OwnerReferences, desired.OwnerReferences)
+}
+
+func podSpecForCompare(spec corev1.PodSpec) corev1.PodSpec {
+	spec.NodeName = ""
+	if spec.DNSPolicy == "" {
+		spec.DNSPolicy = corev1.DNSClusterFirst
+	}
+	if spec.SchedulerName == "" {
+		spec.SchedulerName = corev1.DefaultSchedulerName
+	}
+	if spec.EnableServiceLinks != nil && *spec.EnableServiceLinks {
+		spec.EnableServiceLinks = nil
+	}
+	if spec.TerminationGracePeriodSeconds != nil && *spec.TerminationGracePeriodSeconds == 30 {
+		spec.TerminationGracePeriodSeconds = nil
+	}
+	return spec
+}
+
+func runtimePodReadyOnNode(pod *corev1.Pod, nodeName string) bool {
+	if pod == nil || pod.Spec.NodeName != nodeName || pod.Status.Phase != corev1.PodRunning {
+		return false
+	}
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 func objectMeta(namespace, name string) metav1.ObjectMeta {

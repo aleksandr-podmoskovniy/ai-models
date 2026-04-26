@@ -19,8 +19,10 @@ package nodecacheruntime
 import (
 	"context"
 	"log/slog"
+	"maps"
 
 	k8sadapters "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/nodecacheruntime"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -48,12 +50,41 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	if !r.options.MatchesNode(node) {
+		if err := r.setRuntimeReadyLabel(ctx, node, false); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, r.service.Delete(ctx, r.options.Namespace, node.Name)
 	}
 
-	if err := r.service.Apply(ctx, node, r.options.runtimeSpec(node.Name)); err != nil {
+	if err := r.service.Apply(ctx, node, r.options.runtimeSpec(node)); err != nil {
+		return ctrl.Result{}, err
+	}
+	ready, err := r.service.RuntimeReady(ctx, r.options.Namespace, node.Name)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.setRuntimeReadyLabel(ctx, node, ready); err != nil {
 		return ctrl.Result{}, err
 	}
 	r.logger.Info("node cache runtime reconciled", slog.String("nodeName", node.Name))
 	return ctrl.Result{}, nil
+}
+
+func (r *Reconciler) setRuntimeReadyLabel(ctx context.Context, node *corev1.Node, ready bool) error {
+	if node == nil {
+		return nil
+	}
+	before := node.DeepCopy()
+	if ready {
+		if node.Labels == nil {
+			node.Labels = map[string]string{}
+		}
+		node.Labels[nodecache.RuntimeReadyNodeLabelKey] = nodecache.RuntimeReadyNodeLabelValue
+	} else if len(node.Labels) > 0 {
+		delete(node.Labels, nodecache.RuntimeReadyNodeLabelKey)
+	}
+	if maps.Equal(before.Labels, node.Labels) {
+		return nil
+	}
+	return r.client.Patch(ctx, node, client.MergeFrom(before))
 }

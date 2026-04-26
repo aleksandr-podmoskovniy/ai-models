@@ -220,3 +220,50 @@ repo-local docs ещё не менялись.
 - временные `Model` с label `ai-models.deckhouse.io/live-validation=hf-publication`
   удалены;
 - временные publication Pods и state Secrets для live проверки отсутствуют.
+
+## 6. Continuation 2026-04-25: live acceptance после обновления
+
+Цель:
+
+- проверить, что в кластере действительно работает обновлённая версия модуля;
+- прогнать один bounded upload/publication сценарий по текущей схеме;
+- подтвердить отсутствие неожиданных рестартов `DMCR` при публикации,
+  delivery rollout и delete/cleanup;
+- проверить, что worker/job логи содержат полноценную операционную картину;
+- проверить RBAC-поведение для human-facing ролей без расширения доступа к
+  internal runtime objects.
+
+Scope:
+
+- live cluster objects only;
+- временный validation namespace и временная модель;
+- `DMCR`, controller, publication worker/source worker, cleanup job/pod logs;
+- `kubectl auth can-i`/RBAC evidence по live ClusterRole/Role fragments.
+
+Non-goals:
+
+- не менять repo code без отдельного slice;
+- не чинить внешние сервисы, если live прогон упрётся в cluster/storage issue;
+- не оставлять временные модели, PVC или debug Pods после проверки.
+
+Acceptance:
+
+- зафиксированы текущие controller/DMCR images, revisions и restart counters;
+- upload/publication дошёл до published artifact или место сбоя зафиксировано
+  с logs/events;
+- delivery rollout проверен до workload-visible state или место сбоя
+  зафиксировано;
+- delete/cleanup проверен с evidence по cleanup worker/job и без рестарта DMCR;
+- `dmcr` Pod restart counters до/после совпадают или каждый restart объяснён;
+- `worker/job` logs содержат source, bytes/digest/artifact/reason/status, а
+  неполные логи перечислены как доработка;
+- RBAC проверка подтверждает deny для `secrets`, `pods/exec`,
+  `pods/attach`, `pods/portforward`, `status/finalizers` и internal runtime
+  objects для module-local доступа.
+
+Проверки:
+
+- `kubectl get/describe/logs/events` по временным объектам;
+- `kubectl auth can-i` под выбранными service accounts/groups;
+- сравнение `dmcr` restart counters до/после;
+- cleanup временных объектов.

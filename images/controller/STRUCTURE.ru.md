@@ -3,8 +3,11 @@
 Этот документ фиксирует живую package map controller runtime и объясняет,
 почему границы именно такие.
 
-Это не file-by-file inventory и не historical migration log. Для slice history
-используются archived bundles; здесь остаётся только current-state architecture.
+Это не file-by-file inventory, не function inventory и не historical migration
+log. Для slice history используются archived bundles; здесь остаётся только
+current-state architecture. Если функция требует отдельного объяснения, это
+должно жить рядом с кодом как Go doc, именованный test case или короткий
+package-local comment, а не в этом документе.
 
 Если пакет нельзя защитить хотя бы по одному из оснований ниже, его не надо
 объяснять, его надо убрать:
@@ -36,6 +39,7 @@ images/controller/
   cmd/
     ai-models-controller/
     ai-models-artifact-runtime/
+    ai-models-node-cache-runtime/
   internal/
     bootstrap/
     cmdsupport/
@@ -68,6 +72,7 @@ images/controller/
     adapters/
       k8s/
         auditevent/
+        cleanupstate/
         directuploadstate/
         modeldelivery/
         nodecacheruntime/
@@ -94,7 +99,10 @@ images/controller/
       publishworker/
       uploadsession/
       artifactcleanup/
+      nodecachecsi/
+      nodecacheruntime/
     support/
+      archiveio/
       cleanuphandle/
       modelobject/
       resourcenames/
@@ -109,13 +117,17 @@ images/controller/
 - `README.md`, `STRUCTURE.ru.md`, `TEST_EVIDENCE.ru.md` остаются рядом с
   runtime tree.
 - `go.mod`, `go.sum`, `werf.inc.yaml` образуют image-local build boundary.
-- `cmd/ai-models-controller` и `cmd/ai-models-artifact-runtime` — два
-  execution entrypoint.
+- `cmd/ai-models-controller` — long-running controller manager.
+- `cmd/ai-models-artifact-runtime` — shared short-lived runtime shell for
+  `publish-worker`, `upload-session` / `upload-gateway`, `artifact-cleanup`
+  and `materialize-artifact`.
+- `cmd/ai-models-node-cache-runtime` — dedicated long-running node runtime
+  shell for the privileged node-cache image and kubelet-facing CSI service.
 - `cmd/` должен оставаться thin shell: env/argv parsing, exit codes, wiring
   into `internal/*`.
 - `ai-models-artifact-runtime` больше не экспонирует legacy shell вроде
-  `--snapshot-dir`; runtime contract режется по реальным current commands, а не
-  по старым migration paths.
+  `--snapshot-dir` или `node-cache-runtime`; runtime contract режется по
+  реальным current commands, а не по старым migration paths.
 
 ### Composition root и process glue
 
@@ -145,6 +157,8 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
 - `internal/application/sourceadmission/` — cheap preflight for `source.url`.
 - `internal/application/publishaudit/` — append-only audit planning.
 - `internal/application/deletion/` — delete-time policy seam.
+- Empty application placeholders are not boundaries. A new application package
+  appears only together with a real use-case contract and tests.
 
 Это use-case seams. Их нельзя растворять ни в controllers, ни в adapters.
 
@@ -168,8 +182,8 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
 - `internal/nodecache/` — shared node-local cache contract for digest-addressed
   shared store layout, ready markers, separate consumer
   materialization plus internal current-link и stable workload-model-link
-  helper surface, single-writer coordination, bounded eviction planning и
-  module-owned maintenance loop;
+  helper surface, single-writer coordination, per-digest retry/backoff,
+  bounded eviction planning и module-owned maintenance loop;
 - `internal/monitoring/catalogmetrics/` — Prometheus collectors over public
   `Model` / `ClusterModel` truth.
 - `internal/monitoring/runtimehealth/` — Prometheus collectors over managed
@@ -177,6 +191,9 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
   `PVC`, including selector-scoped desired/managed/ready summary signal and
   aggregated workload-delivery mode/reason counts over managed top-level
   workloads.
+- `cmd/ai-models-node-cache-runtime/` — dedicated thin executable shell for
+  the privileged node-cache CSI/runtime image; it must stay separate from the
+  shared publication/materialize runtime image.
 
 ### Controllers
 
@@ -184,6 +201,8 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
 - `catalogcleanup/` — delete/finalizer owner.
 - `nodecachesubstrate/` — owner controller for managed local storage substrate
   over `sds-node-configurator` / `sds-local-volume` CR boundaries.
+- `nodecacheruntime/` — owner controller for per-node runtime Pod/PVC,
+  runtime-readiness Node label and node-selection reconciliation.
 - `workloaddelivery/` — owner controller for top-level workload annotations
   `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel`.
 
@@ -195,6 +214,7 @@ package без нового owner — patchwork.
 `internal/adapters/k8s/*` держит concrete Kubernetes shaping и CRUD:
 
 - `sourceworker/`
+- `cleanupstate/`
 - `directuploadstate/`
 - `modeldelivery/`
 - `nodecacheruntime/`
@@ -237,7 +257,14 @@ Non-K8s adapters:
 - `k8s/nodecacheruntime/` держит только concrete shaping для stable per-node
   runtime Pod/PVC и bounded runtime-side вычитку набора опубликованных
   артефактов, реально нужных live Pod'ам на текущей ноде; cache maintenance
-  policy и public workload semantics не должны утекать туда;
+  policy и public workload semantics не должны утекать туда. Единственный
+  допустимый cross-adapter контракт здесь — narrow projection из
+  workload-delivery annotations в desired-artifact set для конкретной ноды; при
+  расширении этот контракт надо вынести в shared projection type, а не
+  наращивать adapter-to-adapter imports;
+- `k8s/cleanupstate/` держит только module-private Secret-backed cleanup state:
+  cleanup handle, completed marker and upload-stage handoff. Public status и
+  delete policy остаются в `application/deletion` и controller owner;
 - `k8s/directuploadstate/` держит только secret-backed checkpoint для
   direct-upload: owner-generation reset, persisted current-layer session state,
   committed-layer journal и terminal phase handoff; public progress/status
@@ -248,8 +275,9 @@ Non-K8s adapters:
   (`AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`,
   `AI_MODELS_MODEL_FAMILY`) через stable per-pod `/data/modelcache/model`
   projection или digest-специфичный shared-store path для shared PVC bridge
-  topology, отдельно от raw cache-root/current internals и отдельно от будущего
-  workload-facing node-shared cache mount service;
+  topology, а для managed SharedDirect — inline CSI volume attributes. Raw
+  cache-root/current internals остаются внутри `internal/nodecache` and CSI
+  runtime, не в workload mutation policy;
 - live `HuggingFace` publish path больше не держит локальный
   `workspace/model` fallback: canonical path — direct or mirrored object source,
   cluster-level default теперь `Direct`, planning failure explicit, а
@@ -263,9 +291,13 @@ Non-K8s adapters:
 - `internal/dataplane/publishworker/`
 - `internal/dataplane/uploadsession/`
 - `internal/dataplane/artifactcleanup/`
+- `internal/dataplane/nodecachecsi/`
+- `internal/dataplane/nodecacheruntime/`
 
-Это controller-owned one-shot runtimes. Их нельзя смешивать с reconciler code и
-нельзя откатывать назад в backend scripts.
+`publishworker`, `uploadsession` и `artifactcleanup` — controller-owned
+one-shot runtimes. `nodecachecsi` и `nodecacheruntime` — long-running node-local
+dataplane inside the dedicated node-cache runtime image. Оба типа dataplane
+нельзя смешивать с reconciler code и нельзя откатывать назад в backend scripts.
 
 Live rules для `publishworker`:
 
@@ -278,16 +310,30 @@ Live rules для `publishworker`:
   опирается на тот же package, а не собирает свою вторую cache semantics
   surface.
 
+Live rules для node-cache dataplane:
+
+- `nodecacheruntime` owns process wiring: env/argv parsing, logger setup, CSI
+  server start, desired-artifact loading, per-digest retry/backoff and
+  maintenance loop invocation;
+- `nodecachecsi` owns only CSI identity/node service and bind-mount semantics:
+  authorize requested digest, wait for ready digest, bind-mount read-only model
+  path into kubelet target and update last-used marker;
+- cache layout, ready markers, usage markers, eviction planning and
+  materialization coordination stay in `internal/nodecache`.
+
 ### Shared support
 
 - `cleanuphandle/`
+- `archiveio/`
 - `modelobject/`
 - `resourcenames/`
 - `testkit/`
 - `uploadsessiontoken/`
 
-`support/*` допустим только как shared helper layer. Если пакет решает policy,
-runtime semantics или status logic, это уже не support.
+`support/*` допустим только как shared helper layer. `archiveio` допустим здесь
+только как reusable archive/range-reader primitive for source inspection and
+extraction; если пакет решает policy, runtime semantics или status logic, это
+уже не support.
 
 ## 3. Test discipline
 
@@ -355,22 +401,12 @@ runtime semantics или status logic, это уже не support.
 - Не вводить второй persisted bus или второй lifecycle source of truth между
   controller, upload session и publish worker.
 
-## 5. Что надо удалять при следующем касании
-
-- `MERGE ON TOUCH` micro-files, которые держат только одну константу, одну
-  ошибку или один helper внутри уже понятной boundary.
-- `DELETE ON SIGHT` новые local request wrappers и owner wrappers поверх
-  shared contracts.
-- `DELETE ON SIGHT` misleading names, которые конфликтуют с live boundaries.
-- `DELETE ON SIGHT` новый controller package без нового owner.
-- `DELETE ON SIGHT` package-local inventories наподобие `BRANCH_MATRIX.ru.md`.
-
-## 6. Текущие hotspots
+## 5. Текущие hotspots
 
 ### `internal/controllers/catalogcleanup/`
 
 - Пакет тяжёлый по реальной причине:
-  delete lifecycle включает cleanup job, GC request и finalizer release.
+  delete lifecycle включает cleanup operation, GC request и finalizer release.
 - Рост сюда допустим только внутри того же owner.
 - Всё, что не является owner-level delete orchestration, надо выносить в
   `application/deletion`, `resourcenames` или concrete adapters.
@@ -394,12 +430,33 @@ runtime semantics или status logic, это уже не support.
   - publish invocation
   в один oversized `run.go`.
 
-## 7. Текущий вердикт
+### `internal/nodecache/`
 
-На `2026-04-18` controller/runtime tree уже соответствует live reset baseline:
+- Пакет стал durable shared contract для node-local cache и поэтому может быть
+  больше простого helper package.
+- Рост допустим только по двум осям:
+  - stable cache layout / marker / usage / eviction contract;
+  - runtime loop policy that is shared by materialize and node runtime.
+- CSI protocol details, K8s Pod discovery and controller scheduling policy сюда
+  переносить нельзя.
+
+### `internal/dataplane/nodecachecsi/`
+
+- Пакет должен оставаться kubelet-facing protocol adapter.
+- Он не должен читать Kubernetes API напрямую, решать placement или выбирать
+  source of truth для desired artifacts.
+- Любая логика выше `authorize -> ready digest -> bind mount` должна жить в
+  controller/runtime contract packages.
+
+## 6. Текущий вердикт
+
+Controller/runtime tree соответствует текущему runtime baseline:
 
 - native `ModelPack` publisher живёт в `modelpack/oci`;
 - `HF` и canonical upload paths выровнены на streaming/object-source semantics;
 - legacy backend/publication shell вычищен из live controller tree;
+- stable node-cache delivery split now has controller owner, K8s shaping
+  adapter, shared cache contract, dedicated node runtime process and CSI node
+  dataplane;
 - current documentation and test evidence должны обслуживать только этот
   baseline, а не transition history.

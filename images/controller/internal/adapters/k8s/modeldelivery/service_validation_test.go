@@ -110,26 +110,3 @@ func TestServiceRejectsAmbiguousCacheMountVolume(t *testing.T) {
 		t.Fatalf("unexpected error %v", err)
 	}
 }
-
-func TestServiceRejectsInvalidManagedCacheOptions(t *testing.T) {
-	t.Parallel()
-
-	scheme := testkit.NewScheme(t)
-	kubeClient := testkit.NewFakeClient(t, scheme, nil)
-
-	_, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
-		},
-		ManagedCache: ManagedCacheOptions{
-			Enabled:          true,
-			StorageClassName: "ai-models-node-cache",
-			VolumeSize:       "broken",
-		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
-	})
-	if err == nil || err.Error() != "runtime delivery managed cache volume size must be a valid quantity" {
-		t.Fatalf("unexpected error %v", err)
-	}
-}

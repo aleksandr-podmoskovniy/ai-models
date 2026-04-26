@@ -46,6 +46,10 @@ Current phase-2 slice implemented here:
   surfaces; long-running publish/materialize flows now emit stable step-boundary
   `info` progress events and optional `debug` detail for source selection,
   mirror/download, pack/push, remote inspect and shared-cache coordination;
+- `cmd/ai-models-node-cache-runtime/*` for the dedicated long-running
+  node-cache CSI/runtime entrypoint; the shared publication/materialize runtime
+  image no longer carries the node-cache command path used by managed runtime
+  Pods;
 - `internal/publicationartifact` for controller-owned publication runtime
   result payloads and OCI destination-reference policy; this is no longer the
   old misleading `artifactbackend` seam and no longer keeps a dead request
@@ -63,35 +67,43 @@ Current phase-2 slice implemented here:
   caller supplies direct-upload state, the adapter can continue interrupted
   raw-layer upload from persisted session state while the helper session is
   still alive, instead of depending only on one live worker process;
-- `internal/nodecache` for shared node-local cache contract reused by the
-  current `materialize-artifact` bridge and the new module-owned
-  node-cache runtime plane: digest-addressed shared store layout, ready marker
+- `internal/nodecache` for shared node-local cache contract reused by legacy
+  explicit-volume materialize bridge paths and the module-owned node-cache
+  runtime plane: digest-addressed shared store layout, ready marker
   parsing, separate consumer materialization plus internal current-link and
   stable workload-model-link helper contract, single-writer coordination,
-  access timestamp handling, desired-artifact prefetch into the shared store,
-  protected-digest-aware bounded cache scan/eviction planning, and runtime
-  maintenance loop;
+  access timestamp handling, desired-artifact prefetch into the shared store
+  with per-digest retry/backoff, protected-digest-aware bounded cache
+  scan/eviction planning, and runtime maintenance loop;
+- `internal/dataplane/nodecachecsi` for the kubelet-facing CSI node service
+  used by the node-cache runtime Pod: it exposes Identity/Node RPCs, validates
+  immutable artifact attributes, authorizes the requesting Pod through
+  `podInfoOnMount`, returns transient `Unavailable` while a digest is still
+  being prefetched, and read-only bind-mounts the ready digest store into the
+  kubelet target path;
 - `internal/adapters/k8s/modeldelivery` for reusable consumer-side
-  `PodTemplateSpec` mutation over `materialize-artifact`, fixed
-  `/data/modelcache` cache-root contract over user-provided storage or
-  ai-models-managed local generic ephemeral bridge volume,
-  topology-aware per-pod versus shared PVC bridge handling with RWX
-  single-writer cache-root coordination, and cross-namespace read-only DMCR
-  auth/CA projection into the runtime namespace plus one stable
-  workload-facing runtime env contract
+  `PodTemplateSpec` mutation over the workload-facing node-cache
+  `SharedDirect` inline CSI contract for managed workloads without an explicit
+  cache volume, plus legacy `materialize-artifact` mutation for explicit
+  workload-provided cache volumes; it keeps the fixed `/data/modelcache`
+  cache-root contract, topology-aware per-pod versus shared PVC bridge
+  handling where the legacy bridge is still explicit, and cross-namespace
+  read-only DMCR auth/CA projection only for paths that still materialize in
+  the workload namespace; the stable workload-facing runtime env contract is
   (`AI_MODELS_MODEL_PATH` / `AI_MODELS_MODEL_DIGEST` /
-  `AI_MODELS_MODEL_FAMILY`) that now projects either the stable
-  `/data/modelcache/model` entrypoint for per-pod delivery or a digest-scoped
-  shared-store path for shared PVC bridge topology instead of leaking raw
-  cache-root layout details into consumers;
+  `AI_MODELS_MODEL_FAMILY`) and managed `SharedDirect` now projects the stable
+  `/data/modelcache/model` entrypoint without leaking raw cache-root layout
+  details into consumers; managed `SharedDirect` also requires the dynamic
+  `ai.deckhouse.io/node-cache-runtime-ready=true` node label and keeps the
+  ai-models scheduling gate while no selected node has a ready runtime plane;
 - `internal/adapters/k8s/nodecacheruntime` for stable per-node Pod/PVC shaping
-  of the node-cache runtime plane plus runtime-side extraction of the
-  published artifacts required by live managed Pods on the same node only for
-  the future true shared-direct delivery mode;
+  of the node-cache runtime plane, Deckhouse-style CSI registration sidecar and
+  hostPath/socket wiring, plus runtime-side extraction of the published
+  artifacts required by live `SharedDirect` managed Pods on the same node;
 - `internal/adapters/k8s/nodecachesubstrate` for concrete
   `storage.deckhouse.io/v1alpha1` shaping of managed `LVMVolumeGroupSet`,
   ready managed `LVMVolumeGroup` filtering, and ai-models-owned
-  `LocalStorageClass` rendering for the forthcoming node-local cache runtime;
+  `LocalStorageClass` rendering for the node-local cache runtime;
 - `internal/controllers/workloaddelivery` for controller-owned adoption of
   annotated `Deployment` / `StatefulSet` / `DaemonSet` / `CronJob`
   workloads: its bounded admission hook adds an ai-models scheduling gate to
@@ -99,9 +111,11 @@ Current phase-2 slice implemented here:
   first rollout, then the controller
   resolves `Model` or `ClusterModel`, reuses the shared `k8s/modeldelivery`
   service, writes resolved artifact plus delivery mode/reason annotations onto
-  `PodTemplateSpec`, removes the scheduling gate in the same patch,
-  auto-injects a managed local bridge volume when
+  `PodTemplateSpec`, removes the scheduling gate only after the selected
+  runtime plane is ready for managed `SharedDirect`,
+  auto-injects the managed node-cache inline CSI `SharedDirect` volume when
   node-cache substrate is enabled and the workload did not bring a cache mount,
+  propagates the configured node-cache node selector into managed workloads,
   fail-closes when user-provided `/data/modelcache` storage topology is invalid
   instead of inventing a second storage contract,
   and keeps side-effecting registry Secret projection controller-driven instead
@@ -111,10 +125,9 @@ Current phase-2 slice implemented here:
 - `internal/controllers/nodecachesubstrate` for ai-models-owned managed local
   storage substrate: it keeps one `LVMVolumeGroupSet` plus one
   `LocalStorageClass` for node-local cache preparation and removes the need to
-  hand-create local-storage resources before the later cache runtime slice
-  lands; workload delivery can already reuse that storage class for managed
-  local bridge volumes, but node-shared cache semantics still remain outside
-  this controller;
+  hand-create local-storage resources for the node-cache runtime plane; the
+  controller stays limited to substrate ownership and does not mutate
+  workload templates directly;
 - `internal/controllers/nodecacheruntime` for controller-owned stable per-node
   runtime Pod/PVC ownership: it reconciles the node-cache agent only for the
   selected nodes and keeps runtime shaping separate from workload mutation and
@@ -123,13 +136,14 @@ Current phase-2 slice implemented here:
   controller-owned stable per-node Pod plus stable PVC over the ai-models-
   managed `LocalStorageClass`; that shared-store volume is sized by
   `nodeCache.sharedVolumeSize`, reads the published artifacts required by live
-  managed Pods on the current node only for the future true shared-direct
-  delivery mode, and
-  prefetches immutable artifacts into the shared node-local digest store
-  without treating materialize-bridge workloads as hidden consumers of that
-  plane, so
-  maintenance and prefetch already run on a node-owned storage surface that
-  can be reused by the next CSI-like slice without another ownership rewrite;
+  `SharedDirect` managed Pods on the current node, prefetches immutable
+  artifacts into the shared node-local digest store through the dedicated
+  `nodeCacheRuntime` distroless image, exposes the
+  `node-cache.ai-models.deckhouse.io` CSI socket through `node-driver-registrar`
+  and bind-mounts ready digest stores into workloads; module render also
+  publishes the workload-facing inline CSI driver identity, while
+  explicit-volume materialize bridge workloads remain outside the managed
+  SharedDirect desired-artifact set;
 - `internal/adapters/sourcefetch` for safe `HuggingFace` remote source fetch
   and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport, source mirror transfer, archive inspection and
@@ -278,7 +292,7 @@ Current phase-2 slice implemented here:
   publication, and final publication outcome without introducing a second
   lifecycle engine;
 - `internal/application/deletion` for delete-time finalizer policy and
-  package-local step decisions over cleanup-job progress and registry
+  package-local step decisions over cleanup operation progress and registry
   garbage-collection progress instead of hand-assembling the same
   `FinalizeDeleteDecision` payload shape in multiple branches;
 - `internal/monitoring/catalogmetrics` for module-owned Prometheus collectors
@@ -306,11 +320,11 @@ Current phase-2 slice implemented here:
   option/resource builders, not duplicate the same scheme and model fixtures in
   every controller package;
 - `internal/controllers/catalogcleanup` for minimal delete-only finalizer
-  controller path for `Model` / `ClusterModel`; it now owns cleanup Job
-  materialization and DMCR garbage-collection request lifecycle directly
-  because there is no second cleanup adapter and the old
-  `adapters/k8s/cleanupjob` package was only an unnecessary extra boundary;
-  cleanup job and GC request metadata now also reuse one package-local
+  controller path for `Model` / `ClusterModel`; it now owns cleanup operation
+  execution and DMCR garbage-collection request lifecycle directly because
+  there is no second cleanup adapter and per-delete Kubernetes Jobs do not
+  match the module runtime pattern;
+  cleanup state and GC request metadata now also reuse one package-local
   owner-label seam over shared `resourcenames` policy instead of duplicating
   raw label maps; delete apply prerequisites are now precomputed once per
   reconcile step, and finalizer release reuses the observed cleanup handle

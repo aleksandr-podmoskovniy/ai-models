@@ -55,8 +55,10 @@ func TestObserveFinalizeDeleteFlowUploadStagingSkipsGarbageCollectionLookup(t *t
 		t.Fatalf("SetOnObject() error = %v", err)
 	}
 
-	jobName := cleanupJobName(t, model)
-	reconciler, kubeClient := newModelReconciler(t, model, completedJob("d8-ai-models", jobName))
+	reconciler, kubeClient := newModelReconciler(t, model)
+	if err := reconciler.cleanupState.MarkCompleted(context.Background(), model); err != nil {
+		t.Fatalf("MarkCompleted() error = %v", err)
+	}
 	reconciler.client = failingGetClient{
 		Client:     kubeClient,
 		blockedKey: garbageCollectionRequestKey("d8-ai-models", model.GetUID()),
@@ -84,25 +86,25 @@ func TestNeedsGarbageCollectionObservation(t *testing.T) {
 	cases := []struct {
 		name    string
 		handle  cleanuphandle.Handle
-		job     deletionapp.CleanupJobState
+		state   deletionapp.CleanupOperationState
 		expects bool
 	}{
 		{
-			name:    "backend artifact waits for completed cleanup job",
+			name:    "backend artifact waits for completed cleanup",
 			handle:  backendHandle,
-			job:     deletionapp.CleanupJobStateComplete,
+			state:   deletionapp.CleanupOperationStateComplete,
 			expects: true,
 		},
 		{
-			name:    "backend artifact running job does not observe gc yet",
+			name:    "backend artifact missing cleanup does not observe gc yet",
 			handle:  backendHandle,
-			job:     deletionapp.CleanupJobStateRunning,
+			state:   deletionapp.CleanupOperationStateMissing,
 			expects: false,
 		},
 		{
 			name:    "upload staging never observes gc",
 			handle:  uploadHandle,
-			job:     deletionapp.CleanupJobStateComplete,
+			state:   deletionapp.CleanupOperationStateComplete,
 			expects: false,
 		},
 	}
@@ -112,7 +114,7 @@ func TestNeedsGarbageCollectionObservation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := needsGarbageCollectionObservation(tc.handle, tc.job); got != tc.expects {
+			if got := needsGarbageCollectionObservation(tc.handle, tc.state); got != tc.expects {
 				t.Fatalf("needsGarbageCollectionObservation() = %v, want %v", got, tc.expects)
 			}
 		})
@@ -137,10 +139,10 @@ func TestObserveFinalizeDeleteFlowBuildsRuntimeOnce(t *testing.T) {
 		t.Fatalf("unexpected owner kind %q", flow.runtime.owner.Kind)
 	}
 	if flow.decision != (deletionapp.FinalizeDeleteDecision{
-		CreateJob:     true,
+		RunCleanup:    true,
 		UpdateStatus:  true,
 		StatusReason:  "Pending",
-		StatusMessage: "cleanup job created and waiting for completion",
+		StatusMessage: "artifact cleanup operation is running",
 		Requeue:       true,
 	}) {
 		t.Fatalf("unexpected decision %#v", flow.decision)

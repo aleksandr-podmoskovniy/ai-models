@@ -14,6 +14,8 @@ global:
       mode: CertManager
       certManager:
         clusterIssuerName: letsencrypt
+    placement:
+      customTolerationKeys: []
   modulesImages:
     registry:
       base: dev-registry.deckhouse.io/sys/deckhouse-oss/modules/ai-models
@@ -21,15 +23,62 @@ global:
     digests:
       common:
         kubeRbacProxy: sha256:0000000000000000000000000000000000000000000000000000000000000000
+        csiNodeDriverRegistrar135: sha256:1111111111111111111111111111111111111111111111111111111111111111
       aiModels:
         controller: sha256:2222222222222222222222222222222222222222222222222222222222222222
         controllerRuntime: sha256:3333333333333333333333333333333333333333333333333333333333333333
+        nodeCacheRuntime: sha256:5555555555555555555555555555555555555555555555555555555555555555
         dmcr: sha256:4444444444444444444444444444444444444444444444444444444444444444
   discovery:
+    kubernetesVersion: "1.35.0"
     clusterDomain: cluster.local
+    clusterMasterCount: 3
+    d8SpecificNodeCountByRole:
+      aiModels: 0
+      master: 0
+      system: 0
   clusterConfiguration:
     clusterDomain: cluster.local
 aiModels:
+  internal:
+    rootCA:
+      ca: ""
+      crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tClRFU1QtUk9PVC1DQQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+      key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tClRFU1QtUk9PVC1LRVkKLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQo=
+    controller:
+      cert:
+        ca: |
+          -----BEGIN CERTIFICATE-----
+          TEST-CONTROLLER-CA
+          -----END CERTIFICATE-----
+        crt: |
+          -----BEGIN CERTIFICATE-----
+          TEST-CONTROLLER-CERT
+          -----END CERTIFICATE-----
+        key: |
+          -----BEGIN PRIVATE KEY-----
+          TEST-CONTROLLER-KEY
+          -----END PRIVATE KEY-----
+    dmcr:
+      auth:
+        writePassword: A1aFixtureWritePassword0000000000000000001
+        readPassword: A1aFixtureReadPassword0000000000000000002
+        writeHtpasswd: 'ai-models:$2y$05$po.eUP/BZTCyNDc0pqk5Teo5psAWh.SOTi7V1SYWMHa3F1Mjc.ylC'
+        readHtpasswd: 'ai-models-reader:$2y$05$0P7MggxkjSGxH8d6FJyyLOs7Me44l2tvADc0XhT9ZwYMdcpzZ4kXG'
+        salt: A1aFixtureSalt0000000000000000000000000000000000000000000000001
+      cert:
+        ca: |
+          -----BEGIN CERTIFICATE-----
+          TEST-DMCR-CA
+          -----END CERTIFICATE-----
+        crt: |
+          -----BEGIN CERTIFICATE-----
+          TEST-DMCR-CERT
+          -----END CERTIFICATE-----
+        key: |
+          -----BEGIN PRIVATE KEY-----
+          TEST-DMCR-KEY
+          -----END PRIVATE KEY-----
   artifacts:
     bucket: ai-models
     endpoint: https://s3.internal.local

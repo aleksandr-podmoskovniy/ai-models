@@ -2,27 +2,7 @@
 {{- $namespace := include "ai-models.namespace" . -}}
 {{- $serviceName := include "ai-models.controllerServiceName" . -}}
 {{- $tlsSecretName := include "ai-models.controllerWebhookTLSSecretName" . -}}
-{{- $existingTLSSecret := lookup "v1" "Secret" $namespace $tlsSecretName -}}
-{{- $existingTLSData := (get (default (dict) $existingTLSSecret) "data") | default dict -}}
-{{- $existingCACert := (get $existingTLSData "ca.crt" | default "" | b64dec) -}}
-{{- $existingCAKey := (get $existingTLSData "ca.key" | default "" | b64dec) -}}
-{{- $existingTLSCert := (get $existingTLSData "tls.crt" | default "" | b64dec) -}}
-{{- $existingTLSKey := (get $existingTLSData "tls.key" | default "" | b64dec) -}}
-{{- $serviceHost := printf "%s.%s.svc" $serviceName $namespace -}}
-{{- $alternateNames := list $serviceName (printf "%s.%s" $serviceName $namespace) $serviceHost -}}
-{{- $hasExistingBundle := and $existingCACert $existingCAKey $existingTLSCert $existingTLSKey -}}
-{{- $caCert := $existingCACert -}}
-{{- $caKey := $existingCAKey -}}
-{{- $tlsCert := $existingTLSCert -}}
-{{- $tlsKey := $existingTLSKey -}}
-{{- if not $hasExistingBundle -}}
-  {{- $generatedCA := genCA "ai-models-controller-webhook-ca" 3650 -}}
-  {{- $generatedTLS := genSignedCert $serviceHost nil $alternateNames 3650 $generatedCA -}}
-  {{- $caCert = $generatedCA.Cert -}}
-  {{- $caKey = $generatedCA.Key -}}
-  {{- $tlsCert = $generatedTLS.Cert -}}
-  {{- $tlsKey = $generatedTLS.Key -}}
-{{- end -}}
+{{- $cert := .Values.aiModels.internal.controller.cert -}}
 ---
 apiVersion: v1
 kind: Secret
@@ -30,16 +10,11 @@ metadata:
   name: {{ $tlsSecretName }}
   namespace: {{ $namespace }}
   {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "controller" "part" "webhook-tls")) | nindent 2 }}
-type: Opaque
-stringData:
-  ca.crt: |
-{{ $caCert | nindent 4 }}
-  ca.key: |
-{{ $caKey | nindent 4 }}
-  tls.crt: |
-{{ $tlsCert | nindent 4 }}
-  tls.key: |
-{{ $tlsKey | nindent 4 }}
+type: kubernetes.io/tls
+data:
+  ca.crt: {{ $cert.ca | b64enc }}
+  tls.crt: {{ $cert.crt | b64enc }}
+  tls.key: {{ $cert.key | b64enc }}
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
@@ -49,7 +24,7 @@ metadata:
 webhooks:
   - name: workloaddelivery.ai-models.deckhouse.io
     admissionReviewVersions: ["v1"]
-    failurePolicy: Ignore
+    failurePolicy: Fail
     matchPolicy: Equivalent
     matchConditions:
       - name: ai-models-workload-reference
@@ -63,7 +38,7 @@ webhooks:
         name: {{ $serviceName }}
         path: /mutate-ai-deckhouse-io-workload-delivery
         port: {{ include "ai-models.controllerWebhookPort" . | int }}
-      caBundle: {{ $caCert | b64enc | quote }}
+      caBundle: {{ $cert.ca | b64enc | quote }}
     rules:
       - apiGroups: ["apps"]
         apiVersions: ["v1"]

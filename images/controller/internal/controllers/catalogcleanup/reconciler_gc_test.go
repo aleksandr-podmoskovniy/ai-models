@@ -28,15 +28,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-func TestModelReconcilerEnqueuesGarbageCollectionRequestAndRemovesFinalizerAfterCompletedJob(t *testing.T) {
+func TestModelReconcilerEnqueuesGarbageCollectionRequestAndRemovesFinalizerAfterCompletedCleanup(t *testing.T) {
 	t.Parallel()
 
 	model := newDeletingModel()
 	setCleanupHandle(t, model, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef")
-	jobName := cleanupJobName(t, model)
 	const sessionToken = "session-token-1"
 	stateSecret := sourceWorkerStateSecretWithSessionToken(t, "d8-ai-models", model.GetUID(), sessionToken)
-	reconciler, kubeClient := newModelReconciler(t, model, completedJob("d8-ai-models", jobName), stateSecret)
+	cleaner := &recordingCleaner{}
+	reconciler, kubeClient := newModelReconcilerWithCleaner(t, cleaner, model, stateSecret)
+	if err := reconciler.cleanupState.MarkCompleted(context.Background(), model); err != nil {
+		t.Fatalf("MarkCompleted() error = %v", err)
+	}
 
 	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)})
 	if err != nil {
@@ -44,6 +47,9 @@ func TestModelReconcilerEnqueuesGarbageCollectionRequestAndRemovesFinalizerAfter
 	}
 	if result != (ctrl.Result{}) {
 		t.Fatalf("unexpected result %#v", result)
+	}
+	if got := len(cleaner.calls); got != 0 {
+		t.Fatalf("completed cleanup was repeated %d time(s)", got)
 	}
 
 	var updated modelsv1alpha1.Model
@@ -80,9 +86,12 @@ func TestModelReconcilerRemovesFinalizerWhenQueuedGarbageCollectionRequestAlread
 
 	model := newDeletingModel()
 	setCleanupHandle(t, model, "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1@sha256:deadbeef")
-	jobName := cleanupJobName(t, model)
 	gcSecret := requestedGCSecret("d8-ai-models", model.GetUID())
-	reconciler, kubeClient := newModelReconciler(t, model, completedJob("d8-ai-models", jobName), gcSecret)
+	cleaner := &recordingCleaner{}
+	reconciler, kubeClient := newModelReconcilerWithCleaner(t, cleaner, model, gcSecret)
+	if err := reconciler.cleanupState.MarkCompleted(context.Background(), model); err != nil {
+		t.Fatalf("MarkCompleted() error = %v", err)
+	}
 
 	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)})
 	if err != nil {
@@ -90,6 +99,9 @@ func TestModelReconcilerRemovesFinalizerWhenQueuedGarbageCollectionRequestAlread
 	}
 	if result != (ctrl.Result{}) {
 		t.Fatalf("unexpected result %#v", result)
+	}
+	if got := len(cleaner.calls); got != 0 {
+		t.Fatalf("completed cleanup was repeated %d time(s)", got)
 	}
 
 	var updated modelsv1alpha1.Model

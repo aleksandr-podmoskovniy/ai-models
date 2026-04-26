@@ -35,7 +35,6 @@ const (
 	uploadSessionSecretPrefix      = "ai-model-upload-auth-"
 	uploadSessionTokenSecretPrefix = "ai-model-upload-token-"
 	cleanupHandleSecretPrefix      = "ai-model-cleanup-state-"
-	cleanupJobPrefix               = "ai-model-cleanup-"
 	uploadStagingPrefix            = "raw"
 
 	AppNameLabelKey        = "app.kubernetes.io/name"
@@ -132,10 +131,6 @@ func UploadSessionTokenSecretName(uid types.UID) (string, error) {
 
 func CleanupHandleSecretName(uid types.UID) (string, error) {
 	return PrefixedName(cleanupHandleSecretPrefix, uid)
-}
-
-func CleanupJobName(uid types.UID) (string, error) {
-	return PrefixedName(cleanupJobPrefix, uid)
 }
 
 func UploadStagingObjectPrefix(uid types.UID) (string, error) {

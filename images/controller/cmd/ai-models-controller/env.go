@@ -16,21 +16,10 @@ limitations under the License.
 
 package main
 
-import (
-	"strings"
-
-	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
-	corev1 "k8s.io/api/core/v1"
-)
-
 const (
 	logFormatEnv                              = "LOG_FORMAT"
 	logLevelEnv                               = "LOG_LEVEL"
-	cleanupJobImageEnv                        = "CLEANUP_JOB_IMAGE"
-	cleanupJobImagePullSecretEnv              = "CLEANUP_JOB_IMAGE_PULL_SECRET_NAME"
-	cleanupJobNamespaceEnv                    = "CLEANUP_JOB_NAMESPACE"
-	cleanupJobServiceAccountEnv               = "CLEANUP_JOB_SERVICE_ACCOUNT"
-	cleanupJobEnvPassThroughEnv               = "CLEANUP_JOB_ENV_PASS_THROUGH"
+	cleanupNamespaceEnv                       = "CLEANUP_NAMESPACE"
 	publicationWorkerImageEnv                 = "PUBLICATION_WORKER_IMAGE"
 	publicationWorkerImagePullSecretEnv       = "PUBLICATION_WORKER_IMAGE_PULL_SECRET_NAME"
 	workloadDeliveryRuntimeImagePullSecretEnv = "WORKLOAD_DELIVERY_RUNTIME_IMAGE_PULL_SECRET_NAME"
@@ -57,9 +46,10 @@ const (
 	artifactsCredentialsSecretEnv             = "ARTIFACTS_CREDENTIALS_SECRET_NAME"
 	artifactsCASecretEnv                      = "ARTIFACTS_CA_SECRET_NAME"
 	nodeCacheEnabledEnv                       = "NODE_CACHE_ENABLED"
+	nodeCacheRuntimeImageEnv                  = "NODE_CACHE_RUNTIME_IMAGE"
+	nodeCacheCSIRegistrarImageEnv             = "NODE_CACHE_CSI_REGISTRAR_IMAGE"
 	nodeCacheMaxSizeEnv                       = "NODE_CACHE_MAX_SIZE"
 	nodeCacheSharedVolumeSizeEnv              = "NODE_CACHE_SHARED_VOLUME_SIZE"
-	nodeCacheFallbackVolumeSizeEnv            = "NODE_CACHE_FALLBACK_VOLUME_SIZE"
 	nodeCacheStorageClassNameEnv              = "NODE_CACHE_STORAGE_CLASS_NAME"
 	nodeCacheVolumeGroupSetNameEnv            = "NODE_CACHE_VOLUME_GROUP_SET_NAME"
 	nodeCacheVGNameOnNodeEnv                  = "NODE_CACHE_VOLUME_GROUP_NAME_ON_NODE"
@@ -75,8 +65,6 @@ const (
 	leaderElectionNamespaceEnv                = "LEADER_ELECTION_NAMESPACE"
 )
 
-const defaultCleanupPassThrough = "LOG_FORMAT,LOG_LEVEL,SSL_CERT_FILE,REQUESTS_CA_BUNDLE,AWS_CA_BUNDLE"
-
 const (
 	defaultPublicationMaxConcurrentWorkers = 4
 	defaultPublicationWorkerCPURequest     = "1"
@@ -86,23 +74,3 @@ const (
 	defaultPublicationWorkerEphemeralReq   = "1Gi"
 	defaultPublicationWorkerEphemeralLimit = "1Gi"
 )
-
-func cleanupJobEnv(passThrough, logFormat, logLevel string) []corev1.EnvVar {
-	env := cmdsupport.PassThroughEnv(passThrough)
-	env = upsertEnvValue(env, logFormatEnv, logFormat)
-	env = upsertEnvValue(env, logLevelEnv, logLevel)
-	return env
-}
-
-func upsertEnvValue(env []corev1.EnvVar, name, value string) []corev1.EnvVar {
-	if strings.TrimSpace(value) == "" {
-		return env
-	}
-	for index := range env {
-		if env[index].Name == name {
-			env[index].Value = value
-			return env
-		}
-	}
-	return append(env, corev1.EnvVar{Name: name, Value: value})
-}

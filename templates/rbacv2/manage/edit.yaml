@@ -15,7 +15,7 @@ metadata:
 rules:
   - apiGroups: ["ai.deckhouse.io"]
     resources: ["models", "clustermodels"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
   - apiGroups: ["deckhouse.io"]
     resources: ["moduleconfigs"]
     resourceNames: ["ai-models"]

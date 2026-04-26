@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
@@ -57,12 +58,12 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	t.Parallel()
 
 	config := managerConfig{
-		LogFormat:                     "json",
-		LogLevel:                      "debug",
-		CleanupJobImage:               "example.com/controller-runtime:dev",
-		CleanupJobImagePullSecretName: "module-registry",
-		CleanupJobNamespace:           "d8-ai-models",
-		PublicationWorkerNamespace:    "d8-ai-models",
+		LogFormat:                                  "json",
+		LogLevel:                                   "debug",
+		CleanupNamespace:                           "d8-ai-models",
+		PublicationWorkerImage:                     "example.com/controller-runtime:dev",
+		PublicationWorkerImagePullSecretName:       "module-registry",
+		PublicationWorkerNamespace:                 "d8-ai-models",
 		WorkloadDeliveryRuntimeImagePullSecretName: "workload-runtime-pull",
 		PublicationOCICASecretName:                 "ai-models-dmcr-ca",
 		PublicationOCIInsecure:                     false,
@@ -73,8 +74,10 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 		ArtifactsS3Region:                          "test",
 		ArtifactsCredentialsSecretName:             "artifacts-credentials",
 		NodeCacheEnabled:                           true,
+		NodeCacheRuntimeImage:                      "example.com/node-cache-runtime:dev",
+		NodeCacheCSIRegistrarImage:                 "registry.example.test/csi-node-driver-registrar@sha256:aaaa",
 		NodeCacheMaxSize:                           "200Gi",
-		NodeCacheFallbackVolumeSize:                "32Gi",
+		NodeCacheSharedVolumeSize:                  "64Gi",
 		NodeCacheStorageClassName:                  "ai-models-node-cache",
 		NodeCacheVolumeGroupSetName:                "ai-models-node-cache",
 		NodeCacheVolumeGroupNameOnNode:             "ai-models-cache",
@@ -85,7 +88,7 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 
 	options := config.bootstrapOptions(corev1.ResourceRequirements{})
 
-	if got, want := options.WorkloadDelivery.Service.Render.RuntimeImage, config.CleanupJobImage; got != want {
+	if got, want := options.WorkloadDelivery.Service.Render.RuntimeImage, config.PublicationWorkerImage; got != want {
 		t.Fatalf("delivery runtime image = %q, want %q", got, want)
 	}
 	if got, want := options.WorkloadDelivery.Service.Render.LogLevel, config.LogLevel; got != want {
@@ -97,11 +100,11 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	if got, want := options.WorkloadDelivery.Service.ManagedCache.Enabled, config.NodeCacheEnabled; got != want {
 		t.Fatalf("delivery managed cache enabled = %t, want %t", got, want)
 	}
-	if got, want := options.WorkloadDelivery.Service.ManagedCache.StorageClassName, config.NodeCacheStorageClassName; got != want {
-		t.Fatalf("delivery managed cache storage class name = %q, want %q", got, want)
+	if got, want := options.WorkloadDelivery.Service.ManagedCache.NodeSelector["node-role.kubernetes.io/worker"], ""; got != want {
+		t.Fatalf("delivery managed cache node selector = %q, want %q", got, want)
 	}
-	if got, want := options.WorkloadDelivery.Service.ManagedCache.VolumeSize, config.NodeCacheFallbackVolumeSize; got != want {
-		t.Fatalf("delivery managed cache volume size = %q, want %q", got, want)
+	if got, want := options.WorkloadDelivery.Service.ManagedCache.NodeSelector["ai.deckhouse.io/node-cache-runtime-ready"], "true"; got != want {
+		t.Fatalf("delivery managed cache ready selector = %q, want %q", got, want)
 	}
 	if got, want := options.WorkloadDelivery.Service.RegistrySourceNamespace, config.PublicationWorkerNamespace; got != want {
 		t.Fatalf("delivery source namespace = %q, want %q", got, want)
@@ -133,6 +136,15 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	if got, want := options.NodeCacheSubstrate.ThinPoolName, config.NodeCacheThinPoolName; got != want {
 		t.Fatalf("node cache thin pool name = %q, want %q", got, want)
 	}
+	if got, want := options.NodeCacheRuntime.CSIRegistrarImage, config.NodeCacheCSIRegistrarImage; got != want {
+		t.Fatalf("node cache CSI registrar image = %q, want %q", got, want)
+	}
+	if got, want := options.NodeCacheRuntime.RuntimeImage, config.NodeCacheRuntimeImage; got != want {
+		t.Fatalf("node cache runtime image = %q, want %q", got, want)
+	}
+	if got, want := options.NodeCacheRuntime.MaxTotalSize, config.NodeCacheSharedVolumeSize; got != want {
+		t.Fatalf("node cache runtime max total size = %q, want %q", got, want)
+	}
 }
 
 func TestParseManagerConfigRejectsInvalidNodeCacheSelectors(t *testing.T) {
@@ -146,6 +158,121 @@ func TestParseManagerConfigRejectsInvalidNodeCacheSelectors(t *testing.T) {
 	}
 	if exitCode != 2 {
 		t.Fatalf("parseManagerConfig() exitCode = %d, want 2", exitCode)
+	}
+}
+
+func TestParseManagerConfigRejectsEmptyCSIRegistrarImageWhenNodeCacheEnabled(t *testing.T) {
+	t.Parallel()
+
+	_, exitCode, err := parseManagerConfig([]string{
+		"--node-cache-enabled=true",
+		"--node-cache-runtime-image=example.com/node-cache-runtime:dev",
+		`--node-cache-node-selector-json={"node-role.kubernetes.io/worker":""}`,
+		`--node-cache-block-device-selector-json={"status.blockdevice.storage.deckhouse.io/model":"nvme"}`,
+	})
+	if err == nil {
+		t.Fatal("parseManagerConfig() error = nil, want error")
+	}
+	if exitCode != 2 {
+		t.Fatalf("parseManagerConfig() exitCode = %d, want 2", exitCode)
+	}
+	if !strings.Contains(err.Error(), "node-cache-csi-registrar-image must not be empty when node cache is enabled") {
+		t.Fatalf("parseManagerConfig() error = %q", err.Error())
+	}
+}
+
+func TestParseManagerConfigRejectsEmptyNodeCacheRuntimeImageWhenNodeCacheEnabled(t *testing.T) {
+	t.Parallel()
+
+	_, exitCode, err := parseManagerConfig([]string{
+		"--node-cache-enabled=true",
+		"--node-cache-csi-registrar-image=registry.example.test/csi-node-driver-registrar@sha256:aaaa",
+		`--node-cache-node-selector-json={"node-role.kubernetes.io/worker":""}`,
+		`--node-cache-block-device-selector-json={"status.blockdevice.storage.deckhouse.io/model":"nvme"}`,
+	})
+	if err == nil {
+		t.Fatal("parseManagerConfig() error = nil, want error")
+	}
+	if exitCode != 2 {
+		t.Fatalf("parseManagerConfig() exitCode = %d, want 2", exitCode)
+	}
+	if !strings.Contains(err.Error(), "node-cache-runtime-image must not be empty when node cache is enabled") {
+		t.Fatalf("parseManagerConfig() error = %q", err.Error())
+	}
+}
+
+func TestParseManagerConfigRejectsNodeCacheSharedVolumeGreaterThanMaxSize(t *testing.T) {
+	t.Parallel()
+
+	_, exitCode, err := parseManagerConfig([]string{
+		"--node-cache-enabled=true",
+		"--node-cache-runtime-image=example.com/node-cache-runtime:dev",
+		"--node-cache-csi-registrar-image=registry.example.test/csi-node-driver-registrar@sha256:aaaa",
+		"--node-cache-max-size=64Gi",
+		"--node-cache-shared-volume-size=65Gi",
+		`--node-cache-node-selector-json={"node-role.kubernetes.io/worker":""}`,
+		`--node-cache-block-device-selector-json={"status.blockdevice.storage.deckhouse.io/model":"nvme"}`,
+	})
+	if err == nil {
+		t.Fatal("parseManagerConfig() error = nil, want error")
+	}
+	if exitCode != 2 {
+		t.Fatalf("parseManagerConfig() exitCode = %d, want 2", exitCode)
+	}
+	if !strings.Contains(err.Error(), "node-cache-shared-volume-size must not exceed node-cache-max-size") {
+		t.Fatalf("parseManagerConfig() error = %q", err.Error())
+	}
+}
+
+func TestParseManagerConfigRejectsEmptyNodeCacheSelectorsWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "default selectors",
+			args:    []string{"--node-cache-enabled=true"},
+			wantErr: "node-cache-node-selector-json must not be empty when node cache is enabled",
+		},
+		{
+			name: "empty node selector",
+			args: []string{
+				"--node-cache-enabled=true",
+				"--node-cache-node-selector-json={}",
+				`--node-cache-block-device-selector-json={"status.blockdevice.storage.deckhouse.io/model":"nvme"}`,
+			},
+			wantErr: "node-cache-node-selector-json must not be empty when node cache is enabled",
+		},
+		{
+			name: "empty block device selector",
+			args: []string{
+				"--node-cache-enabled=true",
+				`--node-cache-node-selector-json={"node-role.kubernetes.io/worker":""}`,
+				"--node-cache-block-device-selector-json={}",
+			},
+			wantErr: "node-cache-block-device-selector-json must not be empty when node cache is enabled",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, exitCode, err := parseManagerConfig(tt.args)
+			if err == nil {
+				t.Fatal("parseManagerConfig() error = nil, want error")
+			}
+			if exitCode != 2 {
+				t.Fatalf("parseManagerConfig() exitCode = %d, want 2", exitCode)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("parseManagerConfig() error = %q, want substring %q", err.Error(), tt.wantErr)
+			}
+		})
 	}
 }
 

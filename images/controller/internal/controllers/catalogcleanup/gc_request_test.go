@@ -30,7 +30,7 @@ import (
 func TestBuildDMCRGCRequestSecretIncludesSharedOwnerLabels(t *testing.T) {
 	t.Parallel()
 
-	secret := buildDMCRGCRequestSecret("d8-ai-models", cleanupJobOwner{
+	secret := buildDMCRGCRequestSecret("d8-ai-models", cleanupOwner{
 		UID:       types.UID("1111-2222"),
 		Kind:      "Model",
 		Name:      "deepseek-r1",
@@ -52,6 +52,9 @@ func TestBuildDMCRGCRequestSecretIncludesSharedOwnerLabels(t *testing.T) {
 	if secret.Annotations[dmcrGCRequestedAnnotationKey] == "" {
 		t.Fatal("expected queued-request annotation on garbage-collection request secret")
 	}
+	if got, want := secret.Annotations[dmcrGCPhaseAnnotationKey], dmcrGCPhaseQueued; got != want {
+		t.Fatalf("expected queued phase annotation %q, got %q", want, got)
+	}
 	if secret.Annotations[dmcrGCSwitchAnnotationKey] != "" {
 		t.Fatalf("expected delete-triggered request to stay queued, got %#v", secret.Annotations)
 	}
@@ -64,7 +67,7 @@ func TestEnsureGarbageCollectionRequestRefreshesMetadataOnExistingSecret(t *test
 	t.Parallel()
 
 	model := newDeletingModel()
-	owner := cleanupJobOwner{
+	owner := cleanupOwner{
 		UID:       model.GetUID(),
 		Kind:      "Model",
 		Name:      "deepseek-r1",
@@ -109,6 +112,9 @@ func TestEnsureGarbageCollectionRequestRefreshesMetadataOnExistingSecret(t *test
 	if updated.Annotations[dmcrGCRequestedAnnotationKey] == "" {
 		t.Fatalf("expected queued-request annotation to be set, got %#v", updated.Annotations)
 	}
+	if got, want := updated.Annotations[dmcrGCPhaseAnnotationKey], dmcrGCPhaseQueued; got != want {
+		t.Fatalf("expected queued phase annotation %q, got %q", want, got)
+	}
 	if updated.Annotations[dmcrGCSwitchAnnotationKey] != "" {
 		t.Fatalf("expected refreshed request to stay queued, got %#v", updated.Annotations)
 	}
@@ -124,7 +130,7 @@ func TestEnsureGarbageCollectionRequestSnapshotsCurrentDirectUploadSessionToken(
 	t.Parallel()
 
 	model := newDeletingModel()
-	owner := cleanupJobOwner{
+	owner := cleanupOwner{
 		UID:       model.GetUID(),
 		Kind:      "Model",
 		Name:      "deepseek-r1",

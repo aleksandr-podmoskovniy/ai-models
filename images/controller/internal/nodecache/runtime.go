@@ -38,7 +38,8 @@ func RunRuntimeLoop(ctx context.Context, options RuntimeOptions, loader DesiredA
 	if err := ValidateMaintenanceOptions(options.Maintenance); err != nil {
 		return err
 	}
-	if err := runRuntimeCycle(ctx, options, loader, prefetch); err != nil {
+	retryState := NewPrefetchRetryState(PrefetchRetryOptions{})
+	if err := runRuntimeCycleWithRetry(ctx, options, loader, prefetch, retryState); err != nil {
 		return err
 	}
 
@@ -50,7 +51,7 @@ func RunRuntimeLoop(ctx context.Context, options RuntimeOptions, loader DesiredA
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := runRuntimeCycle(ctx, options, loader, prefetch); err != nil {
+			if err := runRuntimeCycleWithRetry(ctx, options, loader, prefetch, retryState); err != nil {
 				return err
 			}
 		}
@@ -58,11 +59,15 @@ func RunRuntimeLoop(ctx context.Context, options RuntimeOptions, loader DesiredA
 }
 
 func runRuntimeCycle(ctx context.Context, options RuntimeOptions, loader DesiredArtifactLoader, prefetch PrefetchFunc) error {
+	return runRuntimeCycleWithRetry(ctx, options, loader, prefetch, NewPrefetchRetryState(PrefetchRetryOptions{}))
+}
+
+func runRuntimeCycleWithRetry(ctx context.Context, options RuntimeOptions, loader DesiredArtifactLoader, prefetch PrefetchFunc, retryState *PrefetchRetryState) error {
 	artifacts, err := loader.LoadDesiredArtifacts(ctx)
 	if err != nil {
 		return err
 	}
-	if err := EnsureDesiredArtifacts(ctx, options.Maintenance.CacheRoot, artifacts, prefetch); err != nil {
+	if err := EnsureDesiredArtifactsWithRetry(ctx, options.Maintenance.CacheRoot, artifacts, prefetch, retryState); err != nil {
 		return err
 	}
 

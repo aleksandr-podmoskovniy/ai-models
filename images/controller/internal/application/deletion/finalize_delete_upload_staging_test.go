@@ -32,57 +32,27 @@ func TestFinalizeDeleteUploadStagingLifecycle(t *testing.T) {
 		assert func(t *testing.T, got FinalizeDeleteDecision)
 	}{
 		{
-			name: "upload staging missing job creates cleanup job",
+			name: "upload staging missing cleanup runs operation",
 			input: FinalizeDeleteInput{
 				HasFinalizer: true,
 				HandleFound:  true,
 				HandleKind:   cleanuphandle.KindUploadStaging,
-				JobState:     CleanupJobStateMissing,
+				CleanupState: CleanupOperationStateMissing,
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
-				if !got.CreateJob || !got.UpdateStatus || !got.Requeue {
+				if !got.RunCleanup || !got.UpdateStatus || !got.Requeue {
 					t.Fatalf("unexpected decision %#v", got)
 				}
 			},
 		},
 		{
-			name: "upload staging running job requeues",
+			name: "upload staging completed cleanup removes finalizer",
 			input: FinalizeDeleteInput{
 				HasFinalizer: true,
 				HandleFound:  true,
 				HandleKind:   cleanuphandle.KindUploadStaging,
-				JobState:     CleanupJobStateRunning,
-			},
-			assert: func(t *testing.T, got FinalizeDeleteDecision) {
-				t.Helper()
-				if got.CreateJob || !got.UpdateStatus || !got.Requeue {
-					t.Fatalf("unexpected decision %#v", got)
-				}
-			},
-		},
-		{
-			name: "upload staging failed job fails closed",
-			input: FinalizeDeleteInput{
-				HasFinalizer: true,
-				HandleFound:  true,
-				HandleKind:   cleanuphandle.KindUploadStaging,
-				JobState:     CleanupJobStateFailed,
-			},
-			assert: func(t *testing.T, got FinalizeDeleteDecision) {
-				t.Helper()
-				if !got.UpdateStatus || got.StatusReason != modelsv1alpha1.ModelConditionReasonFailed || !got.Requeue {
-					t.Fatalf("unexpected decision %#v", got)
-				}
-			},
-		},
-		{
-			name: "upload staging completed job removes finalizer",
-			input: FinalizeDeleteInput{
-				HasFinalizer: true,
-				HandleFound:  true,
-				HandleKind:   cleanuphandle.KindUploadStaging,
-				JobState:     CleanupJobStateComplete,
+				CleanupState: CleanupOperationStateComplete,
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()
@@ -92,12 +62,12 @@ func TestFinalizeDeleteUploadStagingLifecycle(t *testing.T) {
 			},
 		},
 		{
-			name: "upload staging unknown job state fails closed",
+			name: "upload staging unknown cleanup state fails closed",
 			input: FinalizeDeleteInput{
 				HasFinalizer: true,
 				HandleFound:  true,
 				HandleKind:   cleanuphandle.KindUploadStaging,
-				JobState:     CleanupJobState("Unknown"),
+				CleanupState: CleanupOperationState("Unknown"),
 			},
 			assert: func(t *testing.T, got FinalizeDeleteDecision) {
 				t.Helper()

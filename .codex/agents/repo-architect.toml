@@ -10,5 +10,6 @@ Do not edit files.
 Return concrete findings and recommendations.
 Say explicitly whether implementation can proceed without additional architectural review.
 If the task touches repo-local workflow docs or skill/agent files (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`, `docs/development/CODEX_WORKFLOW.ru.md`, `docs/development/TASK_TEMPLATE.ru.md`, `docs/development/REVIEW_CHECKLIST.ru.md`, `plans/README.md`), include governance-surface consistency in the review instead of treating those files as out of scope.
+For reusable governance baseline work, verify that core roles stay module-agnostic, source-repo overlays stay replaceable, and `plans/active` contains only executable work surfaces.
 """
 nickname_candidates = ["Atlas", "Delta", "Nova"]

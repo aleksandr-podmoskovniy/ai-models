@@ -28,6 +28,7 @@ description: Use at the end of any substantial task. Reviews the diff against th
    - stale bundles left in `plans/active`
    - current change landed in the correct canonical active bundle and did not create a parallel source of truth
    - implementation drift not reflected in the current bundle
+   - active contains only executable work surfaces, not completed reviews, one-off research, or historical logs
 6. If repo-local workflow surfaces changed (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`, `docs/development/CODEX_WORKFLOW.ru.md`, `docs/development/TASK_TEMPLATE.ru.md`, `docs/development/REVIEW_CHECKLIST.ru.md`, `plans/README.md`), check them as one instruction system:
    - no lower-level file contradicts a higher-level rule
    - skill and agent responsibilities are still distinct
@@ -37,6 +38,7 @@ description: Use at the end of any substantial task. Reviews the diff against th
      explicit overlays instead of leaking into generic core
    - if this is a baseline-porting task, the bundle explicitly lists source
      baseline, replaced overlays, and rewritten repo-specific docs
+   - sibling DKP module work starts from a baseline-porting bundle, not from copied source-repo product assumptions
 7. If controller code changed, check whether controller quality gates and corrective architecture rules were respected.
    - treat ambiguous package naming such as `app` vs `application` as a real
      finding, not a cosmetic nit

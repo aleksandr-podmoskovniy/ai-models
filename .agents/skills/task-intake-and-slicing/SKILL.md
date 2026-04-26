@@ -48,9 +48,11 @@ description: Use first for any non-trivial request. Converts a human request int
    - copied reusable core
    - overlays to replace or remove
    - repo docs that must be rewritten before the first product slice
-15. If the task defines durable project discipline, encode it in repo-local skills or skill references instead of leaving it only in the current bundle.
-16. Avoid duplicate active slugs for the same workstream, reuse the current canonical active bundle when the request is a continuation, and archive stale/finished or oversized active bundles when active context drifts.
-17. Save the result in `plans/active/<slug>/TASK.ru.md` and `plans/active/<slug>/PLAN.ru.md`.
+15. For sibling DKP module work, open a baseline-porting bundle first; do not begin a product/runtime slice until the target repo has replaced source-specific overlays and rewritten repo-specific docs.
+16. Before creating a new active bundle, inspect `plans/active`: active contains only executable work surfaces, not completed reviews, one-off research, or historical logs.
+17. If the task defines durable project discipline, encode it in repo-local skills or skill references instead of leaving it only in the current bundle.
+18. Avoid duplicate active slugs for the same workstream, reuse the current canonical active bundle when the request is a continuation, and archive stale/finished or oversized active bundles when active context drifts.
+19. Save the result in `plans/active/<slug>/TASK.ru.md` and `plans/active/<slug>/PLAN.ru.md`.
 
 ## Output
 

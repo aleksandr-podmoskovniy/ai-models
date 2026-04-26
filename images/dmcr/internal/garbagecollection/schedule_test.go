@@ -63,6 +63,9 @@ func TestEnsureScheduledRequestCreatesOrUpdatesSecret(t *testing.T) {
 	if got, want := secret.Annotations[RequestQueuedAtAnnotationKey], queuedAt.Format(time.RFC3339Nano); got != want {
 		t.Fatalf("queued annotation = %q, want %q", got, want)
 	}
+	if got, want := secret.Annotations[phaseAnnotationKey], phaseQueued; got != want {
+		t.Fatalf("phase annotation = %q, want %q", got, want)
+	}
 }
 
 func TestMaybeEnqueueStartupBackfillRequestQueuesWhenStale(t *testing.T) {
@@ -107,6 +110,9 @@ func TestMaybeEnqueueStartupBackfillRequestQueuesWhenStale(t *testing.T) {
 	}
 	if got, want := secret.Annotations[RequestQueuedAtAnnotationKey], queuedAt.Format(time.RFC3339Nano); got != want {
 		t.Fatalf("queued annotation = %q, want %q", got, want)
+	}
+	if got, want := secret.Annotations[phaseAnnotationKey], phaseQueued; got != want {
+		t.Fatalf("phase annotation = %q, want %q", got, want)
 	}
 
 	if err := maybeEnqueueStartupBackfillRequest(context.Background(), client, options, planner, queuedAt.Add(time.Minute)); err != nil {

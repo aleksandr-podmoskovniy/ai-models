@@ -23,6 +23,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -177,6 +178,72 @@ func TestDesiredArtifactsClientRejectsIncompleteTrueSharedDirectAnnotationsOnTar
 	}
 }
 
+func TestDesiredArtifactsClientAllowsCSIPublishOnlyForRequestingManagedPod(t *testing.T) {
+	t.Parallel()
+
+	pod := managedPod("runtime-a", "worker-a", corev1.PodPending, string(modeldelivery.DeliveryModeSharedDirect), string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane), "oci://example/model-a", "sha256:a")
+	pod.UID = types.UID("pod-a")
+	client, err := NewDesiredArtifactsClient(fake.NewSimpleClientset(pod))
+	if err != nil {
+		t.Fatalf("NewDesiredArtifactsClient() error = %v", err)
+	}
+
+	allowed, err := client.AllowCSIPublish(context.Background(), "worker-a", map[string]string{
+		csiPodNameAttribute:      "runtime-a",
+		csiPodNamespaceAttribute: "team-a",
+		csiPodUIDAttribute:       "pod-a",
+	}, "sha256:a")
+	if err != nil {
+		t.Fatalf("AllowCSIPublish() error = %v", err)
+	}
+	if !allowed {
+		t.Fatal("expected publish to be allowed for requesting managed SharedDirect pod")
+	}
+
+	allowed, err = client.AllowCSIPublish(context.Background(), "worker-a", map[string]string{
+		csiPodNameAttribute:      "runtime-a",
+		csiPodNamespaceAttribute: "team-a",
+		csiPodUIDAttribute:       "pod-a",
+	}, "sha256:b")
+	if err != nil {
+		t.Fatalf("AllowCSIPublish(wrong digest) error = %v", err)
+	}
+	if allowed {
+		t.Fatal("expected wrong digest to be denied")
+	}
+}
+
+func TestDesiredArtifactsClientDeniesCSIPublishWithoutPodInfoOrManagedAnnotations(t *testing.T) {
+	t.Parallel()
+
+	pod := managedPod("runtime-a", "worker-a", corev1.PodPending, string(modeldelivery.DeliveryModeMaterializeBridge), "", "oci://example/model-a", "sha256:a")
+	pod.UID = types.UID("pod-a")
+	client, err := NewDesiredArtifactsClient(fake.NewSimpleClientset(pod))
+	if err != nil {
+		t.Fatalf("NewDesiredArtifactsClient() error = %v", err)
+	}
+
+	allowed, err := client.AllowCSIPublish(context.Background(), "worker-a", nil, "sha256:a")
+	if err != nil {
+		t.Fatalf("AllowCSIPublish(no pod info) error = %v", err)
+	}
+	if allowed {
+		t.Fatal("expected request without CSI pod info to be denied")
+	}
+
+	allowed, err = client.AllowCSIPublish(context.Background(), "worker-a", map[string]string{
+		csiPodNameAttribute:      "runtime-a",
+		csiPodNamespaceAttribute: "team-a",
+		csiPodUIDAttribute:       "pod-a",
+	}, "sha256:a")
+	if err != nil {
+		t.Fatalf("AllowCSIPublish(bridge pod) error = %v", err)
+	}
+	if allowed {
+		t.Fatal("expected non-SharedDirect managed pod to be denied")
+	}
+}
+
 func managedPod(name, nodeName string, phase corev1.PodPhase, deliveryMode, deliveryReason, artifactURI, digest string) *corev1.Pod {
 	annotations := map[string]string{
 		modeldelivery.ResolvedDeliveryModeAnnotation: deliveryMode,
@@ -190,6 +257,7 @@ func managedPod(name, nodeName string, phase corev1.PodPhase, deliveryMode, deli
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Namespace:   "team-a",
+			UID:         types.UID(name + "-uid"),
 			Annotations: annotations,
 		},
 		Spec:   corev1.PodSpec{NodeName: nodeName},

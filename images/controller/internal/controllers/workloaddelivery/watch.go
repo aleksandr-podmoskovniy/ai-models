@@ -29,15 +29,23 @@ import (
 )
 
 const (
+	workloadReferenceIndexField     = "ai.deckhouse.io/workloaddelivery-ref"
 	modelReferenceIndexField        = "ai.deckhouse.io/workloaddelivery-model-ref"
 	clusterModelReferenceIndexField = "ai.deckhouse.io/workloaddelivery-clustermodel-ref"
+	workloadReferenceIndexValue     = "true"
 )
 
 func indexWorkloadReferences(ctx context.Context, indexer client.FieldIndexer) error {
+	if err := indexer.IndexField(ctx, &appsv1.Deployment{}, workloadReferenceIndexField, workloadReferenceIndex); err != nil {
+		return err
+	}
 	if err := indexer.IndexField(ctx, &appsv1.Deployment{}, modelReferenceIndexField, modelReferenceIndexValue); err != nil {
 		return err
 	}
 	if err := indexer.IndexField(ctx, &appsv1.Deployment{}, clusterModelReferenceIndexField, clusterModelReferenceIndexValue); err != nil {
+		return err
+	}
+	if err := indexer.IndexField(ctx, &appsv1.StatefulSet{}, workloadReferenceIndexField, workloadReferenceIndex); err != nil {
 		return err
 	}
 	if err := indexer.IndexField(ctx, &appsv1.StatefulSet{}, modelReferenceIndexField, modelReferenceIndexValue); err != nil {
@@ -46,16 +54,30 @@ func indexWorkloadReferences(ctx context.Context, indexer client.FieldIndexer) e
 	if err := indexer.IndexField(ctx, &appsv1.StatefulSet{}, clusterModelReferenceIndexField, clusterModelReferenceIndexValue); err != nil {
 		return err
 	}
+	if err := indexer.IndexField(ctx, &appsv1.DaemonSet{}, workloadReferenceIndexField, workloadReferenceIndex); err != nil {
+		return err
+	}
 	if err := indexer.IndexField(ctx, &appsv1.DaemonSet{}, modelReferenceIndexField, modelReferenceIndexValue); err != nil {
 		return err
 	}
 	if err := indexer.IndexField(ctx, &appsv1.DaemonSet{}, clusterModelReferenceIndexField, clusterModelReferenceIndexValue); err != nil {
 		return err
 	}
+	if err := indexer.IndexField(ctx, &batchv1.CronJob{}, workloadReferenceIndexField, workloadReferenceIndex); err != nil {
+		return err
+	}
 	if err := indexer.IndexField(ctx, &batchv1.CronJob{}, modelReferenceIndexField, modelReferenceIndexValue); err != nil {
 		return err
 	}
 	return indexer.IndexField(ctx, &batchv1.CronJob{}, clusterModelReferenceIndexField, clusterModelReferenceIndexValue)
+}
+
+func workloadReferenceIndex(object client.Object) []string {
+	if strings.TrimSpace(object.GetAnnotations()[ModelAnnotation]) == "" &&
+		strings.TrimSpace(object.GetAnnotations()[ClusterModelAnnotation]) == "" {
+		return nil
+	}
+	return []string{workloadReferenceIndexValue}
 }
 
 func modelReferenceIndexValue(object client.Object) []string {
@@ -104,6 +126,22 @@ func (r *baseReconciler) mapCronJobsForModel(ctx context.Context, object client.
 
 func (r *baseReconciler) mapCronJobsForClusterModel(ctx context.Context, object client.Object) []reconcile.Request {
 	return r.listCronJobRequests(ctx, client.MatchingFields{clusterModelReferenceIndexField: object.GetName()})
+}
+
+func (r *baseReconciler) mapDeploymentsForNodeCacheReadiness(ctx context.Context, _ client.Object) []reconcile.Request {
+	return r.listDeploymentRequests(ctx, client.MatchingFields{workloadReferenceIndexField: workloadReferenceIndexValue})
+}
+
+func (r *baseReconciler) mapStatefulSetsForNodeCacheReadiness(ctx context.Context, _ client.Object) []reconcile.Request {
+	return r.listStatefulSetRequests(ctx, client.MatchingFields{workloadReferenceIndexField: workloadReferenceIndexValue})
+}
+
+func (r *baseReconciler) mapDaemonSetsForNodeCacheReadiness(ctx context.Context, _ client.Object) []reconcile.Request {
+	return r.listDaemonSetRequests(ctx, client.MatchingFields{workloadReferenceIndexField: workloadReferenceIndexValue})
+}
+
+func (r *baseReconciler) mapCronJobsForNodeCacheReadiness(ctx context.Context, _ client.Object) []reconcile.Request {
+	return r.listCronJobRequests(ctx, client.MatchingFields{workloadReferenceIndexField: workloadReferenceIndexValue})
 }
 
 func (r *baseReconciler) listDeploymentRequests(ctx context.Context, options ...client.ListOption) []reconcile.Request {

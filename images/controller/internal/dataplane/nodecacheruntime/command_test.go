@@ -14,23 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package nodecacheruntime
 
 import (
 	"testing"
 	"time"
 )
 
-func TestParseNodeCacheRuntimeConfigFromEnv(t *testing.T) {
+func TestParseConfigFromEnv(t *testing.T) {
 	t.Setenv(nodeCacheRootEnv, "/cache")
 	t.Setenv(nodeCacheMaxSizeEnv, "200Gi")
 	t.Setenv(nodeCacheMaxUnusedAgeEnv, "48h")
 	t.Setenv(nodeCacheScanIntervalEnv, "10m")
 	t.Setenv(nodeCacheNodeNameEnv, "node-1")
+	t.Setenv(nodeCacheCSIEndpointEnv, "/csi/custom.sock")
 
-	config, exitCode, err := parseNodeCacheRuntimeConfig(nil)
+	config, exitCode, err := parseConfig(nil)
 	if err != nil {
-		t.Fatalf("parseNodeCacheRuntimeConfig() error = %v", err)
+		t.Fatalf("parseConfig() error = %v", err)
 	}
 	if exitCode != 0 {
 		t.Fatalf("exitCode = %d, want 0", exitCode)
@@ -50,34 +51,47 @@ func TestParseNodeCacheRuntimeConfigFromEnv(t *testing.T) {
 	if got, want := config.NodeName, "node-1"; got != want {
 		t.Fatalf("NodeName = %q, want %q", got, want)
 	}
+	if got, want := config.CSIEndpoint, "/csi/custom.sock"; got != want {
+		t.Fatalf("CSIEndpoint = %q, want %q", got, want)
+	}
 }
 
-func TestParseNodeCacheRuntimeConfigRejectsEmptyRoot(t *testing.T) {
+func TestParseConfigRejectsEmptyRoot(t *testing.T) {
 	t.Setenv(nodeCacheRootEnv, "")
 
-	if _, exitCode, err := parseNodeCacheRuntimeConfig(nil); err == nil || exitCode != 2 {
+	if _, exitCode, err := parseConfig(nil); err == nil || exitCode != 2 {
 		t.Fatalf("expected exitCode=2 and error, got exitCode=%d err=%v", exitCode, err)
 	}
 }
 
-func TestParseNodeCacheRuntimeConfigRejectsEmptyNodeName(t *testing.T) {
+func TestParseConfigRejectsEmptyNodeName(t *testing.T) {
 	t.Setenv(nodeCacheRootEnv, "/cache")
 	t.Setenv(nodeCacheNodeNameEnv, "")
 
-	if _, exitCode, err := parseNodeCacheRuntimeConfig(nil); err == nil || exitCode != 2 {
+	if _, exitCode, err := parseConfig(nil); err == nil || exitCode != 2 {
 		t.Fatalf("expected exitCode=2 and error, got exitCode=%d err=%v", exitCode, err)
 	}
 }
 
-func TestParseNodeCacheRuntimeSize(t *testing.T) {
-	sizeBytes, err := parseNodeCacheRuntimeSize("1Gi")
+func TestParseConfigRejectsEmptyCSIEndpoint(t *testing.T) {
+	t.Setenv(nodeCacheRootEnv, "/cache")
+	t.Setenv(nodeCacheNodeNameEnv, "node-1")
+	t.Setenv(nodeCacheCSIEndpointEnv, "")
+
+	if _, exitCode, err := parseConfig([]string{"--csi-endpoint="}); err == nil || exitCode != 2 {
+		t.Fatalf("expected exitCode=2 and error, got exitCode=%d err=%v", exitCode, err)
+	}
+}
+
+func TestParseSize(t *testing.T) {
+	sizeBytes, err := parseSize("1Gi")
 	if err != nil {
-		t.Fatalf("parseNodeCacheRuntimeSize() error = %v", err)
+		t.Fatalf("parseSize() error = %v", err)
 	}
 	if sizeBytes <= 0 {
 		t.Fatalf("expected positive size bytes, got %d", sizeBytes)
 	}
-	if _, err := parseNodeCacheRuntimeSize("not-a-quantity"); err == nil {
+	if _, err := parseSize("not-a-quantity"); err == nil {
 		t.Fatal("expected quantity parse error")
 	}
 }

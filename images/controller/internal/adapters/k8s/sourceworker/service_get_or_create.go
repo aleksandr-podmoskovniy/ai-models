@@ -52,6 +52,7 @@ func (s *Service) prepareRequestState(
 func (s *Service) existingOrQueuedHandle(
 	ctx context.Context,
 	ownerUID types.UID,
+	ownerGeneration int64,
 	directUploadState modelpackports.DirectUploadState,
 ) (*publicationports.SourceWorkerHandle, bool, error) {
 	existingPod, found, err := s.lookupPod(ctx, ownerUID)
@@ -59,7 +60,7 @@ func (s *Service) existingOrQueuedHandle(
 		return nil, false, err
 	}
 	if found {
-		if shouldRecreateFailedPod(existingPod, directUploadState) {
+		if shouldRecreateStalePod(existingPod, ownerGeneration) || shouldRecreateFailedPod(existingPod, directUploadState) {
 			if err := ownedresource.DeleteAll(ctx, s.client, existingPod); err != nil {
 				return nil, false, err
 			}
@@ -126,4 +127,16 @@ func shouldRecreateFailedPod(
 		return false
 	}
 	return directUploadState.Phase == modelpackports.DirectUploadStatePhaseRunning
+}
+
+func shouldRecreateStalePod(pod *corev1.Pod, ownerGeneration int64) bool {
+	if pod == nil {
+		return false
+	}
+	recordedGeneration, err := sourceWorkerOwnerGeneration(pod)
+	currentGeneration := normalizedOwnerGeneration(ownerGeneration)
+	if err != nil {
+		return pod.Status.Phase == corev1.PodSucceeded || currentGeneration > 1
+	}
+	return recordedGeneration != currentGeneration
 }

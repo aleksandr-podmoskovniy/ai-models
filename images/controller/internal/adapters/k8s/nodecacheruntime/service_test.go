@@ -94,6 +94,35 @@ func TestServiceApplyDeletesDriftedPodForRecreate(t *testing.T) {
 	}
 }
 
+func TestServiceApplyKeepsSchedulerBoundPod(t *testing.T) {
+	t.Parallel()
+
+	service, kubeClient := newTestService(t)
+	owner := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-a", UID: "worker-a-uid"}}
+
+	if err := service.Apply(context.Background(), owner, testRuntimeSpec()); err != nil {
+		t.Fatalf("initial Apply() error = %v", err)
+	}
+	pod := &corev1.Pod{}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: "d8-ai-models", Name: "ai-models-node-cache-runtime-worker-a"}, pod); err != nil {
+		t.Fatalf("Get(Pod) error = %v", err)
+	}
+	pod.Spec.NodeName = "worker-a"
+	if err := kubeClient.Update(context.Background(), pod); err != nil {
+		t.Fatalf("Update(Pod) error = %v", err)
+	}
+
+	if err := service.Apply(context.Background(), owner, testRuntimeSpec()); err != nil {
+		t.Fatalf("second Apply() error = %v", err)
+	}
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: "d8-ai-models", Name: "ai-models-node-cache-runtime-worker-a"}, pod); err != nil {
+		t.Fatalf("expected scheduler-bound Pod to stay present, got err=%v", err)
+	}
+	if got, want := pod.Spec.NodeName, "worker-a"; got != want {
+		t.Fatalf("pod spec.nodeName = %q, want %q", got, want)
+	}
+}
+
 func TestServiceDeleteRemovesPodAndPVC(t *testing.T) {
 	t.Parallel()
 
@@ -144,6 +173,7 @@ func testRuntimeSpec() RuntimeSpec {
 		Namespace:          "d8-ai-models",
 		NodeName:           "worker-a",
 		RuntimeImage:       "runtime:latest",
+		CSIRegistrarImage:  "registrar:latest",
 		ServiceAccountName: "ai-models-node-cache-runtime",
 		StorageClassName:   "ai-models-node-cache",
 		SharedVolumeSize:   "64Gi",

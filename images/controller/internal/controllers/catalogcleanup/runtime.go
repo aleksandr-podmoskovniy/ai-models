@@ -25,7 +25,7 @@ import (
 type finalizeDeleteRuntime struct {
 	object   client.Object
 	handle   cleanuphandle.Handle
-	owner    cleanupJobOwner
+	owner    cleanupOwner
 	hasOwner bool
 }
 
@@ -58,5 +58,5 @@ func buildFinalizeDeleteRuntime(
 }
 
 func decisionNeedsCleanupOwner(decision deletionapp.FinalizeDeleteDecision) bool {
-	return decision.CreateJob || decision.EnsureGarbageCollectionRequest
+	return decision.RunCleanup || decision.EnsureGarbageCollectionRequest
 }

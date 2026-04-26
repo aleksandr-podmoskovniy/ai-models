@@ -109,16 +109,38 @@ false
 {{- default "200Gi" (index $nodeCache "maxSize") -}}
 {{- end -}}
 
-{{- define "ai-models.nodeCacheFallbackVolumeSize" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
-{{- default "32Gi" (index $nodeCache "fallbackVolumeSize") -}}
-{{- end -}}
-
 {{- define "ai-models.nodeCacheSharedVolumeSize" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
 {{- default "64Gi" (index $nodeCache "sharedVolumeSize") -}}
+{{- end -}}
+
+{{- define "ai-models.nodeCacheQuantityBytes" -}}
+{{- $value := . | toString | trim -}}
+{{- if not (regexMatch "^[0-9]+([KMGT]i?)?$" $value) -}}
+  {{- fail (printf "aiModels.nodeCache quantity %q must be an integer optionally suffixed with Ki, Mi, Gi, Ti, K, M, G, or T" $value) -}}
+{{- end -}}
+{{- $suffix := regexFind "[A-Za-z]+$" $value -}}
+{{- $number := int64 (regexReplaceAll "[A-Za-z]+$" $value "") -}}
+{{- $multiplier := int64 1 -}}
+{{- if eq $suffix "K" -}}
+  {{- $multiplier = int64 1000 -}}
+{{- else if eq $suffix "M" -}}
+  {{- $multiplier = int64 1000000 -}}
+{{- else if eq $suffix "G" -}}
+  {{- $multiplier = int64 1000000000 -}}
+{{- else if eq $suffix "T" -}}
+  {{- $multiplier = int64 1000000000000 -}}
+{{- else if eq $suffix "Ki" -}}
+  {{- $multiplier = int64 1024 -}}
+{{- else if eq $suffix "Mi" -}}
+  {{- $multiplier = int64 1048576 -}}
+{{- else if eq $suffix "Gi" -}}
+  {{- $multiplier = int64 1073741824 -}}
+{{- else if eq $suffix "Ti" -}}
+  {{- $multiplier = int64 1099511627776 -}}
+{{- end -}}
+{{- mul $number $multiplier -}}
 {{- end -}}
 
 {{- define "ai-models.nodeCacheStorageClassName" -}}
@@ -163,6 +185,15 @@ false
 ai-models-node-cache-runtime
 {{- end -}}
 
+{{- define "ai-models.nodeCacheCSIDriverName" -}}
+node-cache.ai-models.deckhouse.io
+{{- end -}}
+
+{{- define "ai-models.nodeCacheCSIRegistrarImage" -}}
+{{- $kubernetesSemVer := semver .Values.global.discovery.kubernetesVersion -}}
+{{- include "helm_lib_csi_image_with_common_fallback" (list . "csiNodeDriverRegistrar" $kubernetesSemVer) -}}
+{{- end -}}
+
 {{- define "ai-models.nodeCacheMaintenanceMaxUnusedAge" -}}
 24h
 {{- end -}}
@@ -194,45 +225,6 @@ ai.deckhouse.io/dmcr-gc-request
 {{- else -}}
 */20 * * * *
 {{- end -}}
-{{- end -}}
-
-{{- define "ai-models.controlPlaneNodeSelector" -}}
-nodeSelector:
-  node-role.kubernetes.io/control-plane: ""
-{{- end -}}
-
-{{- define "ai-models.systemNodeSelector" -}}
-{{- $discovery := (.Values.global.discovery | default dict) -}}
-{{- $roles := ($discovery.d8SpecificNodeCountByRole | default dict) -}}
-{{- if gt (int (default 0 (index $roles "system"))) 0 -}}
-nodeSelector:
-  node-role.deckhouse.io/system: ""
-{{- else -}}
-{{- include "ai-models.controlPlaneNodeSelector" . -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "ai-models.controlPlaneTolerations" -}}
-tolerations:
-  - key: node-role.kubernetes.io/control-plane
-    operator: Exists
-    effect: NoSchedule
-  - key: node-role.kubernetes.io/master
-    operator: Exists
-    effect: NoSchedule
-{{- end -}}
-
-{{- define "ai-models.systemTolerations" -}}
-tolerations:
-  - key: node-role.deckhouse.io/system
-    operator: Exists
-    effect: NoSchedule
-  - key: node-role.kubernetes.io/control-plane
-    operator: Exists
-    effect: NoSchedule
-  - key: node-role.kubernetes.io/master
-    operator: Exists
-    effect: NoSchedule
 {{- end -}}
 
 {{- define "ai-models.serviceName" -}}
@@ -299,70 +291,35 @@ ai-models-dmcr-ca
 ai.deckhouse.io/dmcr-pod-secret-checksum
 {{- end -}}
 
-{{- define "ai-models.dmcrExistingPodSecretChecksum" -}}
-{{- $namespace := include "ai-models.namespace" . -}}
-{{- $deployment := default (dict) (lookup "apps/v1" "Deployment" $namespace (include "ai-models.dmcrName" .)) -}}
-{{- $spec := get $deployment "spec" | default (dict) -}}
-{{- $template := get $spec "template" | default (dict) -}}
-{{- $metadata := get $template "metadata" | default (dict) -}}
-{{- $annotations := get $metadata "annotations" | default (dict) -}}
-{{- get $annotations "checksum/secret" | default "" -}}
-{{- end -}}
-
-{{- define "ai-models.dmcrSecretAnnotatedChecksum" -}}
-{{- $root := index . 0 -}}
-{{- $secretName := index . 1 -}}
-{{- $secret := default (dict) (lookup "v1" "Secret" (include "ai-models.namespace" $root) $secretName) -}}
-{{- $metadata := get $secret "metadata" | default (dict) -}}
-{{- $annotations := get $metadata "annotations" | default (dict) -}}
-{{- get $annotations (include "ai-models.dmcrSecretRestartChecksumAnnotationKey" $root) | default "" -}}
-{{- end -}}
-
-{{- define "ai-models.dmcrMissingSecretChecksum" -}}
-{{- $root := index . 0 -}}
-{{- $part := index . 1 -}}
-{{- $previous := include "ai-models.dmcrExistingPodSecretChecksum" $root | trim -}}
-{{- if $previous -}}
-{{- sha256sum (printf "%s/recovered\n%s" $part $previous) -}}
-{{- else -}}
-{{- printf "%s/bootstrap" $part -}}
-{{- end -}}
-{{- end -}}
-
 {{- define "ai-models.dmcrAuthSecretRestartChecksum" -}}
-{{- $namespace := include "ai-models.namespace" . -}}
-{{- $secretName := include "ai-models.dmcrAuthSecretName" . -}}
-{{- $annotated := include "ai-models.dmcrSecretAnnotatedChecksum" (list . $secretName) | trim -}}
-{{- if $annotated -}}
-{{- $annotated -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $dmcr := (index $internal "dmcr") | default dict -}}
+{{- $auth := (index $dmcr "auth") | default dict -}}
+{{- $writePassword := (index $auth "writePassword") | default "" | trim -}}
+{{- $readPassword := (index $auth "readPassword") | default "" | trim -}}
+{{- $writeHtpasswd := (index $auth "writeHtpasswd") | default "" | trim -}}
+{{- $readHtpasswd := (index $auth "readHtpasswd") | default "" | trim -}}
+{{- $salt := (index $auth "salt") | default "" | trim -}}
+{{- if or $salt $writePassword $readPassword $writeHtpasswd $readHtpasswd -}}
+{{- printf "%s\n%s\n%s\n%s\n%s\n%s\n%s" (sha256sum $salt) (include "ai-models.dmcrPasswordChecksum" $writePassword | trim) (include "ai-models.dmcrPasswordChecksum" $readPassword | trim) (sha256sum $writeHtpasswd) (sha256sum $readHtpasswd) (include "ai-models.dmcrWriteAuthUsername" . | trim) (include "ai-models.dmcrReadAuthUsername" . | trim) | sha256sum -}}
 {{- else -}}
-{{- $data := get (default (dict) (lookup "v1" "Secret" $namespace $secretName)) "data" | default (dict) -}}
-{{- $salt := get $data "salt" | default "" | b64dec | trim -}}
-{{- $writePassword := get $data "write.password" | default "" | b64dec | trim -}}
-{{- $readPassword := get $data "read.password" | default "" | b64dec | trim -}}
-{{- if or $salt $writePassword $readPassword -}}
-{{- printf "%s\n%s\n%s\n%s\n%s" (sha256sum $salt) (include "ai-models.dmcrPasswordChecksum" $writePassword | trim) (include "ai-models.dmcrPasswordChecksum" $readPassword | trim) (include "ai-models.dmcrWriteAuthUsername" . | trim) (include "ai-models.dmcrReadAuthUsername" . | trim) | sha256sum -}}
-{{- else -}}
-{{- include "ai-models.dmcrMissingSecretChecksum" (list . "auth") -}}
-{{- end -}}
+auth/bootstrap
 {{- end -}}
 {{- end -}}
 
 {{- define "ai-models.dmcrTLSSecretRestartChecksum" -}}
-{{- $namespace := include "ai-models.namespace" . -}}
-{{- $secretName := include "ai-models.dmcrTLSSecretName" . -}}
-{{- $annotated := include "ai-models.dmcrSecretAnnotatedChecksum" (list . $secretName) | trim -}}
-{{- if $annotated -}}
-{{- $annotated -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $dmcr := (index $internal "dmcr") | default dict -}}
+{{- $cert := (index $dmcr "cert") | default dict -}}
+{{- $caCert := (index $cert "ca") | default "" | trim -}}
+{{- $tlsCert := (index $cert "crt") | default "" | trim -}}
+{{- $tlsKey := (index $cert "key") | default "" | trim -}}
+{{- if or $caCert $tlsCert $tlsKey -}}
+{{- printf "%s\n%s\n%s" (sha256sum $caCert) (sha256sum $tlsCert) (sha256sum $tlsKey) | sha256sum -}}
 {{- else -}}
-{{- $data := get (default (dict) (lookup "v1" "Secret" $namespace $secretName)) "data" | default (dict) -}}
-{{- $tlsCert := get $data "tls.crt" | default "" | b64dec | trim -}}
-{{- $tlsKey := get $data "tls.key" | default "" | b64dec | trim -}}
-{{- if or $tlsCert $tlsKey -}}
-{{- printf "%s\n%s" (sha256sum $tlsCert) (sha256sum $tlsKey) | sha256sum -}}
-{{- else -}}
-{{- include "ai-models.dmcrMissingSecretChecksum" (list . "tls") -}}
-{{- end -}}
+tls/bootstrap
 {{- end -}}
 {{- end -}}
 
@@ -622,34 +579,6 @@ ai-models
 ai-models-reader
 {{- end -}}
 
-{{- define "ai-models.dmcrWriteAuthPassword" -}}
-{{- $namespace := include "ai-models.namespace" . -}}
-{{- $authSecretName := include "ai-models.dmcrAuthSecretName" . -}}
-{{- $authSecret := lookup "v1" "Secret" $namespace $authSecretName -}}
-{{- $authData := (get (default (dict) $authSecret) "data" | default (dict)) -}}
-{{- $serverPassword := (get $authData "write.password" | default "" | b64dec) -}}
-{{- $secretName := include "ai-models.dmcrWriteAuthSecretName" . -}}
-{{- $existingSecret := lookup "v1" "Secret" $namespace $secretName -}}
-{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
-{{- $existingPassword := (get $existingData "password" | default "" | b64dec) -}}
-{{- $generatedPassword := printf "A1a%s" (randAlphaNum 37) -}}
-{{- coalesce $serverPassword $existingPassword $generatedPassword -}}
-{{- end -}}
-
-{{- define "ai-models.dmcrReadAuthPassword" -}}
-{{- $namespace := include "ai-models.namespace" . -}}
-{{- $authSecretName := include "ai-models.dmcrAuthSecretName" . -}}
-{{- $authSecret := lookup "v1" "Secret" $namespace $authSecretName -}}
-{{- $authData := (get (default (dict) $authSecret) "data" | default (dict)) -}}
-{{- $serverPassword := (get $authData "read.password" | default "" | b64dec) -}}
-{{- $secretName := include "ai-models.dmcrReadAuthSecretName" . -}}
-{{- $existingSecret := lookup "v1" "Secret" $namespace $secretName -}}
-{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
-{{- $existingPassword := (get $existingData "password" | default "" | b64dec) -}}
-{{- $generatedPassword := printf "A1a%s" (randAlphaNum 37) -}}
-{{- coalesce $serverPassword $existingPassword $generatedPassword -}}
-{{- end -}}
-
 {{- define "ai-models.dmcrDockerConfigJSON" -}}
 {{- $root := index . 0 -}}
 {{- $host := include "ai-models.dmcrServiceHost" $root -}}
@@ -661,49 +590,6 @@ ai-models-reader
 
 {{- define "ai-models.dmcrPasswordChecksum" -}}
 {{- sha256sum (trim (toString .)) -}}
-{{- end -}}
-
-{{- define "ai-models.dmcrWriteHTPasswdEntry" -}}
-{{- $root := index . 0 -}}
-{{- $desiredPassword := index . 1 | trim -}}
-{{- $desiredChecksum := include "ai-models.dmcrPasswordChecksum" $desiredPassword | trim -}}
-{{- $secretName := include "ai-models.dmcrAuthSecretName" $root -}}
-{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" $root) $secretName -}}
-{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
-{{- $existingEntry := (get $existingData "write.htpasswd" | default "" | b64dec) -}}
-{{- $storedPassword := (get $existingData "write.password" | default "" | b64dec) -}}
-{{- $storedChecksum := (get $existingData "write.htpasswd.checksum" | default "" | b64dec) -}}
-{{- if and $existingEntry $storedPassword $storedChecksum (eq ($storedPassword | trim) $desiredPassword) (eq ($storedChecksum | trim) $desiredChecksum) -}}
-{{- $existingEntry -}}
-{{- else -}}
-{{- htpasswd (include "ai-models.dmcrWriteAuthUsername" $root | trim) $desiredPassword -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "ai-models.dmcrReadHTPasswdEntry" -}}
-{{- $root := index . 0 -}}
-{{- $desiredPassword := index . 1 | trim -}}
-{{- $desiredChecksum := include "ai-models.dmcrPasswordChecksum" $desiredPassword | trim -}}
-{{- $secretName := include "ai-models.dmcrAuthSecretName" $root -}}
-{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" $root) $secretName -}}
-{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
-{{- $existingEntry := (get $existingData "read.htpasswd" | default "" | b64dec) -}}
-{{- $storedPassword := (get $existingData "read.password" | default "" | b64dec) -}}
-{{- $storedChecksum := (get $existingData "read.htpasswd.checksum" | default "" | b64dec) -}}
-{{- if and $existingEntry $storedPassword $storedChecksum (eq ($storedPassword | trim) $desiredPassword) (eq ($storedChecksum | trim) $desiredChecksum) -}}
-{{- $existingEntry -}}
-{{- else -}}
-{{- htpasswd (include "ai-models.dmcrReadAuthUsername" $root | trim) $desiredPassword -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "ai-models.dmcrHTTPSalt" -}}
-{{- $secretName := include "ai-models.dmcrAuthSecretName" . -}}
-{{- $existingSecret := lookup "v1" "Secret" (include "ai-models.namespace" .) $secretName -}}
-{{- $existingData := (get (default (dict) $existingSecret) "data" | default (dict)) -}}
-{{- $existingSalt := (get $existingData "salt" | default "" | b64dec) -}}
-{{- $generatedSalt := randAlphaNum 64 -}}
-{{- coalesce $existingSalt $generatedSalt -}}
 {{- end -}}
 
 {{- define "ai-models.hasAPI" -}}
@@ -738,6 +624,31 @@ true
   {{- end -}}
   {{- if not (include "ai-models.artifactsCredentialsSecretName" . | trim) -}}
     {{- fail "ai-models.artifacts.credentialsSecretName is required" -}}
+  {{- end -}}
+  {{- $moduleValues := (index .Values "aiModels") | default dict -}}
+  {{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
+  {{- if and (hasKey $nodeCache "enabled") (index $nodeCache "enabled") -}}
+    {{- range $module := list "sds-node-configurator-crd" "sds-node-configurator" "sds-local-volume-crd" "sds-local-volume" -}}
+      {{- if not (has $module $enabledModules) -}}
+        {{- fail (printf "aiModels.nodeCache.enabled requires global.enabledModules to include %s" $module) -}}
+      {{- end -}}
+    {{- end -}}
+    {{- $nodeSelector := (index $nodeCache "nodeSelector") | default dict -}}
+    {{- if eq (len $nodeSelector) 0 -}}
+      {{- fail "aiModels.nodeCache.nodeSelector must not be empty when nodeCache is enabled" -}}
+    {{- end -}}
+    {{- $blockDeviceSelector := (index $nodeCache "blockDeviceSelector") | default dict -}}
+    {{- if eq (len $blockDeviceSelector) 0 -}}
+      {{- fail "aiModels.nodeCache.blockDeviceSelector must not be empty when nodeCache is enabled" -}}
+    {{- end -}}
+    {{- $maxSizeBytes := include "ai-models.nodeCacheQuantityBytes" (include "ai-models.nodeCacheMaxSize" .) | int64 -}}
+    {{- $sharedVolumeSizeBytes := include "ai-models.nodeCacheQuantityBytes" (include "ai-models.nodeCacheSharedVolumeSize" .) | int64 -}}
+    {{- if gt $sharedVolumeSizeBytes $maxSizeBytes -}}
+      {{- fail "aiModels.nodeCache.sharedVolumeSize must not be greater than aiModels.nodeCache.maxSize" -}}
+    {{- end -}}
+    {{- if not (include "ai-models.nodeCacheCSIRegistrarImage" . | trim) -}}
+      {{- fail "aiModels.nodeCache.enabled requires csiNodeDriverRegistrar image digest in global.modulesImages" -}}
+    {{- end -}}
   {{- end -}}
 {{- end -}}
 {{- end -}}

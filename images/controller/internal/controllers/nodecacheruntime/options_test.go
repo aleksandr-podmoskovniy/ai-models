@@ -30,10 +30,11 @@ func TestOptionsValidate(t *testing.T) {
 		Enabled:            true,
 		Namespace:          "d8-ai-models",
 		RuntimeImage:       "runtime:latest",
+		CSIRegistrarImage:  "registrar:latest",
 		ServiceAccountName: "ai-models-node-cache-runtime",
 		StorageClassName:   "ai-models-node-cache",
 		SharedVolumeSize:   "64Gi",
-		MaxTotalSize:       "200Gi",
+		MaxTotalSize:       "64Gi",
 		MaxUnusedAge:       "24h",
 		ScanInterval:       "5m",
 		OCIAuthSecretName:  "ai-models-dmcr-auth-read",
@@ -51,10 +52,11 @@ func TestOptionsValidateRejectsInvalidSharedVolumeSize(t *testing.T) {
 		Enabled:            true,
 		Namespace:          "d8-ai-models",
 		RuntimeImage:       "runtime:latest",
+		CSIRegistrarImage:  "registrar:latest",
 		ServiceAccountName: "ai-models-node-cache-runtime",
 		StorageClassName:   "ai-models-node-cache",
 		SharedVolumeSize:   "invalid",
-		MaxTotalSize:       "200Gi",
+		MaxTotalSize:       "64Gi",
 		MaxUnusedAge:       "24h",
 		ScanInterval:       "5m",
 		OCIAuthSecretName:  "ai-models-dmcr-auth-read",
@@ -62,6 +64,28 @@ func TestOptionsValidateRejectsInvalidSharedVolumeSize(t *testing.T) {
 	}
 	if err := options.Validate(); err == nil {
 		t.Fatal("expected invalid shared volume size error")
+	}
+}
+
+func TestOptionsValidateRejectsMaxTotalSizeGreaterThanSharedVolume(t *testing.T) {
+	t.Parallel()
+
+	options := Options{
+		Enabled:            true,
+		Namespace:          "d8-ai-models",
+		RuntimeImage:       "runtime:latest",
+		CSIRegistrarImage:  "registrar:latest",
+		ServiceAccountName: "ai-models-node-cache-runtime",
+		StorageClassName:   "ai-models-node-cache",
+		SharedVolumeSize:   "64Gi",
+		MaxTotalSize:       "65Gi",
+		MaxUnusedAge:       "24h",
+		ScanInterval:       "5m",
+		OCIAuthSecretName:  "ai-models-dmcr-auth-read",
+		NodeSelectorLabels: map[string]string{"node-role.deckhouse.io/ai-models-cache": "enabled"},
+	}
+	if err := options.Validate(); err == nil {
+		t.Fatal("expected max total size validation error")
 	}
 }
 
@@ -82,5 +106,23 @@ func TestOptionsMatchesNodeRejectsMissingLabel(t *testing.T) {
 	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-a"}}
 	if options.MatchesNode(node) {
 		t.Fatal("expected missing label to fail matchLabels semantics")
+	}
+}
+
+func TestOptionsRuntimeSpecUsesHostnameLabelForScheduling(t *testing.T) {
+	t.Parallel()
+
+	options := Options{Namespace: "d8-ai-models"}
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+		Name:   "node-object-a",
+		Labels: map[string]string{corev1.LabelHostname: "worker-a.example.test"},
+	}}
+
+	spec := options.runtimeSpec(node)
+	if got, want := spec.NodeName, "node-object-a"; got != want {
+		t.Fatalf("node name = %q, want %q", got, want)
+	}
+	if got, want := spec.NodeHostname, "worker-a.example.test"; got != want {
+		t.Fatalf("node hostname = %q, want %q", got, want)
 	}
 }

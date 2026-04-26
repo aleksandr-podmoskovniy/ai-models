@@ -24,49 +24,14 @@ import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func cleanupJobName(t *testing.T, object client.Object) string {
-	t.Helper()
-
-	name, err := resourcenames.CleanupJobName(object.GetUID())
-	if err != nil {
-		t.Fatalf("CleanupJobName() error = %v", err)
-	}
-
-	return name
-}
-
-func runningJob(namespace, name string) *batchv1.Job {
-	return &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      name,
-		},
-	}
-}
-
-func completedJob(namespace, name string) *batchv1.Job {
-	return &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      name,
-		},
-		Status: batchv1.JobStatus{
-			Conditions: []batchv1.JobCondition{
-				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
-			},
-		},
-	}
-}
-
 func requestedGCSecret(namespace string, ownerUID types.UID) *corev1.Secret {
-	secret := buildDMCRGCRequestSecret(namespace, cleanupJobOwner{
+	secret := buildDMCRGCRequestSecret(namespace, cleanupOwner{
 		UID:  ownerUID,
 		Kind: modelsv1alpha1.ModelKind,
 		Name: "deepseek-r1",
@@ -103,29 +68,6 @@ func sourceWorkerStateSecretWithSessionToken(t *testing.T, namespace string, own
 		Data: map[string][]byte{
 			"state.json": payload,
 		},
-	}
-}
-
-func failedJob(namespace, name string) *batchv1.Job {
-	return &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      name,
-		},
-		Status: batchv1.JobStatus{
-			Conditions: []batchv1.JobCondition{
-				{Type: batchv1.JobFailed, Status: corev1.ConditionTrue},
-			},
-		},
-	}
-}
-
-func assertCleanupJobExists(t *testing.T, kubeClient client.Client, name string) {
-	t.Helper()
-
-	var job batchv1.Job
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: "d8-ai-models", Name: name}, &job); err != nil {
-		t.Fatalf("expected cleanup job %q, got err=%v", name, err)
 	}
 }
 

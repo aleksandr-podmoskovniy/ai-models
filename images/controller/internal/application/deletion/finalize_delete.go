@@ -23,13 +23,11 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
-type CleanupJobState string
+type CleanupOperationState string
 
 const (
-	CleanupJobStateMissing  CleanupJobState = "Missing"
-	CleanupJobStateRunning  CleanupJobState = "Running"
-	CleanupJobStateComplete CleanupJobState = "Complete"
-	CleanupJobStateFailed   CleanupJobState = "Failed"
+	CleanupOperationStateMissing  CleanupOperationState = "Missing"
+	CleanupOperationStateComplete CleanupOperationState = "Complete"
 )
 
 type GarbageCollectionState string
@@ -46,14 +44,14 @@ type FinalizeDeleteInput struct {
 	HandleErr              error
 	HandleKind             cleanuphandle.Kind
 	RuntimeResourcePresent bool
-	JobState               CleanupJobState
+	CleanupState           CleanupOperationState
 	GarbageCollectionState GarbageCollectionState
 }
 
 type FinalizeDeleteDecision struct {
 	RemoveFinalizer                bool
 	DeleteRuntimeResources         bool
-	CreateJob                      bool
+	RunCleanup                     bool
 	EnsureGarbageCollectionRequest bool
 	DeleteGarbageCollectionRequest bool
 	UpdateStatus                   bool
@@ -81,9 +79,9 @@ func FinalizeDelete(input FinalizeDeleteInput) FinalizeDeleteDecision {
 
 	switch input.HandleKind {
 	case cleanuphandle.KindBackendArtifact:
-		return finalizeBackendArtifactDelete(input.JobState, input.GarbageCollectionState)
+		return finalizeBackendArtifactDelete(input.CleanupState, input.GarbageCollectionState)
 	case cleanuphandle.KindUploadStaging:
-		return finalizeUploadStagingDelete(input.JobState)
+		return finalizeUploadStagingDelete(input.CleanupState)
 	default:
 		return failureDecision(
 			modelsv1alpha1.ModelConditionReasonFailed,
@@ -92,19 +90,15 @@ func FinalizeDelete(input FinalizeDeleteInput) FinalizeDeleteDecision {
 	}
 }
 
-type cleanupJobMessages struct {
-	created     string
-	running     string
-	failed      string
+type cleanupOperationMessages struct {
+	started     string
 	unsupported string
 }
 
-func finalizeUploadStagingDelete(jobState CleanupJobState) FinalizeDeleteDecision {
-	decision, terminal := cleanupJobProgressDecision(jobState, cleanupJobMessages{
-		created:     "upload staging cleanup job created and waiting for completion",
-		running:     "upload staging cleanup job is still running",
-		failed:      "upload staging cleanup job failed",
-		unsupported: "upload staging cleanup job entered an unsupported state",
+func finalizeUploadStagingDelete(cleanupState CleanupOperationState) FinalizeDeleteDecision {
+	decision, terminal := cleanupOperationProgressDecision(cleanupState, cleanupOperationMessages{
+		started:     "upload staging cleanup operation is running",
+		unsupported: "upload staging cleanup operation entered an unsupported state",
 	})
 	if terminal {
 		return decision
@@ -113,14 +107,12 @@ func finalizeUploadStagingDelete(jobState CleanupJobState) FinalizeDeleteDecisio
 }
 
 func finalizeBackendArtifactDelete(
-	jobState CleanupJobState,
+	cleanupState CleanupOperationState,
 	garbageCollectionState GarbageCollectionState,
 ) FinalizeDeleteDecision {
-	decision, terminal := cleanupJobProgressDecision(jobState, cleanupJobMessages{
-		created:     "cleanup job created and waiting for completion",
-		running:     "cleanup job is still running",
-		failed:      "cleanup job failed",
-		unsupported: "cleanup job entered an unsupported state",
+	decision, terminal := cleanupOperationProgressDecision(cleanupState, cleanupOperationMessages{
+		started:     "artifact cleanup operation is running",
+		unsupported: "artifact cleanup operation entered an unsupported state",
 	})
 	if terminal {
 		return decision
@@ -128,15 +120,11 @@ func finalizeBackendArtifactDelete(
 	return garbageCollectionProgressDecision(garbageCollectionState)
 }
 
-func cleanupJobProgressDecision(jobState CleanupJobState, messages cleanupJobMessages) (FinalizeDeleteDecision, bool) {
-	switch jobState {
-	case CleanupJobStateMissing:
-		return createJobDecision(messages.created), true
-	case CleanupJobStateRunning:
-		return pendingDecision(messages.running), true
-	case CleanupJobStateFailed:
-		return failureDecision(modelsv1alpha1.ModelConditionReasonFailed, messages.failed), true
-	case CleanupJobStateComplete:
+func cleanupOperationProgressDecision(state CleanupOperationState, messages cleanupOperationMessages) (FinalizeDeleteDecision, bool) {
+	switch state {
+	case CleanupOperationStateMissing:
+		return runCleanupDecision(messages.started), true
+	case CleanupOperationStateComplete:
 		return FinalizeDeleteDecision{}, false
 	default:
 		return failureDecision(modelsv1alpha1.ModelConditionReasonFailed, messages.unsupported), true
@@ -154,9 +142,9 @@ func garbageCollectionProgressDecision(state GarbageCollectionState) FinalizeDel
 	}
 }
 
-func createJobDecision(message string) FinalizeDeleteDecision {
+func runCleanupDecision(message string) FinalizeDeleteDecision {
 	return FinalizeDeleteDecision{
-		CreateJob:     true,
+		RunCleanup:    true,
 		UpdateStatus:  true,
 		StatusReason:  modelsv1alpha1.ModelConditionReasonPending,
 		StatusMessage: message,
@@ -178,15 +166,6 @@ func enqueueGarbageCollectionAndRemoveFinalizerDecision() FinalizeDeleteDecision
 	return FinalizeDeleteDecision{
 		EnsureGarbageCollectionRequest: true,
 		RemoveFinalizer:                true,
-	}
-}
-
-func pendingDecision(message string) FinalizeDeleteDecision {
-	return FinalizeDeleteDecision{
-		UpdateStatus:  true,
-		StatusReason:  modelsv1alpha1.ModelConditionReasonPending,
-		StatusMessage: message,
-		Requeue:       true,
 	}
 }
 

@@ -198,6 +198,7 @@ func ensureScheduledRequest(
 				},
 				Annotations: map[string]string{
 					RequestQueuedAtAnnotationKey: queuedAt.UTC().Format(time.RFC3339Nano),
+					phaseAnnotationKey:           phaseQueued,
 				},
 			},
 			Type: corev1.SecretTypeOpaque,
@@ -216,6 +217,7 @@ func ensureScheduledRequest(
 			secretCopy.Annotations = make(map[string]string, 3)
 		}
 		secretCopy.Annotations[RequestQueuedAtAnnotationKey] = queuedAt.UTC().Format(time.RFC3339Nano)
+		secretCopy.Annotations[phaseAnnotationKey] = phaseQueued
 		delete(secretCopy.Annotations, switchAnnotationKey)
 		_, err = client.CoreV1().Secrets(namespace).Update(ctx, secretCopy, metav1.UpdateOptions{})
 		if err != nil {

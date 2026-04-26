@@ -136,7 +136,6 @@ func TestCanonicalResourceNames(t *testing.T) {
 		{name: "upload session service", fn: UploadSessionServiceName, prefix: "ai-model-upload-"},
 		{name: "upload session secret", fn: UploadSessionSecretName, prefix: "ai-model-upload-auth-"},
 		{name: "upload session token secret", fn: UploadSessionTokenSecretName, prefix: "ai-model-upload-token-"},
-		{name: "cleanup job", fn: CleanupJobName, prefix: "ai-model-cleanup-"},
 	}
 
 	for _, tc := range cases {
@@ -157,7 +156,4 @@ func TestCanonicalResourceNames(t *testing.T) {
 		})
 	}
 
-	if _, err := CleanupJobName(types.UID(":::")); err == nil {
-		t.Fatal("expected normalized-empty UID to be rejected")
-	}
 }

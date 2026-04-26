@@ -22,13 +22,13 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
 	DefaultInitContainerName = "ai-models-materializer"
 	DefaultCacheMountPath    = "/data/modelcache"
 	DefaultManagedCacheName  = "ai-models-node-cache"
+	NodeCacheCSIDriverName   = nodecache.CSIDriverName
 
 	ResolvedDigestAnnotation         = "ai.deckhouse.io/resolved-digest"
 	ResolvedArtifactURIAnnotation    = "ai.deckhouse.io/resolved-artifact-uri"
@@ -43,6 +43,10 @@ const (
 	LogLevelEnv      = "LOG_LEVEL"
 	defaultLogFormat = "json"
 	defaultLogLevel  = "info"
+
+	nodeCacheCSIAttributeArtifactURI    = nodecache.CSIAttributeArtifactURI
+	nodeCacheCSIAttributeArtifactDigest = nodecache.CSIAttributeArtifactDigest
+	nodeCacheCSIAttributeArtifactFamily = nodecache.CSIAttributeArtifactFamily
 )
 
 type Options struct {
@@ -57,10 +61,9 @@ type Options struct {
 }
 
 type ManagedCacheOptions struct {
-	Enabled          bool
-	StorageClassName string
-	VolumeSize       string
-	VolumeName       string
+	Enabled      bool
+	VolumeName   string
+	NodeSelector map[string]string
 }
 
 func NormalizeOptions(options Options) Options {
@@ -100,6 +103,7 @@ func NormalizeManagedCacheOptions(options ManagedCacheOptions) ManagedCacheOptio
 	if strings.TrimSpace(options.VolumeName) == "" {
 		options.VolumeName = DefaultManagedCacheName
 	}
+	options.NodeSelector = copyCleanStringMap(options.NodeSelector)
 	return options
 }
 
@@ -108,17 +112,25 @@ func ValidateManagedCacheOptions(options ManagedCacheOptions) error {
 		return nil
 	}
 	switch {
-	case strings.TrimSpace(options.StorageClassName) == "":
-		return errors.New("runtime delivery managed cache storage class name must not be empty")
-	case strings.TrimSpace(options.VolumeSize) == "":
-		return errors.New("runtime delivery managed cache volume size must not be empty")
 	case strings.TrimSpace(options.VolumeName) == "":
 		return errors.New("runtime delivery managed cache volume name must not be empty")
 	}
-	if _, err := resource.ParseQuantity(strings.TrimSpace(options.VolumeSize)); err != nil {
-		return errors.New("runtime delivery managed cache volume size must be a valid quantity")
-	}
 	return nil
+}
+
+func copyCleanStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	output := make(map[string]string, len(input))
+	for key, value := range input {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		output[key] = strings.TrimSpace(value)
+	}
+	return output
 }
 
 func ModelPath(options Options) string {

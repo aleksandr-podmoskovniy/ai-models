@@ -22,7 +22,6 @@ import (
 	"time"
 
 	k8sadapters "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/nodecacheruntime"
-	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -31,6 +30,7 @@ type Options struct {
 	Enabled             bool
 	Namespace           string
 	RuntimeImage        string
+	CSIRegistrarImage   string
 	ImagePullSecretName string
 	ServiceAccountName  string
 	StorageClassName    string
@@ -67,11 +67,22 @@ func (o Options) MatchesNode(node *corev1.Node) bool {
 	return true
 }
 
-func (o Options) runtimeSpec(nodeName string) k8sadapters.RuntimeSpec {
+func (o Options) runtimeSpec(node *corev1.Node) k8sadapters.RuntimeSpec {
+	nodeName := ""
+	nodeHostname := ""
+	if node != nil {
+		nodeName = node.Name
+		nodeHostname = strings.TrimSpace(node.Labels[corev1.LabelHostname])
+	}
+	if nodeHostname == "" {
+		nodeHostname = nodeName
+	}
 	return k8sadapters.RuntimeSpec{
 		Namespace:           o.Namespace,
 		NodeName:            nodeName,
+		NodeHostname:        nodeHostname,
 		RuntimeImage:        o.RuntimeImage,
+		CSIRegistrarImage:   o.CSIRegistrarImage,
 		ImagePullSecretName: o.ImagePullSecretName,
 		ServiceAccountName:  o.ServiceAccountName,
 		StorageClassName:    o.StorageClassName,
@@ -85,19 +96,14 @@ func (o Options) runtimeSpec(nodeName string) k8sadapters.RuntimeSpec {
 	}
 }
 
-func timeParseDuration(value string) (time.Duration, error) {
-	if value == "" {
-		return nodecache.DefaultMaintenancePeriod, nil
-	}
-	return time.ParseDuration(value)
-}
-
 func (o Options) validateRequiredFields() error {
 	switch {
 	case strings.TrimSpace(o.Namespace) == "":
 		return errors.New("node cache runtime namespace must not be empty")
 	case strings.TrimSpace(o.RuntimeImage) == "":
 		return errors.New("node cache runtime image must not be empty")
+	case strings.TrimSpace(o.CSIRegistrarImage) == "":
+		return errors.New("node cache runtime CSI registrar image must not be empty")
 	case strings.TrimSpace(o.ServiceAccountName) == "":
 		return errors.New("node cache runtime service account must not be empty")
 	case strings.TrimSpace(o.StorageClassName) == "":
@@ -120,16 +126,21 @@ func (o Options) validateRequiredFields() error {
 }
 
 func (o Options) validateParsedValues() error {
-	if _, err := resource.ParseQuantity(strings.TrimSpace(o.SharedVolumeSize)); err != nil {
+	sharedVolumeSize, err := resource.ParseQuantity(strings.TrimSpace(o.SharedVolumeSize))
+	if err != nil {
 		return errors.New("node cache runtime shared volume size must be a valid quantity")
 	}
-	if _, err := resource.ParseQuantity(strings.TrimSpace(o.MaxTotalSize)); err != nil {
+	maxTotalSize, err := resource.ParseQuantity(strings.TrimSpace(o.MaxTotalSize))
+	if err != nil {
 		return errors.New("node cache runtime max total size must be a valid quantity")
 	}
-	if _, err := timeParseDuration(strings.TrimSpace(o.MaxUnusedAge)); err != nil {
+	if maxTotalSize.Cmp(sharedVolumeSize) > 0 {
+		return errors.New("node cache runtime max total size must not exceed shared volume size")
+	}
+	if _, err := time.ParseDuration(strings.TrimSpace(o.MaxUnusedAge)); err != nil {
 		return errors.New("node cache runtime max unused age must be a valid duration")
 	}
-	if _, err := timeParseDuration(strings.TrimSpace(o.ScanInterval)); err != nil {
+	if _, err := time.ParseDuration(strings.TrimSpace(o.ScanInterval)); err != nil {
 		return errors.New("node cache runtime scan interval must be a valid duration")
 	}
 	return nil

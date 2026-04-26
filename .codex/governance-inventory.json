@@ -114,6 +114,7 @@
       "must_include": [
         "check them as one instruction system",
         "no lower-level file contradicts a higher-level rule",
+        "active contains only executable work surfaces",
         "for any DKP user-facing API/auth/exposure/RBAC/runtime entrypoint change"
       ]
     },
@@ -123,7 +124,8 @@
       "must_include": [
         "make it a dedicated governance bundle",
         "include DKP user-facing RBAC coverage",
-        "archive stale/finished or oversized active bundles"
+        "archive stale/finished or oversized active bundles",
+        "For sibling DKP module work, open a baseline-porting bundle first"
       ]
     },
     {
@@ -176,7 +178,8 @@
       "path": ".codex/agents/repo-architect.toml",
       "sandbox_mode": "read-only",
       "must_include": [
-        "include governance-surface consistency in the review"
+        "include governance-surface consistency in the review",
+        "core roles stay module-agnostic"
       ]
     },
     {
@@ -185,7 +188,8 @@
       "sandbox_mode": "read-only",
       "must_include": [
         "review them as one instruction system and treat contradictions across layers as real findings.",
-        "missing access-level coverage"
+        "missing access-level coverage",
+        "source-repo product assumptions leaking into reusable core"
       ]
     },
     {
@@ -194,6 +198,7 @@
       "sandbox_mode": "workspace-write",
       "must_include": [
         "archive stale or oversized active bundles instead of creating sibling sources of truth.",
+        "active contains only executable work surfaces",
         "For DKP user-facing API/auth/RBAC/exposure/runtime entrypoint tasks",
         "require consistency checks across all touched instruction layers."
       ]
@@ -221,6 +226,8 @@
         "Project-specific overlay agents:",
         "Write-capable agents:",
         "## Porting pattern",
+        "active contains only executable work surfaces",
+        "For a sibling module such as `ai-inference`",
         "Files that must be reviewed and rewritten during porting:",
         ".codex/governance-inventory.json",
         "explicit DKP user-facing RBAC coverage",

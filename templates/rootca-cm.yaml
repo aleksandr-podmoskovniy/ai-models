@@ -1,0 +1,13 @@
+{{- if (include "ai-models.isEnabled" .) }}
+{{- $ca := printf "%s" .Values.aiModels.internal.rootCA.crt | b64dec }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-models-ca
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "root-ca")) | nindent 2 }}
+data:
+  ca-bundle: |
+{{ $ca | nindent 4 }}
+{{- end }}

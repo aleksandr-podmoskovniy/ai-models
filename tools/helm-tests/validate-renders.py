@@ -39,6 +39,78 @@ DISALLOWED_RENDER_MARKERS = (
 
 MAX_PORT_NAME_LENGTH = 15
 DMCR_RESTART_CHECKSUM_ANNOTATION = "ai.deckhouse.io/dmcr-pod-secret-checksum"
+VALUES_BACKED_TLS_TEMPLATE_RULES = (
+    (
+        Path("templates/controller/webhook.yaml"),
+        "controller webhook TLS",
+        ".Values.aiModels.internal.controller.cert",
+        ("lookup", "genCA", "genSignedCert"),
+    ),
+    (
+        Path("templates/dmcr/secret.yaml"),
+        "DMCR TLS",
+        ".Values.aiModels.internal.dmcr.cert",
+        ("lookup", "genCA", "genSignedCert", "ca.key"),
+    ),
+)
+VALUES_BACKED_TLS_SECRET_RULES = (
+    ("ai-models-controller-webhook-tls", ("ca.key:",), True),
+    ("ai-models-dmcr-tls", ("ca.key:",), True),
+    ("ai-models-dmcr-ca", ("ca.key:", "tls.crt:", "tls.key:"), False),
+)
+DMCR_AUTH_VALUES_PATH = ".Values.aiModels.internal.dmcr.auth"
+DMCR_AUTH_FORBIDDEN_HELPER_MARKERS = (
+    'define "ai-models.dmcrWriteAuthPassword"',
+    'define "ai-models.dmcrReadAuthPassword"',
+    'define "ai-models.dmcrWriteHTPasswdEntry"',
+    'define "ai-models.dmcrReadHTPasswdEntry"',
+    'define "ai-models.dmcrHTTPSalt"',
+    "randAlphaNum",
+    "htpasswd ",
+)
+COMMON_CA_HOOK_RULES = (
+    (
+        Path("images/hooks/pkg/hooks/tls_certificates_controller/main.go"),
+        "controller webhook TLS",
+    ),
+    (
+        Path("images/hooks/pkg/hooks/tls_certificates_dmcr/main.go"),
+        "DMCR TLS",
+    ),
+)
+ROOT_CA_VALUES_PATH = ".Values.aiModels.internal.rootCA"
+ROOT_CA_SECRET_NAME = "ai-models-ca"
+USER_AUTHZ_ACCESS_LEVELS = (
+    "User",
+    "PrivilegedUser",
+    "Editor",
+    "Admin",
+    "ClusterEditor",
+    "ClusterAdmin",
+)
+HUMAN_RBAC_TEMPLATE_PATHS = (
+    Path("templates/user-authz-cluster-roles.yaml"),
+    Path("templates/rbacv2/use/view.yaml"),
+    Path("templates/rbacv2/use/edit.yaml"),
+    Path("templates/rbacv2/manage/view.yaml"),
+    Path("templates/rbacv2/manage/edit.yaml"),
+)
+HUMAN_RBAC_FORBIDDEN_MARKERS = (
+    "models/status",
+    "models/finalizers",
+    "clustermodels/status",
+    "clustermodels/finalizers",
+    "secrets",
+    "pods/log",
+    "pods/exec",
+    "pods/attach",
+    "pods/portforward",
+    "nodecacheruntimes",
+    "nodecachesubstrates",
+    "sourceworkers",
+    "uploadsessions",
+    "directuploadstates",
+)
 
 
 def _find_secret(
@@ -492,6 +564,22 @@ def _validate_node_cache_runtime_plane(path: Path, content: str) -> list[str]:
     if "--node-cache-enabled=true" not in content:
         return errors
 
+    if "--node-cache-node-selector-json=" not in content:
+        errors.append(
+            f"{path.name}: controller render must pass --node-cache-node-selector-json for SDS-backed node-cache substrate"
+        )
+    elif "--node-cache-node-selector-json={}" in content:
+        errors.append(
+            f"{path.name}: controller render must not pass an empty --node-cache-node-selector-json when node-cache is enabled"
+        )
+    if "--node-cache-block-device-selector-json=" not in content:
+        errors.append(
+            f"{path.name}: controller render must pass --node-cache-block-device-selector-json for SDS-backed node-cache substrate"
+        )
+    elif "--node-cache-block-device-selector-json={}" in content:
+        errors.append(
+            f"{path.name}: controller render must not pass an empty --node-cache-block-device-selector-json when node-cache is enabled"
+        )
     if "kind: DaemonSet" in content and "name: ai-models-node-cache-runtime" in content:
         errors.append(
             f"{path.name}: node-cache-enabled render must not keep legacy DaemonSet/ai-models-node-cache-runtime after stable per-node runtime plane rollout"
@@ -499,6 +587,22 @@ def _validate_node_cache_runtime_plane(path: Path, content: str) -> list[str]:
     if '--node-cache-shared-volume-size=' not in content:
         errors.append(
             f"{path.name}: controller render must pass --node-cache-shared-volume-size for the stable node-cache runtime PVC contract"
+        )
+    if "--node-cache-csi-registrar-image=" not in content:
+        errors.append(
+            f"{path.name}: controller render must pass --node-cache-csi-registrar-image for kubelet-facing node-cache CSI registration"
+        )
+    elif "--node-cache-csi-registrar-image=\n" in content:
+        errors.append(
+            f"{path.name}: controller render must not pass an empty --node-cache-csi-registrar-image when node-cache is enabled"
+        )
+    if "--node-cache-runtime-image=" not in content:
+        errors.append(
+            f"{path.name}: controller render must pass --node-cache-runtime-image for the dedicated node-cache runtime image"
+        )
+    elif "--node-cache-runtime-image=\n" in content:
+        errors.append(
+            f"{path.name}: controller render must not pass an empty --node-cache-runtime-image when node-cache is enabled"
         )
     if "kind: ServiceAccount" not in content or "name: ai-models-node-cache-runtime" not in content:
         errors.append(
@@ -512,6 +616,256 @@ def _validate_node_cache_runtime_plane(path: Path, content: str) -> list[str]:
         errors.append(
             f"{path.name}: node-cache-enabled render must include RoleBinding/ai-models-node-cache-runtime"
         )
+    if 'resources: ["pods"]' not in content or 'verbs: ["get", "list"]' not in content:
+        errors.append(
+            f"{path.name}: node-cache runtime RBAC must grant read-only get/list on pods for CSI publish authorization"
+        )
+    if "kind: CSIDriver" not in content or "name: node-cache.ai-models.deckhouse.io" not in content:
+        errors.append(
+            f"{path.name}: node-cache-enabled render must include CSIDriver/node-cache.ai-models.deckhouse.io"
+        )
+    return errors
+
+
+def _validate_runtime_placement(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+
+    for raw_document in _split_yaml_documents(content):
+        documents = _parse_render_documents(raw_document)
+        if not _find_document(documents, "Deployment", "dmcr"):
+            continue
+        if "node-role.kubernetes.io/control-plane" in raw_document:
+            errors.append(
+                f"{path.name}: Deployment/dmcr must use system placement without control-plane fallback"
+            )
+
+    return errors
+
+
+def _validate_controller_cleanup_runtime(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    if "--cleanup-job-" in content:
+        errors.append(
+            f"{path.name}: controller render must not expose per-delete cleanup Job flags"
+        )
+    if 'resources: ["jobs"]' in content:
+        errors.append(
+            f"{path.name}: controller render must not grant batch/jobs after cleanup moved in-process"
+        )
+    if "kind: Deployment" in content and "name: ai-models-controller" in content:
+        for env_name in ("AI_MODELS_OCI_USERNAME", "AI_MODELS_OCI_PASSWORD"):
+            if f"name: {env_name}" not in content:
+                errors.append(
+                    f"{path.name}: controller render must pass {env_name} for in-process artifact cleanup"
+                )
+    return errors
+
+
+def _validate_template_sources(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    for template, label, values_path, forbidden_markers in VALUES_BACKED_TLS_TEMPLATE_RULES:
+        content = (repo_root / template).read_text(encoding="utf-8")
+        for marker in forbidden_markers:
+            if re.search(rf"\b{re.escape(marker)}\b", content):
+                errors.append(
+                    f"{template}: {label} must be values-backed, found {marker!r}"
+                )
+        if values_path not in content:
+            errors.append(f"{template}: {label} must read {values_path}")
+
+    for hook, label in COMMON_CA_HOOK_RULES:
+        content = (repo_root / hook).read_text(encoding="utf-8")
+        if "CommonCAValuesPath" not in content or "internal.rootCA" not in content:
+            errors.append(f"{hook}: {label} must use common module root CA")
+
+    root_ca_secret = (repo_root / "templates/rootca-secret.yaml").read_text(
+        encoding="utf-8"
+    )
+    if ROOT_CA_VALUES_PATH not in root_ca_secret:
+        errors.append(
+            f"templates/rootca-secret.yaml: root CA Secret must read {ROOT_CA_VALUES_PATH}"
+        )
+    if "b64enc" in root_ca_secret:
+        errors.append(
+            "templates/rootca-secret.yaml: root CA values are already base64 encoded"
+        )
+
+    root_ca_cm = (repo_root / "templates/rootca-cm.yaml").read_text(encoding="utf-8")
+    if ROOT_CA_VALUES_PATH not in root_ca_cm or "b64dec" not in root_ca_cm:
+        errors.append(
+            f"templates/rootca-cm.yaml: root CA ConfigMap must decode {ROOT_CA_VALUES_PATH}"
+        )
+
+    dmcr_secret = (repo_root / "templates/dmcr/secret.yaml").read_text(encoding="utf-8")
+    if DMCR_AUTH_VALUES_PATH not in dmcr_secret:
+        errors.append(
+            f"templates/dmcr/secret.yaml: DMCR auth must read {DMCR_AUTH_VALUES_PATH}"
+        )
+
+    helpers = (repo_root / "templates/_helpers.tpl").read_text(encoding="utf-8")
+    for marker in DMCR_AUTH_FORBIDDEN_HELPER_MARKERS:
+        if marker in helpers:
+            errors.append(
+                f"templates/_helpers.tpl: DMCR auth must be hook-owned, found {marker!r}"
+            )
+
+    return errors
+
+
+def _validate_human_rbac_sources(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+
+    user_authz_path = Path("templates/user-authz-cluster-roles.yaml")
+    user_authz = (repo_root / user_authz_path).read_text(encoding="utf-8")
+    for level in USER_AUTHZ_ACCESS_LEVELS:
+        role_name = re.sub(r"(?<!^)([A-Z])", r"-\1", level).lower()
+        if f"user-authz.deckhouse.io/access-level: {level}" not in user_authz:
+            errors.append(f"{user_authz_path}: missing access level {level}")
+        if f"name: d8:user-authz:ai-models:{role_name}" not in user_authz:
+            errors.append(f"{user_authz_path}: missing role for access level {level}")
+
+    expected_user_rule = 'resources: ["models", "clustermodels"]'
+    expected_read_verbs = 'verbs: ["get", "list", "watch"]'
+    if expected_user_rule not in user_authz or expected_read_verbs not in user_authz:
+        errors.append(
+            f"{user_authz_path}: User access level must grant read-only models and clustermodels"
+        )
+
+    expected_model_write = 'resources: ["models"]'
+    expected_cluster_model_write = 'resources: ["clustermodels"]'
+    expected_write_verbs = (
+        'verbs: ["create", "update", "patch", "delete", "deletecollection"]'
+    )
+    if expected_model_write not in user_authz or expected_write_verbs not in user_authz:
+        errors.append(
+            f"{user_authz_path}: Editor access level must grant write-only models delta"
+        )
+    if expected_cluster_model_write not in user_authz or expected_write_verbs not in user_authz:
+        errors.append(
+            f"{user_authz_path}: ClusterEditor access level must grant write-only clustermodels delta"
+        )
+
+    for template in HUMAN_RBAC_TEMPLATE_PATHS:
+        content = (repo_root / template).read_text(encoding="utf-8").lower()
+        for marker in HUMAN_RBAC_FORBIDDEN_MARKERS:
+            if marker in content:
+                errors.append(
+                    f"{template}: human-facing RBAC must not grant {marker}"
+                )
+
+    use_templates = "\n".join(
+        (repo_root / path).read_text(encoding="utf-8")
+        for path in (Path("templates/rbacv2/use/view.yaml"), Path("templates/rbacv2/use/edit.yaml"))
+    )
+    if "clustermodels" in use_templates:
+        errors.append(
+            "templates/rbacv2/use: use roles must not grant cluster-scoped clustermodels"
+        )
+
+    use_edit = (repo_root / "templates/rbacv2/use/edit.yaml").read_text(
+        encoding="utf-8"
+    )
+    manage_edit = (repo_root / "templates/rbacv2/manage/edit.yaml").read_text(
+        encoding="utf-8"
+    )
+    for template, content in (
+        ("templates/rbacv2/use/edit.yaml", use_edit),
+        ("templates/rbacv2/manage/edit.yaml", manage_edit),
+    ):
+        if '"get"' in content or '"list"' in content or '"watch"' in content:
+            errors.append(f"{template}: edit role must be write-only delta")
+
+    manage_view = (repo_root / "templates/rbacv2/manage/view.yaml").read_text(
+        encoding="utf-8"
+    )
+    if 'resources: ["models", "clustermodels"]' not in manage_view:
+        errors.append(
+            "templates/rbacv2/manage/view.yaml: manage view must cover models and clustermodels"
+        )
+    if 'resourceNames: ["ai-models"]' not in manage_view:
+        errors.append(
+            "templates/rbacv2/manage/view.yaml: manage view must cover ModuleConfig ai-models"
+        )
+
+    return errors
+
+
+def _validate_values_backed_tls_secrets(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    for raw_document in _split_yaml_documents(content):
+        documents = _parse_render_documents(raw_document)
+        for secret_name, forbidden_keys, must_be_tls in VALUES_BACKED_TLS_SECRET_RULES:
+            if not _find_document(documents, "Secret", secret_name):
+                continue
+            if must_be_tls and "type: kubernetes.io/tls" not in raw_document:
+                errors.append(
+                    f"{path.name}: Secret/{secret_name} must be kubernetes.io/tls"
+                )
+            for key in forbidden_keys:
+                if key in raw_document:
+                    errors.append(
+                        f"{path.name}: Secret/{secret_name} must not render {key.rstrip(':')}"
+                    )
+    return errors
+
+
+def _validate_workload_delivery_webhook(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    if "name: ai-models-workload-delivery" not in content:
+        return errors
+    if "kind: MutatingWebhookConfiguration" not in content:
+        errors.append(
+            f"{path.name}: workload delivery webhook configuration must render as MutatingWebhookConfiguration"
+        )
+    if not re.search(r"(?m)^\s*failurePolicy:\s+Fail\s*$", content):
+        errors.append(
+            f"{path.name}: workload delivery webhook must fail closed for annotated workloads"
+        )
+    if not re.search(r'(?m)^\s*caBundle:\s+"?[A-Za-z0-9+/=]+"?\s*$', content):
+        errors.append(
+            f"{path.name}: workload delivery webhook must render a non-empty caBundle"
+        )
+    return errors
+
+
+def _validate_root_ca_contract(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    root_secret_seen = False
+    root_cm_seen = False
+
+    for raw_document in _split_yaml_documents(content):
+        documents = _parse_render_documents(raw_document)
+        if _find_document(documents, "Secret", ROOT_CA_SECRET_NAME):
+            root_secret_seen = True
+            if "type: kubernetes.io/tls" not in raw_document:
+                errors.append(
+                    f"{path.name}: Secret/{ROOT_CA_SECRET_NAME} must be kubernetes.io/tls"
+                )
+            for key in ("tls.crt:", "tls.key:"):
+                if key not in raw_document:
+                    errors.append(
+                        f"{path.name}: Secret/{ROOT_CA_SECRET_NAME} must render {key.rstrip(':')}"
+                    )
+            for key in ("ca.crt:", "ca.key:"):
+                if key in raw_document:
+                    errors.append(
+                        f"{path.name}: Secret/{ROOT_CA_SECRET_NAME} must not render {key.rstrip(':')}"
+                    )
+
+        if _find_document(documents, "ConfigMap", ROOT_CA_SECRET_NAME):
+            root_cm_seen = True
+            if "ca-bundle: |" not in raw_document:
+                errors.append(
+                    f"{path.name}: ConfigMap/{ROOT_CA_SECRET_NAME} must expose ca-bundle"
+                )
+
+    if "name: ai-models-controller" not in content:
+        return errors
+    if not root_secret_seen:
+        errors.append(f"{path.name}: Secret/{ROOT_CA_SECRET_NAME} is missing")
+    if not root_cm_seen:
+        errors.append(f"{path.name}: ConfigMap/{ROOT_CA_SECRET_NAME} is missing")
+
     return errors
 
 
@@ -611,6 +965,11 @@ def validate_render(path: Path) -> list[str]:
     errors.extend(_validate_port_name_lengths(path, content))
     errors.extend(_validate_dmcr_secret_delete_rbac(path, content))
     errors.extend(_validate_node_cache_runtime_plane(path, content))
+    errors.extend(_validate_runtime_placement(path, content))
+    errors.extend(_validate_controller_cleanup_runtime(path, content))
+    errors.extend(_validate_values_backed_tls_secrets(path, content))
+    errors.extend(_validate_workload_delivery_webhook(path, content))
+    errors.extend(_validate_root_ca_contract(path, content))
     errors.extend(_validate_dmcr_auth_consistency(path, content))
     errors.extend(_validate_dmcr_secret_restart_contract(path, content))
 
@@ -628,6 +987,9 @@ def main() -> int:
         return 1
 
     errors: list[str] = []
+    repo_root = Path(__file__).resolve().parents[2]
+    errors.extend(_validate_template_sources(repo_root))
+    errors.extend(_validate_human_rbac_sources(repo_root))
     for render in sorted(renders_dir.glob("helm-template-*.yaml")):
         errors.extend(validate_render(render))
 

@@ -123,6 +123,46 @@ func TestRenderBuildsDigestScopedModelPathForSharedPVCTopology(t *testing.T) {
 	}
 }
 
+func TestRenderBuildsSharedDirectWithoutMaterializer(t *testing.T) {
+	t.Parallel()
+
+	rendered, err := Render(Input{
+		Artifact: publication.PublishedArtifact{
+			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
+			URI:       "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
+			Digest:    "sha256:deadbeef",
+			MediaType: "application/vnd.cncf.model.manifest.v1+json",
+		},
+		ArtifactFamily: "hf-safetensors-v1",
+		CacheMount: CacheMount{
+			VolumeName: DefaultManagedCacheName,
+			MountPath:  DefaultCacheMountPath,
+		},
+		TopologyKind: CacheTopologyDirect,
+	}, Options{
+		RuntimeImage: "example.com/ai-models:latest",
+	})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	if rendered.HasInitContainer {
+		t.Fatalf("did not expect init container for shared-direct render")
+	}
+	if got, want := rendered.InitContainerName, DefaultInitContainerName; got != want {
+		t.Fatalf("init container name = %q, want %q", got, want)
+	}
+	if got, want := rendered.ModelPath, nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
+		t.Fatalf("model path = %q, want %q", got, want)
+	}
+	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
+		t.Fatalf("runtime model path env = %q, want %q", got, want)
+	}
+	if len(rendered.Volumes) != 0 {
+		t.Fatalf("did not expect registry CA volumes for shared-direct render, got %#v", rendered.Volumes)
+	}
+}
+
 func TestRenderBuildsRuntimeImagePullSecretReference(t *testing.T) {
 	t.Parallel()
 

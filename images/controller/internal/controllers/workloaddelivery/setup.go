@@ -24,10 +24,12 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 const (
@@ -106,39 +108,51 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 }
 
 func setupDeploymentController(mgr ctrl.Manager, base baseReconciler) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	controller := ctrl.NewControllerManagedBy(mgr).
 		Named(deploymentControllerName).
 		For(&appsv1.Deployment{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
 		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapDeploymentsForModel)).
-		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapDeploymentsForClusterModel)).
-		Complete(&deploymentReconciler{base})
+		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapDeploymentsForClusterModel))
+	if base.options.Service.ManagedCache.Enabled {
+		controller = controller.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(base.mapDeploymentsForNodeCacheReadiness), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
+	}
+	return controller.Complete(&deploymentReconciler{base})
 }
 
 func setupStatefulSetController(mgr ctrl.Manager, base baseReconciler) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	controller := ctrl.NewControllerManagedBy(mgr).
 		Named(statefulSetControllerName).
 		For(&appsv1.StatefulSet{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
 		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapStatefulSetsForModel)).
-		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapStatefulSetsForClusterModel)).
-		Complete(&statefulSetReconciler{base})
+		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapStatefulSetsForClusterModel))
+	if base.options.Service.ManagedCache.Enabled {
+		controller = controller.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(base.mapStatefulSetsForNodeCacheReadiness), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
+	}
+	return controller.Complete(&statefulSetReconciler{base})
 }
 
 func setupDaemonSetController(mgr ctrl.Manager, base baseReconciler) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	controller := ctrl.NewControllerManagedBy(mgr).
 		Named(daemonSetControllerName).
 		For(&appsv1.DaemonSet{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
 		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapDaemonSetsForModel)).
-		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapDaemonSetsForClusterModel)).
-		Complete(&daemonSetReconciler{base})
+		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapDaemonSetsForClusterModel))
+	if base.options.Service.ManagedCache.Enabled {
+		controller = controller.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(base.mapDaemonSetsForNodeCacheReadiness), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
+	}
+	return controller.Complete(&daemonSetReconciler{base})
 }
 
 func setupCronJobController(mgr ctrl.Manager, base baseReconciler) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	controller := ctrl.NewControllerManagedBy(mgr).
 		Named(cronJobControllerName).
 		For(&batchv1.CronJob{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
 		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapCronJobsForModel)).
-		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapCronJobsForClusterModel)).
-		Complete(&cronJobReconciler{base})
+		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapCronJobsForClusterModel))
+	if base.options.Service.ManagedCache.Enabled {
+		controller = controller.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(base.mapCronJobsForNodeCacheReadiness), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
+	}
+	return controller.Complete(&cronJobReconciler{base})
 }
 
 func (r *deploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

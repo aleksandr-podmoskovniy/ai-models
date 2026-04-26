@@ -32,6 +32,27 @@ SPEC.loader.exec_module(MODULE)
 
 class ValidateRendersTest(unittest.TestCase):
     @staticmethod
+    def _controller_contract_docs() -> str:
+        return """---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-models-ca
+type: kubernetes.io/tls
+stringData:
+  tls.crt: cert
+  tls.key: key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-models-ca
+data:
+  ca-bundle: |
+    cert
+"""
+
+    @staticmethod
     def _htpasswd_entry(username: str, password: str) -> str:
         htpasswd_bin = shutil.which("htpasswd")
         if not htpasswd_bin:
@@ -44,6 +65,133 @@ class ValidateRendersTest(unittest.TestCase):
             check=True,
         )
         return result.stdout.strip()
+
+    @staticmethod
+    def _write_human_rbac_sources(root: Path, **overrides: str) -> None:
+        defaults = {
+            "templates/user-authz-cluster-roles.yaml": """---
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: User
+  name: d8:user-authz:ai-models:user
+rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models", "clustermodels"]
+    verbs: ["get", "list", "watch"]
+---
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: PrivilegedUser
+  name: d8:user-authz:ai-models:privileged-user
+rules: []
+---
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: Editor
+  name: d8:user-authz:ai-models:editor
+rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models"]
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+---
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: Admin
+  name: d8:user-authz:ai-models:admin
+rules: []
+---
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: ClusterEditor
+  name: d8:user-authz:ai-models:cluster-editor
+rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["clustermodels"]
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+---
+metadata:
+  annotations:
+    user-authz.deckhouse.io/access-level: ClusterAdmin
+  name: d8:user-authz:ai-models:cluster-admin
+rules: []
+""",
+            "templates/rbacv2/use/view.yaml": """rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models"]
+    verbs: ["get", "list", "watch"]
+""",
+            "templates/rbacv2/use/edit.yaml": """rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models"]
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+""",
+            "templates/rbacv2/manage/view.yaml": """rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models", "clustermodels"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["deckhouse.io"]
+    resources: ["moduleconfigs"]
+    resourceNames: ["ai-models"]
+    verbs: ["get", "list", "watch"]
+""",
+            "templates/rbacv2/manage/edit.yaml": """rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models", "clustermodels"]
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["deckhouse.io"]
+    resources: ["moduleconfigs"]
+    resourceNames: ["ai-models"]
+    verbs: ["create", "update", "patch", "delete"]
+""",
+        }
+
+        for relative_path, content in defaults.items():
+            target = root / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(overrides.get(relative_path, content), encoding="utf-8")
+
+    def test_validate_human_rbac_sources_accepts_target_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._write_human_rbac_sources(root)
+            errors = MODULE._validate_human_rbac_sources(root)
+
+        self.assertEqual(errors, [])
+
+    def test_validate_human_rbac_sources_rejects_forbidden_access(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._write_human_rbac_sources(
+                root,
+                **{
+                    "templates/rbacv2/use/edit.yaml": """rules:
+  - apiGroups: ["ai.deckhouse.io"]
+    resources: ["models", "clustermodels", "models/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+""",
+                },
+            )
+            errors = MODULE._validate_human_rbac_sources(root)
+
+        self.assertIn(
+            "templates/rbacv2/use/edit.yaml: human-facing RBAC must not grant models/status",
+            errors,
+        )
+        self.assertIn(
+            "templates/rbacv2/use/edit.yaml: human-facing RBAC must not grant secrets",
+            errors,
+        )
+        self.assertIn(
+            "templates/rbacv2/use: use roles must not grant cluster-scoped clustermodels",
+            errors,
+        )
+        self.assertIn(
+            "templates/rbacv2/use/edit.yaml: edit role must be write-only delta",
+            errors,
+        )
 
     def test_parse_secret_documents_reads_string_data(self) -> None:
         content = """---
@@ -147,6 +295,7 @@ metadata:
   name: ai-models-dmcr-tls
   annotations:
     ai.deckhouse.io/dmcr-pod-secret-checksum: tls/bootstrap
+type: kubernetes.io/tls
 stringData:
   tls.crt: cert
   tls.key: key
@@ -196,6 +345,7 @@ metadata:
   name: ai-models-dmcr-tls
   annotations:
     ai.deckhouse.io/dmcr-pod-secret-checksum: tls/bootstrap
+type: kubernetes.io/tls
 ---
 apiVersion: v1
 kind: Secret
@@ -298,9 +448,14 @@ spec:
     spec:
       containers:
         - name: controller
+          env:
+            - name: AI_MODELS_OCI_USERNAME
+              value: ai-models-reader
+            - name: AI_MODELS_OCI_PASSWORD
+              value: reader
           args:
             - --node-cache-enabled=true
-"""
+""" + self._controller_contract_docs()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             render_path = Path(tmpdir) / "helm-template-test.yaml"
@@ -310,10 +465,16 @@ spec:
         self.assertEqual(
             errors,
             [
+                "helm-template-test.yaml: controller render must pass --node-cache-node-selector-json for SDS-backed node-cache substrate",
+                "helm-template-test.yaml: controller render must pass --node-cache-block-device-selector-json for SDS-backed node-cache substrate",
                 "helm-template-test.yaml: controller render must pass --node-cache-shared-volume-size for the stable node-cache runtime PVC contract",
+                "helm-template-test.yaml: controller render must pass --node-cache-csi-registrar-image for kubelet-facing node-cache CSI registration",
+                "helm-template-test.yaml: controller render must pass --node-cache-runtime-image for the dedicated node-cache runtime image",
                 "helm-template-test.yaml: node-cache-enabled render must include ServiceAccount/ai-models-node-cache-runtime",
                 "helm-template-test.yaml: node-cache-enabled render must include Role/ai-models-node-cache-runtime",
                 "helm-template-test.yaml: node-cache-enabled render must include RoleBinding/ai-models-node-cache-runtime",
+                "helm-template-test.yaml: node-cache runtime RBAC must grant read-only get/list on pods for CSI publish authorization",
+                "helm-template-test.yaml: node-cache-enabled render must include CSIDriver/node-cache.ai-models.deckhouse.io",
             ],
         )
 
@@ -328,9 +489,18 @@ spec:
     spec:
       containers:
         - name: controller
+          env:
+            - name: AI_MODELS_OCI_USERNAME
+              value: ai-models-reader
+            - name: AI_MODELS_OCI_PASSWORD
+              value: reader
           args:
             - --node-cache-enabled=true
+            - --node-cache-runtime-image=registry.example.test/node-cache-runtime@sha256:2222
+            - --node-cache-csi-registrar-image=registry.example.test/csi-node-driver-registrar@sha256:1111
             - --node-cache-shared-volume-size=64Gi
+            - --node-cache-node-selector-json={"ai.deckhouse.io/node-cache":"true"}
+            - --node-cache-block-device-selector-json={"ai.deckhouse.io/model-cache":"true"}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -341,12 +511,21 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: ai-models-node-cache-runtime
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: ai-models-node-cache-runtime
-"""
+---
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: node-cache.ai-models.deckhouse.io
+""" + self._controller_contract_docs()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             render_path = Path(tmpdir) / "helm-template-test.yaml"
@@ -354,6 +533,68 @@ metadata:
             errors = MODULE.validate_render(render_path)
 
         self.assertEqual(errors, [])
+
+    def test_validate_render_rejects_empty_node_cache_selectors(self) -> None:
+        content = """---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-models-controller
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          env:
+            - name: AI_MODELS_OCI_USERNAME
+              value: ai-models-reader
+            - name: AI_MODELS_OCI_PASSWORD
+              value: reader
+          args:
+            - --node-cache-enabled=true
+            - --node-cache-runtime-image=registry.example.test/node-cache-runtime@sha256:2222
+            - --node-cache-csi-registrar-image=registry.example.test/csi-node-driver-registrar@sha256:1111
+            - --node-cache-shared-volume-size=64Gi
+            - --node-cache-node-selector-json={}
+            - --node-cache-block-device-selector-json={}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-models-node-cache-runtime
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ai-models-node-cache-runtime
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-models-node-cache-runtime
+---
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: node-cache.ai-models.deckhouse.io
+""" + self._controller_contract_docs()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE.validate_render(render_path)
+
+        self.assertEqual(
+            errors,
+            [
+                "helm-template-test.yaml: controller render must not pass an empty --node-cache-node-selector-json when node-cache is enabled",
+                "helm-template-test.yaml: controller render must not pass an empty --node-cache-block-device-selector-json when node-cache is enabled",
+            ],
+        )
 
     def test_validate_render_rejects_quoted_node_cache_json_flags(self) -> None:
         content = """---
@@ -366,11 +607,16 @@ spec:
     spec:
       containers:
         - name: controller
+          env:
+            - name: AI_MODELS_OCI_USERNAME
+              value: ai-models-reader
+            - name: AI_MODELS_OCI_PASSWORD
+              value: reader
           args:
             - --node-cache-enabled=false
             - --node-cache-node-selector-json="{}"
             - --node-cache-block-device-selector-json="{\\"role\\":\\"gpu\\"}"
-"""
+""" + self._controller_contract_docs()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             render_path = Path(tmpdir) / "helm-template-test.yaml"
@@ -396,9 +642,18 @@ spec:
     spec:
       containers:
         - name: controller
+          env:
+            - name: AI_MODELS_OCI_USERNAME
+              value: ai-models-reader
+            - name: AI_MODELS_OCI_PASSWORD
+              value: reader
           args:
             - --node-cache-enabled=true
+            - --node-cache-runtime-image=registry.example.test/node-cache-runtime@sha256:2222
+            - --node-cache-csi-registrar-image=registry.example.test/csi-node-driver-registrar@sha256:1111
             - --node-cache-shared-volume-size=64Gi
+            - --node-cache-node-selector-json={"ai.deckhouse.io/node-cache":"true"}
+            - --node-cache-block-device-selector-json={"ai.deckhouse.io/model-cache":"true"}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -409,17 +664,26 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: ai-models-node-cache-runtime
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: ai-models-node-cache-runtime
 ---
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: node-cache.ai-models.deckhouse.io
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: ai-models-node-cache-runtime
-"""
+""" + self._controller_contract_docs()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             render_path = Path(tmpdir) / "helm-template-test.yaml"
@@ -430,6 +694,52 @@ metadata:
             errors,
             [
                 "helm-template-test.yaml: node-cache-enabled render must not keep legacy DaemonSet/ai-models-node-cache-runtime after stable per-node runtime plane rollout",
+            ],
+        )
+
+    def test_validate_render_accepts_fail_closed_workload_delivery_webhook(self) -> None:
+        content = """---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: ai-models-workload-delivery
+webhooks:
+  - name: workloaddelivery.ai-models.deckhouse.io
+    failurePolicy: Fail
+    clientConfig:
+      caBundle: Y2E=
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE.validate_render(render_path)
+
+        self.assertEqual(errors, [])
+
+    def test_validate_render_rejects_fail_open_workload_delivery_webhook(self) -> None:
+        content = """---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: ai-models-workload-delivery
+webhooks:
+  - name: workloaddelivery.ai-models.deckhouse.io
+    failurePolicy: Ignore
+    clientConfig:
+      caBundle: ""
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE.validate_render(render_path)
+
+        self.assertEqual(
+            errors,
+            [
+                "helm-template-test.yaml: workload delivery webhook must fail closed for annotated workloads",
+                "helm-template-test.yaml: workload delivery webhook must render a non-empty caBundle",
             ],
         )
 

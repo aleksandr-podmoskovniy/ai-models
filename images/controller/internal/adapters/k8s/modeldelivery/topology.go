@@ -29,6 +29,7 @@ type CacheTopologyKind string
 const (
 	CacheTopologyPerPod    CacheTopologyKind = "PerPod"
 	CacheTopologySharedPVC CacheTopologyKind = "SharedPVC"
+	CacheTopologyDirect    CacheTopologyKind = "SharedDirect"
 )
 
 type TopologyHints struct {
@@ -67,6 +68,13 @@ func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, 
 	}
 
 	switch {
+	case isNodeCacheCSIVolume(volume):
+		return CacheTopology{
+			Kind:           CacheTopologyDirect,
+			CacheMount:     cacheMount,
+			DeliveryMode:   DeliveryModeSharedDirect,
+			DeliveryReason: DeliveryReasonNodeSharedRuntimePlane,
+		}, nil
 	case volume.PersistentVolumeClaim != nil:
 		claimName := strings.TrimSpace(volume.PersistentVolumeClaim.ClaimName)
 		if claimName == "" {
@@ -91,8 +99,12 @@ func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, 
 			DeliveryReason: reason,
 		}, nil
 	default:
-		return CacheTopology{}, fmt.Errorf("runtime delivery cache volume %q uses unsupported source; expected persistentVolumeClaim, emptyDir, ephemeral, or StatefulSet claim template", cacheMount.VolumeName)
+		return CacheTopology{}, fmt.Errorf("runtime delivery cache volume %q uses unsupported source; expected csi, persistentVolumeClaim, emptyDir, ephemeral, or StatefulSet claim template", cacheMount.VolumeName)
 	}
+}
+
+func isNodeCacheCSIVolume(volume corev1.Volume) bool {
+	return volume.CSI != nil && strings.TrimSpace(volume.CSI.Driver) == NodeCacheCSIDriverName
 }
 
 func normalizeTopologyHints(hints TopologyHints) TopologyHints {

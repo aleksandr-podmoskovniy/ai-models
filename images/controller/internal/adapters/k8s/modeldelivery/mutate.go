@@ -28,10 +28,15 @@ func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest s
 	}
 
 	RemoveSchedulingGate(template)
-	template.Spec.InitContainers = upsertContainer(template.Spec.InitContainers, rendered.InitContainer)
+	if rendered.HasInitContainer {
+		template.Spec.InitContainers = upsertContainer(template.Spec.InitContainers, rendered.InitContainer)
+	} else {
+		template.Spec.InitContainers = removeContainerByName(template.Spec.InitContainers, rendered.InitContainerName)
+	}
 	template.Spec.Containers = upsertRuntimeEnv(template.Spec.Containers, rendered.RuntimeEnv)
 	template.Spec.Volumes = upsertVolumes(template.Spec.Volumes, rendered.Volumes)
 	template.Spec.ImagePullSecrets = upsertImagePullSecrets(template.Spec.ImagePullSecrets, rendered.ImagePullSecrets)
+	template.Spec.ImagePullSecrets = removeImagePullSecretsByName(template.Spec.ImagePullSecrets, rendered.ImagePullSecretNamesPrune)
 	template.Annotations = upsertAnnotations(template.Annotations, map[string]string{
 		ResolvedDigestAnnotation:         digest,
 		ResolvedArtifactURIAnnotation:    rendered.ArtifactURI,
@@ -79,6 +84,20 @@ func upsertVolumes(existing []corev1.Volume, desired []corev1.Volume) []corev1.V
 	return existing
 }
 
+func removeContainerByName(existing []corev1.Container, name string) []corev1.Container {
+	if name == "" || len(existing) == 0 {
+		return existing
+	}
+	filtered := existing[:0]
+	for _, container := range existing {
+		if container.Name == name {
+			continue
+		}
+		filtered = append(filtered, container)
+	}
+	return filtered
+}
+
 func upsertEnv(existing []corev1.EnvVar, desired []corev1.EnvVar) []corev1.EnvVar {
 	for _, item := range desired {
 		replaced := false
@@ -111,6 +130,26 @@ func upsertImagePullSecrets(existing []corev1.LocalObjectReference, desired []co
 		}
 	}
 	return existing
+}
+
+func removeImagePullSecretsByName(existing []corev1.LocalObjectReference, names []string) []corev1.LocalObjectReference {
+	if len(existing) == 0 || len(names) == 0 {
+		return existing
+	}
+	remove := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if name != "" {
+			remove[name] = struct{}{}
+		}
+	}
+	filtered := existing[:0]
+	for _, secret := range existing {
+		if _, found := remove[secret.Name]; found {
+			continue
+		}
+		filtered = append(filtered, secret)
+	}
+	return filtered
 }
 
 func upsertAnnotations(existing map[string]string, desired map[string]string) map[string]string {

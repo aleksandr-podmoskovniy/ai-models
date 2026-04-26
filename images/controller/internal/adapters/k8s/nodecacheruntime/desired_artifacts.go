@@ -24,13 +24,19 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
-const podNodeNameFieldSelector = "spec.nodeName"
+const (
+	podNodeNameFieldSelector = "spec.nodeName"
+	csiPodNameAttribute      = "csi.storage.k8s.io/pod.name"
+	csiPodNamespaceAttribute = "csi.storage.k8s.io/pod.namespace"
+	csiPodUIDAttribute       = "csi.storage.k8s.io/pod.uid"
+)
 
 type DesiredArtifactsClient struct {
 	client kubernetes.Interface
@@ -88,6 +94,35 @@ func (c *DesiredArtifactsClient) LoadNodeDesiredArtifacts(ctx context.Context, n
 	}
 
 	return nodecache.NormalizeDesiredArtifacts(artifacts)
+}
+
+func (c *DesiredArtifactsClient) AllowCSIPublish(ctx context.Context, nodeName string, attributes map[string]string, digest string) (bool, error) {
+	if c == nil {
+		return false, errors.New("node cache runtime desired artifacts client must not be nil")
+	}
+	nodeName = strings.TrimSpace(nodeName)
+	podName := strings.TrimSpace(attributes[csiPodNameAttribute])
+	podNamespace := strings.TrimSpace(attributes[csiPodNamespaceAttribute])
+	podUID := strings.TrimSpace(attributes[csiPodUIDAttribute])
+	if nodeName == "" || podName == "" || podNamespace == "" || podUID == "" || strings.TrimSpace(digest) == "" {
+		return false, nil
+	}
+
+	pod, err := c.client.CoreV1().Pods(podNamespace).Get(ctx, podName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if string(pod.UID) != podUID || strings.TrimSpace(pod.Spec.NodeName) != nodeName || !IsActiveScheduledPod(pod) {
+		return false, nil
+	}
+	artifact, found, err := DesiredArtifactFromPod(pod)
+	if err != nil || !found {
+		return false, err
+	}
+	return artifact.Digest == strings.TrimSpace(digest), nil
 }
 
 func IsActiveScheduledPod(pod *corev1.Pod) bool {

@@ -29,4 +29,7 @@ const (
 	DefaultSharedVolumeSize  = "64Gi"
 	DefaultMaxUnusedAge      = 24 * time.Hour
 	DefaultMaintenancePeriod = 5 * time.Minute
+
+	RuntimeReadyNodeLabelKey   = "ai.deckhouse.io/node-cache-runtime-ready"
+	RuntimeReadyNodeLabelValue = "true"
 )

@@ -38,8 +38,8 @@ spec:
       {{- include "helm_lib_module_pod_security_context_run_as_user_deckhouse_with_writable_fs" . | nindent 6 }}
       {{- include "helm_lib_pod_anti_affinity_for_ha" (list . (dict "app.kubernetes.io/name" (include "ai-models.fullname" .) "app.kubernetes.io/component" "controller")) | nindent 6 }}
       {{- include "helm_lib_priority_class" (tuple . $priorityClassName) | nindent 6 }}
-      {{- include "ai-models.controlPlaneNodeSelector" . | nindent 6 }}
-      {{- include "ai-models.controlPlaneTolerations" . | nindent 6 }}
+      {{- include "helm_lib_node_selector" (tuple . "master") | nindent 6 }}
+      {{- include "helm_lib_tolerations" (tuple . "any-node") | nindent 6 }}
       containers:
         - name: controller
           {{- include "helm_lib_module_container_security_context_read_only_root_filesystem_capabilities_drop_all_pss_restricted" . | nindent 10 }}
@@ -51,10 +51,6 @@ spec:
             - --leader-elect=true
             - --leader-election-id={{ include "ai-models.controllerLeaderElectionID" . }}
             - --leader-election-namespace=$(POD_NAMESPACE)
-            - --cleanup-job-image={{ include "helm_lib_module_image" (list . "controllerRuntime") }}
-            - --cleanup-job-image-pull-secret-name={{ include "ai-models.registrySecretName" . }}
-            - --cleanup-job-namespace=$(POD_NAMESPACE)
-            - --cleanup-job-service-account={{ include "ai-models.controllerServiceAccountName" . }}
             - --publication-worker-image={{ include "helm_lib_module_image" (list . "controllerRuntime") }}
             - --publication-worker-image-pull-secret-name={{ include "ai-models.registrySecretName" . }}
             - --publication-worker-namespace=$(POD_NAMESPACE)
@@ -80,9 +76,10 @@ spec:
             - --artifacts-credentials-secret-name={{ include "ai-models.artifactsResolvedSecretName" . }}
             - --artifacts-ca-secret-name={{ include "ai-models.artifactsMountedCASecretName" . }}
             - --node-cache-enabled={{ include "ai-models.nodeCacheEnabled" . }}
+            - --node-cache-runtime-image={{ include "helm_lib_module_image" (list . "nodeCacheRuntime") }}
+            - --node-cache-csi-registrar-image={{ include "ai-models.nodeCacheCSIRegistrarImage" . }}
             - --node-cache-max-size={{ include "ai-models.nodeCacheMaxSize" . }}
             - --node-cache-shared-volume-size={{ include "ai-models.nodeCacheSharedVolumeSize" . }}
-            - --node-cache-fallback-volume-size={{ include "ai-models.nodeCacheFallbackVolumeSize" . }}
             - --node-cache-storage-class-name={{ include "ai-models.nodeCacheStorageClassName" . }}
             - --node-cache-volume-group-set-name={{ include "ai-models.nodeCacheVolumeGroupSetName" . }}
             - --node-cache-volume-group-name-on-node={{ include "ai-models.nodeCacheVolumeGroupNameOnNode" . }}
@@ -124,22 +121,36 @@ spec:
             - name: AI_MODELS_S3_CA_FILE
               value: /etc/ai-models/artifacts-ca/ca.crt
             {{- end }}
+            - name: AI_MODELS_OCI_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.dmcrWriteAuthSecretName" . }}
+                  key: username
+            - name: AI_MODELS_OCI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.dmcrWriteAuthSecretName" . }}
+                  key: password
+            {{- if (include "ai-models.dmcrCASecretName" . | trim) }}
+            - name: AI_MODELS_OCI_CA_FILE
+              value: /etc/ai-models/registry-ca/ca.crt
+            {{- end }}
             - name: LOG_FORMAT
               value: json
-          {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
           volumeMounts:
+            {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
             - name: artifacts-ca
               mountPath: /etc/ai-models/artifacts-ca
               readOnly: true
+            {{- end }}
+            {{- if (include "ai-models.dmcrCASecretName" . | trim) }}
+            - name: registry-ca
+              mountPath: /etc/ai-models/registry-ca
+              readOnly: true
+            {{- end }}
             - name: webhook-tls
               mountPath: /tmp/k8s-webhook-server/serving-certs
               readOnly: true
-          {{- else }}
-          volumeMounts:
-            - name: webhook-tls
-              mountPath: /tmp/k8s-webhook-server/serving-certs
-              readOnly: true
-          {{- end }}
           ports:
             - name: metrics
               containerPort: {{ include "ai-models.controllerMetricsPort" . | int }}
@@ -251,18 +262,18 @@ spec:
           )
         ) }}
         {{- include "kube_rbac_proxy.sidecar_container" (tuple . $kubeRbacProxySettings) | nindent 8 }}
-      {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
       volumes:
+        {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
         - name: artifacts-ca
           secret:
             secretName: {{ include "ai-models.artifactsMountedCASecretName" . }}
+        {{- end }}
+        {{- if (include "ai-models.dmcrCASecretName" . | trim) }}
+        - name: registry-ca
+          secret:
+            secretName: {{ include "ai-models.dmcrCASecretName" . }}
+        {{- end }}
         - name: webhook-tls
           secret:
             secretName: {{ include "ai-models.controllerWebhookTLSSecretName" . }}
-      {{- else }}
-      volumes:
-        - name: webhook-tls
-          secret:
-            secretName: {{ include "ai-models.controllerWebhookTLSSecretName" . }}
-      {{- end }}
 {{- end }}

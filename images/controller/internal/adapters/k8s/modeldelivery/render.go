@@ -37,13 +37,16 @@ type Input struct {
 }
 
 type Rendered struct {
-	InitContainer    corev1.Container
-	RuntimeEnv       []corev1.EnvVar
-	Volumes          []corev1.Volume
-	ImagePullSecrets []corev1.LocalObjectReference
-	ModelPath        string
-	ArtifactURI      string
-	ArtifactFamily   string
+	InitContainer             corev1.Container
+	HasInitContainer          bool
+	InitContainerName         string
+	RuntimeEnv                []corev1.EnvVar
+	Volumes                   []corev1.Volume
+	ImagePullSecrets          []corev1.LocalObjectReference
+	ImagePullSecretNamesPrune []string
+	ModelPath                 string
+	ArtifactURI               string
+	ArtifactFamily            string
 }
 
 func Render(input Input, options Options) (Rendered, error) {
@@ -57,7 +60,7 @@ func Render(input Input, options Options) (Rendered, error) {
 	if strings.TrimSpace(input.Artifact.Digest) == "" {
 		return Rendered{}, errors.New("runtime delivery artifact digest must not be empty")
 	}
-	if strings.TrimSpace(input.RegistryAccess.AuthSecretName) == "" {
+	if input.TopologyKind != CacheTopologyDirect && strings.TrimSpace(input.RegistryAccess.AuthSecretName) == "" {
 		return Rendered{}, errors.New("runtime delivery registry auth projection must not be empty")
 	}
 	if strings.TrimSpace(input.CacheMount.VolumeName) == "" {
@@ -76,8 +79,21 @@ func Render(input Input, options Options) (Rendered, error) {
 	if input.TopologyKind == CacheTopologySharedPVC {
 		modelPath = nodecache.SharedArtifactModelPath(options.CacheMountPath, input.Artifact.Digest)
 	}
+	if input.TopologyKind == CacheTopologyDirect {
+		return Rendered{
+			HasInitContainer:          false,
+			InitContainerName:         options.InitContainerName,
+			RuntimeEnv:                buildRuntimeEnv(input, options, modelPath),
+			ImagePullSecretNamesPrune: buildImagePullSecretNamesPrune(input.RuntimeImagePullSecretName),
+			ModelPath:                 modelPath,
+			ArtifactURI:               strings.TrimSpace(input.Artifact.URI),
+			ArtifactFamily:            strings.TrimSpace(input.ArtifactFamily),
+		}, nil
+	}
 
 	return Rendered{
+		HasInitContainer:  true,
+		InitContainerName: options.InitContainerName,
 		InitContainer: corev1.Container{
 			Name:            options.InitContainerName,
 			Image:           options.RuntimeImage,
@@ -100,6 +116,13 @@ func buildImagePullSecrets(secretName string) []corev1.LocalObjectReference {
 		return nil
 	}
 	return []corev1.LocalObjectReference{{Name: strings.TrimSpace(secretName)}}
+}
+
+func buildImagePullSecretNamesPrune(secretName string) []string {
+	if strings.TrimSpace(secretName) == "" {
+		return nil
+	}
+	return []string{strings.TrimSpace(secretName)}
 }
 
 func buildInitEnv(input Input, options Options) []corev1.EnvVar {
