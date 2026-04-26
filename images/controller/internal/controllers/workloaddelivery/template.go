@@ -53,7 +53,7 @@ func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeld
 	if modeldelivery.RemoveSchedulingGate(template) {
 		changed = true
 	}
-	initContainers, removedInit := removeContainerByName(template.Spec.InitContainers, options.Render.InitContainerName)
+	initContainers, removedInit := modeldelivery.RemoveManagedInitContainers(template.Spec.InitContainers, options.Render.InitContainerName)
 	if removedInit {
 		template.Spec.InitContainers = initContainers
 		changed = true
@@ -70,6 +70,7 @@ func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeld
 		modeldelivery.ResolvedArtifactFamilyAnnotation,
 		modeldelivery.ResolvedDeliveryModeAnnotation,
 		modeldelivery.ResolvedDeliveryReasonAnnotation,
+		modeldelivery.ResolvedModelsAnnotation,
 	} {
 		var removed bool
 		template.Annotations, removed = removeAnnotation(template.Annotations, key)
@@ -103,7 +104,8 @@ func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldeli
 		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedArtifactURIAnnotation]) != "" ||
 		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedArtifactFamilyAnnotation]) != "" ||
 		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedDeliveryModeAnnotation]) != "" ||
-		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]) != "" {
+		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedDeliveryReasonAnnotation]) != "" ||
+		strings.TrimSpace(template.Annotations[modeldelivery.ResolvedModelsAnnotation]) != "" {
 		return true
 	}
 	if modeldelivery.HasManagedRuntimeEnv(template.Spec.Containers) {
@@ -112,7 +114,7 @@ func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldeli
 	if modeldelivery.HasSchedulingGate(template) {
 		return true
 	}
-	if hasContainerByName(template.Spec.InitContainers, options.Render.InitContainerName) {
+	if modeldelivery.HasManagedInitContainer(template.Spec.InitContainers, options.Render.InitContainerName) {
 		return true
 	}
 	for _, volume := range template.Spec.Volumes {
@@ -121,28 +123,6 @@ func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldeli
 		}
 	}
 	return modeldelivery.HasManagedCacheTemplateState(template, options)
-}
-
-func removeContainerByName(containers []corev1.Container, name string) ([]corev1.Container, bool) {
-	removed := false
-	filtered := containers[:0]
-	for _, container := range containers {
-		if container.Name == name {
-			removed = true
-			continue
-		}
-		filtered = append(filtered, container)
-	}
-	return filtered, removed
-}
-
-func hasContainerByName(containers []corev1.Container, name string) bool {
-	for _, container := range containers {
-		if container.Name == name {
-			return true
-		}
-	}
-	return false
 }
 
 func removeAnnotation(annotations map[string]string, key string) (map[string]string, bool) {

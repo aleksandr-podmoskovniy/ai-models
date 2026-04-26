@@ -39,6 +39,14 @@ func WorkloadModelPath(cacheRoot string) string {
 	return filepath.Join(filepath.Clean(strings.TrimSpace(cacheRoot)), WorkloadLinkName)
 }
 
+func WorkloadModelsDirPath(cacheRoot string) string {
+	return filepath.Join(filepath.Clean(strings.TrimSpace(cacheRoot)), "models")
+}
+
+func WorkloadModelAliasPath(cacheRoot, alias string) string {
+	return filepath.Join(WorkloadModelsDirPath(cacheRoot), strings.TrimSpace(alias))
+}
+
 func SharedArtifactModelPath(cacheRoot, digest string) string {
 	return modelpackports.MaterializedModelPath(StorePath(cacheRoot, digest))
 }
@@ -77,6 +85,38 @@ func UpdateWorkloadModelLink(cacheRoot string) error {
 		return errors.New("cache-root workload model symlink requires non-empty path")
 	}
 	return updateRelativeLink(WorkloadModelPath(cacheRoot), CurrentLinkPath(cacheRoot))
+}
+
+func UpdateWorkloadModelAliasLink(cacheRoot, alias, targetModelPath string) error {
+	cacheRoot = filepath.Clean(strings.TrimSpace(cacheRoot))
+	alias = strings.TrimSpace(alias)
+	if err := ValidateModelAlias(alias); err != nil {
+		return err
+	}
+	if cacheRoot == "" || cacheRoot == "." {
+		return errors.New("cache-root workload model alias symlink requires non-empty path")
+	}
+	return updateRelativeLink(WorkloadModelAliasPath(cacheRoot, alias), targetModelPath)
+}
+
+func ValidateModelAlias(alias string) error {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return errors.New("model alias must not be empty")
+	}
+	if len(alias) > 40 {
+		return errors.New("model alias must be at most 40 characters")
+	}
+	for index, char := range alias {
+		valid := char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '-'
+		if !valid {
+			return errors.New("model alias must contain only lowercase letters, digits, and dashes")
+		}
+		if (index == 0 || index == len(alias)-1) && char == '-' {
+			return errors.New("model alias must start and end with a lowercase letter or digit")
+		}
+	}
+	return nil
 }
 
 func updateRelativeLink(linkPath, targetPath string) error {

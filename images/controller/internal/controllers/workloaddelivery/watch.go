@@ -74,26 +74,33 @@ func indexWorkloadReferences(ctx context.Context, indexer client.FieldIndexer) e
 
 func workloadReferenceIndex(object client.Object) []string {
 	if strings.TrimSpace(object.GetAnnotations()[ModelAnnotation]) == "" &&
-		strings.TrimSpace(object.GetAnnotations()[ClusterModelAnnotation]) == "" {
+		strings.TrimSpace(object.GetAnnotations()[ClusterModelAnnotation]) == "" &&
+		strings.TrimSpace(object.GetAnnotations()[ModelRefsAnnotation]) == "" {
 		return nil
 	}
 	return []string{workloadReferenceIndexValue}
 }
 
 func modelReferenceIndexValue(object client.Object) []string {
-	name := strings.TrimSpace(object.GetAnnotations()[ModelAnnotation])
-	if name == "" {
-		return nil
-	}
-	return []string{name}
+	return referenceNamesByScope(object, ReferenceScopeModel)
 }
 
 func clusterModelReferenceIndexValue(object client.Object) []string {
-	name := strings.TrimSpace(object.GetAnnotations()[ClusterModelAnnotation])
-	if name == "" {
+	return referenceNamesByScope(object, ReferenceScopeClusterModel)
+}
+
+func referenceNamesByScope(object client.Object, scope ReferenceScope) []string {
+	refs, found, err := parseReferences(object.GetAnnotations())
+	if err != nil || !found {
 		return nil
 	}
-	return []string{name}
+	names := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Scope == scope {
+			names = append(names, ref.Name)
+		}
+	}
+	return names
 }
 
 func (r *baseReconciler) mapDeploymentsForModel(ctx context.Context, object client.Object) []reconcile.Request {

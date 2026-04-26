@@ -60,6 +60,35 @@ func TestDesiredArtifactFromPodReadsManagedAnnotations(t *testing.T) {
 	}
 }
 
+func TestDesiredArtifactsFromPodReadsResolvedModelList(t *testing.T) {
+	t.Parallel()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				modeldelivery.ResolvedDeliveryModeAnnotation:   string(modeldelivery.DeliveryModeSharedDirect),
+				modeldelivery.ResolvedDeliveryReasonAnnotation: string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane),
+				modeldelivery.ResolvedModelsAnnotation: `[{"alias":"main","uri":"oci://example/model-a","path":"/data/modelcache/models/main","digest":"sha256:a","family":"gguf-v1"},` +
+					`{"alias":"draft","uri":"oci://example/model-b","path":"/data/modelcache/models/draft","digest":"sha256:b"}]`,
+			},
+		},
+	}
+
+	artifacts, found, err := DesiredArtifactsFromPod(pod)
+	if err != nil {
+		t.Fatalf("DesiredArtifactsFromPod() error = %v", err)
+	}
+	if !found || len(artifacts) != 2 {
+		t.Fatalf("unexpected artifacts %#v found=%v", artifacts, found)
+	}
+	if got, want := artifacts[0].Digest, "sha256:a"; got != want {
+		t.Fatalf("first digest = %q, want %q", got, want)
+	}
+	if got, want := artifacts[1].Digest, "sha256:b"; got != want {
+		t.Fatalf("second digest = %q, want %q", got, want)
+	}
+}
+
 func TestDesiredArtifactFromPodIgnoresBridgeAndLegacyPods(t *testing.T) {
 	t.Parallel()
 
@@ -210,6 +239,31 @@ func TestDesiredArtifactsClientAllowsCSIPublishOnlyForRequestingManagedPod(t *te
 	}
 	if allowed {
 		t.Fatal("expected wrong digest to be denied")
+	}
+}
+
+func TestDesiredArtifactsClientAllowsCSIPublishForAnyResolvedModelDigest(t *testing.T) {
+	t.Parallel()
+
+	pod := managedPod("runtime-a", "worker-a", corev1.PodPending, string(modeldelivery.DeliveryModeSharedDirect), string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane), "oci://example/model-a", "sha256:a")
+	pod.UID = types.UID("pod-a")
+	pod.Annotations[modeldelivery.ResolvedModelsAnnotation] = `[{"alias":"main","uri":"oci://example/model-a","digest":"sha256:a"},` +
+		`{"alias":"draft","uri":"oci://example/model-b","digest":"sha256:b"}]`
+	client, err := NewDesiredArtifactsClient(fake.NewSimpleClientset(pod))
+	if err != nil {
+		t.Fatalf("NewDesiredArtifactsClient() error = %v", err)
+	}
+
+	allowed, err := client.AllowCSIPublish(context.Background(), "worker-a", map[string]string{
+		csiPodNameAttribute:      "runtime-a",
+		csiPodNamespaceAttribute: "team-a",
+		csiPodUIDAttribute:       "pod-a",
+	}, "sha256:b")
+	if err != nil {
+		t.Fatalf("AllowCSIPublish() error = %v", err)
+	}
+	if !allowed {
+		t.Fatal("expected secondary model digest to be allowed")
 	}
 }
 

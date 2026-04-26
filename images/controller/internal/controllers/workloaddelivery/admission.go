@@ -86,7 +86,7 @@ func (h *admissionHandler) shouldGate(
 	object client.Object,
 	template *corev1.PodTemplateSpec,
 ) (bool, error) {
-	reference, found, err := parseReference(object.GetAnnotations())
+	references, found, err := parseReferences(object.GetAnnotations())
 	if err != nil || !found {
 		return false, err
 	}
@@ -101,11 +101,26 @@ func (h *admissionHandler) shouldGate(
 	if err != nil || !found {
 		return found, err
 	}
-	oldReference, oldFound, err := parseReference(oldObject.GetAnnotations())
+	oldReferences, oldFound, err := parseReferences(oldObject.GetAnnotations())
 	if err != nil || !oldFound {
 		return true, err
 	}
-	return oldReference != reference, nil
+	if usesModelRefsAnnotation(oldObject.GetAnnotations()) != usesModelRefsAnnotation(object.GetAnnotations()) {
+		return true, nil
+	}
+	return !equalReferences(oldReferences, references), nil
+}
+
+func equalReferences(left, right []Reference) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (h *admissionHandler) decodeObject(request admission.Request) (client.Object, error) {

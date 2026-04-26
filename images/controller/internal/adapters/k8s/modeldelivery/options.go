@@ -17,7 +17,10 @@ limitations under the License.
 package modeldelivery
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
@@ -35,10 +38,13 @@ const (
 	ResolvedArtifactFamilyAnnotation = "ai.deckhouse.io/resolved-artifact-family"
 	ResolvedDeliveryModeAnnotation   = "ai.deckhouse.io/resolved-delivery-mode"
 	ResolvedDeliveryReasonAnnotation = "ai.deckhouse.io/resolved-delivery-reason"
+	ResolvedModelsAnnotation         = "ai.deckhouse.io/resolved-models"
 
 	ModelPathEnv     = "AI_MODELS_MODEL_PATH"
 	ModelDigestEnv   = "AI_MODELS_MODEL_DIGEST"
 	ModelFamilyEnv   = "AI_MODELS_MODEL_FAMILY"
+	ModelsDirEnv     = "AI_MODELS_MODELS_DIR"
+	ModelsEnv        = "AI_MODELS_MODELS"
 	LogFormatEnv     = "LOG_FORMAT"
 	LogLevelEnv      = "LOG_LEVEL"
 	defaultLogFormat = "json"
@@ -135,6 +141,54 @@ func copyCleanStringMap(input map[string]string) map[string]string {
 
 func ModelPath(options Options) string {
 	return nodecache.WorkloadModelPath(strings.TrimSpace(options.CacheMountPath))
+}
+
+func ModelsDirPath(options Options) string {
+	return nodecache.WorkloadModelsDirPath(strings.TrimSpace(options.CacheMountPath))
+}
+
+func NamedModelPath(options Options, alias string) string {
+	return nodecache.WorkloadModelAliasPath(strings.TrimSpace(options.CacheMountPath), alias)
+}
+
+func NamedModelPathEnv(alias string) string {
+	return namedModelEnv(alias, "PATH")
+}
+
+func NamedModelDigestEnv(alias string) string {
+	return namedModelEnv(alias, "DIGEST")
+}
+
+func NamedModelFamilyEnv(alias string) string {
+	return namedModelEnv(alias, "FAMILY")
+}
+
+func namedModelEnv(alias, suffix string) string {
+	alias = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(alias), "-", "_"))
+	return fmt.Sprintf("AI_MODELS_MODEL_%s_%s", alias, suffix)
+}
+
+func managedInitContainerName(baseName, alias string) string {
+	baseName = strings.TrimSpace(baseName)
+	alias = strings.TrimSpace(alias)
+	name := baseName + "-" + alias
+	if len(name) <= 63 {
+		return name
+	}
+	sum := sha1.Sum([]byte(alias))
+	shortHash := hex.EncodeToString(sum[:])[:10]
+	prefixBudget := 63 - len(shortHash) - 1
+	if prefixBudget > len(baseName) {
+		prefixBudget = len(baseName)
+	}
+	if prefixBudget < 1 {
+		prefixBudget = 1
+	}
+	return baseName[:prefixBudget] + "-" + shortHash
+}
+
+func managedModelVolumeName(baseName, alias string) string {
+	return managedInitContainerName(baseName, alias)
 }
 
 type DeliveryMode string

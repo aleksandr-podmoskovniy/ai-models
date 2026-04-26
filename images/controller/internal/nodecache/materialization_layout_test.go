@@ -19,6 +19,7 @@ package nodecache
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -91,5 +92,47 @@ func TestSharedArtifactModelPathUsesDigestStoreContractPath(t *testing.T) {
 	cacheRoot := filepath.Join(t.TempDir(), "cache")
 	if got, want := SharedArtifactModelPath(cacheRoot, "sha256:deadbeef"), filepath.Join(cacheRoot, StoreDirName, "sha256:deadbeef", "model"); got != want {
 		t.Fatalf("shared artifact model path = %q, want %q", got, want)
+	}
+}
+
+func TestWorkloadModelAliasPathUsesStableModelsDirectory(t *testing.T) {
+	t.Parallel()
+
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	if got, want := WorkloadModelAliasPath(cacheRoot, "main"), filepath.Join(cacheRoot, "models", "main"); got != want {
+		t.Fatalf("workload model alias path = %q, want %q", got, want)
+	}
+}
+
+func TestUpdateWorkloadModelAliasLinkCreatesRelativeSymlink(t *testing.T) {
+	t.Parallel()
+
+	cacheRoot := filepath.Join(t.TempDir(), "cache")
+	targetPath := filepath.Join(cacheRoot, StoreDirName, "sha256:deadbeef", "model")
+	if err := os.MkdirAll(targetPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(targetPath) error = %v", err)
+	}
+	if err := UpdateWorkloadModelAliasLink(cacheRoot, "main", targetPath); err != nil {
+		t.Fatalf("UpdateWorkloadModelAliasLink() error = %v", err)
+	}
+	linkTarget, err := os.Readlink(WorkloadModelAliasPath(cacheRoot, "main"))
+	if err != nil {
+		t.Fatalf("Readlink(alias) error = %v", err)
+	}
+	if filepath.IsAbs(linkTarget) {
+		t.Fatalf("expected relative alias symlink, got %q", linkTarget)
+	}
+}
+
+func TestValidateModelAliasRejectsUnsafeNames(t *testing.T) {
+	t.Parallel()
+
+	for _, alias := range []string{"", "Main", "main_model", "-main", "main-", strings.Repeat("a", 41)} {
+		if err := ValidateModelAlias(alias); err == nil {
+			t.Fatalf("expected alias %q to be rejected", alias)
+		}
+	}
+	if err := ValidateModelAlias("draft-model2"); err != nil {
+		t.Fatalf("expected valid alias: %v", err)
 	}
 }

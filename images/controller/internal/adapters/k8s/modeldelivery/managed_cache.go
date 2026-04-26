@@ -56,11 +56,11 @@ func HasManagedCacheTemplateState(template *corev1.PodTemplateSpec, options Serv
 	}
 
 	managed := NormalizeManagedCacheOptions(options.ManagedCache)
-	if hasVolumeByName(template.Spec.Volumes, managed.VolumeName) {
+	if hasManagedCacheVolume(template.Spec.Volumes, managed.VolumeName) {
 		return true
 	}
-	return containersMountVolume(template.Spec.Containers, managed.VolumeName) ||
-		containersMountVolume(template.Spec.InitContainers, managed.VolumeName)
+	return containersMountManagedVolume(template.Spec.Containers, managed.VolumeName) ||
+		containersMountManagedVolume(template.Spec.InitContainers, managed.VolumeName)
 }
 
 func RemoveManagedCacheTemplateState(template *corev1.PodTemplateSpec, options ServiceOptions) bool {
@@ -70,17 +70,17 @@ func RemoveManagedCacheTemplateState(template *corev1.PodTemplateSpec, options S
 
 	managed := NormalizeManagedCacheOptions(options.ManagedCache)
 	changed := false
-	containers, removed := removeVolumeMountsByName(template.Spec.Containers, managed.VolumeName)
+	containers, removed := removeManagedCacheVolumeMounts(template.Spec.Containers, managed.VolumeName)
 	if removed {
 		template.Spec.Containers = containers
 		changed = true
 	}
-	initContainers, removed := removeVolumeMountsByName(template.Spec.InitContainers, managed.VolumeName)
+	initContainers, removed := removeManagedCacheVolumeMounts(template.Spec.InitContainers, managed.VolumeName)
 	if removed {
 		template.Spec.InitContainers = initContainers
 		changed = true
 	}
-	volumes, removed := removeVolumeByName(template.Spec.Volumes, managed.VolumeName)
+	volumes, removed := removeManagedCacheVolumes(template.Spec.Volumes, managed.VolumeName)
 	if removed {
 		template.Spec.Volumes = volumes
 		changed = true
@@ -164,12 +164,13 @@ func ensureManagedCacheVolumeMounts(containers []corev1.Container, volumeName, m
 	return containers
 }
 
-func removeVolumeMountsByName(containers []corev1.Container, name string) ([]corev1.Container, bool) {
+func removeManagedCacheVolumeMounts(containers []corev1.Container, name string) ([]corev1.Container, bool) {
 	removed := false
+	prefix := strings.TrimSpace(name) + "-"
 	for index := range containers {
 		filtered := containers[index].VolumeMounts[:0]
 		for _, mount := range containers[index].VolumeMounts {
-			if mount.Name == name {
+			if mount.Name == name || strings.HasPrefix(mount.Name, prefix) {
 				removed = true
 				continue
 			}
@@ -180,11 +181,12 @@ func removeVolumeMountsByName(containers []corev1.Container, name string) ([]cor
 	return containers, removed
 }
 
-func removeVolumeByName(volumes []corev1.Volume, name string) ([]corev1.Volume, bool) {
+func removeManagedCacheVolumes(volumes []corev1.Volume, name string) ([]corev1.Volume, bool) {
 	removed := false
+	prefix := strings.TrimSpace(name) + "-"
 	filtered := volumes[:0]
 	for _, volume := range volumes {
-		if volume.Name == name {
+		if volume.Name == name || strings.HasPrefix(volume.Name, prefix) {
 			removed = true
 			continue
 		}
@@ -193,19 +195,21 @@ func removeVolumeByName(volumes []corev1.Volume, name string) ([]corev1.Volume, 
 	return filtered, removed
 }
 
-func hasVolumeByName(volumes []corev1.Volume, name string) bool {
+func hasManagedCacheVolume(volumes []corev1.Volume, name string) bool {
+	prefix := strings.TrimSpace(name) + "-"
 	for _, volume := range volumes {
-		if volume.Name == name {
+		if volume.Name == name || strings.HasPrefix(volume.Name, prefix) {
 			return true
 		}
 	}
 	return false
 }
 
-func containersMountVolume(containers []corev1.Container, name string) bool {
+func containersMountManagedVolume(containers []corev1.Container, name string) bool {
+	prefix := strings.TrimSpace(name) + "-"
 	for _, container := range containers {
 		for _, mount := range container.VolumeMounts {
-			if mount.Name == name {
+			if mount.Name == name || strings.HasPrefix(mount.Name, prefix) {
 				return true
 			}
 		}
@@ -228,13 +232,11 @@ func RemoveManagedRuntimeEnv(containers []corev1.Container) ([]corev1.Container,
 	for index := range containers {
 		filtered := containers[index].Env[:0]
 		for _, env := range containers[index].Env {
-			switch env.Name {
-			case ModelPathEnv, ModelDigestEnv, ModelFamilyEnv:
+			if isManagedRuntimeEnv(env.Name) {
 				removed = true
 				continue
-			default:
-				filtered = append(filtered, env)
 			}
+			filtered = append(filtered, env)
 		}
 		containers[index].Env = filtered
 	}
@@ -244,11 +246,54 @@ func RemoveManagedRuntimeEnv(containers []corev1.Container) ([]corev1.Container,
 func HasManagedRuntimeEnv(containers []corev1.Container) bool {
 	for _, container := range containers {
 		for _, env := range container.Env {
-			switch env.Name {
-			case ModelPathEnv, ModelDigestEnv, ModelFamilyEnv:
+			if isManagedRuntimeEnv(env.Name) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func RemoveManagedInitContainers(containers []corev1.Container, baseName string) ([]corev1.Container, bool) {
+	baseName = strings.TrimSpace(baseName)
+	if baseName == "" {
+		return containers, false
+	}
+	removed := false
+	prefix := baseName + "-"
+	filtered := containers[:0]
+	for _, container := range containers {
+		if container.Name == baseName || strings.HasPrefix(container.Name, prefix) {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, container)
+	}
+	return filtered, removed
+}
+
+func HasManagedInitContainer(containers []corev1.Container, baseName string) bool {
+	baseName = strings.TrimSpace(baseName)
+	if baseName == "" {
+		return false
+	}
+	prefix := baseName + "-"
+	for _, container := range containers {
+		if container.Name == baseName || strings.HasPrefix(container.Name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func isManagedRuntimeEnv(name string) bool {
+	switch name {
+	case ModelPathEnv, ModelDigestEnv, ModelFamilyEnv, ModelsDirEnv, ModelsEnv:
+		return true
+	default:
+		return strings.HasPrefix(name, "AI_MODELS_MODEL_") &&
+			(strings.HasSuffix(name, "_PATH") ||
+				strings.HasSuffix(name, "_DIGEST") ||
+				strings.HasSuffix(name, "_FAMILY"))
+	}
 }

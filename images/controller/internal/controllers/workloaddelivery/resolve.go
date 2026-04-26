@@ -22,18 +22,52 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type ResolvedBinding struct {
+	Alias     string
+	Reference Reference
+	Artifact  publication.PublishedArtifact
+	Family    string
+}
+
 type Resolution struct {
 	Artifact publication.PublishedArtifact
 	Family   string
+	Bindings []ResolvedBinding
 	Ready    bool
 	Message  string
 }
 
-func (r *baseReconciler) resolveReference(ctx context.Context, namespace string, ref Reference) (Resolution, error) {
+func (r *baseReconciler) resolveReferences(ctx context.Context, namespace string, refs []Reference) (Resolution, error) {
+	if len(refs) == 0 {
+		return Resolution{}, fmt.Errorf("workload delivery requires at least one model reference")
+	}
+	bindings := make([]ResolvedBinding, 0, len(refs))
+	for _, ref := range refs {
+		resolution, err := r.resolveSingleReference(ctx, namespace, ref)
+		if err != nil || !resolution.Ready {
+			return resolution, err
+		}
+		bindings = append(bindings, ResolvedBinding{
+			Alias:     ref.Alias,
+			Reference: ref,
+			Artifact:  resolution.Artifact,
+			Family:    resolution.Family,
+		})
+	}
+	return Resolution{
+		Artifact: bindings[0].Artifact,
+		Family:   bindings[0].Family,
+		Bindings: bindings,
+		Ready:    true,
+	}, nil
+}
+
+func (r *baseReconciler) resolveSingleReference(ctx context.Context, namespace string, ref Reference) (Resolution, error) {
 	switch ref.Scope {
 	case ReferenceScopeModel:
 		object := &modelsv1alpha1.Model{}
@@ -52,6 +86,31 @@ func (r *baseReconciler) resolveReference(ctx context.Context, namespace string,
 	default:
 		return Resolution{}, fmt.Errorf("unsupported workload delivery reference scope %q", ref.Scope)
 	}
+}
+
+func (r Resolution) modelDeliveryBindings(aliasContract bool) []modeldelivery.ModelBinding {
+	if !aliasContract {
+		return nil
+	}
+	bindings := make([]modeldelivery.ModelBinding, 0, len(r.Bindings))
+	for _, binding := range r.Bindings {
+		bindings = append(bindings, modeldelivery.ModelBinding{
+			Alias:          binding.Alias,
+			Artifact:       binding.Artifact,
+			ArtifactFamily: binding.Family,
+		})
+	}
+	return bindings
+}
+
+func (r Resolution) modelCount() int {
+	if len(r.Bindings) > 0 {
+		return len(r.Bindings)
+	}
+	if strings.TrimSpace(r.Artifact.Digest) != "" {
+		return 1
+	}
+	return 0
 }
 
 func resolutionFromStatus(status modelsv1alpha1.ModelStatus, kind, name string) (Resolution, error) {

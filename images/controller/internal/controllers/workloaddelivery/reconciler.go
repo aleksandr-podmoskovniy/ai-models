@@ -65,6 +65,7 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 	result, err := r.delivery.ApplyToPodTemplate(ctx, object, modeldelivery.ApplyRequest{
 		Artifact:        resolution.Artifact,
 		ArtifactFamily:  resolution.Family,
+		Bindings:        resolution.modelDeliveryBindings(usesModelRefsAnnotation(object.GetAnnotations())),
 		TargetNamespace: object.GetNamespace(),
 		Topology:        hints,
 	}, template)
@@ -90,6 +91,7 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 		slog.String("namespace", object.GetNamespace()),
 		slog.String("name", object.GetName()),
 		slog.String("digest", resolution.Artifact.Digest),
+		slog.Int("modelCount", resolution.modelCount()),
 		slog.String("previousDigest", patchResult.currentState.Digest),
 		slog.String("modelPath", result.ModelPath),
 		slog.String("previousModelPath", patchResult.currentState.ModelPath),
@@ -103,7 +105,8 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 		object,
 		"Normal",
 		"ModelDeliveryApplied",
-		"Applied runtime delivery for digest %s with mode %s (%s)",
+		"Applied runtime delivery for %d model(s), primary digest %s with mode %s (%s)",
+		resolution.modelCount(),
 		resolution.Artifact.Digest,
 		result.DeliveryMode,
 		result.DeliveryReason,
@@ -135,7 +138,7 @@ func (r *baseReconciler) prepareDeliveryResolution(
 	template *corev1.PodTemplateSpec,
 	managed bool,
 ) (Resolution, bool, error) {
-	reference, found, err := parseReference(object.GetAnnotations())
+	references, found, err := parseReferences(object.GetAnnotations())
 	if err != nil {
 		if managed {
 			if err := r.removeManagedDelivery(ctx, object, original, template); err != nil {
@@ -156,7 +159,7 @@ func (r *baseReconciler) prepareDeliveryResolution(
 		return Resolution{}, false, nil
 	}
 
-	resolution, err := r.resolveReference(ctx, object.GetNamespace(), reference)
+	resolution, err := r.resolveReferences(ctx, object.GetNamespace(), references)
 	if err != nil {
 		return Resolution{}, false, err
 	}

@@ -89,13 +89,17 @@ Current phase-2 slice implemented here:
   cache-root contract, topology-aware per-pod versus shared PVC bridge
   handling where the legacy bridge is still explicit, and cross-namespace
   read-only DMCR auth/CA projection only for paths that still materialize in
-  the workload namespace; the stable workload-facing runtime env contract is
-  (`AI_MODELS_MODEL_PATH` / `AI_MODELS_MODEL_DIGEST` /
-  `AI_MODELS_MODEL_FAMILY`) and managed `SharedDirect` now projects the stable
-  `/data/modelcache/model` entrypoint without leaking raw cache-root layout
-  details into consumers; managed `SharedDirect` also requires the dynamic
-  `ai.deckhouse.io/node-cache-runtime-ready=true` node label and keeps the
-  ai-models scheduling gate while no selected node has a ready runtime plane;
+  the workload namespace; the stable workload-facing runtime env contract keeps
+  legacy primary-model variables (`AI_MODELS_MODEL_PATH` /
+  `AI_MODELS_MODEL_DIGEST` / `AI_MODELS_MODEL_FAMILY`) and adds alias-based
+  multi-model delivery through `ai.deckhouse.io/model-refs`,
+  `/data/modelcache/models/<alias>`, `AI_MODELS_MODELS_DIR`,
+  `AI_MODELS_MODELS` with alias/path/digest/family entries, and per-alias
+  `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}` variables without leaking raw
+  cache-root layout details into consumers; managed `SharedDirect` also
+  requires the dynamic `ai.deckhouse.io/node-cache-runtime-ready=true` node
+  label and keeps the ai-models scheduling gate while no selected node has a
+  ready runtime plane;
 - `internal/adapters/k8s/nodecacheruntime` for stable per-node Pod/PVC shaping
   of the node-cache runtime plane, Deckhouse-style CSI registration sidecar and
   hostPath/socket wiring, plus runtime-side extraction of the published
@@ -347,8 +351,9 @@ Current phase-2 slice implemented here:
   `Failed` with `UnsupportedSource` instead of looping forever on reconcile
   errors;
 - `internal/controllers/workloaddelivery` for direct workload mutation over
-  top-level annotations `ai.deckhouse.io/model` and
-  `ai.deckhouse.io/clustermodel`; this controller intentionally stays
+  top-level annotations `ai.deckhouse.io/model`,
+  `ai.deckhouse.io/clustermodel`, and alias-based
+  `ai.deckhouse.io/model-refs`; this controller intentionally stays
   on mutable workload templates (`Deployment`, `StatefulSet`, `DaemonSet`,
   `CronJob`), uses admission only for the scheduling gate, and does not pretend
   that direct `Job` mutation is safe after creation;

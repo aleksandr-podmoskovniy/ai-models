@@ -45,7 +45,7 @@ func TestNodePublishVolumeBindMountsReadyDigest(t *testing.T) {
 		t.Fatalf("NodePublishVolume() error = %v", err)
 	}
 
-	if got, want := mounter.boundSource, source; got != want {
+	if got, want := mounter.boundSource, nodecache.SharedArtifactModelPath(cacheRoot, digest); got != want {
 		t.Fatalf("bound source = %q, want %q", got, want)
 	}
 	if got, want := mounter.boundTarget, target; got != want {

@@ -29,6 +29,7 @@ import (
 type Input struct {
 	Artifact                   publication.PublishedArtifact
 	ArtifactFamily             string
+	Bindings                   []BindingInput
 	RegistryAccess             ociregistry.Projection
 	RuntimeImagePullSecretName string
 	CacheMount                 CacheMount
@@ -36,17 +37,27 @@ type Input struct {
 	Coordination               Coordination
 }
 
+type BindingInput struct {
+	Alias          string
+	Artifact       publication.PublishedArtifact
+	ArtifactFamily string
+}
+
 type Rendered struct {
 	InitContainer             corev1.Container
+	InitContainers            []corev1.Container
 	HasInitContainer          bool
 	InitContainerName         string
+	InitContainerNames        []string
 	RuntimeEnv                []corev1.EnvVar
 	Volumes                   []corev1.Volume
+	RuntimeVolumeMounts       []corev1.VolumeMount
 	ImagePullSecrets          []corev1.LocalObjectReference
 	ImagePullSecretNamesPrune []string
 	ModelPath                 string
 	ArtifactURI               string
 	ArtifactFamily            string
+	ResolvedModels            string
 }
 
 func Render(input Input, options Options) (Rendered, error) {
@@ -59,6 +70,10 @@ func Render(input Input, options Options) (Rendered, error) {
 	}
 	if strings.TrimSpace(input.Artifact.Digest) == "" {
 		return Rendered{}, errors.New("runtime delivery artifact digest must not be empty")
+	}
+	bindings, aliasContract, err := renderBindings(input)
+	if err != nil {
+		return Rendered{}, err
 	}
 	if input.TopologyKind != CacheTopologyDirect && strings.TrimSpace(input.RegistryAccess.AuthSecretName) == "" {
 		return Rendered{}, errors.New("runtime delivery registry auth projection must not be empty")
@@ -74,6 +89,10 @@ func Render(input Input, options Options) (Rendered, error) {
 		Name:      input.CacheMount.VolumeName,
 		MountPath: options.CacheMountPath,
 	}}, ociregistry.VolumeMounts(input.RegistryAccess.CASecretName)...)
+
+	if aliasContract {
+		return renderAliasBindings(input, options, bindings)
+	}
 
 	modelPath := ModelPath(options)
 	if input.TopologyKind == CacheTopologySharedPVC {

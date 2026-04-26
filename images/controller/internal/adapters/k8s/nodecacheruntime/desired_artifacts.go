@@ -18,6 +18,7 @@ package nodecacheruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -84,12 +85,12 @@ func (c *DesiredArtifactsClient) LoadNodeDesiredArtifacts(ctx context.Context, n
 		if strings.TrimSpace(pod.Spec.NodeName) != nodeName || !IsActiveScheduledPod(pod) {
 			continue
 		}
-		artifact, found, err := DesiredArtifactFromPod(pod)
+		podArtifacts, found, err := DesiredArtifactsFromPod(pod)
 		if err != nil {
 			return nil, err
 		}
 		if found {
-			artifacts = append(artifacts, artifact)
+			artifacts = append(artifacts, podArtifacts...)
 		}
 	}
 
@@ -100,29 +101,47 @@ func (c *DesiredArtifactsClient) AllowCSIPublish(ctx context.Context, nodeName s
 	if c == nil {
 		return false, errors.New("node cache runtime desired artifacts client must not be nil")
 	}
+	pod, ok, err := c.csiPublishPod(ctx, nodeName, attributes, digest)
+	if err != nil || !ok {
+		return false, err
+	}
+	artifacts, found, err := DesiredArtifactsFromPod(pod)
+	if err != nil || !found {
+		return false, err
+	}
+	return desiredArtifactsContainDigest(artifacts, digest), nil
+}
+
+func (c *DesiredArtifactsClient) csiPublishPod(ctx context.Context, nodeName string, attributes map[string]string, digest string) (*corev1.Pod, bool, error) {
 	nodeName = strings.TrimSpace(nodeName)
 	podName := strings.TrimSpace(attributes[csiPodNameAttribute])
 	podNamespace := strings.TrimSpace(attributes[csiPodNamespaceAttribute])
 	podUID := strings.TrimSpace(attributes[csiPodUIDAttribute])
 	if nodeName == "" || podName == "" || podNamespace == "" || podUID == "" || strings.TrimSpace(digest) == "" {
-		return false, nil
+		return nil, false, nil
 	}
 
 	pod, err := c.client.CoreV1().Pods(podNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		return false, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 	if string(pod.UID) != podUID || strings.TrimSpace(pod.Spec.NodeName) != nodeName || !IsActiveScheduledPod(pod) {
-		return false, nil
+		return nil, false, nil
 	}
-	artifact, found, err := DesiredArtifactFromPod(pod)
-	if err != nil || !found {
-		return false, err
+	return pod, true, nil
+}
+
+func desiredArtifactsContainDigest(artifacts []nodecache.DesiredArtifact, digest string) bool {
+	digest = strings.TrimSpace(digest)
+	for _, artifact := range artifacts {
+		if artifact.Digest == digest {
+			return true
+		}
 	}
-	return artifact.Digest == strings.TrimSpace(digest), nil
+	return false
 }
 
 func IsActiveScheduledPod(pod *corev1.Pod) bool {
@@ -144,20 +163,35 @@ func IsActiveScheduledPod(pod *corev1.Pod) bool {
 }
 
 func DesiredArtifactFromPod(pod *corev1.Pod) (nodecache.DesiredArtifact, bool, error) {
+	artifacts, found, err := DesiredArtifactsFromPod(pod)
+	if err != nil || !found {
+		return nodecache.DesiredArtifact{}, found, err
+	}
+	return artifacts[0], true, nil
+}
+
+func DesiredArtifactsFromPod(pod *corev1.Pod) ([]nodecache.DesiredArtifact, bool, error) {
 	if pod == nil {
-		return nodecache.DesiredArtifact{}, false, errors.New("node cache runtime pod must not be nil")
+		return nil, false, errors.New("node cache runtime pod must not be nil")
 	}
 	annotations := pod.GetAnnotations()
 	deliveryMode := strings.TrimSpace(annotations[modeldelivery.ResolvedDeliveryModeAnnotation])
 	deliveryReason := strings.TrimSpace(annotations[modeldelivery.ResolvedDeliveryReasonAnnotation])
 	if deliveryMode != string(modeldelivery.DeliveryModeSharedDirect) ||
 		deliveryReason != string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane) {
-		return nodecache.DesiredArtifact{}, false, nil
+		return nil, false, nil
+	}
+	if models := strings.TrimSpace(annotations[modeldelivery.ResolvedModelsAnnotation]); models != "" {
+		artifacts, err := desiredArtifactsFromResolvedModels(models)
+		if err != nil {
+			return nil, false, err
+		}
+		return artifacts, len(artifacts) > 0, nil
 	}
 	digest := strings.TrimSpace(annotations[modeldelivery.ResolvedDigestAnnotation])
 	artifactURI := strings.TrimSpace(annotations[modeldelivery.ResolvedArtifactURIAnnotation])
 	if digest == "" || artifactURI == "" {
-		return nodecache.DesiredArtifact{}, false, errors.New("managed pod shared-direct artifact annotations are incomplete")
+		return nil, false, errors.New("managed pod shared-direct artifact annotations are incomplete")
 	}
 	artifacts, err := nodecache.NormalizeDesiredArtifacts([]nodecache.DesiredArtifact{{
 		ArtifactURI: artifactURI,
@@ -165,7 +199,29 @@ func DesiredArtifactFromPod(pod *corev1.Pod) (nodecache.DesiredArtifact, bool, e
 		Family:      strings.TrimSpace(annotations[modeldelivery.ResolvedArtifactFamilyAnnotation]),
 	}})
 	if err != nil {
-		return nodecache.DesiredArtifact{}, false, err
+		return nil, false, err
 	}
-	return artifacts[0], true, nil
+	return artifacts, true, nil
+}
+
+type resolvedModelAnnotation struct {
+	URI    string `json:"uri"`
+	Digest string `json:"digest"`
+	Family string `json:"family,omitempty"`
+}
+
+func desiredArtifactsFromResolvedModels(value string) ([]nodecache.DesiredArtifact, error) {
+	var entries []resolvedModelAnnotation
+	if err := json.Unmarshal([]byte(value), &entries); err != nil {
+		return nil, err
+	}
+	artifacts := make([]nodecache.DesiredArtifact, 0, len(entries))
+	for _, entry := range entries {
+		artifacts = append(artifacts, nodecache.DesiredArtifact{
+			ArtifactURI: entry.URI,
+			Digest:      entry.Digest,
+			Family:      entry.Family,
+		})
+	}
+	return nodecache.NormalizeDesiredArtifacts(artifacts)
 }

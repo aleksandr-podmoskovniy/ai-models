@@ -44,7 +44,7 @@ func workloadDeliveryInterest(object client.Object, options modeldelivery.Servic
 	if object == nil {
 		return false
 	}
-	if _, found, err := parseReference(object.GetAnnotations()); err != nil || found {
+	if _, found, err := parseReferences(object.GetAnnotations()); err != nil || found {
 		return true
 	}
 	template, _, err := podTemplateAndHints(object)

@@ -27,6 +27,7 @@ import (
 	_ "hooks/pkg/hooks/sync_artifacts_secrets"
 	_ "hooks/pkg/hooks/tls_certificates_controller"
 	_ "hooks/pkg/hooks/tls_certificates_dmcr"
+	_ "hooks/pkg/hooks/tls_secret_type_migration"
 )
 
 func init() {

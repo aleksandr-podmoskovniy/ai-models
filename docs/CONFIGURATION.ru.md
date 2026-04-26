@@ -231,10 +231,16 @@ volume, переводятся на node-cache SharedDirect path:
   cache PVC;
 - namespace workload'а больше не получает projected DMCR read Secret/CA и
   bridge runtime imagePullSecret для managed SharedDirect path;
-- workload получает один стабильный runtime-facing contract через
-  `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST` и
-  `AI_MODELS_MODEL_FAMILY`; managed SharedDirect проецирует стабильный
-  entrypoint `/data/modelcache/model`;
+- workload получает стабильный runtime-facing contract. Legacy annotations
+  `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel` по-прежнему
+  отдают primary model через `AI_MODELS_MODEL_PATH`,
+  `AI_MODELS_MODEL_DIGEST` и `AI_MODELS_MODEL_FAMILY`; для нескольких моделей
+  используется `ai.deckhouse.io/model-refs` со значением вроде
+  `main=Model/gemma,embed=ClusterModel/bge`, после чего каждая модель видна по
+  стабильному alias path `/data/modelcache/models/<alias>`, а workload получает
+  `AI_MODELS_MODELS_DIR`, `AI_MODELS_MODELS` со списком
+  alias/path/digest/family и per-alias env
+  `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}`;
 - контроллер теперь дополнительно пишет в `PodTemplateSpec` управляемые
   аннотации с выбранным режимом доставки и причиной этого выбора, поэтому
   node-cache runtime может находить desired artifacts по live Pod'ам на своей

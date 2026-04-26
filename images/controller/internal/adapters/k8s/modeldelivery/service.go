@@ -42,8 +42,15 @@ type ServiceOptions struct {
 type ApplyRequest struct {
 	Artifact        publication.PublishedArtifact
 	ArtifactFamily  string
+	Bindings        []ModelBinding
 	TargetNamespace string
 	Topology        TopologyHints
+}
+
+type ModelBinding struct {
+	Alias          string
+	Artifact       publication.PublishedArtifact
+	ArtifactFamily string
 }
 
 type ApplyResult struct {
@@ -90,38 +97,7 @@ func (s *Service) ApplyToPodTemplate(
 	if err := validateApplyInputs(s, owner, template, request.Topology); err != nil {
 		return ApplyResult{}, err
 	}
-	if err := ensureManagedCacheMount(template, s.options, request.Artifact, request.ArtifactFamily); err != nil {
-		return ApplyResult{}, err
-	}
-
-	topology, err := detectCacheTopology(
-		template,
-		request.Topology,
-		s.options.Render.CacheMountPath,
-		s.options.ManagedCache.VolumeName,
-	)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-
-	targetNamespace, err := resolveTargetNamespace(owner, request.TargetNamespace)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	coordination, err := s.resolveCoordination(ctx, targetNamespace, topology, request.Topology, request.Artifact.Digest)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	if topology.Kind == CacheTopologyDirect {
-		if err := s.cleanupProjectedRuntimeAccess(ctx, owner, targetNamespace); err != nil {
-			return ApplyResult{}, err
-		}
-	}
-	projection, err := s.ensureRegistryProjection(ctx, owner, targetNamespace, topology.Kind)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	runtimeImagePullSecretName, err := s.runtimeImagePullSecretName(ctx, owner, targetNamespace, topology.Kind)
+	input, topology, aliasContract, err := s.renderInput(ctx, owner, request, template)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -130,33 +106,103 @@ func (s *Service) ApplyToPodTemplate(
 		return ApplyResult{}, err
 	}
 
-	rendered, err := Render(Input{
-		Artifact:                   request.Artifact,
-		ArtifactFamily:             request.ArtifactFamily,
-		RegistryAccess:             projection,
-		RuntimeImagePullSecretName: runtimeImagePullSecretName,
-		CacheMount:                 topology.CacheMount,
-		TopologyKind:               topology.Kind,
-		Coordination:               coordination,
-	}, s.options.Render)
+	rendered, err := Render(input, s.options.Render)
 	if err != nil {
 		return ApplyResult{}, err
 	}
 
-	if err := applyRendered(template, rendered, request.Artifact.Digest, topology.DeliveryMode, topology.DeliveryReason); err != nil {
+	if err := applyRendered(template, rendered, input.Artifact.Digest, topology.DeliveryMode, topology.DeliveryReason); err != nil {
 		return ApplyResult{}, err
 	}
+	s.pruneManagedCacheTemplateState(template, topology, rendered, aliasContract)
 	applyReadyNodeSchedulingGate(template, topology.Kind, readyNodes)
 
 	return ApplyResult{
 		CacheMountPath:    topology.CacheMount.MountPath,
 		ModelPath:         rendered.ModelPath,
-		RegistryAccess:    projection,
+		RegistryAccess:    input.RegistryAccess,
 		ResolvedDigestKey: ResolvedDigestAnnotation,
 		TopologyKind:      topology.Kind,
 		DeliveryMode:      topology.DeliveryMode,
 		DeliveryReason:    topology.DeliveryReason,
 	}, nil
+}
+
+func (s *Service) renderInput(
+	ctx context.Context,
+	owner client.Object,
+	request ApplyRequest,
+	template *corev1.PodTemplateSpec,
+) (Input, CacheTopology, bool, error) {
+	bindings, aliasContract, err := normalizeApplyBindings(request)
+	if err != nil {
+		return Input{}, CacheTopology{}, false, err
+	}
+	if err := ensureManagedCacheTemplate(template, s.options, bindings, aliasContract); err != nil {
+		return Input{}, CacheTopology{}, false, err
+	}
+
+	topology, err := detectApplyTopology(
+		template,
+		request.Topology,
+		s.options.Render.CacheMountPath,
+		s.options.ManagedCache.VolumeName,
+		aliasContract && s.options.ManagedCache.Enabled,
+	)
+	if err != nil {
+		return Input{}, CacheTopology{}, false, err
+	}
+	input, err := s.resolveRenderInput(ctx, owner, request, bindings, aliasContract, topology)
+	if err != nil {
+		return Input{}, CacheTopology{}, false, err
+	}
+	return input, topology, aliasContract, nil
+}
+
+func (s *Service) resolveRenderInput(
+	ctx context.Context,
+	owner client.Object,
+	request ApplyRequest,
+	bindings []ModelBinding,
+	aliasContract bool,
+	topology CacheTopology,
+) (Input, error) {
+	targetNamespace, err := resolveTargetNamespace(owner, request.TargetNamespace)
+	if err != nil {
+		return Input{}, err
+	}
+	if err := s.prepareTopologyAccess(ctx, owner, targetNamespace, topology.Kind); err != nil {
+		return Input{}, err
+	}
+	coordination, err := s.resolveCoordination(ctx, targetNamespace, topology, request.Topology, bindings[0].Artifact.Digest)
+	if err != nil {
+		return Input{}, err
+	}
+	projection, err := s.ensureRegistryProjection(ctx, owner, targetNamespace, topology.Kind)
+	if err != nil {
+		return Input{}, err
+	}
+	runtimeImagePullSecretName, err := s.runtimeImagePullSecretName(ctx, owner, targetNamespace, topology.Kind)
+	if err != nil {
+		return Input{}, err
+	}
+	return Input{
+		Artifact:                   bindings[0].Artifact,
+		ArtifactFamily:             bindings[0].ArtifactFamily,
+		Bindings:                   inputBindings(bindings, aliasContract),
+		RegistryAccess:             projection,
+		RuntimeImagePullSecretName: runtimeImagePullSecretName,
+		CacheMount:                 topology.CacheMount,
+		TopologyKind:               topology.Kind,
+		Coordination:               coordination,
+	}, nil
+}
+
+func (s *Service) prepareTopologyAccess(ctx context.Context, owner client.Object, targetNamespace string, topologyKind CacheTopologyKind) error {
+	if topologyKind != CacheTopologyDirect {
+		return nil
+	}
+	return s.cleanupProjectedRuntimeAccess(ctx, owner, targetNamespace)
 }
 
 func (s *Service) readyNodesForTopology(ctx context.Context, topologyKind CacheTopologyKind) (bool, error) {

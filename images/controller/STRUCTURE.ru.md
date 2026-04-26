@@ -204,7 +204,8 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
 - `nodecacheruntime/` — owner controller for per-node runtime Pod/PVC,
   runtime-readiness Node label and node-selection reconciliation.
 - `workloaddelivery/` — owner controller for top-level workload annotations
-  `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel`.
+  `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel` /
+  `ai.deckhouse.io/model-refs`.
 
 Controller package оправдан ownership, а не удобством чтения. Новый controller
 package без нового owner — patchwork.
@@ -271,11 +272,14 @@ Non-K8s adapters:
   policy не должна утекать туда;
 - `k8s/modeldelivery/` остаётся boundary для workload mutation и теперь держит
   module-managed local bridge volume injection отдельно от storage substrate
-  CR shaping, плюс стабильный workload-facing env contract
-  (`AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`,
-  `AI_MODELS_MODEL_FAMILY`) через stable per-pod `/data/modelcache/model`
-  projection или digest-специфичный shared-store path для shared PVC bridge
-  topology, а для managed SharedDirect — inline CSI volume attributes. Raw
+  CR shaping, плюс стабильный workload-facing env contract: legacy primary
+  model остаётся в `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST` и
+  `AI_MODELS_MODEL_FAMILY`, а multi-model delivery отдаёт alias paths
+  `/data/modelcache/models/<alias>`, `AI_MODELS_MODELS_DIR`,
+  `AI_MODELS_MODELS` со списком alias/path/digest/family и per-alias
+  `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}`. Bridge paths создают
+  alias symlink поверх shared-store layout, а managed SharedDirect использует
+  отдельные inline CSI volume attributes на каждый alias. Raw
   cache-root/current internals остаются внутри `internal/nodecache` and CSI
   runtime, не в workload mutation policy;
 - live `HuggingFace` publish path больше не держит локальный

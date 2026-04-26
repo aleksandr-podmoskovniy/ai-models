@@ -32,6 +32,7 @@ type deliverySignalState struct {
 	ArtifactURI    string
 	ArtifactFamily string
 	ModelPath      string
+	Models         string
 	DeliveryMode   string
 	DeliveryReason string
 }
@@ -46,6 +47,7 @@ func deliverySignalStateFromTemplate(template *corev1.PodTemplateSpec) deliveryS
 		ArtifactURI:    trimmedAnnotation(template.Annotations, modeldelivery.ResolvedArtifactURIAnnotation),
 		ArtifactFamily: trimmedAnnotation(template.Annotations, modeldelivery.ResolvedArtifactFamilyAnnotation),
 		ModelPath:      managedRuntimeEnvValue(template.Spec.Containers, modeldelivery.ModelPathEnv),
+		Models:         trimmedAnnotation(template.Annotations, modeldelivery.ResolvedModelsAnnotation),
 		DeliveryMode:   trimmedAnnotation(template.Annotations, modeldelivery.ResolvedDeliveryModeAnnotation),
 		DeliveryReason: trimmedAnnotation(template.Annotations, modeldelivery.ResolvedDeliveryReasonAnnotation),
 	}

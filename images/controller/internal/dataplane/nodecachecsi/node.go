@@ -47,7 +47,7 @@ func (s *Server) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		return nil, status.Errorf(codes.Internal, "check node cache CSI target mount: %v", err)
 	}
 	if mounted {
-		if err := s.touchUsage(source); err != nil {
+		if err := s.touchUsage(source.UsageDir); err != nil {
 			return nil, err
 		}
 		return &csi.NodePublishVolumeResponse{}, nil
@@ -55,10 +55,10 @@ func (s *Server) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return nil, status.Errorf(codes.Internal, "create node cache CSI target: %v", err)
 	}
-	if err := s.options.Mounter.BindMount(source, target, true); err != nil {
+	if err := s.options.Mounter.BindMount(source.MountPath, target, true); err != nil {
 		return nil, status.Errorf(codes.Internal, "bind node cache artifact: %v", err)
 	}
-	if err := s.touchUsage(source); err != nil {
+	if err := s.touchUsage(source.UsageDir); err != nil {
 		return nil, err
 	}
 	return &csi.NodePublishVolumeResponse{}, nil
@@ -122,25 +122,31 @@ func (s *Server) publishRequest(req *csi.NodePublishVolumeRequest) (string, stri
 	return target, digest, nil
 }
 
-func (s *Server) readySource(digest string) (string, error) {
-	source := nodecache.StorePath(s.options.CacheRoot, digest)
-	marker, err := nodecache.ReadMarker(source)
+type readySource struct {
+	MountPath string
+	UsageDir  string
+}
+
+func (s *Server) readySource(digest string) (readySource, error) {
+	storePath := nodecache.StorePath(s.options.CacheRoot, digest)
+	modelPath := nodecache.SharedArtifactModelPath(s.options.CacheRoot, digest)
+	marker, err := nodecache.ReadMarker(storePath)
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "read node cache marker for %s: %v", digest, err)
+		return readySource{}, status.Errorf(codes.Internal, "read node cache marker for %s: %v", digest, err)
 	}
 	if marker == nil {
-		return "", status.Errorf(codes.Unavailable, "node cache artifact %s is not ready", digest)
+		return readySource{}, status.Errorf(codes.Unavailable, "node cache artifact %s is not ready", digest)
 	}
 	if marker.Digest != "" && marker.Digest != digest {
-		return "", status.Errorf(codes.Internal, "node cache marker digest %q does not match requested %q", marker.Digest, digest)
+		return readySource{}, status.Errorf(codes.Internal, "node cache marker digest %q does not match requested %q", marker.Digest, digest)
 	}
-	if _, err := os.Stat(nodecache.SharedArtifactModelPath(s.options.CacheRoot, digest)); err != nil {
+	if _, err := os.Stat(modelPath); err != nil {
 		if os.IsNotExist(err) {
-			return "", status.Errorf(codes.Unavailable, "node cache artifact %s model path is not ready", digest)
+			return readySource{}, status.Errorf(codes.Unavailable, "node cache artifact %s model path is not ready", digest)
 		}
-		return "", status.Errorf(codes.Internal, "stat node cache artifact %s model path: %v", digest, err)
+		return readySource{}, status.Errorf(codes.Internal, "stat node cache artifact %s model path: %v", digest, err)
 	}
-	return source, nil
+	return readySource{MountPath: modelPath, UsageDir: storePath}, nil
 }
 
 func (s *Server) touchUsage(source string) error {
