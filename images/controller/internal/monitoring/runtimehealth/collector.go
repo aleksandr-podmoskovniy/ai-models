@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -30,6 +31,8 @@ const collectorName = "runtime-health"
 
 type Options struct {
 	RuntimeNamespace   string
+	CleanupNamespace   string
+	NodeCacheEnabled   bool
 	NodeSelectorLabels map[string]string
 }
 
@@ -47,7 +50,10 @@ func NewCollector(reader client.Reader, logger *slog.Logger, options Options) *C
 		reader:             reader,
 		logger:             logger.With(slog.String("collector", collectorName)),
 		runtimeNamespace:   options.RuntimeNamespace,
+		cleanupNamespace:   options.CleanupNamespace,
+		nodeCacheEnabled:   options.NodeCacheEnabled,
 		nodeSelectorLabels: options.NodeSelectorLabels,
+		now:                time.Now,
 	}
 }
 
@@ -55,7 +61,10 @@ type Collector struct {
 	reader             client.Reader
 	logger             *slog.Logger
 	runtimeNamespace   string
+	cleanupNamespace   string
+	nodeCacheEnabled   bool
 	nodeSelectorLabels map[string]string
+	now                func() time.Time
 }
 
 func (c *Collector) Register(registerer prometheus.Registerer) {
@@ -72,33 +81,47 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	pods, err := c.listNodeCacheRuntimePods(ctx)
-	if err != nil {
-		c.logger.Error("failed to list node-cache runtime Pods for metrics collection", slog.Any("error", err))
-	}
-	pvcs, err := c.listNodeCacheRuntimePVCs(ctx)
-	if err != nil {
-		c.logger.Error("failed to list node-cache runtime PVCs for metrics collection", slog.Any("error", err))
-	}
-	selectedNodes, err := c.listSelectedNodes(ctx)
-	if err != nil {
-		c.logger.Error("failed to list selected nodes for runtime-health metrics collection", slog.Any("error", err))
+	var pods []corev1.Pod
+	var pvcs []corev1.PersistentVolumeClaim
+	var selectedNodes []corev1.Node
+	if c.nodeCacheEnabled {
+		var err error
+		pods, err = c.listNodeCacheRuntimePods(ctx)
+		if err != nil {
+			c.logger.Error("failed to list node-cache runtime Pods for metrics collection", slog.Any("error", err))
+		}
+		pvcs, err = c.listNodeCacheRuntimePVCs(ctx)
+		if err != nil {
+			c.logger.Error("failed to list node-cache runtime PVCs for metrics collection", slog.Any("error", err))
+		}
+		selectedNodes, err = c.listSelectedNodes(ctx)
+		if err != nil {
+			c.logger.Error("failed to list selected nodes for runtime-health metrics collection", slog.Any("error", err))
+		}
 	}
 	if err := c.collectManagedWorkloadDelivery(ctx, ch); err != nil {
 		c.logger.Error("failed to list managed workloads for runtime-health metrics collection", slog.Any("error", err))
 	}
+	gcRequests, err := c.listDMCRGCRequests(ctx)
+	if err != nil {
+		c.logger.Error("failed to list DMCR garbage-collection requests for runtime-health metrics collection", slog.Any("error", err))
+	}
 
-	reportNodeCacheRuntimeSummary(ch, strings.TrimSpace(c.runtimeNamespace), selectedNodes, pods, pvcs)
-	for i := range pods {
-		reportNodeCacheRuntimePod(ch, &pods[i])
+	if c.nodeCacheEnabled {
+		reportNodeCacheRuntimeSummary(ch, strings.TrimSpace(c.runtimeNamespace), selectedNodes, pods, pvcs)
+		for i := range pods {
+			reportNodeCacheRuntimePod(ch, &pods[i])
+		}
+		for i := range pvcs {
+			reportNodeCacheRuntimePVC(ch, &pvcs[i])
+		}
 	}
-	for i := range pvcs {
-		reportNodeCacheRuntimePVC(ch, &pvcs[i])
-	}
+	reportDMCRGCRequests(ch, strings.TrimSpace(c.cleanupNamespace), gcRequests, c.now())
 }
 
 func normalizeOptions(options Options) Options {
 	options.RuntimeNamespace = strings.TrimSpace(options.RuntimeNamespace)
+	options.CleanupNamespace = strings.TrimSpace(options.CleanupNamespace)
 	if len(options.NodeSelectorLabels) == 0 {
 		options.NodeSelectorLabels = nil
 		return options

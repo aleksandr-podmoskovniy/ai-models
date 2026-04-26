@@ -214,7 +214,7 @@ func TestBuildReportFailsClosedWhenDirectUploadMetadataIsBroken(t *testing.T) {
 
 	_, err := buildReportWithClock(
 		context.Background(),
-		newFakeDynamicClient(t),
+		newFakeKubeClient(t),
 		store,
 		"dmcr",
 		time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC),

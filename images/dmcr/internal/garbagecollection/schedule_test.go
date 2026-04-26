@@ -202,6 +202,40 @@ func TestMaybeEnqueueStartupBackfillRequestSkipsWhenRequestExists(t *testing.T) 
 	}
 }
 
+func TestMaybeEnqueueStartupBackfillRequestIgnoresCompletedRequest(t *testing.T) {
+	completed := completedRequestForTest("dmcr-gc-completed", time.Date(2026, 4, 23, 18, 20, 0, 0, time.UTC))
+	client := fake.NewSimpleClientset(completed.DeepCopy())
+	planner, err := newSchedulePlanner("0 2 * * *", time.Date(2026, 4, 23, 18, 25, 53, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("newSchedulePlanner() error = %v", err)
+	}
+
+	previousRunner := startupBackfillCheckRunner
+	startupBackfillCheckRunner = func(context.Context, string) (Report, error) {
+		return Report{
+			StaleDirectUploadPrefixes: []PrefixInventoryEntry{
+				{Prefix: "dmcr/_ai_models/direct-upload/objects/session-a"},
+			},
+		}, nil
+	}
+	t.Cleanup(func() {
+		startupBackfillCheckRunner = previousRunner
+	})
+
+	options := Options{
+		RequestNamespace:     "d8-ai-models",
+		RequestLabelSelector: DefaultRequestLabelSelector(),
+		ConfigPath:           "/etc/dmcr/config.yml",
+	}
+	now := time.Date(2026, 4, 23, 18, 26, 0, 0, time.UTC)
+	if err := maybeEnqueueStartupBackfillRequest(context.Background(), client, options, planner, now); err != nil {
+		t.Fatalf("maybeEnqueueStartupBackfillRequest() error = %v", err)
+	}
+	if _, err := client.CoreV1().Secrets("d8-ai-models").Get(context.Background(), ScheduledRequestName, metav1.GetOptions{}); err != nil {
+		t.Fatalf("expected scheduled request to be queued despite completed result: %v", err)
+	}
+}
+
 func TestMaybeEnqueueStartupBackfillRequestRetriesFailedCheck(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	startedAt := time.Date(2026, 4, 23, 18, 25, 53, 0, time.UTC)

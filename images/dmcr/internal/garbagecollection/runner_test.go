@@ -19,6 +19,7 @@ package garbagecollection
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -29,127 +30,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
-
-func TestShouldRunGarbageCollection(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name   string
-		secret corev1.Secret
-		want   bool
-	}{
-		{
-			name: "queued request secret",
-			secret: corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{RequestLabelKey: RequestLabelValue},
-					Annotations: map[string]string{
-						RequestQueuedAtAnnotationKey: "2026-04-10T00:00:00Z",
-					},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "pending request secret",
-			secret: corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{RequestLabelKey: RequestLabelValue},
-					Annotations: map[string]string{
-						switchAnnotationKey: "2026-04-10T00:00:00Z",
-					},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "non request secret",
-			secret: corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						switchAnnotationKey: "2026-04-10T00:00:00Z",
-					},
-				},
-			},
-			want: false,
-		},
-	}
-
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			if got := shouldRunGarbageCollection(test.secret); got != test.want {
-				t.Fatalf("shouldRunGarbageCollection() = %t, want %t", got, test.want)
-			}
-		})
-	}
-}
-
-func TestShouldActivateGarbageCollection(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, 4, 13, 14, 0, 0, 0, time.UTC)
-	tests := []struct {
-		name            string
-		secrets         []corev1.Secret
-		activationDelay time.Duration
-		want            bool
-	}{
-		{
-			name: "queued request older than activation delay arms gc",
-			secrets: []corev1.Secret{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Annotations: map[string]string{
-							RequestQueuedAtAnnotationKey: now.Add(-11 * time.Minute).Format(time.RFC3339Nano),
-						},
-					},
-				},
-			},
-			activationDelay: 10 * time.Minute,
-			want:            true,
-		},
-		{
-			name: "fresh queued request stays pending",
-			secrets: []corev1.Secret{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Annotations: map[string]string{
-							RequestQueuedAtAnnotationKey: now.Add(-2 * time.Minute).Format(time.RFC3339Nano),
-						},
-					},
-				},
-			},
-			activationDelay: 10 * time.Minute,
-			want:            false,
-		},
-		{
-			name: "invalid queued timestamp arms gc fail-open",
-			secrets: []corev1.Secret{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Annotations: map[string]string{
-							RequestQueuedAtAnnotationKey: "broken",
-						},
-					},
-				},
-			},
-			activationDelay: 10 * time.Minute,
-			want:            true,
-		},
-	}
-
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			if got := shouldActivateGarbageCollection(test.secrets, now, test.activationDelay); got != test.want {
-				t.Fatalf("shouldActivateGarbageCollection() = %t, want %t", got, test.want)
-			}
-		})
-	}
-}
 
 func TestRunRequestCycleArmsQueuedRequestsAndLogs(t *testing.T) {
 	var buffer bytes.Buffer
@@ -256,7 +136,7 @@ func TestRunLoopStepQueuesStartupBackfillRequest(t *testing.T) {
 	}
 }
 
-func TestRunRequestCycleDeletesActiveRequestsAndLogs(t *testing.T) {
+func TestRunRequestCycleMarksActiveRequestsDoneAndLogs(t *testing.T) {
 	var buffer bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buffer, &slog.HandlerOptions{ReplaceAttr: replaceAttrForTest}))
 	logger = logger.With(slog.String("logger", "dmcr-garbage-collection"))
@@ -287,6 +167,9 @@ func TestRunRequestCycleDeletesActiveRequestsAndLogs(t *testing.T) {
 				switchAnnotationKey:          "2026-04-13T00:00:00Z",
 			},
 		},
+		Data: map[string][]byte{
+			directUploadTokenDataKey: []byte("token-must-not-survive-result"),
+		},
 	}
 	client := fake.NewSimpleClientset(secret.DeepCopy())
 	options := Options{
@@ -296,16 +179,16 @@ func TestRunRequestCycleDeletesActiveRequestsAndLogs(t *testing.T) {
 		ConfigPath:           configPath,
 		GCTimeout:            time.Minute,
 	}
-	previousAutoCleanupRunner := autoCleanupRunner
-	autoCleanupRunner = func(_ context.Context, configPath, registryBinary string, gcTimeout time.Duration, policy cleanupPolicy) (AutoCleanupResult, error) {
+	previousCleanupRunner := cleanupRunner
+	cleanupRunner = func(_ context.Context, configPath, registryBinary string, gcTimeout time.Duration, policy cleanupPolicy) (CleanupResult, error) {
 		_ = configPath
 		_ = registryBinary
 		_ = gcTimeout
 		_ = policy
-		return AutoCleanupResult{RegistryOutput: "gc-ok"}, nil
+		return CleanupResult{RegistryOutput: "gc-ok"}, nil
 	}
 	t.Cleanup(func() {
-		autoCleanupRunner = previousAutoCleanupRunner
+		cleanupRunner = previousCleanupRunner
 	})
 
 	handled, err := runRequestCycle(context.Background(), client, options, func() time.Time { return time.Date(2026, 4, 13, 14, 0, 0, 0, time.UTC) })
@@ -316,14 +199,34 @@ func TestRunRequestCycleDeletesActiveRequestsAndLogs(t *testing.T) {
 		t.Fatal("runRequestCycle() = false, want true")
 	}
 
-	if _, err := client.CoreV1().Secrets("d8-ai-models").Get(context.Background(), "dmcr-gc-request-1", metav1.GetOptions{}); err == nil {
-		t.Fatal("expected active request secret to be deleted after successful garbage collection")
+	updated, err := client.CoreV1().Secrets("d8-ai-models").Get(context.Background(), "dmcr-gc-request-1", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("expected completed request secret to stay observable: %v", err)
+	}
+	if got, want := updated.Annotations[phaseAnnotationKey], phaseDone; got != want {
+		t.Fatalf("phase annotation = %q, want %q", got, want)
+	}
+	if updated.Annotations[switchAnnotationKey] != "" {
+		t.Fatalf("expected completed request switch annotation to be removed, got %#v", updated.Annotations)
+	}
+	if updated.Annotations[completedAtAnnotationKey] == "" {
+		t.Fatalf("expected completed-at annotation, got %#v", updated.Annotations)
+	}
+	if _, found := updated.Data[directUploadTokenDataKey]; found {
+		t.Fatalf("completed result must not retain direct-upload token data: %#v", updated.Data)
+	}
+	var result requestResultRecord
+	if err := json.Unmarshal(updated.Data[resultDataKey], &result); err != nil {
+		t.Fatalf("decode result data error = %v", err)
+	}
+	if got, want := result.RegistryOutput, "gc-ok"; got != want {
+		t.Fatalf("result registry output = %q, want %q", got, want)
 	}
 
 	entries := decodeJSONLogLines(t, buffer.Bytes())
 	assertLogMessage(t, entries, "dmcr garbage collection requested")
 	assertLogMessage(t, entries, "dmcr garbage collection completed")
-	assertLogMessage(t, entries, "dmcr garbage collection requests removed")
+	assertLogMessage(t, entries, "dmcr garbage collection requests completed")
 
 	if got := entries[1]["registry_output"]; got != "gc-ok" {
 		t.Fatalf("registry_output = %v, want gc-ok", got)

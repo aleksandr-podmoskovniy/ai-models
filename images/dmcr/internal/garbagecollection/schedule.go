@@ -108,7 +108,7 @@ func maybeEnqueueScheduledRequest(
 		return err
 	}
 	planner.MarkTriggered(now)
-	if len(requestSecrets) > 0 {
+	if hasPendingRequest(requestSecrets) {
 		return nil
 	}
 
@@ -143,7 +143,7 @@ func maybeEnqueueStartupBackfillRequest(
 	if err != nil {
 		return err
 	}
-	if len(requestSecrets) > 0 {
+	if hasPendingRequest(requestSecrets) {
 		planner.startupBackfillChecked = true
 		return nil
 	}

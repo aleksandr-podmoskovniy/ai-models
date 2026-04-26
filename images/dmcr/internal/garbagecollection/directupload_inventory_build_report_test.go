@@ -20,9 +20,6 @@ import (
 	"context"
 	"testing"
 	"time"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func TestBuildReportKeepsFreshDirectUploadPrefixAgeBoundedWhenNoLiveOwnersRemain(t *testing.T) {
@@ -38,7 +35,7 @@ func TestBuildReportKeepsFreshDirectUploadPrefixAgeBoundedWhenNoLiveOwnersRemain
 
 	report, err := buildReportWithClock(
 		context.Background(),
-		newFakeDynamicClient(t),
+		newFakeKubeClient(t),
 		store,
 		"dmcr",
 		now,
@@ -62,11 +59,14 @@ func TestBuildReportKeepsFreshDirectUploadPrefixAgeBoundedWhileOwnerIsDeleting(t
 			lastModified: now.Add(-2 * time.Hour),
 		},
 	)
-	deletingModel := directUploadDeletingModel(now)
+	deletingState := cleanupStateSecretForTest(
+		"deleting-model",
+		`{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deleting/1111"}}`,
+	)
 
 	report, err := buildReportWithClock(
 		context.Background(),
-		newFakeDynamicClient(t, deletingModel),
+		newFakeKubeClient(t, deletingState),
 		store,
 		"dmcr",
 		now,
@@ -92,7 +92,7 @@ func TestBuildReportKeepsFreshDirectUploadPrefixAgeBoundedWhenDeleteTriggeredPol
 	)
 	report, err := buildReportWithClock(
 		context.Background(),
-		newFakeDynamicClient(t),
+		newFakeKubeClient(t),
 		store,
 		"dmcr",
 		now,
@@ -104,19 +104,4 @@ func TestBuildReportKeepsFreshDirectUploadPrefixAgeBoundedWhenDeleteTriggeredPol
 	if got, want := len(report.StaleDirectUploadPrefixes), 0; got != want {
 		t.Fatalf("stale direct-upload prefix count = %d, want %d", got, want)
 	}
-}
-
-func directUploadDeletingModel(now time.Time) *unstructured.Unstructured {
-	return &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "ai.deckhouse.io/v1alpha1",
-		"kind":       "Model",
-		"metadata": map[string]any{
-			"name":              "deleting-model",
-			"namespace":         "team-a",
-			"deletionTimestamp": metav1.NewTime(now).Format(time.RFC3339),
-			"annotations": map[string]any{
-				legacyCleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deleting/1111"}}`,
-			},
-		},
-	}}
 }

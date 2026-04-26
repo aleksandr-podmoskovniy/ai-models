@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func TestCollectLivePrefixesFromSecretUsesExplicitPrefixes(t *testing.T) {
@@ -66,19 +65,11 @@ func TestCollectLivePrefixesFromSecretFallsBackToReference(t *testing.T) {
 func TestDiscoverLivePrefixesReadsCleanupStateSecrets(t *testing.T) {
 	t.Parallel()
 
-	liveModel := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "ai.deckhouse.io/v1alpha1",
-		"kind":       "Model",
-		"metadata": map[string]any{
-			"name":      "live-model",
-			"namespace": "team-a",
-			"annotations": map[string]any{
-				legacyCleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/live/2222"}}`,
-			},
-		},
-	}}
-
-	client := newFakeDynamicClient(t, liveModel)
+	stateSecret := cleanupStateSecretForTest(
+		"live-model",
+		`{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/live/2222"}}`,
+	)
+	client := newFakeKubeClient(t, stateSecret)
 
 	live, err := DiscoverLivePrefixes(context.Background(), client, defaultCleanupStateNamespace)
 	if err != nil {

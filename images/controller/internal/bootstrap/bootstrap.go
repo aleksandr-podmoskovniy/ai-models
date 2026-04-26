@@ -179,17 +179,17 @@ func (a *App) setupManager(mgr ctrl.Manager) error {
 		metrics.Registry,
 		a.logger.With(slog.String("runtimeKind", "metrics")),
 	)
-	if a.nodeCacheRuntime.Enabled {
-		runtimehealth.SetupCollector(
-			mgr.GetCache(),
-			metrics.Registry,
-			a.logger.With(slog.String("runtimeKind", "metrics")),
-			runtimehealth.Options{
-				RuntimeNamespace:   a.nodeCacheRuntime.Namespace,
-				NodeSelectorLabels: a.nodeCacheRuntime.NodeSelectorLabels,
-			},
-		)
-	}
+	runtimehealth.SetupCollector(
+		mgr.GetCache(),
+		metrics.Registry,
+		a.logger.With(slog.String("runtimeKind", "metrics")),
+		runtimehealth.Options{
+			RuntimeNamespace:   a.nodeCacheRuntime.Namespace,
+			CleanupNamespace:   a.cleanup.Cleanup.Namespace,
+			NodeCacheEnabled:   a.nodeCacheRuntime.Enabled,
+			NodeSelectorLabels: a.nodeCacheRuntime.NodeSelectorLabels,
+		},
+	)
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return err

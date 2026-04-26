@@ -115,6 +115,13 @@ func TestGarbageCollectionProgressDecision(t *testing.T) {
 			},
 		},
 		{
+			name:  "completed gc removes finalizer",
+			state: GarbageCollectionStateComplete,
+			want: FinalizeDeleteDecision{
+				RemoveFinalizer: true,
+			},
+		},
+		{
 			name:  "unsupported gc state fails closed",
 			state: GarbageCollectionState("Other"),
 			want: FinalizeDeleteDecision{

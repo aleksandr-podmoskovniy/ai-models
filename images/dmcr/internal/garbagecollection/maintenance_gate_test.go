@@ -56,8 +56,8 @@ func TestRunRequestCycleActivatesAndReleasesMaintenanceGate(t *testing.T) {
 		t.Fatalf("os.WriteFile(config.yml) error = %v", err)
 	}
 
-	previousAutoCleanupRunner := autoCleanupRunner
-	autoCleanupRunner = func(ctx context.Context, _, _ string, _ time.Duration, _ cleanupPolicy) (AutoCleanupResult, error) {
+	previousCleanupRunner := cleanupRunner
+	cleanupRunner = func(ctx context.Context, _, _ string, _ time.Duration, _ cleanupPolicy) (CleanupResult, error) {
 		lease, err := client.CoordinationV1().Leases("d8-ai-models").Get(ctx, "dmcr-gc-maintenance", metav1.GetOptions{})
 		if err != nil {
 			t.Fatalf("Get(maintenance lease) error = %v", err)
@@ -65,10 +65,10 @@ func TestRunRequestCycleActivatesAndReleasesMaintenanceGate(t *testing.T) {
 		if leaseHolder(lease) != "pod-a" {
 			t.Fatalf("maintenance gate holder = %q, want pod-a", leaseHolder(lease))
 		}
-		return AutoCleanupResult{}, nil
+		return CleanupResult{}, nil
 	}
 	t.Cleanup(func() {
-		autoCleanupRunner = previousAutoCleanupRunner
+		cleanupRunner = previousCleanupRunner
 	})
 
 	_, err := runRequestCycle(context.Background(), client, options, time.Now)
@@ -126,13 +126,13 @@ func TestRunRequestCycleWaitsForMaintenanceGateAckQuorum(t *testing.T) {
 	}
 
 	cleanupCalled := false
-	previousAutoCleanupRunner := autoCleanupRunner
-	autoCleanupRunner = func(context.Context, string, string, time.Duration, cleanupPolicy) (AutoCleanupResult, error) {
+	previousCleanupRunner := cleanupRunner
+	cleanupRunner = func(context.Context, string, string, time.Duration, cleanupPolicy) (CleanupResult, error) {
 		cleanupCalled = true
-		return AutoCleanupResult{}, nil
+		return CleanupResult{}, nil
 	}
 	t.Cleanup(func() {
-		autoCleanupRunner = previousAutoCleanupRunner
+		cleanupRunner = previousCleanupRunner
 	})
 
 	handled, err := runRequestCycle(context.Background(), client, options, time.Now)
@@ -179,13 +179,13 @@ func TestRunRequestCycleSkipsCleanupWhenMaintenanceGateAckQuorumMissing(t *testi
 	}
 
 	cleanupCalled := false
-	previousAutoCleanupRunner := autoCleanupRunner
-	autoCleanupRunner = func(context.Context, string, string, time.Duration, cleanupPolicy) (AutoCleanupResult, error) {
+	previousCleanupRunner := cleanupRunner
+	cleanupRunner = func(context.Context, string, string, time.Duration, cleanupPolicy) (CleanupResult, error) {
 		cleanupCalled = true
-		return AutoCleanupResult{}, nil
+		return CleanupResult{}, nil
 	}
 	t.Cleanup(func() {
-		autoCleanupRunner = previousAutoCleanupRunner
+		cleanupRunner = previousCleanupRunner
 	})
 
 	handled, err := runRequestCycle(context.Background(), client, options, time.Now)

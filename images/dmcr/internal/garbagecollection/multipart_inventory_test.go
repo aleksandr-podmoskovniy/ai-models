@@ -20,9 +20,6 @@ import (
 	"context"
 	"testing"
 	"time"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func TestDiscoverDirectUploadMultipartInventoryReturnsOnlyOldOrTargetedUploads(t *testing.T) {
@@ -100,7 +97,7 @@ func TestBuildReportIncludesDirectUploadMultipartResidue(t *testing.T) {
 
 	report, err := buildReportWithClock(
 		context.Background(),
-		newFakeDynamicClient(t),
+		newFakeKubeClient(t),
 		store,
 		"dmcr",
 		now,
@@ -136,7 +133,7 @@ func TestBuildReportKeepsFreshMultipartUploadAgeBoundedWhenNoLiveOwnersRemain(t 
 
 	report, err := buildReportWithClock(
 		context.Background(),
-		newFakeDynamicClient(t),
+		newFakeKubeClient(t),
 		store,
 		"dmcr",
 		now,
@@ -162,22 +159,14 @@ func TestBuildReportKeepsFreshMultipartUploadAgeBoundedWhileOwnerIsDeleting(t *t
 			partCount:   9,
 		},
 	)
-	deletingModel := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "ai.deckhouse.io/v1alpha1",
-		"kind":       "Model",
-		"metadata": map[string]any{
-			"name":              "deleting-model",
-			"namespace":         "team-a",
-			"deletionTimestamp": metav1.NewTime(now).Format(time.RFC3339),
-			"annotations": map[string]any{
-				legacyCleanupHandleAnnotationKey: `{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deleting/1111"}}`,
-			},
-		},
-	}}
+	deletingState := cleanupStateSecretForTest(
+		"deleting-model",
+		`{"kind":"BackendArtifact","backend":{"repositoryMetadataPrefix":"dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/deleting/1111"}}`,
+	)
 
 	report, err := buildReportWithClock(
 		context.Background(),
-		newFakeDynamicClient(t, deletingModel),
+		newFakeKubeClient(t, deletingState),
 		store,
 		"dmcr",
 		now,
@@ -205,7 +194,7 @@ func TestBuildReportKeepsFreshMultipartUploadAgeBoundedWhenDeleteTriggeredPolicy
 	)
 	report, err := buildReportWithClock(
 		context.Background(),
-		newFakeDynamicClient(t),
+		newFakeKubeClient(t),
 		store,
 		"dmcr",
 		now,

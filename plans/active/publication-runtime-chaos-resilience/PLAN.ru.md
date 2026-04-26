@@ -320,6 +320,38 @@ Node drain/reboot команды не включаются в автоматич
   connection reset/refused/timeout/EPIPE/temporary DNS errors retry, while TLS
   certificate errors and DNS not-found fail fast as terminal configuration
   failures.
+- DMCR GC result persistence: successful active request Secrets now move to
+  `phase=done`, drop the direct-upload session token, store bounded
+  `result.json` with counts/registry output and keep `completed-at` for
+  operator inspection. Completed request Secrets are ignored by active/queued
+  selection and pruned after `completed-request-ttl`.
+- Controller delete observation now treats `phase=done` as internal
+  `GarbageCollectionStateComplete`, so a persisted private GC result does not
+  look like a stuck queued request.
+- Runtime observability alignment: `runtimehealth` is now registered
+  independently of `nodeCache.enabled`, so workload-delivery metrics are
+  present for the current MaterializeBridge baseline. The same collector also
+  exports private `DMCR` GC request counts by phase and per-request age, making
+  queued/armed/done lifecycle machine-visible without turning GC request
+  Secrets into public API.
+- LOC cleanup: `cmd/ai-models-controller/config.go` was split so config
+  parsing/validation and bootstrap wiring are separate files below the
+  controller LOC budget.
+- RBAC/legacy cleanup: `DMCR` service account no longer gets cluster-wide
+  `Model` / `ClusterModel` reads. GC live inventory is explicitly based on
+  module-private cleanup-state Secrets, and stale test scaffolding that
+  pretended model annotations were still a live source was removed.
+- Follow-up RBAC/legacy cleanup: `dmcr-cleaner gc check` help text was aligned
+  with the private cleanup-state ownership model, so operator-facing CLI no
+  longer advertises live `Model` / `ClusterModel` ownership as the source of
+  truth.
+- Follow-up virtualization-style GC hardening: direct operator-facing
+  `dmcr-cleaner gc auto-cleanup` was removed. Destructive cleanup now stays
+  behind `dmcr-cleaner gc run`, so every physical registry/source/direct-upload
+  cleanup goes through request coalescing, the zero-rollout maintenance gate,
+  pod-local ack quorum and persisted result state. The remaining internal
+  `AutoCleanup*` naming was also removed so code vocabulary matches the gated
+  lifecycle.
 
 ### Validation 2026-04-26
 
@@ -341,14 +373,79 @@ Node drain/reboot команды не включаются в автоматич
   ./internal/garbagecollection`, `cd images/controller && go test
   ./internal/adapters/modelpack/oci ./internal/controllers/catalogcleanup`,
   `git diff --check`, and `make verify` passed.
+- After DMCR GC result persistence, `cd images/dmcr && go test
+  ./internal/garbagecollection ./cmd/dmcr-cleaner/cmd`, `cd
+  images/controller && go test ./internal/application/deletion
+  ./internal/controllers/catalogcleanup ./internal/adapters/modelpack/oci`, and
+  `git diff --check` passed.
+- After runtime observability alignment, `cd images/controller && go test
+  ./internal/monitoring/runtimehealth ./internal/bootstrap
+  ./cmd/ai-models-controller`, `cd images/dmcr && go test
+  ./internal/garbagecollection ./cmd/dmcr-cleaner/cmd`, `git diff --check`,
+  and `make verify` passed.
+- After RBAC/legacy cleanup, `cd images/dmcr && go test
+  ./internal/garbagecollection ./cmd/dmcr-cleaner/cmd`, `cd images/controller
+  && go test ./internal/monitoring/runtimehealth ./internal/bootstrap
+  ./cmd/ai-models-controller ./internal/controllers/catalogcleanup
+  ./internal/application/deletion ./internal/adapters/modelpack/oci`,
+  `git diff --check`, and `make verify` passed.
+- Render evidence: `templates/dmcr/rbac.yaml` renders only a namespaced
+  `Role`/`RoleBinding` for module-private `Secret`/`Lease` state; no
+  `d8:ai-models:dmcr` `ClusterRole`/`ClusterRoleBinding` remains.
+- After removing direct `gc auto-cleanup`, `cd images/dmcr && go test
+  ./cmd/dmcr-cleaner/cmd ./internal/garbagecollection` passed.
+- Final post-cleanup validation: no live code/docs/templates/render output
+  contain `auto-cleanup`, `AutoCleanup` or `autoCleanup`; `git diff --check`
+  and `make verify` passed.
 - Live hard e2e must resume only after the DMCR GC fix is built and deployed;
   the current live bundle still contains the race.
 
+### Live rollout check 2026-04-26 23:04 MSK
+
+- First kubeconfig current-context check showed `k8s-dvp.apiac.ru`, where
+  `ai-models` is disabled and `d8-ai-models` has no pods. All meaningful
+  rollout checks were then run explicitly with `--context k8s.apiac.ru`.
+- `k8s.apiac.ru` module state was `Ready`, source
+  `aleksandr-podmoskovniy-ghcr`, version `main`, deployed release
+  `ai-models-v0.0.7`.
+- Initial live pods were old: controller image
+  `sha256:b688ae187ed87cb327b1b3de3b7f09cfc148794803be77cf6d69aab51b3be602`,
+  DMCR image
+  `sha256:a3e769930047b1ebc2c96f0750dfb377028fefd0abf7306f72c29da4ee531233`.
+- During polling the cluster rolled to controller image
+  `sha256:586e460c4d7fd127d727f81a2658e432836f5176a098317049c4f38f8d7cb528`
+  and DMCR image
+  `sha256:107c052898643b3c1a915fd037549b0c73f337d4efbedb7bcae796f03dfa552c`,
+  both deployments reached `2/2` ready.
+- Contract check inside the new DMCR pod still showed
+  `dmcr-cleaner gc auto-cleanup` and old `gc check` help text referencing live
+  `Model` / `ClusterModel` ownership. This proves the live image does not
+  include the latest local cleanup-bypass removal.
+- Hard e2e/chaos was intentionally not started because it would validate the
+  wrong runtime contract. Resume only after the current local diff is committed,
+  pushed, built and the in-pod `dmcr-cleaner gc --help` no longer lists
+  `auto-cleanup`.
+
+### Live rollout recheck 2026-04-26 23:15 MSK
+
+- Waited another 5 minutes before checking the cluster again.
+- Polling attempts at `23:15` through `23:20` MSK still showed the same live
+  controller image
+  `sha256:586e460c4d7fd127d727f81a2658e432836f5176a098317049c4f38f8d7cb528`
+  and DMCR image
+  `sha256:107c052898643b3c1a915fd037549b0c73f337d4efbedb7bcae796f03dfa552c`.
+- In-pod contract check still reported `dmcr-cleaner gc auto-cleanup`, so the
+  cleanup-bypass removal was not live.
+- Local git check showed `HEAD` equals `origin/main`, while the working tree
+  still contains the uncommitted/unpushed diff removing `auto-cleanup` and
+  renaming internal `AutoCleanup*` vocabulary. Polling was stopped because the
+  cluster cannot roll out a diff that has not reached the remote build source.
+
 ### Review residual risks 2026-04-26
 
-- GC result persistence is still not implemented: successful `dmcr-gc-*`
-  requests are observable in logs but not persisted as a durable result object.
-  This remains a separate UX/HA slice, not part of the emergency race fix.
+- GC result persistence is now implemented as module-private Secret state, not
+  public `Model`/`ClusterModel` status. A later UX slice can project a compact
+  user-facing summary if product UX needs it.
 - If controller cannot snapshot a direct-upload session token, delete-time
   cleanup safely falls back to age-bounded cleanup. This can leave partial
   direct-upload objects until stale-age expiry, but avoids unsafe broad

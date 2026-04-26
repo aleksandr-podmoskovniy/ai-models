@@ -190,7 +190,8 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
   runtime-plane health for stable per-node node-cache agents and their shared
   `PVC`, including selector-scoped desired/managed/ready summary signal and
   aggregated workload-delivery mode/reason counts over managed top-level
-  workloads.
+  workloads plus module-private `DMCR` garbage-collection request lifecycle
+  counts/age.
 - `cmd/ai-models-node-cache-runtime/` — dedicated thin executable shell for
   the privileged node-cache CSI/runtime image; it must stay separate from the
   shared publication/materialize runtime image.

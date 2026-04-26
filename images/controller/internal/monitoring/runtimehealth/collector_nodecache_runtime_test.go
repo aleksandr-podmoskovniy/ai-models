@@ -31,6 +31,7 @@ func TestCollectorReportsManagedNodeCacheRuntimeHealthMetrics(t *testing.T) {
 
 	requestedSize := resource.MustParse("64Gi")
 	families := gatherMetrics(t, Options{
+		NodeCacheEnabled: true,
 		RuntimeNamespace: "d8-ai-models",
 		NodeSelectorLabels: map[string]string{
 			"node-role.deckhouse.io/ai-models-cache": "enabled",
@@ -169,6 +170,7 @@ func TestCollectorIgnoresUnmanagedResourcesAndReportsUnreadyPendingState(t *test
 	t.Parallel()
 
 	families := gatherMetrics(t, Options{
+		NodeCacheEnabled: true,
 		RuntimeNamespace: "d8-ai-models",
 		NodeSelectorLabels: map[string]string{
 			"node-role.deckhouse.io/ai-models-cache": "enabled",

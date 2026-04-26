@@ -101,6 +101,16 @@ var (
 		"Number of workload Pods whose managed materialize bridge init container is in the reported state, grouped by namespace, delivery mode, delivery reason, state, and reason.",
 		"namespace", "delivery_mode", "delivery_reason", "state", "reason",
 	)
+	dmcrGCRequestsMetric = newMetricInfo(
+		"dmcr_gc_requests",
+		"Number of module-private DMCR garbage-collection requests grouped by lifecycle phase.",
+		"namespace", "phase",
+	)
+	dmcrGCRequestAgeSecondsMetric = newMetricInfo(
+		"dmcr_gc_request_age_seconds",
+		"Age of a module-private DMCR garbage-collection request in its current lifecycle phase.",
+		"namespace", "name", "phase",
+	)
 )
 
 func collectorDescs() []*prometheus.Desc {
@@ -118,5 +128,7 @@ func collectorDescs() []*prometheus.Desc {
 		workloadDeliveryPodsManagedMetric.desc,
 		workloadDeliveryPodsReadyMetric.desc,
 		workloadDeliveryInitStateMetric.desc,
+		dmcrGCRequestsMetric.desc,
+		dmcrGCRequestAgeSecondsMetric.desc,
 	}
 }

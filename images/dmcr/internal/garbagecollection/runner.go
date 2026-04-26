@@ -54,6 +54,7 @@ func RunLoop(ctx context.Context, client kubernetes.Interface, options Options) 
 		slog.Duration("garbage_collection_timeout", options.GCTimeout),
 		slog.Duration("rescan_interval", options.RescanInterval),
 		slog.Duration("activation_delay", options.ActivationDelay),
+		slog.Duration("completed_request_ttl", options.CompletedRequestTTL),
 		slog.String("schedule", strings.TrimSpace(options.Schedule)),
 		slog.String("executor_lease", options.ExecutorLeaseName),
 		slog.String("executor_identity", executorLease.identity),
@@ -126,6 +127,10 @@ func runRequestCycle(
 	if err != nil {
 		return false, err
 	}
+	requestSecrets, err = pruneExpiredCompletedRequests(ctx, client, options.RequestNamespace, requestSecrets, now(), options.CompletedRequestTTL)
+	if err != nil {
+		return false, err
+	}
 	activeSecrets := activeRequestSecrets(requestSecrets)
 	if len(activeSecrets) > 0 {
 		return runActiveRequestCycle(ctx, client, options, activeSecrets)
@@ -192,7 +197,7 @@ func runActiveRequestCycle(
 		slog.Int("targeted_direct_upload_multipart_upload_count", len(policy.targetDirectUploadMultipartUploads)),
 	)
 
-	result, cleanupErr := autoCleanupRunner(cycleCtx, options.ConfigPath, options.RegistryBinary, options.GCTimeout, policy)
+	result, cleanupErr := cleanupRunner(cycleCtx, options.ConfigPath, options.RegistryBinary, options.GCTimeout, policy)
 	if cleanupErr != nil {
 		return true, cleanupErr
 	}
@@ -212,11 +217,11 @@ func runActiveRequestCycle(
 	}
 	slog.Default().Info("dmcr garbage collection completed", attrs...)
 
-	if err := deleteRequests(ctx, client, options.RequestNamespace, activeSecrets); err != nil {
+	if err := markRequestsCompleted(ctx, client, options.RequestNamespace, activeSecrets, result, time.Now().UTC()); err != nil {
 		return true, err
 	}
 	slog.Default().Info(
-		"dmcr garbage collection requests removed",
+		"dmcr garbage collection requests completed",
 		slog.Int("request_count", len(activeSecrets)),
 		slog.Any("request_names", requestNames),
 	)
@@ -256,11 +261,17 @@ func shouldRunGarbageCollection(secret corev1.Secret) bool {
 	if secret.Labels[RequestLabelKey] != RequestLabelValue {
 		return false
 	}
+	if isCompletedRequest(secret) {
+		return false
+	}
 	return strings.TrimSpace(secret.Annotations[switchAnnotationKey]) != ""
 }
 
 func isQueuedRequest(secret corev1.Secret) bool {
 	if secret.Labels[RequestLabelKey] != RequestLabelValue {
+		return false
+	}
+	if isCompletedRequest(secret) {
 		return false
 	}
 	if strings.TrimSpace(secret.Annotations[switchAnnotationKey]) != "" {
@@ -283,6 +294,9 @@ func shouldActivateGarbageCollection(secrets []corev1.Secret, now time.Time, act
 	}
 
 	for _, secret := range secrets {
+		if !isQueuedRequest(secret) {
+			continue
+		}
 		requestedAt, err := time.Parse(time.RFC3339Nano, secret.Annotations[RequestQueuedAtAnnotationKey])
 		if err != nil {
 			return true
@@ -315,23 +329,6 @@ func armQueuedRequests(
 				continue
 			}
 			return fmt.Errorf("arm dmcr garbage-collection request %s: %w", secretCopy.Name, err)
-		}
-	}
-	return nil
-}
-
-func deleteRequests(
-	ctx context.Context,
-	client kubernetes.Interface,
-	namespace string,
-	secrets []corev1.Secret,
-) error {
-	for _, secret := range secrets {
-		if err := client.CoreV1().Secrets(namespace).Delete(ctx, secret.Name, metav1.DeleteOptions{}); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-			return fmt.Errorf("delete dmcr garbage-collection request %s: %w", secret.Name, err)
 		}
 	}
 	return nil

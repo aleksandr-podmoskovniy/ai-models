@@ -30,6 +30,9 @@ const (
 	phaseAnnotationKey            = "ai.deckhouse.io/dmcr-gc-phase"
 	phaseQueued                   = "queued"
 	phaseArmed                    = "armed"
+	phaseDone                     = "done"
+	completedAtAnnotationKey      = "ai.deckhouse.io/dmcr-gc-completed-at"
+	resultDataKey                 = "result.json"
 	directUploadModeAnnotationKey = "ai.deckhouse.io/dmcr-gc-direct-upload-mode"
 	directUploadModeImmediate     = "immediate-orphan-cleanup"
 	directUploadTokenDataKey      = "direct-upload-session-token"
@@ -38,6 +41,7 @@ const (
 	DefaultConfigPath             = "/etc/docker/registry/config.yml"
 	DefaultRescanInterval         = 5 * time.Second
 	DefaultActivationDelay        = 10 * time.Minute
+	DefaultCompletedRequestTTL    = time.Hour
 	DefaultExecutorLeaseName      = "dmcr-gc-executor"
 	DefaultExecutorLeaseDuration  = 45 * time.Second
 	DefaultExecutorRenewInterval  = 15 * time.Second
@@ -58,6 +62,7 @@ type Options struct {
 	GCTimeout                     time.Duration
 	RescanInterval                time.Duration
 	ActivationDelay               time.Duration
+	CompletedRequestTTL           time.Duration
 	Schedule                      string
 	ExecutorLeaseName             string
 	ExecutorIdentity              string
@@ -94,6 +99,9 @@ func applyDefaultOptions(options Options) Options {
 	}
 	if options.ActivationDelay <= 0 {
 		options.ActivationDelay = DefaultActivationDelay
+	}
+	if options.CompletedRequestTTL <= 0 {
+		options.CompletedRequestTTL = DefaultCompletedRequestTTL
 	}
 	if strings.TrimSpace(options.ExecutorLeaseName) == "" {
 		options.ExecutorLeaseName = DefaultExecutorLeaseName

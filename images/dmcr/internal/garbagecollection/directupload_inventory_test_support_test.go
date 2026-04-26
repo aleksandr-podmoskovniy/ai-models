@@ -26,7 +26,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -212,40 +211,21 @@ func equalStringSlices(got, want []string) bool {
 	return true
 }
 
-const legacyCleanupHandleAnnotationKey = "ai.deckhouse.io/cleanup-handle"
-
-func newFakeDynamicClient(t *testing.T, objects ...runtime.Object) *fake.Clientset {
+func newFakeKubeClient(t *testing.T, objects ...runtime.Object) *fake.Clientset {
 	t.Helper()
 
-	secrets := make([]runtime.Object, 0, len(objects))
-	for _, object := range objects {
-		if secret := cleanupStateSecretForTest(object); secret != nil {
-			secrets = append(secrets, secret)
-		}
-	}
-	return fake.NewSimpleClientset(secrets...)
+	return fake.NewSimpleClientset(objects...)
 }
 
-func cleanupStateSecretForTest(object runtime.Object) *corev1.Secret {
-	switch typed := object.(type) {
-	case *corev1.Secret:
-		return typed
-	case *unstructured.Unstructured:
-		raw := strings.TrimSpace(typed.GetAnnotations()[legacyCleanupHandleAnnotationKey])
-		if raw == "" {
-			return nil
-		}
-		return &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "cleanup-state-" + strings.TrimSpace(typed.GetName()),
-				Namespace: defaultCleanupStateNamespace,
-				Labels: map[string]string{
-					appNameLabelKey: cleanupStateAppName,
-				},
+func cleanupStateSecretForTest(name, rawHandle string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cleanup-state-" + strings.TrimSpace(name),
+			Namespace: defaultCleanupStateNamespace,
+			Labels: map[string]string{
+				appNameLabelKey: cleanupStateAppName,
 			},
-			Data: map[string][]byte{cleanupHandleDataKey: []byte(raw)},
-		}
-	default:
-		return nil
+		},
+		Data: map[string][]byte{cleanupHandleDataKey: []byte(strings.TrimSpace(rawHandle))},
 	}
 }

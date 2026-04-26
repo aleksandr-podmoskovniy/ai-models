@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	deletionapp "github.com/deckhouse/ai-models/controller/internal/application/deletion"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,6 +64,23 @@ func TestBuildDMCRGCRequestSecretIncludesSharedOwnerLabels(t *testing.T) {
 	}
 	if got := secret.Annotations[dmcrGCDirectUploadModeKey]; got != "" {
 		t.Fatalf("unexpected direct-upload cleanup mode %q without session token", got)
+	}
+}
+
+func TestObserveDMCRGCRequestStateRecognizesCompletedResult(t *testing.T) {
+	t.Parallel()
+
+	got := observeDMCRGCRequestState(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{dmcrGCRequestLabelKey: dmcrGCRequestLabelValue},
+			Annotations: map[string]string{
+				dmcrGCPhaseAnnotationKey:     dmcrGCPhaseDone,
+				dmcrGCRequestedAnnotationKey: "2026-04-23T13:00:00Z",
+			},
+		},
+	})
+	if got != deletionapp.GarbageCollectionStateComplete {
+		t.Fatalf("observeDMCRGCRequestState() = %q, want %q", got, deletionapp.GarbageCollectionStateComplete)
 	}
 }
 

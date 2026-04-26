@@ -38,6 +38,7 @@ const (
 	dmcrGCSwitchAnnotationKey    = "ai.deckhouse.io/dmcr-gc-switch"
 	dmcrGCPhaseAnnotationKey     = "ai.deckhouse.io/dmcr-gc-phase"
 	dmcrGCPhaseQueued            = "queued"
+	dmcrGCPhaseDone              = "done"
 	dmcrGCDirectUploadModeKey    = "ai.deckhouse.io/dmcr-gc-direct-upload-mode"
 	dmcrGCDirectUploadModeFast   = "immediate-orphan-cleanup"
 	dmcrGCDirectUploadTokenKey   = "direct-upload-session-token"
@@ -97,6 +98,9 @@ func queueDMCRGCRequestSecret(secret *corev1.Secret, owner cleanupOwner, directU
 func observeDMCRGCRequestState(secret *corev1.Secret) deletionapp.GarbageCollectionState {
 	if secret == nil {
 		return deletionapp.GarbageCollectionStateMissing
+	}
+	if strings.TrimSpace(secret.Annotations[dmcrGCPhaseAnnotationKey]) == dmcrGCPhaseDone {
+		return deletionapp.GarbageCollectionStateComplete
 	}
 	if secret.Annotations[dmcrGCSwitchAnnotationKey] != "" {
 		return deletionapp.GarbageCollectionStateRequested

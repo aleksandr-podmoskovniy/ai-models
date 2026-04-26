@@ -25,7 +25,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-type AutoCleanupResult struct {
+type CleanupResult struct {
 	Report         Report
 	RegistryOutput string
 }
@@ -37,9 +37,9 @@ type cleanupPolicy struct {
 	cleanupStateNamespace              string
 }
 
-type autoCleanupFunc func(context.Context, string, string, time.Duration, cleanupPolicy) (AutoCleanupResult, error)
+type cleanupFunc func(context.Context, string, string, time.Duration, cleanupPolicy) (CleanupResult, error)
 
-var autoCleanupRunner autoCleanupFunc = autoCleanupWithPolicy
+var cleanupRunner cleanupFunc = cleanupWithPolicy
 
 func Check(ctx context.Context, configPath string) (Report, error) {
 	client, err := NewInClusterClient()
@@ -55,42 +55,33 @@ func Check(ctx context.Context, configPath string) (Report, error) {
 	return BuildReport(ctx, client, cleanupStateNamespace(cleanupPolicy{}), store, rootDirectory)
 }
 
-func AutoCleanup(
-	ctx context.Context,
-	configPath string,
-	registryBinary string,
-	gcTimeout time.Duration,
-) (AutoCleanupResult, error) {
-	return autoCleanupWithPolicy(ctx, configPath, registryBinary, gcTimeout, cleanupPolicy{})
-}
-
-func autoCleanupWithPolicy(
+func cleanupWithPolicy(
 	ctx context.Context,
 	configPath string,
 	registryBinary string,
 	gcTimeout time.Duration,
 	policy cleanupPolicy,
-) (AutoCleanupResult, error) {
+) (CleanupResult, error) {
 	client, err := NewInClusterClient()
 	if err != nil {
-		return AutoCleanupResult{}, err
+		return CleanupResult{}, err
 	}
 
 	store, rootDirectory, err := newPrefixStoreFromConfig(configPath)
 	if err != nil {
-		return AutoCleanupResult{}, err
+		return CleanupResult{}, err
 	}
 
 	report, err := BuildReportWithPolicy(ctx, client, store, rootDirectory, policy)
 	if err != nil {
-		return AutoCleanupResult{}, err
+		return CleanupResult{}, err
 	}
 	preGCProtectedPrefixes, err := collectProtectedDirectUploadPrefixes(ctx, store, rootDirectory)
 	if err != nil {
-		return AutoCleanupResult{}, err
+		return CleanupResult{}, err
 	}
 	if err := deleteStalePrefixes(ctx, store, report); err != nil {
-		return AutoCleanupResult{}, err
+		return CleanupResult{}, err
 	}
 
 	output, err := execGarbageCollect(ctx, Options{
@@ -101,13 +92,13 @@ func autoCleanupWithPolicy(
 		ActivationDelay: DefaultActivationDelay,
 	})
 	if err != nil {
-		return AutoCleanupResult{}, err
+		return CleanupResult{}, err
 	}
 	if err := deletePostGarbageCollectDirectUploadPrefixes(ctx, store, rootDirectory, time.Now().UTC(), policy, preGCProtectedPrefixes); err != nil {
-		return AutoCleanupResult{}, err
+		return CleanupResult{}, err
 	}
 
-	return AutoCleanupResult{
+	return CleanupResult{
 		Report:         report,
 		RegistryOutput: strings.TrimSpace(string(output)),
 	}, nil

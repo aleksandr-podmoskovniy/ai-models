@@ -39,8 +39,9 @@ productized DMCR cleanup surface:
   queued;
 - operators can run `dmcr-cleaner gc check` for report-only inspection of stale
   repository/source-mirror prefixes plus orphan direct-upload object prefixes
-  and open direct-upload multipart uploads, and `dmcr-cleaner gc auto-cleanup`
-  for the same sweep followed by registry `garbage-collect`;
+  and open direct-upload multipart uploads; destructive cleanup is intentionally
+  restricted to `dmcr-cleaner gc run`, which goes through request coalescing,
+  the maintenance gate, pod-local ack quorum and persisted result state;
 - `dmcr-cleaner` coalesces queued requests, activates a cluster-visible
   zero-rollout maintenance gate after the internal debounce window, waits for
   pod-local runtime ack quorum, removes stale
@@ -51,15 +52,18 @@ productized DMCR cleanup surface:
   multipart upload snapshotted by controller delete flow as
   `{objectKey, uploadID}`; then it runs registry `garbage-collect` and removes
   processed requests;
-- when no live `Model` or `ClusterModel` objects remain in the cluster,
-  unprotected direct-upload residue is treated as immediately reclaimable
-  instead of waiting for the generic session-age window;
+- non-targeted direct-upload residue always remains age-bounded; only
+  delete-triggered requests with a valid snapshotted session token may reclaim
+  an exact unfinished direct-upload object or multipart upload immediately;
 - after registry `garbage-collect`, `dmcr-cleaner` reruns direct-upload orphan
   cleanup for prefixes that were protected before GC and may have become
   orphaned only after canonical blob metadata was removed;
 - `dmcr-cleaner gc run` uses internal Kubernetes `Lease` objects so only one
   replica owns scheduled enqueue and active cleanup, while all replicas mirror
   maintenance state and publish pod-scoped runtime acks before destructive GC;
+- `dmcr-cleaner` discovers live registry/source-mirror ownership through
+  module-private cleanup-state Secrets in the module namespace; it no longer
+  needs cluster-wide `Model` / `ClusterModel` reads;
 - `dmcr-cleaner` writes repo-owned structured JSON lifecycle logs under the
   `dmcr-garbage-collection` logger; the main `dmcr` process stays on upstream
   logging behavior.

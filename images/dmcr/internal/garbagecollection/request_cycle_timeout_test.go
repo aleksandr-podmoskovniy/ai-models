@@ -52,13 +52,13 @@ func TestRunRequestCycleBoundsFullActiveCleanupWindow(t *testing.T) {
 		t.Fatalf("os.WriteFile(config.yml) error = %v", err)
 	}
 
-	previousAutoCleanupRunner := autoCleanupRunner
-	autoCleanupRunner = func(ctx context.Context, _ string, _ string, _ time.Duration, _ cleanupPolicy) (AutoCleanupResult, error) {
+	previousCleanupRunner := cleanupRunner
+	cleanupRunner = func(ctx context.Context, _ string, _ string, _ time.Duration, _ cleanupPolicy) (CleanupResult, error) {
 		<-ctx.Done()
-		return AutoCleanupResult{}, ctx.Err()
+		return CleanupResult{}, ctx.Err()
 	}
 	t.Cleanup(func() {
-		autoCleanupRunner = previousAutoCleanupRunner
+		cleanupRunner = previousCleanupRunner
 	})
 
 	startedAt := time.Now()

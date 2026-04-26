@@ -50,6 +50,7 @@ func newGCCommand() *cobra.Command {
 				slog.Duration("garbage_collection_timeout", options.GCTimeout),
 				slog.Duration("rescan_interval", options.RescanInterval),
 				slog.Duration("activation_delay", options.ActivationDelay),
+				slog.Duration("completed_request_ttl", options.CompletedRequestTTL),
 				slog.String("schedule", options.Schedule),
 				slog.String("maintenance_gate", options.MaintenanceGateName),
 				slog.Int("maintenance_gate_ack_quorum", options.MaintenanceGateAckQuorum),
@@ -67,7 +68,7 @@ func newGCCommand() *cobra.Command {
 	}
 	checkCommand := &cobra.Command{
 		Use:   "check",
-		Short: "Report stale DMCR repository, source-mirror, direct-upload object, and direct-upload multipart residue that no longer belong to live Model or ClusterModel objects",
+		Short: "Report stale DMCR repository, source-mirror, direct-upload object, and direct-upload multipart residue outside private cleanup-state ownership",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			report, err := garbagecollection.Check(cmd.Context(), options.ConfigPath)
@@ -75,25 +76,6 @@ func newGCCommand() *cobra.Command {
 				return err
 			}
 			_, err = cmd.OutOrStdout().Write([]byte(report.Format()))
-			return err
-		},
-	}
-	autoCleanupCommand := &cobra.Command{
-		Use:   "auto-cleanup",
-		Short: "Delete stale DMCR repository, source-mirror, and direct-upload residue, then run registry garbage-collect",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			result, err := garbagecollection.AutoCleanup(cmd.Context(), options.ConfigPath, options.RegistryBinary, options.GCTimeout)
-			if err != nil {
-				return err
-			}
-			_, err = cmd.OutOrStdout().Write([]byte(result.Report.Format()))
-			if err != nil {
-				return err
-			}
-			if result.RegistryOutput != "" {
-				_, err = cmd.OutOrStdout().Write([]byte(result.RegistryOutput + "\n"))
-			}
 			return err
 		},
 	}
@@ -105,6 +87,7 @@ func newGCCommand() *cobra.Command {
 	runCommand.Flags().DurationVar(&options.GCTimeout, "garbage-collection-timeout", 10*time.Minute, "Maximum time allowed for one active garbage-collection cycle.")
 	runCommand.Flags().DurationVar(&options.RescanInterval, "rescan-interval", garbagecollection.DefaultRescanInterval, "Polling interval used while waiting for new pending garbage-collection requests.")
 	runCommand.Flags().DurationVar(&options.ActivationDelay, "activation-delay", garbagecollection.DefaultActivationDelay, "Minimum time a queued request must stay pending before the helper arms a maintenance GC cycle.")
+	runCommand.Flags().DurationVar(&options.CompletedRequestTTL, "completed-request-ttl", garbagecollection.DefaultCompletedRequestTTL, "How long completed DMCR garbage-collection request results stay observable before pruning.")
 	runCommand.Flags().StringVar(&options.Schedule, "schedule", "", "Cron schedule used to enqueue periodic stale-sweep requests; empty disables the periodic trigger.")
 	runCommand.Flags().StringVar(&options.MaintenanceGateName, "maintenance-gate-name", garbagecollection.DefaultMaintenanceGateName, "Lease name used to publish the zero-rollout DMCR maintenance gate.")
 	runCommand.Flags().DurationVar(&options.MaintenanceGateDuration, "maintenance-gate-duration", 0, "Maintenance gate lease duration; defaults to garbage-collection-timeout plus safety margin.")
@@ -115,12 +98,8 @@ func newGCCommand() *cobra.Command {
 	runCommand.Flags().DurationVar(&options.MaintenanceGateAckTTL, "maintenance-gate-ack-ttl", garbagecollection.DefaultMaintenanceAckTTL, "Lifetime of one pod-scoped maintenance gate ack Lease.")
 	_ = runCommand.MarkFlagRequired("request-namespace")
 	checkCommand.Flags().StringVar(&options.ConfigPath, "config-path", garbagecollection.DefaultConfigPath, "Path to the active DMCR registry config file.")
-	autoCleanupCommand.Flags().StringVar(&options.RegistryBinary, "registry-binary", garbagecollection.DefaultRegistryBinary, "Path to the DMCR registry binary used for garbage-collect.")
-	autoCleanupCommand.Flags().StringVar(&options.ConfigPath, "config-path", garbagecollection.DefaultConfigPath, "Path to the active DMCR registry config file.")
-	autoCleanupCommand.Flags().DurationVar(&options.GCTimeout, "garbage-collection-timeout", 10*time.Minute, "Maximum time allowed for one registry garbage-collect run.")
 
 	command.AddCommand(runCommand)
 	command.AddCommand(checkCommand)
-	command.AddCommand(autoCleanupCommand)
 	return command
 }

@@ -62,6 +62,12 @@ cleanup candidates уже есть и нет другого active или queued
 внутренний zero-rollout maintenance gate с runtime ack quorum, а не изменение
 Pod template `DMCR`.
 
+Controller metrics дополнительно показывают private lifecycle этих запросов:
+сколько `dmcr-gc-*` находится в фазах `queued`, `armed`, `done` или
+`unknown`, и сколько секунд конкретный запрос находится в текущей фазе. Это
+операторская наблюдаемость поверх module-private `Secret`, а не новый
+публичный API для пользователей моделей.
+
 Публичный runtime path для моделей теперь controller-owned:
 
 - `Model` / `ClusterModel` используют один cluster-level
@@ -95,6 +101,9 @@ RBAC разделён по Deckhouse `user-authz` и `rbacv2`:
   `ModuleConfig` `ai-models`;
 - human-facing роли модуля намеренно не дают `status`, `finalizers`, доступ к
   Secret, pod logs, exec, attach, port-forward и internal runtime objects.
+- internal service-account RBAC не aggregate'ится в человеческие роли; `DMCR`
+  garbage collection читает только module-private cleanup/GC `Secret` и
+  `Lease` в namespace модуля, а не user-facing `Model` или `ClusterModel`.
 
 Default — `artifacts.sourceFetchMode=Direct`.
 
