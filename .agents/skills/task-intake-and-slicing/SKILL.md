@@ -49,10 +49,17 @@ description: Use first for any non-trivial request. Converts a human request int
    - overlays to replace or remove
    - repo docs that must be rewritten before the first product slice
 15. For sibling DKP module work, open a baseline-porting bundle first; do not begin a product/runtime slice until the target repo has replaced source-specific overlays and rewritten repo-specific docs.
-16. Before creating a new active bundle, inspect `plans/active`: active contains only executable work surfaces, not completed reviews, one-off research, or historical logs.
-17. If the task defines durable project discipline, encode it in repo-local skills or skill references instead of leaving it only in the current bundle.
-18. Avoid duplicate active slugs for the same workstream, reuse the current canonical active bundle when the request is a continuation, and archive stale/finished or oversized active bundles when active context drifts.
-19. Save the result in `plans/active/<slug>/TASK.ru.md` and `plans/active/<slug>/PLAN.ru.md`.
+16. Before creating a new active bundle, inspect `plans/active` and classify every active bundle as one of:
+   - keep: next executable workstream with a concrete next slice;
+   - merge: same workstream as the current request;
+   - archive: completed review, live-audit, live-ops, research, historical log, or oversized context bundle;
+   - delete: only for empty/accidental scaffolding with no engineering record.
+17. If active contains completed or historical bundles, archive them before adding new work unless the user explicitly asked only for read-only planning.
+18. For governance, handoff, or plan-hygiene tasks, record an `Active bundle disposition` section in the current `PLAN.ru.md`: kept bundles, archived bundles, and why each kept bundle remains executable.
+19. If the current task finishes, do not leave its bundle in `plans/active` unless it contains an explicit next executable slice; move the closed bundle to `plans/archive/<year>/`.
+20. If the task defines durable project discipline, encode it in repo-local skills or skill references instead of leaving it only in the current bundle.
+21. Avoid duplicate active slugs for the same workstream, reuse the current canonical active bundle when the request is a continuation, and archive stale/finished or oversized active bundles when active context drifts.
+22. Save the result in `plans/active/<slug>/TASK.ru.md` and `plans/active/<slug>/PLAN.ru.md`.
 
 ## Output
 

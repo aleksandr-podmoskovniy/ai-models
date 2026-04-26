@@ -43,8 +43,16 @@ narrative и старые архитектурные болячки.
 
 - `plans/active` не содержит завершённых rootCA/TLS/auth/RBAC/code-reduction
   bundles и одноразовых research/smoke surfaces.
+- `plans/active` не содержит завершённых live-ops, live-audit,
+  implementation-report или historical-runtime bundles; они переносятся в
+  `plans/archive/2026`.
+- Для каждого оставленного active bundle есть понятная причина: это следующий
+  исполнимый workstream, а не память проекта.
 - В reusable core явно закреплено, что active bundle должен быть executable
   working surface, а не historical log.
+- Skills/agents требуют active-bundle disposition при intake/review и не
+  позволяют оставлять завершённый текущий bundle в `plans/active` без явного
+  next slice.
 - Skills/agents требуют dedicated baseline-porting bundle перед работой в
   соседнем модуле.
 - Project-specific overlays остаются отдельными от reusable core.
@@ -58,3 +66,14 @@ narrative и старые архитектурные болячки.
   Поэтому переносим только завершённые, reviewed или одноразовые surfaces.
 - Можно accidentally усилить generic core ai-models-specific формулировками.
   Поэтому новые правила должны говорить про DKP module repos в целом.
+
+## Continuation 2026-04-26
+
+`plans/active` снова разросся после нескольких implementation/live-ops slices.
+Задача continuation:
+
+- повторно классифицировать все active bundles;
+- архивировать завершённые и historical slices;
+- оставить active только реально следующий executable workstream;
+- ужесточить skills/agents так, чтобы task intake и review gate требовали
+  disposition текущего bundle и не оставляли закрытые задачи в active.

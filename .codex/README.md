@@ -125,12 +125,18 @@ Engineering expectations carried by this baseline:
 Active bundle hygiene:
 
 - `plans/active` is a work queue, not a project memory dump.
+- Every active bundle must have a concrete next executable slice. If it does
+  not, it belongs in `plans/archive/<year>/`.
+- Intake and review must classify active bundles as keep, merge, archive or
+  delete before adding a new workstream.
 - Reviewed/completed bundles move to `plans/archive/<year>/` when the slice is
   closed.
 - One-off research or smoke-test bundles move to archive after their
   recommendation is captured.
 - Long workstreams keep one canonical active continuation bundle; old context
   is archived and linked from notes instead of copied forward.
+- A completed current task bundle must not remain in `plans/active` unless it
+  explicitly names the next executable slice.
 
 Machine-checkable governance baseline:
 

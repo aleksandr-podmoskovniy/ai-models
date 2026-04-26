@@ -15,6 +15,9 @@ State the orchestration mode: `solo`, `light`, or `full`.
 If the mode is not `solo`, list the read-only subagents that should review the task before implementation.
 Reuse the canonical active bundle when the task is a continuation; archive stale or oversized active bundles instead of creating sibling sources of truth.
 Before creating a new active bundle, inspect `plans/active`; active contains only executable work surfaces, not completed reviews, one-off research, or historical logs.
+Classify active bundles as keep, merge, archive, or delete before writing a new bundle; keep requires a concrete next executable slice.
+For governance, handoff, or plan-hygiene tasks, write an active bundle disposition section with kept and archived bundles plus the reason each kept bundle remains executable.
+Do not leave a completed current task bundle in `plans/active` unless it contains an explicit next executable slice.
 If the task touches repo-local workflow governance (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`, `docs/development/CODEX_WORKFLOW.ru.md`, `docs/development/TASK_TEMPLATE.ru.md`, `docs/development/REVIEW_CHECKLIST.ru.md`, `plans/README.md`), make that scope explicit and require consistency checks across all touched instruction layers.
 If the task tightens the reusable governance baseline, state explicitly what remains reusable core and what remains project-specific overlay.
 If the task ports this baseline from another repo, record source repo baseline, copied reusable core surfaces, overlays to replace/remove, and repo docs that must be rewritten before the first product slice.

@@ -115,6 +115,8 @@
         "check them as one instruction system",
         "no lower-level file contradicts a higher-level rule",
         "active contains only executable work surfaces",
+        "completed current bundle is archived or has an explicit next executable slice",
+        "active bundle disposition",
         "for any DKP user-facing API/auth/exposure/RBAC/runtime entrypoint change"
       ]
     },
@@ -125,6 +127,8 @@
         "make it a dedicated governance bundle",
         "include DKP user-facing RBAC coverage",
         "archive stale/finished or oversized active bundles",
+        "classify every active bundle as one of",
+        "do not leave its bundle in `plans/active` unless it contains an explicit next executable slice",
         "For sibling DKP module work, open a baseline-porting bundle first"
       ]
     },
@@ -179,7 +183,9 @@
       "sandbox_mode": "read-only",
       "must_include": [
         "include governance-surface consistency in the review",
-        "core roles stay module-agnostic"
+        "core roles stay module-agnostic",
+        "Treat oversized active bundles",
+        "completed current bundle left in `plans/active`"
       ]
     },
     {
@@ -189,7 +195,9 @@
       "must_include": [
         "review them as one instruction system and treat contradictions across layers as real findings.",
         "missing access-level coverage",
-        "source-repo product assumptions leaking into reusable core"
+        "source-repo product assumptions leaking into reusable core",
+        "completed current bundle left in `plans/active`",
+        "active shortlist and archive rationale"
       ]
     },
     {
@@ -199,6 +207,8 @@
       "must_include": [
         "archive stale or oversized active bundles instead of creating sibling sources of truth.",
         "active contains only executable work surfaces",
+        "Classify active bundles as keep, merge, archive, or delete before writing a new bundle",
+        "Do not leave a completed current task bundle in `plans/active` unless it contains an explicit next executable slice.",
         "For DKP user-facing API/auth/RBAC/exposure/runtime entrypoint tasks",
         "require consistency checks across all touched instruction layers."
       ]
@@ -227,6 +237,8 @@
         "Write-capable agents:",
         "## Porting pattern",
         "active contains only executable work surfaces",
+        "Every active bundle must have a concrete next executable slice",
+        "A completed current task bundle must not remain in `plans/active`",
         "For a sibling module such as `ai-inference`",
         "Files that must be reviewed and rewritten during porting:",
         ".codex/governance-inventory.json",

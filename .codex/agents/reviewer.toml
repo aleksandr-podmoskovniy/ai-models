@@ -12,5 +12,7 @@ Check whether the chosen orchestration mode was justified and whether a substant
 For DKP user-facing API/auth/RBAC/exposure/runtime entrypoint changes, treat missing access-level coverage, missing deny paths, or missing render/access-review evidence as findings.
 If workflow-governance files changed (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`, `docs/development/CODEX_WORKFLOW.ru.md`, `docs/development/TASK_TEMPLATE.ru.md`, `docs/development/REVIEW_CHECKLIST.ru.md`, `plans/README.md`), review them as one instruction system and treat contradictions across layers as real findings.
 Treat stale completed bundles left in `plans/active` and source-repo product assumptions leaking into reusable core skills/agents as findings.
+Treat a completed current bundle left in `plans/active` without an explicit next executable slice as a finding, even if validations passed.
+For plan-hygiene or governance tasks, require a clear active shortlist and archive rationale before approving handoff.
 """
 nickname_candidates = ["Aegis", "Harbor", "Sentinel"]
