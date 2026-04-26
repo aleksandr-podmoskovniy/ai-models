@@ -74,16 +74,17 @@ func queueDMCRGCRequestSecret(secret *corev1.Secret, owner cleanupOwner, directU
 	secret.Annotations[dmcrGCRequestedAnnotationKey] = requestedAt
 	delete(secret.Annotations, dmcrGCSwitchAnnotationKey)
 	secret.Annotations[dmcrGCPhaseAnnotationKey] = dmcrGCPhaseQueued
-	secret.Annotations[dmcrGCDirectUploadModeKey] = dmcrGCDirectUploadModeFast
 
 	token := strings.TrimSpace(directUploadSessionToken)
 	if token != "" {
+		secret.Annotations[dmcrGCDirectUploadModeKey] = dmcrGCDirectUploadModeFast
 		if secret.Data == nil {
 			secret.Data = make(map[string][]byte, 1)
 		}
 		secret.Data[dmcrGCDirectUploadTokenKey] = []byte(token)
 		return
 	}
+	delete(secret.Annotations, dmcrGCDirectUploadModeKey)
 	if len(secret.Data) == 0 {
 		return
 	}

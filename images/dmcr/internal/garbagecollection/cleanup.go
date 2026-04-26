@@ -34,8 +34,6 @@ type cleanupPolicy struct {
 	targetDirectUploadPrefixes         map[string]struct{}
 	targetDirectUploadMultipartUploads map[directUploadMultipartTarget]struct{}
 	directUploadStaleAge               time.Duration
-	allowImmediateDirectUploadCleanup  bool
-	ignoreDeletingOwners               bool
 	cleanupStateNamespace              string
 }
 
@@ -143,12 +141,9 @@ func buildReportWithClock(
 	now time.Time,
 	policy cleanupPolicy,
 ) (Report, error) {
-	live, err := DiscoverLivePrefixes(ctx, client, cleanupStateNamespace(policy), policy.ignoreDeletingOwners)
+	live, err := DiscoverLivePrefixes(ctx, client, cleanupStateNamespace(policy))
 	if err != nil {
 		return Report{}, err
-	}
-	if live.totalOwnerCount() == 0 {
-		policy.allowImmediateDirectUploadCleanup = true
 	}
 
 	storedRepositories, storedRawPrefixes, err := DiscoverStoredPrefixes(ctx, store, rootDirectory)
@@ -183,7 +178,7 @@ func deletePostGarbageCollectDirectUploadPrefixes(
 	policy cleanupPolicy,
 	preGCProtectedPrefixes map[string]struct{},
 ) error {
-	if len(preGCProtectedPrefixes) == 0 && !policy.allowImmediateDirectUploadCleanup {
+	if len(preGCProtectedPrefixes) == 0 {
 		return nil
 	}
 

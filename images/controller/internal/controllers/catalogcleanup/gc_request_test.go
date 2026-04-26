@@ -61,6 +61,9 @@ func TestBuildDMCRGCRequestSecretIncludesSharedOwnerLabels(t *testing.T) {
 	if got := string(secret.Data[dmcrGCDirectUploadTokenKey]); got != "" {
 		t.Fatalf("unexpected direct-upload session token payload %q", got)
 	}
+	if got := secret.Annotations[dmcrGCDirectUploadModeKey]; got != "" {
+		t.Fatalf("unexpected direct-upload cleanup mode %q without session token", got)
+	}
 }
 
 func TestEnsureGarbageCollectionRequestRefreshesMetadataOnExistingSecret(t *testing.T) {
@@ -81,7 +84,10 @@ func TestEnsureGarbageCollectionRequestRefreshesMetadataOnExistingSecret(t *test
 				"extra": "keep",
 			},
 			Annotations: map[string]string{
-				dmcrGCSwitchAnnotationKey: "2026-04-10T00:00:00Z",
+				dmcrGCSwitchAnnotationKey:    "2026-04-10T00:00:00Z",
+				dmcrGCDirectUploadModeKey:    dmcrGCDirectUploadModeFast,
+				dmcrGCRequestedAnnotationKey: "2026-04-10T00:00:00Z",
+				dmcrGCPhaseAnnotationKey:     "stale",
 			},
 		},
 		Type: corev1.SecretTypeOpaque,
@@ -121,6 +127,9 @@ func TestEnsureGarbageCollectionRequestRefreshesMetadataOnExistingSecret(t *test
 	if _, found := updated.Data[dmcrGCDirectUploadTokenKey]; found {
 		t.Fatalf("expected stale direct-upload token to be removed, got %#v", updated.Data)
 	}
+	if got := updated.Annotations[dmcrGCDirectUploadModeKey]; got != "" {
+		t.Fatalf("expected stale direct-upload mode to be removed without token, got %#v", updated.Annotations)
+	}
 	if got, want := string(updated.Data["extra"]), "keep"; got != want {
 		t.Fatalf("unexpected preserved data %q", got)
 	}
@@ -151,5 +160,8 @@ func TestEnsureGarbageCollectionRequestSnapshotsCurrentDirectUploadSessionToken(
 	}
 	if got, want := string(request.Data[dmcrGCDirectUploadTokenKey]), sessionToken; got != want {
 		t.Fatalf("session token payload = %q, want %q", got, want)
+	}
+	if got, want := request.Annotations[dmcrGCDirectUploadModeKey], dmcrGCDirectUploadModeFast; got != want {
+		t.Fatalf("direct-upload cleanup mode = %q, want %q", got, want)
 	}
 }

@@ -246,7 +246,7 @@ func TestDiscoverDirectUploadInventoryTargetsFreshPrefixWhenCleanupPolicyRequest
 		now,
 		cleanupPolicy{
 			targetDirectUploadPrefixes: map[string]struct{}{
-				"dmcr/_ai_models/direct-upload/objects/session-fresh": {},
+				"/dmcr/_ai_models/direct-upload/objects/session-fresh/": {},
 			},
 		},
 	)

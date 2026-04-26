@@ -31,7 +31,6 @@ const (
 	cleanupStateAppName  = "ai-models-cleanup-state"
 	cleanupHandleDataKey = "cleanupHandle"
 	appNameLabelKey      = "app.kubernetes.io/name"
-	ownerKindLabelKey    = "ai.deckhouse.io/owner-kind"
 )
 
 type cleanupHandleSnapshot struct {
@@ -45,7 +44,7 @@ type cleanupHandleBackendSnapshot struct {
 	SourceMirrorPrefix       string `json:"sourceMirrorPrefix,omitempty"`
 }
 
-func DiscoverLivePrefixes(ctx context.Context, client kubernetes.Interface, namespace string, _ bool) (livePrefixSet, error) {
+func DiscoverLivePrefixes(ctx context.Context, client kubernetes.Interface, namespace string) (livePrefixSet, error) {
 	if client == nil {
 		return livePrefixSet{}, fmt.Errorf("kubernetes client must not be nil")
 	}
@@ -76,13 +75,6 @@ func collectLivePrefixesFromSecret(secret *corev1.Secret, live *livePrefixSet) e
 	if secret == nil {
 		return nil
 	}
-	switch strings.TrimSpace(secret.Labels[ownerKindLabelKey]) {
-	case "Model":
-		live.modelCount++
-	case "ClusterModel":
-		live.clusterModelCount++
-	}
-
 	rawHandle := strings.TrimSpace(string(secret.Data[cleanupHandleDataKey]))
 	if rawHandle == "" {
 		return nil

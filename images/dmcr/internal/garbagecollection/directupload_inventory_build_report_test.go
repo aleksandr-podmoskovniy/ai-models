@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-func TestBuildReportMarksFreshDirectUploadPrefixStaleWhenNoLiveOwnersRemain(t *testing.T) {
+func TestBuildReportKeepsFreshDirectUploadPrefixAgeBoundedWhenNoLiveOwnersRemain(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
@@ -47,11 +47,8 @@ func TestBuildReportMarksFreshDirectUploadPrefixStaleWhenNoLiveOwnersRemain(t *t
 	if err != nil {
 		t.Fatalf("buildReportWithClock() error = %v", err)
 	}
-	if got, want := len(report.StaleDirectUploadPrefixes), 1; got != want {
+	if got, want := len(report.StaleDirectUploadPrefixes), 0; got != want {
 		t.Fatalf("stale direct-upload prefix count = %d, want %d", got, want)
-	}
-	if got, want := report.StaleDirectUploadPrefixes[0].Prefix, "dmcr/_ai_models/direct-upload/objects/session-fresh"; got != want {
-		t.Fatalf("stale prefix = %q, want %q", got, want)
 	}
 }
 
@@ -83,7 +80,7 @@ func TestBuildReportKeepsFreshDirectUploadPrefixAgeBoundedWhileOwnerIsDeleting(t
 	}
 }
 
-func TestBuildReportMarksFreshDirectUploadPrefixStaleWhenDeleteTriggeredPolicyIgnoresDeletingOwner(t *testing.T) {
+func TestBuildReportKeepsFreshDirectUploadPrefixAgeBoundedWhenDeleteTriggeredPolicyHasNoTarget(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
@@ -99,12 +96,12 @@ func TestBuildReportMarksFreshDirectUploadPrefixStaleWhenDeleteTriggeredPolicyIg
 		store,
 		"dmcr",
 		now,
-		cleanupPolicy{ignoreDeletingOwners: true},
+		cleanupPolicy{},
 	)
 	if err != nil {
 		t.Fatalf("buildReportWithClock() error = %v", err)
 	}
-	if got, want := len(report.StaleDirectUploadPrefixes), 1; got != want {
+	if got, want := len(report.StaleDirectUploadPrefixes), 0; got != want {
 		t.Fatalf("stale direct-upload prefix count = %d, want %d", got, want)
 	}
 }

@@ -149,10 +149,8 @@ func staleDirectUploadPrefixes(
 		if _, found := protected[entry.Prefix]; found {
 			continue
 		}
-		if !policy.allowImmediateDirectUploadCleanup {
-			if _, targeted := policy.targetDirectUploadPrefixes[entry.Prefix]; !targeted && entry.LastModifiedAt.After(cutoff) {
-				continue
-			}
+		if _, targeted := policy.targetDirectUploadPrefixes[entry.Prefix]; !targeted && entry.LastModifiedAt.After(cutoff) {
+			continue
 		}
 		stale = append(stale, PrefixInventoryEntry{
 			Prefix:          entry.Prefix,
@@ -169,6 +167,14 @@ func normalizeCleanupPolicy(policy cleanupPolicy) cleanupPolicy {
 	}
 	if policy.targetDirectUploadPrefixes == nil {
 		policy.targetDirectUploadPrefixes = make(map[string]struct{})
+	} else {
+		normalizedTargets := make(map[string]struct{}, len(policy.targetDirectUploadPrefixes))
+		for prefix := range policy.targetDirectUploadPrefixes {
+			if normalized := normalizeDirectUploadPrefixTarget(prefix); normalized != "" {
+				normalizedTargets[normalized] = struct{}{}
+			}
+		}
+		policy.targetDirectUploadPrefixes = normalizedTargets
 	}
 	if policy.targetDirectUploadMultipartUploads == nil {
 		policy.targetDirectUploadMultipartUploads = make(map[directUploadMultipartTarget]struct{})
@@ -180,6 +186,10 @@ func normalizeCleanupPolicy(policy cleanupPolicy) cleanupPolicy {
 		policy.targetDirectUploadMultipartUploads = normalizedTargets
 	}
 	return policy
+}
+
+func normalizeDirectUploadPrefixTarget(prefix string) string {
+	return strings.Trim(strings.TrimSpace(prefix), "/")
 }
 
 func directUploadInventoryBasePrefix(rootDirectory string) string {

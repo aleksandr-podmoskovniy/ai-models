@@ -26,7 +26,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
@@ -91,33 +90,6 @@ type directUploadCompleteResult struct {
 
 type abortDirectUploadRequest struct {
 	SessionToken string `json:"sessionToken"`
-}
-
-type directUploadAPIError struct {
-	StatusCode int
-	Message    string
-}
-
-const (
-	directUploadAPIRequestAttempts  = 180
-	directUploadAPIInitialRetryWait = 100 * time.Millisecond
-	directUploadAPIMaxRetryWait     = 5 * time.Second
-)
-
-func (e *directUploadAPIError) Error() string {
-	if e == nil {
-		return "DMCR direct upload API error"
-	}
-	return fmt.Sprintf("DMCR direct upload API returned status %d: %s", e.StatusCode, strings.TrimSpace(e.Message))
-}
-
-func isDirectUploadStatus(err error, statusCode int) bool {
-	var apiErr *directUploadAPIError
-	return errors.As(err, &apiErr) && apiErr.StatusCode == statusCode
-}
-
-func isTransientDirectUploadAPIError(err error) bool {
-	return isDirectUploadStatus(err, http.StatusServiceUnavailable)
 }
 
 func newDirectUploadClient(
@@ -309,7 +281,7 @@ func (c *directUploadClient) doJSONOnce(
 
 	resp, err := c.apiClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to call DMCR direct upload API: %w", err)
+		return &directUploadTransportError{err: err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
@@ -326,24 +298,4 @@ func (c *directUploadClient) doJSONOnce(
 		return fmt.Errorf("failed to decode DMCR direct upload API response: %w", err)
 	}
 	return nil
-}
-
-func sleepDirectUploadRetry(ctx context.Context, wait time.Duration) error {
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
-func nextDirectUploadRetryWait(current time.Duration) time.Duration {
-	next := current * 2
-	if next > directUploadAPIMaxRetryWait {
-		return directUploadAPIMaxRetryWait
-	}
-	return next
 }

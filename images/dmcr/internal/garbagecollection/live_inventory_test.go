@@ -80,12 +80,9 @@ func TestDiscoverLivePrefixesReadsCleanupStateSecrets(t *testing.T) {
 
 	client := newFakeDynamicClient(t, liveModel)
 
-	live, err := DiscoverLivePrefixes(context.Background(), client, defaultCleanupStateNamespace, true)
+	live, err := DiscoverLivePrefixes(context.Background(), client, defaultCleanupStateNamespace)
 	if err != nil {
 		t.Fatalf("DiscoverLivePrefixes() error = %v", err)
-	}
-	if live.modelCount != 1 {
-		t.Fatalf("expected one model cleanup state, got %d", live.modelCount)
 	}
 	if _, found := live.repositoryPrefixes["dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/live/2222"]; !found {
 		t.Fatal("expected live model repository prefix to stay protected")

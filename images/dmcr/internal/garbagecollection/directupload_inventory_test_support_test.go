@@ -240,8 +240,7 @@ func cleanupStateSecretForTest(object runtime.Object) *corev1.Secret {
 				Name:      "cleanup-state-" + strings.TrimSpace(typed.GetName()),
 				Namespace: defaultCleanupStateNamespace,
 				Labels: map[string]string{
-					appNameLabelKey:   cleanupStateAppName,
-					ownerKindLabelKey: strings.TrimSpace(typed.GetKind()),
+					appNameLabelKey: cleanupStateAppName,
 				},
 			},
 			Data: map[string][]byte{cleanupHandleDataKey: []byte(raw)},

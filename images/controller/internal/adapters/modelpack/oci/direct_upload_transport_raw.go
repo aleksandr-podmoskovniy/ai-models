@@ -171,6 +171,7 @@ func uploadOrRecoverRawDirectBlobPart(
 	uploadedParts []uploadedDirectPart,
 ) ([]uploadedDirectPart, error) {
 	recoveries := 0
+	retryWait := directUploadAPIInitialRetryWait
 	for {
 		uploadedPart, err := uploadBufferedDirectBlobPart(ctx, helperClient, sessionToken, payload, partNumber)
 		if err == nil {
@@ -190,9 +191,8 @@ func uploadOrRecoverRawDirectBlobPart(
 			return nil, recoveryErr
 		}
 		if retry {
-			recoveries++
-			if recoveries > blobUploadRecoveryAttempts {
-				return nil, err
+			if retryErr := waitDirectUploadRecoveryRetry(ctx, &recoveries, &retryWait, err); retryErr != nil {
+				return nil, retryErr
 			}
 			continue
 		}

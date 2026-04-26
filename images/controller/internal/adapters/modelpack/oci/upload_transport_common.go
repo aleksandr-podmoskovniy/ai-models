@@ -18,11 +18,13 @@ package oci
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
@@ -120,4 +122,24 @@ func nextDirectUploadPosition(parts []uploadedDirectPart) (int64, int, error) {
 		offset += part.SizeBytes
 	}
 	return offset, len(normalized) + 1, nil
+}
+
+func waitDirectUploadRecoveryRetry(
+	ctx context.Context,
+	recoveries *int,
+	retryWait *time.Duration,
+	cause error,
+) error {
+	*recoveries++
+	if *recoveries > blobUploadRecoveryAttempts {
+		return cause
+	}
+	if *retryWait <= 0 {
+		*retryWait = directUploadAPIInitialRetryWait
+	}
+	if err := sleepDirectUploadRetry(ctx, *retryWait); err != nil {
+		return fmt.Errorf("direct upload part recovery retry stopped: %w", errors.Join(cause, err))
+	}
+	*retryWait = nextDirectUploadRetryWait(*retryWait)
+	return nil
 }

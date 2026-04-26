@@ -2,13 +2,23 @@
 
 ## Orchestration
 
-Режим этого slice: `solo`.
+Изначальный planning slice был `solo`, потому что фиксировал chaos matrix без
+изменения runtime code.
 
-Причина: текущая задача проектирует тестовый план и не меняет runtime code.
-При переходе к реализации/исполнению destructive chaos нужен отдельный
-execution slice. Для него режим должен быть минимум `light`, а при изменении
+Execution continuation 2026-04-26 перешёл в live-evidence-driven runtime/HA
+fixes после подтверждённой гонки `DMCR` GC против active direct-upload. Для
+таких изменений целевой режим — минимум `light`, а при широкой смене
 controller/DMCR/runtime поведения — `full` с `integration_architect` и финальным
 `reviewer`.
+
+Фактическая проверка continuation:
+
+- `integration_architect` read-only review выполнен после реализации.
+- финальный `reviewer` read-only review выполнен после реализации.
+- оба review указали на один и тот же дефект: malformed/rotated
+  direct-upload token не должен валить весь `DMCR` GC cycle.
+- `reviewer` дополнительно указал workflow gap: выводы subagents должны быть
+  записаны в bundle.
 
 ## Read-only выводы по соседним паттернам
 
@@ -230,3 +240,117 @@ Node drain/reboot команды не включаются в автоматич
 - Все найденные gaps либо исправлены, либо вынесены в следующий task bundle с
   конкретным implementation slice.
 
+## Execution continuation 2026-04-26
+
+### Scope
+
+- Дождаться rollout новой сборки в `k8s.apiac.ru`.
+- Проверить module/controller/DMCR/node-cache runtime health перед тестом.
+- Прогнать controlled e2e/chaos subset из matrix, начиная с безопасных
+  pod-level сценариев.
+- Фиксировать evidence по status, events, logs, state Secrets, GC requests и
+  cleanup.
+- Исправлять только подтверждённые code defects; live/transient cluster issues
+  фиксировать отдельно как operations findings.
+
+### Rollout wait policy
+
+- Подождать 5 минут после пользовательского push.
+- Проверить rollout новой сборки.
+- Если новая сборка ещё не выкатилась, подождать ещё 5 минут.
+- После этого проверять readiness каждую минуту до явного успеха или
+  диагностируемого blocker.
+
+### Execution guardrails
+
+- Использовать отдельный timestamped namespace.
+- Не ребутать ноды без отдельного подтверждения.
+- Начать с C0/C1/C3/C5/C8/C10/C11; расширять до C13/C14 только если
+  `nodeCache.enabled=true` реально включён в live module config.
+- Останавливать тест при росте ошибок RGW/Ceph/DMCR вне тестового namespace.
+
+### Execution findings 2026-04-26
+
+- Rollout check: `ModulePullOverride/ai-models` already pointed to
+  `main@sha256:e68a3d0be875e91c6a5b4d12b5980374f04215cb4a09ffabef24edda5c4f6df9`;
+  repeated checks did not change controller/DMCR pod templates.
+- Registry/CI check: GitHub build for `5b10545` completed successfully, but
+  `crane copy` reused the existing bundle manifest because the commit only
+  changed governance/plans and did not change module payload.
+- Live `ModuleConfig` has no `nodeCache.enabled=true`, so C13/C14 are blocked
+  until that setting is explicitly enabled.
+- C0 failed before chaos injection: scheduled DMCR GC ran during active
+  HuggingFace publication and removed fresh direct-upload multipart state.
+- Evidence: Model became terminal `Failed` with `NoSuchUpload` / `NoSuchKey`
+  while `dmcr-garbage-collection` logged a scheduled cycle with
+  `open_direct_upload_multipart_upload_count=1` and
+  `stale_direct_upload_multipart_upload_count=1` at the same time.
+- Root cause: GC treated fresh direct-upload prefixes/uploads as immediately
+  stale whenever no cleanup-state owners existed. Active publication does not
+  create cleanup-state owner objects, so scheduled GC could race normal upload.
+- Fix: non-targeted direct-upload prefixes and multipart uploads are now always
+  age-bounded. Explicit delete/cleanup requests still target exact
+  direct-upload prefixes/uploads derived from cleanup state token.
+- Follow-up hardening: controller no longer writes direct-upload immediate mode
+  on GC requests without a session token; DMCR ignores old no-token immediate
+  requests as plain GC requests; target direct-upload prefixes are normalized
+  before matching.
+- Legacy cleanup: removed the dead `ignoreDeletingOwners` GC policy flag. Live
+  inventory is driven by module-private cleanup-state Secrets, so the flag no
+  longer had any runtime semantics.
+- Direct-upload API retry hardening: client retries transient transport errors
+  and backend `500/502/503/504` responses, while keeping `4xx` validation/auth
+  failures terminal. Retry/error classification was split out of
+  `direct_upload_client.go` to keep the file under the controller LOC budget.
+- Direct-upload object-store backoff: part upload recovery now waits with
+  bounded exponential backoff when `listParts` shows no progress after a
+  failed PUT. If the part was actually committed, publishing continues without
+  delay. This avoids tight retry loops against RGW/S3 during transient storage
+  failures.
+- DMCR GC runner structure was split without behavior changes:
+  maintenance-gate sync/ack/release moved to `maintenance_gate.go`, registry
+  shell execution moved to `cleanup_exec.go`, and matching tests were split by
+  decision surface. This removes the remaining >350 LOC runner/test hotspots in
+  the touched GC boundary.
+- Review fixes: malformed, signature-mismatched, missing-secret or invalid-path
+  direct-upload targeted tokens now degrade to plain age-bounded GC instead of
+  failing the whole active GC cycle. Valid tokens in the same batch are still
+  honored.
+- Review fixes: direct-upload API transport retry is now narrowed. Transient
+  connection reset/refused/timeout/EPIPE/temporary DNS errors retry, while TLS
+  certificate errors and DNS not-found fail fast as terminal configuration
+  failures.
+
+### Validation 2026-04-26
+
+- `cd images/dmcr && go test ./internal/garbagecollection` passed.
+- `cd images/dmcr && go test ./...` passed.
+- `make verify` passed.
+- After follow-up hardening, `cd images/controller && go test
+  ./internal/controllers/catalogcleanup`, `cd images/dmcr && go test
+  ./internal/garbagecollection`, and `make verify` passed again.
+- After direct-upload retry hardening, `cd images/controller && go test
+  ./internal/adapters/modelpack/oci ./internal/controllers/catalogcleanup`,
+  `cd images/dmcr && go test ./internal/garbagecollection`, and `make verify`
+  passed.
+- After part-upload recovery backoff, the same targeted tests and `make verify`
+  passed.
+- After DMCR GC runner split, `cd images/dmcr && go test
+  ./internal/garbagecollection`, `git diff --check`, and `make verify` passed.
+- After read-only review fixes, `cd images/dmcr && go test
+  ./internal/garbagecollection`, `cd images/controller && go test
+  ./internal/adapters/modelpack/oci ./internal/controllers/catalogcleanup`,
+  `git diff --check`, and `make verify` passed.
+- Live hard e2e must resume only after the DMCR GC fix is built and deployed;
+  the current live bundle still contains the race.
+
+### Review residual risks 2026-04-26
+
+- GC result persistence is still not implemented: successful `dmcr-gc-*`
+  requests are observable in logs but not persisted as a durable result object.
+  This remains a separate UX/HA slice, not part of the emergency race fix.
+- If controller cannot snapshot a direct-upload session token, delete-time
+  cleanup safely falls back to age-bounded cleanup. This can leave partial
+  direct-upload objects until stale-age expiry, but avoids unsafe broad
+  deletion.
+- Live hard e2e remains blocked until this code is built and deployed.

@@ -32,20 +32,7 @@ func TestCleanupPolicyForActiveRequestsTargetsDeleteTriggeredDirectUploadPrefix(
 	t.Setenv(SealedS3SecretKeyEnv, "secret")
 	t.Setenv(directUploadTokenSecretEnv, "token-secret")
 
-	configPath := filepath.Join(t.TempDir(), "config.yml")
-	if err := os.WriteFile(configPath, []byte(`
-storage:
-  sealeds3:
-    bucket: ai-models
-    region: us-east-1
-    regionendpoint: s3.example.com
-    rootdirectory: dmcr
-    forcepathstyle: true
-    secure: true
-    skipverify: false
-`), 0o644); err != nil {
-		t.Fatalf("os.WriteFile(config.yml) error = %v", err)
-	}
+	configPath := writeDirectUploadConfigForTest(t)
 
 	token := encodeDirectUploadSessionTokenForTest(t, []byte("token-secret"), directUploadSessionClaims{
 		ObjectKey: "dmcr/_ai_models/direct-upload/objects/session-a/data",
@@ -106,6 +93,138 @@ func TestCleanupPolicyForActiveRequestsIgnoresRequestsWithoutTargetedToken(t *te
 	}
 	if len(policy.targetDirectUploadMultipartUploads) != 0 {
 		t.Fatalf("unexpected targeted direct-upload multipart uploads %#v", policy.targetDirectUploadMultipartUploads)
+	}
+}
+
+func TestCleanupPolicyForActiveRequestsIgnoresImmediateModeWithoutTargetedToken(t *testing.T) {
+	t.Parallel()
+
+	policy, err := cleanupPolicyForActiveRequests("unused", []corev1.Secret{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dmcr-gc-request-a",
+				Namespace: "d8-ai-models",
+				Labels:    map[string]string{RequestLabelKey: RequestLabelValue},
+				Annotations: map[string]string{
+					switchAnnotationKey:           "2026-04-23T13:00:00Z",
+					directUploadModeAnnotationKey: directUploadModeImmediate,
+					RequestQueuedAtAnnotationKey:  "2026-04-23T13:00:00Z",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("cleanupPolicyForActiveRequests() error = %v", err)
+	}
+	if len(policy.targetDirectUploadPrefixes) != 0 {
+		t.Fatalf("unexpected targeted direct-upload prefixes %#v", policy.targetDirectUploadPrefixes)
+	}
+	if len(policy.targetDirectUploadMultipartUploads) != 0 {
+		t.Fatalf("unexpected targeted direct-upload multipart uploads %#v", policy.targetDirectUploadMultipartUploads)
+	}
+}
+
+func TestCleanupPolicyForActiveRequestsFallsBackWhenTokenSecretMissing(t *testing.T) {
+	t.Parallel()
+
+	policy, err := cleanupPolicyForActiveRequests("unused", []corev1.Secret{
+		directUploadImmediateRequestWithToken("signed-but-secret-is-missing"),
+	})
+	if err != nil {
+		t.Fatalf("cleanupPolicyForActiveRequests() error = %v", err)
+	}
+	if len(policy.targetDirectUploadPrefixes) != 0 {
+		t.Fatalf("unexpected targeted direct-upload prefixes %#v", policy.targetDirectUploadPrefixes)
+	}
+	if len(policy.targetDirectUploadMultipartUploads) != 0 {
+		t.Fatalf("unexpected targeted direct-upload multipart uploads %#v", policy.targetDirectUploadMultipartUploads)
+	}
+}
+
+func TestCleanupPolicyForActiveRequestsFallsBackWhenTokenIsMalformed(t *testing.T) {
+	t.Setenv(SealedS3AccessKeyEnv, "access")
+	t.Setenv(SealedS3SecretKeyEnv, "secret")
+	t.Setenv(directUploadTokenSecretEnv, "token-secret")
+
+	policy, err := cleanupPolicyForActiveRequests(writeDirectUploadConfigForTest(t), []corev1.Secret{
+		directUploadImmediateRequestWithToken("not-a-valid-token"),
+	})
+	if err != nil {
+		t.Fatalf("cleanupPolicyForActiveRequests() error = %v", err)
+	}
+	if len(policy.targetDirectUploadPrefixes) != 0 {
+		t.Fatalf("unexpected targeted direct-upload prefixes %#v", policy.targetDirectUploadPrefixes)
+	}
+	if len(policy.targetDirectUploadMultipartUploads) != 0 {
+		t.Fatalf("unexpected targeted direct-upload multipart uploads %#v", policy.targetDirectUploadMultipartUploads)
+	}
+}
+
+func TestCleanupPolicyForActiveRequestsSkipsInvalidTokenAndKeepsValidTarget(t *testing.T) {
+	t.Setenv(SealedS3AccessKeyEnv, "access")
+	t.Setenv(SealedS3SecretKeyEnv, "secret")
+	t.Setenv(directUploadTokenSecretEnv, "token-secret")
+
+	validToken := encodeDirectUploadSessionTokenForTest(t, []byte("token-secret"), directUploadSessionClaims{
+		ObjectKey: "dmcr/_ai_models/direct-upload/objects/session-a/data",
+		UploadID:  "upload-a",
+	})
+	invalidToken := encodeDirectUploadSessionTokenForTest(t, []byte("token-secret"), directUploadSessionClaims{
+		ObjectKey: "dmcr/not-a-direct-upload-object",
+		UploadID:  "upload-b",
+	})
+
+	policy, err := cleanupPolicyForActiveRequests(writeDirectUploadConfigForTest(t), []corev1.Secret{
+		directUploadImmediateRequestWithToken("bad-token"),
+		directUploadImmediateRequestWithToken(invalidToken),
+		directUploadImmediateRequestWithToken(validToken),
+	})
+	if err != nil {
+		t.Fatalf("cleanupPolicyForActiveRequests() error = %v", err)
+	}
+	if len(policy.targetDirectUploadPrefixes) != 1 {
+		t.Fatalf("targeted direct-upload prefixes = %#v, want one valid target", policy.targetDirectUploadPrefixes)
+	}
+	if _, found := policy.targetDirectUploadPrefixes["dmcr/_ai_models/direct-upload/objects/session-a"]; !found {
+		t.Fatalf("expected valid targeted direct-upload prefix, got %#v", policy.targetDirectUploadPrefixes)
+	}
+}
+
+func writeDirectUploadConfigForTest(t *testing.T) string {
+	t.Helper()
+
+	configPath := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(configPath, []byte(`
+storage:
+  sealeds3:
+    bucket: ai-models
+    region: us-east-1
+    regionendpoint: s3.example.com
+    rootdirectory: dmcr
+    forcepathstyle: true
+    secure: true
+    skipverify: false
+`), 0o644); err != nil {
+		t.Fatalf("os.WriteFile(config.yml) error = %v", err)
+	}
+	return configPath
+}
+
+func directUploadImmediateRequestWithToken(token string) corev1.Secret {
+	return corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dmcr-gc-request-a",
+			Namespace: "d8-ai-models",
+			Labels:    map[string]string{RequestLabelKey: RequestLabelValue},
+			Annotations: map[string]string{
+				switchAnnotationKey:           "2026-04-23T13:00:00Z",
+				directUploadModeAnnotationKey: directUploadModeImmediate,
+				RequestQueuedAtAnnotationKey:  "2026-04-23T13:00:00Z",
+			},
+		},
+		Data: map[string][]byte{
+			directUploadTokenDataKey: []byte(token),
+		},
 	}
 }
 

@@ -90,10 +90,8 @@ func discoverDirectUploadMultipartInventory(
 			ObjectKey: upload.Key,
 			UploadID:  upload.UploadID,
 		})
-		if !policy.allowImmediateDirectUploadCleanup {
-			if _, targeted := policy.targetDirectUploadMultipartUploads[target]; !targeted && upload.InitiatedAt.After(cutoff) {
-				continue
-			}
+		if _, targeted := policy.targetDirectUploadMultipartUploads[target]; !targeted && upload.InitiatedAt.After(cutoff) {
+			continue
 		}
 
 		prefix, ok := inferDirectUploadPrefix(rootDirectory, upload.Key)

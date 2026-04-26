@@ -41,19 +41,21 @@ func cleanupPolicyForActiveRequests(configPath string, activeSecrets []corev1.Se
 
 	var (
 		targetTokens []string
-		needsDecode  bool
 	)
 	for _, secret := range activeSecrets {
 		if strings.TrimSpace(secret.Annotations[directUploadModeAnnotationKey]) != directUploadModeImmediate {
 			continue
 		}
-		policy.ignoreDeletingOwners = true
-		needsDecode = true
 		if token := strings.TrimSpace(string(secret.Data[directUploadTokenDataKey])); token != "" {
 			targetTokens = append(targetTokens, token)
 		}
 	}
-	if !needsDecode || len(targetTokens) == 0 {
+	if len(targetTokens) == 0 {
+		return policy, nil
+	}
+
+	tokenSecret := []byte(strings.TrimSpace(os.Getenv(directUploadTokenSecretEnv)))
+	if len(tokenSecret) == 0 {
 		return policy, nil
 	}
 
@@ -61,21 +63,17 @@ func cleanupPolicyForActiveRequests(configPath string, activeSecrets []corev1.Se
 	if err != nil {
 		return cleanupPolicy{}, err
 	}
-	tokenSecret := []byte(strings.TrimSpace(os.Getenv(directUploadTokenSecretEnv)))
-	if len(tokenSecret) == 0 {
-		return cleanupPolicy{}, fmt.Errorf("direct upload cleanup policy requires %s for targeted delete", directUploadTokenSecretEnv)
-	}
 
 	targetPrefixes := make(map[string]struct{}, len(targetTokens))
 	targetMultipartUploads := make(map[directUploadMultipartTarget]struct{}, len(targetTokens))
 	for _, token := range targetTokens {
 		claims, err := decodeDirectUploadSessionToken(tokenSecret, token)
 		if err != nil {
-			return cleanupPolicy{}, fmt.Errorf("decode targeted direct-upload session token: %w", err)
+			continue
 		}
 		prefix, ok := inferDirectUploadPrefix(storageConfig.RootDirectory, claims.ObjectKey)
 		if !ok {
-			return cleanupPolicy{}, fmt.Errorf("targeted direct-upload session token does not point to a valid direct-upload object prefix")
+			continue
 		}
 		targetPrefixes[prefix] = struct{}{}
 		if strings.TrimSpace(claims.UploadID) != "" {

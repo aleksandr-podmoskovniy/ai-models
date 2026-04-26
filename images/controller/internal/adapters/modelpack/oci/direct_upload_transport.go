@@ -119,6 +119,7 @@ func uploadDescribedLayerParts(
 	state *describedDirectUploadState,
 ) error {
 	recoveries := 0
+	retryWait := directUploadAPIInitialRetryWait
 	for state.offset < totalSize {
 		uploadedPart, err := uploadDirectBlobPart(ctx, helperClient, state.session, layer, state.offset, state.partNumber, totalSize)
 		if err == nil {
@@ -126,7 +127,9 @@ func uploadDescribedLayerParts(
 			state.offset += uploadedPart.SizeBytes
 			state.partNumber++
 			recoveries = 0
+			retryWait = directUploadAPIInitialRetryWait
 		} else {
+			previousOffset := state.offset
 			nextParts, nextOffset, nextPartNumber, recoveryErr := recoverDirectBlobUpload(ctx, helperClient, state.session.SessionToken, err)
 			if recoveryErr != nil {
 				return recoveryErr
@@ -134,9 +137,11 @@ func uploadDescribedLayerParts(
 			state.uploadedParts = nextParts
 			state.offset = nextOffset
 			state.partNumber = nextPartNumber
-			recoveries++
-			if recoveries > blobUploadRecoveryAttempts {
-				return err
+			if state.offset > previousOffset {
+				recoveries = 0
+				retryWait = directUploadAPIInitialRetryWait
+			} else if retryErr := waitDirectUploadRecoveryRetry(ctx, &recoveries, &retryWait, err); retryErr != nil {
+				return retryErr
 			}
 		}
 		state.current.UploadedSizeBytes = state.offset

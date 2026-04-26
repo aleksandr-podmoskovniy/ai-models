@@ -121,7 +121,7 @@ func TestBuildReportIncludesDirectUploadMultipartResidue(t *testing.T) {
 	}
 }
 
-func TestBuildReportMarksFreshMultipartUploadStaleWhenNoLiveOwnersRemain(t *testing.T) {
+func TestBuildReportKeepsFreshMultipartUploadAgeBoundedWhenNoLiveOwnersRemain(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
@@ -145,11 +145,8 @@ func TestBuildReportMarksFreshMultipartUploadStaleWhenNoLiveOwnersRemain(t *test
 	if err != nil {
 		t.Fatalf("buildReportWithClock() error = %v", err)
 	}
-	if got, want := len(report.StaleDirectUploadMultipartUploads), 1; got != want {
+	if got, want := len(report.StaleDirectUploadMultipartUploads), 0; got != want {
 		t.Fatalf("stale multipart upload count = %d, want %d", got, want)
-	}
-	if got, want := report.StaleDirectUploadMultipartUploads[0].UploadID, "upload-fresh"; got != want {
-		t.Fatalf("stale multipart upload = %q, want %q", got, want)
 	}
 }
 
@@ -194,7 +191,7 @@ func TestBuildReportKeepsFreshMultipartUploadAgeBoundedWhileOwnerIsDeleting(t *t
 	}
 }
 
-func TestBuildReportMarksFreshMultipartUploadStaleWhenDeleteTriggeredPolicyIgnoresDeletingOwner(t *testing.T) {
+func TestBuildReportKeepsFreshMultipartUploadAgeBoundedWhenDeleteTriggeredPolicyHasNoTarget(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
@@ -212,12 +209,12 @@ func TestBuildReportMarksFreshMultipartUploadStaleWhenDeleteTriggeredPolicyIgnor
 		store,
 		"dmcr",
 		now,
-		cleanupPolicy{ignoreDeletingOwners: true},
+		cleanupPolicy{},
 	)
 	if err != nil {
 		t.Fatalf("buildReportWithClock() error = %v", err)
 	}
-	if got, want := len(report.StaleDirectUploadMultipartUploads), 1; got != want {
+	if got, want := len(report.StaleDirectUploadMultipartUploads), 0; got != want {
 		t.Fatalf("stale multipart upload count = %d, want %d", got, want)
 	}
 }
