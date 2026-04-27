@@ -441,6 +441,45 @@ Node drain/reboot команды не включаются в автоматич
   renaming internal `AutoCleanup*` vocabulary. Polling was stopped because the
   cluster cannot roll out a diff that has not reached the remote build source.
 
+### Live chaos retry 2026-04-26 23:51 MSK
+
+- Fresh rollout check on `k8s.apiac.ru` showed module `ai-models` Ready and
+  newly rolled controller/DMCR pods. In-pod `dmcr-cleaner gc --help` no longer
+  exposed the legacy `auto-cleanup` command; the live contract has only
+  `check` and `run`.
+- The cluster still has both legacy `ai-models.deckhouse.io` and current
+  `ai.deckhouse.io` CRDs installed. Short `kubectl get model` resolves to the
+  legacy group on this cluster, so chaos harnesses must use fully-qualified
+  `models.ai.deckhouse.io` and `clustermodels.ai.deckhouse.io` resource names.
+- Cleanup attempt for empty legacy CRDs
+  `models.ai-models.deckhouse.io` / `clustermodels.ai-models.deckhouse.io` was
+  blocked by cluster `ValidatingAdmissionPolicy` `label-objects.deckhouse.io`
+  because those CRDs carry protected `heritage: deckhouse` labels. This is a
+  live-ops cleanup blocker outside module code; harnesses must stay explicit
+  until platform-owned CRD migration cleanup is performed.
+- C1 found a real runtime HA defect before direct-upload started: deleting the
+  source worker during HuggingFace metadata fetch made the current
+  `ai.deckhouse.io/v1alpha1` `Model` terminal `Failed` with
+  `Get "https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct": context canceled`.
+- Evidence namespace:
+  `/tmp/ai-models-chaos-20260426235148`; test Model
+  `ai-models-chaos-20260426235148/qwen-chaos-20260426235148`; failed condition
+  reason `PublicationFailed`.
+- Root cause: `sourceworker` only recreated failed pods when direct-upload
+  state had already entered `Running`. A worker interrupted before
+  direct-upload state existed was returned as a failed runtime handle and then
+  projected into a business publication failure.
+- Fix: `internal/adapters/k8s/sourceworker` now treats failed publish pods with
+  runtime-loss termination messages such as `context canceled` or
+  `signal: terminated` as retryable pod loss and recreates them before
+  returning a failed handle to catalog status.
+- Test evidence: `cd images/controller && go test
+  ./internal/adapters/k8s/sourceworker ./internal/application/publishobserve
+  ./internal/controllers/catalogstatus` passed.
+- Repo evidence after the fix: `git diff --check` and `make verify` passed.
+- Repeat live chaos is blocked until this source-worker recovery fix is built
+  and rolled out to the cluster.
+
 ### Review residual risks 2026-04-26
 
 - GC result persistence is now implemented as module-private Secret state, not

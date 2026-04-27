@@ -18,6 +18,7 @@ package sourceworker
 
 import (
 	"context"
+	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/directuploadstate"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
@@ -126,7 +127,14 @@ func shouldRecreateFailedPod(
 	if pod == nil || pod.Status.Phase != corev1.PodFailed {
 		return false
 	}
-	return directUploadState.Phase == modelpackports.DirectUploadStatePhaseRunning
+	return directUploadState.Phase == modelpackports.DirectUploadStatePhaseRunning ||
+		workerInterruptedByRuntimeLoss(pod)
+}
+
+func workerInterruptedByRuntimeLoss(pod *corev1.Pod) bool {
+	message := strings.ToLower(terminationMessage(pod, "publish"))
+	return strings.Contains(message, "context canceled") ||
+		strings.Contains(message, "signal: terminated")
 }
 
 func shouldRecreateStalePod(pod *corev1.Pod, ownerGeneration int64) bool {

@@ -116,3 +116,80 @@ func TestServiceGetOrCreateRecreatesFailedPodWhenDirectUploadIsRunning(t *testin
 		t.Fatal("expected recreated pod to replace failed instance")
 	}
 }
+
+func TestServiceGetOrCreateRecreatesInterruptedFailedPodBeforeDirectUploadStarts(t *testing.T) {
+	t.Parallel()
+
+	scheme := testkit.NewScheme(t)
+	request := testOperationRequest()
+	owner := testkit.NewModel()
+	owner.UID = request.Owner.UID
+	owner.Name = request.Owner.Name
+
+	podName, err := resourcenames.SourceWorkerPodName(request.Owner.UID)
+	if err != nil {
+		t.Fatalf("SourceWorkerPodName() error = %v", err)
+	}
+	stateSecretName, err := resourcenames.SourceWorkerStateSecretName(request.Owner.UID)
+	if err != nil {
+		t.Fatalf("SourceWorkerStateSecretName() error = %v", err)
+	}
+	stateSecret, err := directuploadstate.NewSecret(directuploadstate.SecretSpec{
+		Name:            stateSecretName,
+		Namespace:       "d8-ai-models",
+		OwnerGeneration: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewSecret() error = %v", err)
+	}
+
+	failedPod := &corev1.Pod{
+		ObjectMeta: testkit.NewModel().ObjectMeta,
+	}
+	failedPod.Name = podName
+	failedPod.Namespace = "d8-ai-models"
+	failedPod.Labels = buildLabels(request.Owner)
+	failedPod.Status.Phase = corev1.PodFailed
+	failedPod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: "publish",
+		State: corev1.ContainerState{
+			Terminated: &corev1.ContainerStateTerminated{
+				Message: "Get \"https://huggingface.co/api/models/Qwen/Qwen2.5-0.5B-Instruct\": context canceled",
+			},
+		},
+	}}
+
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			owner,
+			failedPod,
+			stateSecret,
+			testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-write"),
+		).
+		Build()
+
+	service, err := NewService(kubeClient, scheme, testOptions())
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	handle, created, err := service.GetOrCreate(context.Background(), owner, request)
+	if err != nil {
+		t.Fatalf("GetOrCreate() error = %v", err)
+	}
+	if !created {
+		t.Fatal("expected interrupted failed worker pod to be recreated")
+	}
+	if handle == nil || handle.Name != podName {
+		t.Fatalf("unexpected source worker handle %#v", handle)
+	}
+
+	var recreated corev1.Pod
+	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: podName, Namespace: "d8-ai-models"}, &recreated); err != nil {
+		t.Fatalf("Get(recreated pod) error = %v", err)
+	}
+	if recreated.Status.Phase == corev1.PodFailed {
+		t.Fatal("expected recreated pod to replace interrupted failed instance")
+	}
+}
