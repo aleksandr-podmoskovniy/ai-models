@@ -34,43 +34,20 @@ import (
 func TestDirectUploadClientRetriesServiceUnavailableAPIResponse(t *testing.T) {
 	t.Parallel()
 
-	attempts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		attempts++
-		if request.URL.Path != "/v2/blob-uploads/complete" {
-			http.NotFound(writer, request)
-			return
-		}
-		if user, pass, ok := request.BasicAuth(); !ok || user != "writer" || pass != "secret" {
-			t.Fatalf("unexpected direct upload auth %q/%q", user, pass)
-		}
-		if attempts < 3 {
+	client, attempts := newCompleteDirectUploadTestClient(t, func(writer http.ResponseWriter, _ *http.Request, attempt int) {
+		if attempt < 3 {
 			http.Error(writer, "temporarily read-only", http.StatusServiceUnavailable)
 			return
 		}
-		writeJSON(writer, completeDirectUploadResponse{
-			OK:        true,
-			Digest:    "sha256:abc",
-			SizeBytes: 1,
-		})
-	}))
-	t.Cleanup(server.Close)
-
-	client := &directUploadClient{
-		apiClient: server.Client(),
-		endpoint:  server.URL,
-		auth: modelpackports.RegistryAuth{
-			Username: "writer",
-			Password: "secret",
-		},
-	}
+		writeJSON(writer, validCompleteDirectUploadResponse())
+	})
 
 	result, err := client.complete(context.Background(), "session-a", "sha256:abc", 1, nil)
 	if err != nil {
 		t.Fatalf("complete() error = %v", err)
 	}
-	if attempts != 3 {
-		t.Fatalf("direct upload API attempts = %d, want 3", attempts)
+	if *attempts != 3 {
+		t.Fatalf("direct upload API attempts = %d, want 3", *attempts)
 	}
 	if result.Digest != "sha256:abc" || result.SizeBytes != 1 {
 		t.Fatalf("unexpected complete result %#v", result)
@@ -95,32 +72,20 @@ func TestDirectUploadClientRetriesTransientAPIResponses(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			attempts := 0
-			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-				attempts++
-				if request.URL.Path != "/v2/blob-uploads/complete" {
-					http.NotFound(writer, request)
-					return
-				}
-				if attempts == 1 {
+			client, attempts := newCompleteDirectUploadTestClient(t, func(writer http.ResponseWriter, _ *http.Request, attempt int) {
+				if attempt == 1 {
 					http.Error(writer, "temporary backend failure", test.statusCode)
 					return
 				}
-				writeJSON(writer, completeDirectUploadResponse{
-					OK:        true,
-					Digest:    "sha256:abc",
-					SizeBytes: 1,
-				})
-			}))
-			t.Cleanup(server.Close)
+				writeJSON(writer, validCompleteDirectUploadResponse())
+			})
 
-			client := newDirectUploadClientForTest(server.Client(), server.URL)
 			result, err := client.complete(context.Background(), "session-a", "sha256:abc", 1, nil)
 			if err != nil {
 				t.Fatalf("complete() error = %v", err)
 			}
-			if attempts != 2 {
-				t.Fatalf("direct upload API attempts = %d, want 2", attempts)
+			if *attempts != 2 {
+				t.Fatalf("direct upload API attempts = %d, want 2", *attempts)
 			}
 			if result.Digest != "sha256:abc" || result.SizeBytes != 1 {
 				t.Fatalf("unexpected complete result %#v", result)
@@ -167,6 +132,71 @@ func TestDirectUploadClientRetriesTransportError(t *testing.T) {
 	}
 	if result.Digest != "sha256:abc" || result.SizeBytes != 1 {
 		t.Fatalf("unexpected complete result %#v", result)
+	}
+}
+
+func TestDirectUploadClientRejectsMalformedCompleteSuccess(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		response completeDirectUploadResponse
+	}{
+		{
+			name: "not ok",
+			response: completeDirectUploadResponse{
+				OK:        false,
+				Digest:    "sha256:abc",
+				SizeBytes: 1,
+			},
+		},
+		{
+			name: "missing digest",
+			response: completeDirectUploadResponse{
+				OK:        true,
+				SizeBytes: 1,
+			},
+		},
+		{
+			name: "non-positive size",
+			response: completeDirectUploadResponse{
+				OK:        true,
+				Digest:    "sha256:abc",
+				SizeBytes: 0,
+			},
+		},
+		{
+			name: "wrong digest",
+			response: completeDirectUploadResponse{
+				OK:        true,
+				Digest:    "sha256:def",
+				SizeBytes: 1,
+			},
+		},
+		{
+			name: "wrong size",
+			response: completeDirectUploadResponse{
+				OK:        true,
+				Digest:    "sha256:abc",
+				SizeBytes: 2,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			client, _ := newCompleteDirectUploadTestClient(t, func(writer http.ResponseWriter, _ *http.Request, _ int) {
+				writeJSON(writer, test.response)
+			})
+
+			_, err := client.complete(context.Background(), "session-a", "sha256:abc", 1, nil)
+			if err == nil {
+				t.Fatal("complete() error = nil, want malformed success rejection")
+			}
+		})
 	}
 }
 
@@ -220,20 +250,47 @@ func TestDirectUploadClientDoesNotRetryPermanentTransportError(t *testing.T) {
 func TestDirectUploadClientDoesNotRetryTerminalAPIResponse(t *testing.T) {
 	t.Parallel()
 
-	attempts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		attempts++
+	client, attempts := newCompleteDirectUploadTestClient(t, func(writer http.ResponseWriter, _ *http.Request, _ int) {
 		http.Error(writer, "bad session", http.StatusBadRequest)
-	}))
-	t.Cleanup(server.Close)
+	})
 
-	client := newDirectUploadClientForTest(server.Client(), server.URL)
 	_, err := client.complete(context.Background(), "session-a", "sha256:abc", 1, nil)
 	if err == nil {
 		t.Fatal("complete() error = nil, want terminal bad request")
 	}
-	if attempts != 1 {
-		t.Fatalf("direct upload API attempts = %d, want 1", attempts)
+	if *attempts != 1 {
+		t.Fatalf("direct upload API attempts = %d, want 1", *attempts)
+	}
+}
+
+func newCompleteDirectUploadTestClient(
+	t *testing.T,
+	handle func(http.ResponseWriter, *http.Request, int),
+) (*directUploadClient, *int) {
+	t.Helper()
+
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		attempts++
+		if request.URL.Path != "/v2/blob-uploads/complete" {
+			http.NotFound(writer, request)
+			return
+		}
+		if user, pass, ok := request.BasicAuth(); !ok || user != "writer" || pass != "secret" {
+			t.Fatalf("unexpected direct upload auth %q/%q", user, pass)
+		}
+		handle(writer, request, attempts)
+	}))
+	t.Cleanup(server.Close)
+
+	return newDirectUploadClientForTest(server.Client(), server.URL), &attempts
+}
+
+func validCompleteDirectUploadResponse() completeDirectUploadResponse {
+	return completeDirectUploadResponse{
+		OK:        true,
+		Digest:    "sha256:abc",
+		SizeBytes: 1,
 	}
 }
 

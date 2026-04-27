@@ -49,7 +49,7 @@ func loadDirectUploadCheckpoint(
 	}, nil
 }
 
-func (c *directUploadCheckpoint) completedLayer(plan publishLayerDescriptor) (publishLayerDescriptor, bool, error) {
+func (c *directUploadCheckpoint) completedLayer(plan publishLayerDescriptor, plannedSizeBytes int64) (publishLayerDescriptor, bool, error) {
 	if c == nil {
 		return publishLayerDescriptor{}, false, nil
 	}
@@ -58,12 +58,28 @@ func (c *directUploadCheckpoint) completedLayer(plan publishLayerDescriptor) (pu
 		if layer.Key != key {
 			continue
 		}
-		if layer.TargetPath != plan.TargetPath || layer.MediaType != plan.MediaType {
+		if !completedLayerMatchesPlan(layer, plan, plannedSizeBytes) {
 			return publishLayerDescriptor{}, false, errors.New("direct upload completed layer checkpoint does not match current plan")
 		}
 		return descriptorFromStateLayer(layer), true, nil
 	}
 	return publishLayerDescriptor{}, false, nil
+}
+
+func completedLayerMatchesPlan(
+	layer modelpackports.DirectUploadLayerDescriptor,
+	plan publishLayerDescriptor,
+	plannedSizeBytes int64,
+) bool {
+	return layer.TargetPath == plan.TargetPath &&
+		layer.MediaType == plan.MediaType &&
+		layer.Base == plan.Base &&
+		layer.Format == plan.Format &&
+		layer.Compression == plan.Compression &&
+		(plan.Digest == "" || layer.Digest == plan.Digest) &&
+		(plan.DiffID == "" || layer.DiffID == plan.DiffID) &&
+		(plan.Size <= 0 || layer.SizeBytes == plan.Size) &&
+		(plannedSizeBytes <= 0 || layer.SizeBytes == plannedSizeBytes)
 }
 
 func (c *directUploadCheckpoint) currentLayer(plan publishLayerDescriptor) *modelpackports.DirectUploadCurrentLayer {

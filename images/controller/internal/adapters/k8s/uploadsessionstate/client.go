@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	uploadsessionruntime "github.com/deckhouse/ai-models/controller/internal/dataplane/uploadsession"
@@ -87,45 +86,13 @@ func (c *Client) SaveMultipartParts(ctx context.Context, name string, parts []up
 }
 
 func (c *Client) SaveProbe(ctx context.Context, name string, expectedSizeBytes int64, state uploadsessionruntime.ProbeState) error {
-	fileName := strings.TrimSpace(state.FileName)
-	if fileName == "" {
-		return errors.New("upload session probe file name must not be empty")
-	}
-	if expectedSizeBytes < 0 {
-		return errors.New("upload session expected size bytes must not be negative")
-	}
 	return c.update(ctx, name, func(secret *corev1.Secret) error {
-		ensureData(secret)
-		secret.Data[stateProbeFileNameKey] = []byte(fileName)
-		if expectedSizeBytes > 0 {
-			secret.Data[expectedSizeBytesKey] = []byte(strconv.FormatInt(expectedSizeBytes, 10))
-		} else {
-			delete(secret.Data, expectedSizeBytesKey)
-		}
-		if resolved := strings.TrimSpace(string(state.ResolvedInputFormat)); resolved != "" {
-			secret.Data[stateProbeFormatKey] = []byte(resolved)
-		} else {
-			delete(secret.Data, stateProbeFormatKey)
-		}
-		secret.Data[phaseKey] = []byte(string(PhaseProbing))
-		delete(secret.Data, failureMessageKey)
-		return nil
+		return SaveProbeSecret(secret, expectedSizeBytes, state)
 	})
 }
 
 func (c *Client) ClearMultipart(ctx context.Context, name string) error {
-	return c.update(ctx, name, func(secret *corev1.Secret) error {
-		ensureData(secret)
-		clearMultipartState(secret)
-		if strings.TrimSpace(string(secret.Data[stateProbeFileNameKey])) != "" {
-			secret.Data[phaseKey] = []byte(string(PhaseProbing))
-		} else {
-			secret.Data[phaseKey] = []byte(string(PhaseIssued))
-		}
-		delete(secret.Data, failureMessageKey)
-		delete(secret.Data, stagedHandleKey)
-		return nil
-	})
+	return c.update(ctx, name, ClearMultipartSecret)
 }
 
 func (c *Client) MarkUploaded(ctx context.Context, name string, handle cleanuphandle.Handle) error {
@@ -144,13 +111,13 @@ func (c *Client) MarkCompleted(ctx context.Context, name string) error {
 
 func (c *Client) MarkFailed(ctx context.Context, name string, message string) error {
 	return c.update(ctx, name, func(secret *corev1.Secret) error {
-		return markTerminalSecret(secret, PhaseFailed, message, true)
+		return MarkFailedSecret(secret, message)
 	})
 }
 
 func (c *Client) MarkAborted(ctx context.Context, name string, message string) error {
 	return c.update(ctx, name, func(secret *corev1.Secret) error {
-		return markTerminalSecret(secret, PhaseAborted, message, true)
+		return MarkAbortedSecret(secret, message)
 	})
 }
 

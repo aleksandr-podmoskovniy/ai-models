@@ -84,22 +84,23 @@ func uploadPublishLayer(
 	logger *slog.Logger,
 ) (publishLayerDescriptor, error) {
 	plan := prepared.Plan
-	if checkpoint != nil {
-		if completed, found, err := checkpoint.completedLayer(plan); err != nil {
-			return publishLayerDescriptor{}, err
-		} else if found {
-			return completed, nil
-		}
-	}
-
 	if prepared.Descriptor != nil {
 		descriptor := *prepared.Descriptor
+		if checkpoint != nil {
+			if completed, found, err := checkpoint.completedLayer(descriptor, descriptor.Size); err != nil {
+				return publishLayerDescriptor{}, err
+			} else if found {
+				return completed, nil
+			}
+		}
 		if err := pushDescribedLayerDirectToBackingStorage(ctx, client, input, auth, prepared.Layer, descriptor, checkpoint, logger); err != nil {
 			return publishLayerDescriptor{}, err
 		}
 		return descriptor, nil
 	}
 
+	// Raw one-pass uploads do not know their digest before completion, so a
+	// completed-layer checkpoint cannot prove content identity up front.
 	return pushRawLayerDirectToBackingStorage(ctx, client, input, auth, prepared.Layer, plan, checkpoint, logger)
 }
 

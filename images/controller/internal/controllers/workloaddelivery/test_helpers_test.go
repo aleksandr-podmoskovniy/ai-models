@@ -31,6 +31,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -46,33 +47,31 @@ const (
 )
 
 func newDeploymentReconciler(t *testing.T, objects ...client.Object) (*baseReconciler, client.Client) {
-	return newDeploymentReconcilerWithOptions(t, modeldelivery.ServiceOptions{
-		Render: modeldelivery.Options{
-			RuntimeImage: "example.com/ai-models/controller-runtime:dev",
-		},
-		RegistrySourceNamespace:      testRegistryNamespace,
-		RegistrySourceAuthSecretName: testRegistryAuthName,
-		RuntimeImagePullSecretName:   testRuntimePullSecret,
-	}, objects...)
+	return newDeploymentReconcilerWithOptions(t, defaultServiceOptions(), objects...)
 }
 
 func newDeploymentReconcilerWithManagedCache(t *testing.T, objects ...client.Object) (*baseReconciler, client.Client) {
 	objects = append(objects, readyNodeCacheRuntimeNode())
-	return newDeploymentReconcilerWithOptions(t, modeldelivery.ServiceOptions{
+	serviceOptions := defaultServiceOptions()
+	serviceOptions.ManagedCache = modeldelivery.ManagedCacheOptions{
+		Enabled: true,
+		NodeSelector: map[string]string{
+			"ai.deckhouse.io/node-cache":       "true",
+			nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue,
+		},
+	}
+	return newDeploymentReconcilerWithOptions(t, serviceOptions, objects...)
+}
+
+func defaultServiceOptions() modeldelivery.ServiceOptions {
+	return modeldelivery.ServiceOptions{
 		Render: modeldelivery.Options{
 			RuntimeImage: "example.com/ai-models/controller-runtime:dev",
-		},
-		ManagedCache: modeldelivery.ManagedCacheOptions{
-			Enabled: true,
-			NodeSelector: map[string]string{
-				"ai.deckhouse.io/node-cache":       "true",
-				nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue,
-			},
 		},
 		RegistrySourceNamespace:      testRegistryNamespace,
 		RegistrySourceAuthSecretName: testRegistryAuthName,
 		RuntimeImagePullSecretName:   testRuntimePullSecret,
-	}, objects...)
+	}
 }
 
 func readyNodeCacheRuntimeNode() *corev1.Node {
@@ -86,9 +85,18 @@ func readyNodeCacheRuntimeNode() *corev1.Node {
 }
 
 func newDeploymentReconcilerWithOptions(t *testing.T, serviceOptions modeldelivery.ServiceOptions, objects ...client.Object) (*baseReconciler, client.Client) {
+	return newWorkloadReconcilerWithOptions(t, appsv1.AddToScheme, serviceOptions, objects...)
+}
+
+func newWorkloadReconcilerWithOptions(
+	t *testing.T,
+	addToScheme func(*runtime.Scheme) error,
+	serviceOptions modeldelivery.ServiceOptions,
+	objects ...client.Object,
+) (*baseReconciler, client.Client) {
 	t.Helper()
 
-	scheme := testkit.NewScheme(t, appsv1.AddToScheme)
+	scheme := testkit.NewScheme(t, addToScheme)
 	if serviceOptions.RuntimeImagePullSecretName != "" {
 		objects = append(objects, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, serviceOptions.RuntimeImagePullSecretName))
 	}
@@ -293,6 +301,10 @@ func assertProjectedRuntimeImagePullSecretDeleted(t *testing.T, kubeClient clien
 }
 
 func reconcileDeployment(t *testing.T, reconciler *baseReconciler, workload *appsv1.Deployment) ctrl.Result {
+	return reconcileWorkload(t, reconciler, workload)
+}
+
+func reconcileWorkload(t *testing.T, reconciler *baseReconciler, workload client.Object) ctrl.Result {
 	t.Helper()
 
 	result, err := reconciler.reconcileWorkload(context.Background(), workload)

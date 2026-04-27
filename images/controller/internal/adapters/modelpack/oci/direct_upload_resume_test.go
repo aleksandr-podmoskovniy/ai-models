@@ -67,21 +67,7 @@ func TestPushRawLayerDirectToBackingStorageResumesPersistedSession(t *testing.T)
 	}
 
 	firstChunk := layerPayload[:64]
-	firstDigest := sha256.Sum256(firstChunk)
-	directUpload.sessions["session-1"] = &directUploadSessionState{
-		repository: "published",
-		parts: map[int]uploadedDirectPart{
-			1: {
-				PartNumber: 1,
-				ETag:       hex.EncodeToString(firstDigest[:]),
-				SizeBytes:  int64(len(firstChunk)),
-			},
-		},
-		payloads: map[int][]byte{
-			1: append([]byte(nil), firstChunk...),
-		},
-	}
-	directUpload.nextSessionID = 1
+	seedDirectUploadSession(t, directUpload, firstChunk)
 
 	hasher := sha256.New()
 	if _, err := hasher.Write(firstChunk); err != nil {
@@ -92,20 +78,7 @@ func TestPushRawLayerDirectToBackingStorageResumesPersistedSession(t *testing.T)
 		t.Fatalf("marshalDirectUploadDigestState() error = %v", err)
 	}
 
-	store := &directUploadMemoryStore{
-		found: true,
-		state: modelpackports.DirectUploadState{
-			Phase: modelpackports.DirectUploadStatePhaseRunning,
-			CurrentLayer: &modelpackports.DirectUploadCurrentLayer{
-				Key:               directUploadLayerKey(plan),
-				SessionToken:      "session-1",
-				PartSizeBytes:     64,
-				TotalSizeBytes:    int64(len(layerPayload)),
-				UploadedSizeBytes: 64,
-				DigestState:       digestState,
-			},
-		},
-	}
+	store := newRunningDirectUploadStore(plan, int64(len(layerPayload)), 64, digestState)
 
 	descriptor, err := pushRawLayerDirectToBackingStorage(
 		context.Background(),
@@ -124,17 +97,113 @@ func TestPushRawLayerDirectToBackingStorageResumesPersistedSession(t *testing.T)
 		t.Fatalf("pushRawLayerDirectToBackingStorage() error = %v", err)
 	}
 
+	assertDirectUploadResumeResult(t, directUpload, store, 3)
+	if got := descriptor.Size; got != int64(len(layerPayload)) {
+		t.Fatalf("descriptor.Size = %d, want %d", got, len(layerPayload))
+	}
+}
+
+func TestPushDescribedLayerDirectToBackingStorageResumesPersistedSession(t *testing.T) {
+	t.Parallel()
+
+	registry, directUpload, auth := newDirectPublishHarness(t, directUploadTestOptions{partSizeBytes: 64})
+
+	modelDir := t.TempDir()
+	writeTestModelFiles(t, modelDir, string(bytes.Repeat([]byte("a"), 128)), "GGUF"+string(bytes.Repeat([]byte("b"), 256)))
+
+	layer := modelpackports.PublishLayer{
+		SourcePath:  modelDir,
+		TargetPath:  materializedLayerPath,
+		Base:        modelpackports.LayerBaseModel,
+		Format:      modelpackports.LayerFormatTar,
+		Compression: modelpackports.LayerCompressionNone,
+	}
+	descriptor, err := describePublishLayer(context.Background(), layer)
+	if err != nil {
+		t.Fatalf("describePublishLayer() error = %v", err)
+	}
+
+	firstChunk, err := readPublishLayerChunk(context.Background(), layer, 0, 64)
+	if err != nil {
+		t.Fatalf("readPublishLayerChunk() error = %v", err)
+	}
+	seedDirectUploadSession(t, directUpload, firstChunk)
+
+	store := newRunningDirectUploadStore(descriptor, descriptor.Size, int64(len(firstChunk)), nil)
+
+	if err := pushDescribedLayerDirectToBackingStorage(
+		context.Background(),
+		nil,
+		withDirectUploadInput(modelpackports.PublishInput{
+			ArtifactURI:       serverReference(registry.server, "published"),
+			DirectUploadState: store,
+		}, directUpload),
+		auth,
+		layer,
+		descriptor,
+		&directUploadCheckpoint{store: store, state: store.state},
+		nil,
+	); err != nil {
+		t.Fatalf("pushDescribedLayerDirectToBackingStorage() error = %v", err)
+	}
+
+	assertDirectUploadResumeResult(t, directUpload, store, int((descriptor.Size-int64(len(firstChunk))+63)/64))
+}
+
+func seedDirectUploadSession(t *testing.T, directUpload *directUploadTestServer, firstChunk []byte) {
+	t.Helper()
+
+	firstDigest := sha256.Sum256(firstChunk)
+	directUpload.sessions["session-1"] = &directUploadSessionState{
+		repository: "published",
+		parts: map[int]uploadedDirectPart{
+			1: {PartNumber: 1, ETag: hex.EncodeToString(firstDigest[:]), SizeBytes: int64(len(firstChunk))},
+		},
+		payloads: map[int][]byte{
+			1: append([]byte(nil), firstChunk...),
+		},
+	}
+	directUpload.nextSessionID = 1
+}
+
+func newRunningDirectUploadStore(
+	descriptor publishLayerDescriptor,
+	totalSizeBytes int64,
+	uploadedSizeBytes int64,
+	digestState []byte,
+) *directUploadMemoryStore {
+	return &directUploadMemoryStore{
+		found: true,
+		state: modelpackports.DirectUploadState{
+			Phase: modelpackports.DirectUploadStatePhaseRunning,
+			CurrentLayer: &modelpackports.DirectUploadCurrentLayer{
+				Key:               directUploadLayerKey(descriptor),
+				SessionToken:      "session-1",
+				PartSizeBytes:     64,
+				TotalSizeBytes:    totalSizeBytes,
+				UploadedSizeBytes: uploadedSizeBytes,
+				DigestState:       digestState,
+			},
+		},
+	}
+}
+
+func assertDirectUploadResumeResult(
+	t *testing.T,
+	directUpload *directUploadTestServer,
+	store *directUploadMemoryStore,
+	wantUploadCalls int,
+) {
+	t.Helper()
+
 	if got, want := directUpload.listPartsCalls, 1; got != want {
 		t.Fatalf("listPartsCalls = %d, want %d", got, want)
 	}
-	if got, want := directUpload.uploadCalls, 3; got != want {
-		t.Fatalf("uploadCalls = %d, want %d after resume from first part", got, want)
+	if got := directUpload.uploadCalls; got != wantUploadCalls {
+		t.Fatalf("uploadCalls = %d, want %d after resume from first part", got, wantUploadCalls)
 	}
 	if got, want := directUpload.completeCalls, 1; got != want {
 		t.Fatalf("completeCalls = %d, want %d", got, want)
-	}
-	if got := descriptor.Size; got != int64(len(layerPayload)) {
-		t.Fatalf("descriptor.Size = %d, want %d", got, len(layerPayload))
 	}
 	if len(store.state.CompletedLayers) != 1 || store.state.CurrentLayer != nil {
 		t.Fatalf("unexpected persisted state %#v", store.state)

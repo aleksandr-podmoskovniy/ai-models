@@ -70,6 +70,16 @@ Subagent conclusions:
   transient or ambiguous storage errors after successful verification must not
   delete the only sealed byte path. Link write must be retry-safe; deleting a
   duplicate upload object is allowed only after repository link write succeeds.
+- continuation `repo_architect` after current OCI slice: safest next slices are
+  `publishworker` upload-staging fake collapse, `workloaddelivery` test
+  harness collapse, then a cautious `sourcefetch` HuggingFace metadata helper
+  collapse. DMCR GC should not be the next cheap slice because remaining
+  overlap is intertwined with request lifecycle.
+- continuation `integration_architect` after current OCI slice: current OCI
+  diff has no critical runtime/storage red flags; do not touch
+  controller/node-cache RBAC/templates inside incidental slimming. Runtime/HA
+  candidates (`nodecacheruntime`, `runtimehealth`, DMCR S3 pagination) require
+  their own narrowed package-local slices.
 
 ## 3. Active bundle disposition
 
@@ -81,9 +91,9 @@ Subagent conclusions:
   post-implementation/live-rollout record and currently has only external
   rollout blockers, not an executable in-repo slice.
 - `codebase-slimming-pass` — current. Compact workstream для планомерного
-  сокращения live code. Current completed slice: `DMCR GC inventory/helper
-  normalization`. Next executable slice: `ModelPack OCI direct-upload session
-  runner slimming`; no controller/DMCR direct-upload cross-image helper
+  сокращения live code. Current completed slice: `Runtimehealth collector
+  consolidation`. Next executable slice: `DMCR GC S3 pagination/helper
+  consolidation`; no controller/DMCR direct-upload cross-image helper
   deduplication.
 
 Working-tree note:
@@ -479,9 +489,7 @@ Evidence:
 - `cd images/dmcr && go test -race ./internal/garbagecollection`
 - `git diff --check && git diff --cached --check`
 
-## 6. Next executable slice
-
-### ModelPack OCI direct-upload session runner slimming
+### Completed slice 14. ModelPack OCI direct-upload session runner slimming
 
 Цель:
 
@@ -493,16 +501,362 @@ Evidence:
 
 Файлы:
 
-- `images/controller/internal/adapters/modelpack/oci/direct_upload.go`
-- `images/controller/internal/adapters/modelpack/oci/direct_upload_session.go`
-- `images/controller/internal/adapters/modelpack/oci/publish_layers.go`
+- `images/controller/internal/adapters/modelpack/oci/direct_upload_transport.go`
+- `images/controller/internal/adapters/modelpack/oci/direct_upload_transport_raw.go`
+- `images/controller/internal/adapters/modelpack/oci/direct_upload_transport_raw_flow.go`
+- `images/controller/internal/adapters/modelpack/oci/direct_upload_transport_described_session.go`
+- new package-local direct-upload session helper if needed
 - package-local `modelpack/oci` tests only.
+
+Read-only review conclusions:
+
+- Safe cut is package-local only: extract the duplicated start/resume session
+  skeleton from described and raw direct-upload paths.
+- `listParts()` must stay the source of truth during retry/resume; no local
+  uploaded-byte assumption may replace it.
+- Raw late-digest behavior stays explicit and raw-owned through a digest
+  replay/catch-up hook; do not collapse raw uploads into the pre-described
+  path.
+- Do not broaden checkpoint reuse. Current completed-layer identity is only
+  safe inside one publish attempt because it is keyed by target path and media
+  type.
+- Add a described-layer persisted-session resume proof before/with the helper
+  extraction, because existing resume coverage is strongest on the raw path.
+- Do not route compressed object-source archives through the ranged path and do
+  not move DMCR request/response/session structs into shared ports.
 
 Проверки:
 
 - `cd images/controller && go test ./internal/adapters/modelpack/oci`
 - targeted `go test -count=3 -run 'Test.*DirectUpload|Test.*ObjectSource|Test.*Range' ./internal/adapters/modelpack/oci`
 - `git diff --check && git diff --cached --check`
+
+Evidence:
+
+- production path removed the separate described-session file and now shares
+  one package-local start/resume helper for described and raw direct uploads;
+- raw late-digest replay remains raw-owned through `prepareNew` /
+  `prepareResume` hooks;
+- described direct upload now has a persisted-session resume regression test;
+- production LOC for the touched session/open paths went from 654 to 634;
+  total package LOC increased only because of the new safety test.
+- `cd images/controller && go test ./internal/adapters/modelpack/oci`
+- `cd images/controller && go test -count=3 -run 'TestPushRawLayerDirectToBackingStorageResumesPersistedSession|TestPushDescribedLayerDirectToBackingStorageResumesPersistedSession|TestAdapterPublishRecoversFromInterruptedDirectPartUpload|TestAdapterPublishObjectSourceUsesRangeReadsOnInterruptedUpload|TestAdapterPublishTarObjectSourceUsesRangeReadsOnInterruptedUpload|TestOpenObjectSourceLayerRangeFallsBackToGeneratedArchiveWhenCompressed|TestDirectUploadCheckpointEnsureProgressPlanPersistsAndReusesPlan|TestDirectUploadClientRetriesTransientAPIResponses|TestWaitDirectUploadRecoveryRetryIsBoundedAndContextAware' ./internal/adapters/modelpack/oci`
+- `cd images/controller && go test -race ./internal/adapters/modelpack/oci`
+- `cd images/controller && go test ./internal/adapters/modelpack/oci/...`
+- `git diff --check`
+- final read-only `reviewer` pass: no critical/high findings; confirmed
+  `listParts()` remains resume source of truth, raw late-digest stays raw-owned,
+  and described resume coverage is now present.
+- `make verify` — pass in final reviewer validation.
+
+### Completed slice 15. ModelPack OCI completion/reuse hardening
+
+Цель:
+
+- strengthen tests around malformed DMCR complete success payloads and stale
+  completed-layer reuse before any broader checkpoint slimming;
+- avoid widening checkpoint reuse unless layer identity is made stronger than
+  `TargetPath|MediaType`;
+- keep request/response structs inside the OCI adapter.
+
+Файлы:
+
+- `images/controller/internal/adapters/modelpack/oci/direct_upload_client.go`
+- `images/controller/internal/adapters/modelpack/oci/direct_upload_state.go`
+- `images/controller/internal/adapters/modelpack/oci/adapter_publish.go`
+- package-local `modelpack/oci` tests only.
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelpack/oci`
+- targeted `go test -count=3 -run 'TestDirectUploadClient|TestDirectUploadCheckpoint' ./internal/adapters/modelpack/oci`
+- `git diff --check`
+
+Evidence:
+
+- DMCR `complete` success payload is now rejected when `ok=false`, digest is
+  missing, size is non-positive, digest differs from the expected digest or
+  size differs from the expected size.
+- completed-layer checkpoint reuse now also checks digest, diffID,
+  base/format/compression and planned size, so a stale layer with the same
+  target/media key is rejected instead of being silently reused.
+- `adapter_publish.go` only reuses completed-layer checkpoints for layers with
+  a precomputed descriptor/digest. Raw one-pass upload still resumes active
+  sessions, but skips completed-layer reuse because content identity is known
+  only after upload completion.
+- tests cover exact completed-layer reuse plus stale reuse by digest, planned
+  size and base/format/compression shape mismatch.
+- request/response structs stayed inside `modelpack/oci`; checkpoint reuse was
+  not widened.
+- `cd images/controller && go test ./internal/adapters/modelpack/oci`
+- `cd images/controller && go test -count=3 -run 'TestDirectUploadClient|TestDirectUploadCheckpoint' ./internal/adapters/modelpack/oci`
+- `cd images/controller && go test -race ./internal/adapters/modelpack/oci`
+- `git diff --check`
+
+### Completed slice 16. ModelPack OCI descriptor planning duplicate collapse
+
+Цель:
+
+- collapse duplicated layer identity/source validation between
+  `planPublishLayer` and `describePublishLayer`;
+- keep object-source/archive/raw description behavior and media type semantics
+  unchanged;
+- avoid adding a new package or leaking ModelPack planning into public ports.
+
+Файлы:
+
+- `images/controller/internal/adapters/modelpack/oci/publish_layers_describe.go`
+- package-local `modelpack/oci` tests only.
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelpack/oci`
+- targeted layer matrix and publish tests.
+- `git diff --check`
+
+Evidence:
+
+- `describePublishLayer` now reuses `planPublishLayer` for target/source
+  validation and media-type planning instead of repeating the same validation
+  block;
+- object-source, archive-source and raw/local descriptor behavior stays in the
+  existing concrete describe paths;
+- `publish_layers_describe.go` shrank from 302 to 284 LOC.
+- `cd images/controller && go test ./internal/adapters/modelpack/oci`
+- `cd images/controller && go test -count=3 -run 'Test.*Publish|Test.*Layer|Test.*ObjectSource|TestPublishedModelPath' ./internal/adapters/modelpack/oci`
+- final validation also covered this slice with
+  `cd images/controller && go test -race ./internal/adapters/modelpack/oci`,
+  `git diff --check` and `make verify`.
+
+### Completed slice 17. ModelPack OCI test helper slimming
+
+Цель:
+
+- collapse repeated publish/direct-upload test setup without hiding the
+  protocol-specific assertions for raw late-digest, described resume and ranged
+  object-source reads;
+- keep tests below LOC budget and preserve failure messages that identify the
+  broken contract.
+
+Файлы:
+
+- `images/controller/internal/adapters/modelpack/oci/*_test.go`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelpack/oci`
+- targeted direct-upload/object-source/range tests.
+- `git diff --check`
+
+Evidence:
+
+- `direct_upload_client_test.go` now uses one package-local complete API
+  harness that also checks BasicAuth for all API-response paths.
+- `direct_upload_resume_test.go` now shares persisted running-state and resume
+  result assertions between raw and described resume tests.
+- `direct_upload_client_test.go` shrank from 326 to 312 LOC while preserving
+  malformed-success, transient retry and terminal-error coverage.
+- `cd images/controller && go test -run 'TestDirectUploadClient|TestPush.*DirectToBackingStorageResumesPersistedSession|TestDirectUploadCheckpoint' ./internal/adapters/modelpack/oci`
+- `cd images/controller && go test -count=3 -run 'TestDirectUploadClient|TestPush.*DirectToBackingStorageResumesPersistedSession|TestDirectUploadCheckpoint|Test.*Publish|Test.*Layer|Test.*ObjectSource|TestPublishedModelPath' ./internal/adapters/modelpack/oci`
+- `git diff --check`
+
+### Completed slice 18. Publishworker upload-staging test fake collapse
+
+Цель:
+
+- collapse repeated upload-staging fake implementations in publishworker tests
+  into one package-local full-port fake;
+- keep ranged-read validation, staged-delete accounting and `HTTPClient()`
+  passthrough assertions explicit;
+- avoid touching runtime code, sourcefetch/modelpack ports or upload staging
+  production adapters.
+
+Файлы:
+
+- `images/controller/internal/dataplane/publishworker/test_helpers_test.go`
+- `images/controller/internal/dataplane/publishworker/upload_stage_streaming_test.go`
+- `images/controller/internal/dataplane/publishworker/upload_stage_release_test.go`
+- `images/controller/internal/dataplane/publishworker/huggingface_streaming_test.go`
+- `images/controller/internal/dataplane/publishworker/rawstage_test.go`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/dataplane/publishworker`
+- `cd images/controller && go test -count=3 ./internal/dataplane/publishworker`
+- `git diff --check`
+
+Evidence:
+
+- Removed three duplicate fake staging implementations and replaced them with
+  one package-local fake that implements the full streaming staging surface plus
+  optional `HTTPClient()`.
+- Preserved counters for download/range/delete assertions and mirror
+  `DeletePrefix` behavior.
+- Touched publishworker test files now net reduce about 160 LOC without
+  production code changes.
+- `cd images/controller && go test ./internal/dataplane/publishworker`
+- `cd images/controller && go test -count=3 ./internal/dataplane/publishworker`
+- `git diff --check`
+
+### Completed slice 19. Workloaddelivery test harness collapse
+
+Цель:
+
+- collapse duplicated reconciler/runtime-secret/workload fixture setup around
+  `Deployment` / `StatefulSet` / `DaemonSet` / `CronJob` tests;
+- keep CronJob-specific pod-template path coverage and scheme registration;
+- keep helpers package-local and do not move test harness into
+  `modeldelivery`.
+
+Файлы:
+
+- `images/controller/internal/controllers/workloaddelivery/*_test.go`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/controllers/workloaddelivery`
+- `cd images/controller && go test -race ./internal/controllers/workloaddelivery`
+- `git diff --check`
+
+Evidence:
+
+- Deployment and CronJob tests now share one reconciler/service/client harness
+  while CronJob-specific fixture and reconcile helper remain package-local.
+- `test_helpers_test.go` stays below LOC budget at 344 lines; CronJob helper
+  file shrank from 105 to 70 LOC.
+- `cd images/controller && go test ./internal/controllers/workloaddelivery`
+- `cd images/controller && go test -count=3 ./internal/controllers/workloaddelivery`
+- `cd images/controller && go test -race ./internal/controllers/workloaddelivery`
+- `git diff --check`
+
+### Completed slice 20. Sourcefetch HuggingFace file metadata helper collapse
+
+Цель:
+
+- collapse duplicated HuggingFace HEAD metadata handling between direct
+  object-source planning and profile summary collection;
+- keep direct-vs-mirror branching, selected-file semantics and
+  local-materialization deny path unchanged;
+- keep helper package-local to `sourcefetch`.
+
+Файлы:
+
+- `images/controller/internal/adapters/sourcefetch/huggingface_object_source.go`
+- `images/controller/internal/adapters/sourcefetch/huggingface_profile_summary.go`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/sourcefetch`
+- `cd images/controller && go test -count=3 ./internal/adapters/sourcefetch`
+- `cd images/controller && go test -race ./internal/adapters/sourcefetch`
+- `git diff --check`
+
+Evidence:
+
+- Object-source planning and profile summary now share
+  `describeHuggingFaceRemoteFile` for clean path, snapshot URL, HEAD status,
+  content-length and ETag metadata.
+- Profile summary still fetches `config.json` over GET and still requires
+  positive safetensors/GGUF bytes.
+- Direct object-source still requires `SkipLocalMaterialization` and a resolved
+  profile summary; mirror behavior is untouched.
+- `cd images/controller && go test ./internal/adapters/sourcefetch`
+- `cd images/controller && go test -count=3 ./internal/adapters/sourcefetch`
+- `cd images/controller && go test -race ./internal/adapters/sourcefetch`
+- `git diff --check`
+
+### Completed slice 21. Node-cache runtime desired artifact helper split
+
+Цель:
+
+- separate live-pod scan, SharedDirect annotation decode and CSI publish
+  authorization helpers inside `k8s/nodecacheruntime`;
+- keep RBAC, templates, pod selectors, CSI attributes, byte path and storage
+  budgets unchanged;
+- avoid moving K8s discovery into `internal/nodecache` or CSI dataplane.
+
+Файлы:
+
+- `images/controller/internal/adapters/k8s/nodecacheruntime/desired_artifacts.go`
+- adjacent package-local tests only.
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/k8s/nodecacheruntime ./internal/dataplane/nodecacheruntime ./internal/nodecache`
+- targeted desired-artifact/CSI-authorization tests.
+- `git diff --check`
+
+Evidence:
+
+- `LoadNodeDesiredArtifacts` now separates node-scoped Pod listing from
+  SharedDirect annotation decoding.
+- CSI publish authorization now has a narrow request parser and live-pod
+  lookup helper before digest authorization.
+- RBAC, templates, pod selectors, CSI attributes, byte path and storage budgets
+  were not changed.
+- This slice intentionally increases `desired_artifacts.go` LOC by 33 to make
+  kubelet-facing authorization boundaries explicit.
+- `cd images/controller && go test ./internal/adapters/k8s/nodecacheruntime ./internal/dataplane/nodecacheruntime ./internal/nodecache`
+- `cd images/controller && go test -count=3 -run 'TestDesiredArtifactsClient|TestDesiredArtifact|TestDesiredArtifactsFromPod' ./internal/adapters/k8s/nodecacheruntime`
+- `cd images/controller && go test -race ./internal/adapters/k8s/nodecacheruntime ./internal/dataplane/nodecacheruntime ./internal/nodecache`
+- `git diff --check`
+
+### Completed slice 22. Runtimehealth collector consolidation
+
+Цель:
+
+- collapse repeated list-option and runtime-plane metric shaping helpers inside
+  `monitoring/runtimehealth`;
+- preserve metric names, labels, scrape wiring and cardinality;
+- keep observability logic controller-local and avoid changing node-cache
+  runtime behavior.
+
+Файлы:
+
+- `images/controller/internal/monitoring/runtimehealth/*`
+
+Проверки:
+
+- `cd images/controller && go test ./internal/monitoring/runtimehealth`
+- `cd images/controller && go test -count=3 ./internal/monitoring/runtimehealth`
+- `git diff --check`
+
+Evidence:
+
+- Node-cache runtime Pod/PVC listing now uses one list-options helper.
+- Node-cache runtime metric emission now uses one package-local gauge helper
+  over existing `metricInfo`; metric names, label order and cardinality are
+  unchanged.
+- `collect.go` shrank from 248 to 196 LOC.
+- `cd images/controller && go test ./internal/monitoring/runtimehealth`
+- `cd images/controller && go test -count=3 ./internal/monitoring/runtimehealth`
+- `cd images/controller && go test -race ./internal/monitoring/runtimehealth`
+- `git diff --check`
+
+## 6. Next executable slice
+
+### DMCR GC S3 pagination/helper consolidation
+
+Цель:
+
+- unify package-local S3 pagination / normalized-target handling for object,
+  multipart-upload and multipart-part list paths;
+- keep GC policy, direct-upload cleanup policy, maintenance gate/quorum and
+  sealeds3 resolution unchanged;
+- avoid adding cross-image helpers shared with controller code.
+
+Файлы:
+
+- `images/dmcr/internal/garbagecollection/storage_s3.go`
+- `images/dmcr/internal/garbagecollection/storage_s3_multipart.go`
+- adjacent GC tests only.
+
+Проверки:
+
+- `cd images/dmcr && go test ./internal/garbagecollection`
+- targeted S3 inventory/pagination tests.
+- `git diff --check`
 
 ## 7. Future candidates
 
@@ -600,17 +954,65 @@ history lives in the chat/run logs, not in this active bundle.
   stale-age/protected-prefix policy, multipart gone-upload handling and
   trailing-slash delete scope remain in their original owner paths. Package,
   targeted inventory/report/delete `-count=3`, race and diff checks passed.
+- Slice 14: `modelpack/oci` direct-upload open/resume now shares one
+  package-local session opener for described and raw paths. Raw late-digest
+  replay remains raw-owned through hooks, `listParts()` stays the source of
+  truth, and described direct upload has a persisted-session resume proof.
+  Package, targeted direct-upload/object-source/range `-count=3`, race,
+  `modelpack/oci/...`, diff checks and final reviewer `make verify` passed.
+- Slice 15: `modelpack/oci` now rejects malformed DMCR complete success
+  payloads at the client boundary and rejects stale completed-layer checkpoint
+  reuse when the same target/media key has a different digest, planned size or
+  layer shape. Raw one-pass upload skips completed-layer reuse because its
+  content digest is known only after upload completion. Package, targeted
+  client/checkpoint `-count=3`, race and diff checks passed.
+- Slice 16: `describePublishLayer` now reuses `planPublishLayer` for common
+  identity/source validation and media-type planning, while concrete
+  object-source/archive/raw descriptor paths remain unchanged. Package and
+  targeted publish/layer/object-source tests passed. Final package race,
+  diff check and `make verify` passed.
+- Slice 17: `modelpack/oci` test helper slimming collapsed repeated direct
+  upload API harness and resume assertions while keeping malformed completion,
+  raw late-digest and described resume proofs explicit. Package, targeted
+  `-count=3` and diff checks passed.
+- Slice 18: `publishworker` upload-staging tests now use one package-local
+  full-port fake for stream/range/delete/HTTPClient behavior. Runtime code and
+  ports were not changed. Package, repeated package and race checks passed.
+- Slice 19: `workloaddelivery` tests now share one reconciler/service/client
+  harness while keeping CronJob-specific pod-template coverage local. Package,
+  repeated package and race checks passed.
+- Slice 20: `sourcefetch` HuggingFace direct object-source planning and profile
+  summary share one remote-file metadata helper. Direct-vs-mirror branching and
+  local-materialization deny behavior were not changed. Package, repeated
+  package and race checks passed.
+- Slice 21: `k8s/nodecacheruntime` desired-artifact code now separates
+  node-scoped Pod listing, SharedDirect annotation decode and CSI publish
+  authorization parsing. RBAC, templates, selectors, CSI attributes and byte
+  paths were not changed. Targeted package and race checks passed.
+- Slice 22: `monitoring/runtimehealth` collector now uses one list-options
+  helper and one gauge emission helper over existing metric definitions.
+  Metric names, labels and cardinality were preserved. Package, repeated
+  package and race checks passed.
 
 Final check before handoff:
 
-- `make verify` — pass after slice 13 GC inventory/helper normalization and
-  `modelpack/oci` object-source tar-entry shaping.
+- `make verify` — pass after slice 22 and final checkpoint hardening.
 
 ## 9. Rollback point
 
 Each slice remains rollbackable by its bounded write-set. For the current
-DMCR slices, rollback means reverting `images/dmcr/internal/leaseutil/`, the
-touched `garbagecollection` / `maintenance` lease/request/test files, and the
-package-local `directupload` completion/finalization/test edits. No public
-API, template, RBAC, registry byte path, token format or cleanup request API
-was changed.
+continuation, rollback means reverting the bounded write-set in:
+
+- `images/controller/internal/adapters/modelpack/oci/`
+- `images/controller/internal/dataplane/publishworker/`
+- `images/controller/internal/controllers/workloaddelivery/`
+- `images/controller/internal/adapters/sourcefetch/`
+- `images/controller/internal/adapters/k8s/nodecacheruntime/`
+- `images/controller/internal/monitoring/runtimehealth/`
+- this active bundle plan.
+
+No public API, template, RBAC, registry byte path, token format, cleanup
+request API or runtime entrypoint was changed in slices 14-22. Before the next
+large slimming pass, start a fresh compact continuation bundle or archive this
+one; this bundle is now useful as handoff evidence, not as a small executable
+surface.

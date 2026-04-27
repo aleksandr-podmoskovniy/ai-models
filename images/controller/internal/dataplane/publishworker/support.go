@@ -19,11 +19,11 @@ package publishworker
 import (
 	"context"
 	"fmt"
-	"path"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
+	"github.com/deckhouse/ai-models/controller/internal/dataplane/backendprefix"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
@@ -35,7 +35,6 @@ func buildBackendResult(
 	resolved publicationdata.ResolvedProfile,
 	publishResult modelpackports.PublishResult,
 ) publicationartifact.Result {
-	repositoryMetadataPrefix := backendRepositoryMetadataPrefix(publishResult.Reference)
 	return publicationartifact.Result{
 		Source: source,
 		Artifact: publicationdata.PublishedArtifact{
@@ -55,35 +54,10 @@ func buildBackendResult(
 			},
 			Backend: &cleanuphandle.BackendArtifactHandle{
 				Reference:                publishResult.Reference,
-				RepositoryMetadataPrefix: repositoryMetadataPrefix,
+				RepositoryMetadataPrefix: backendprefix.RepositoryMetadataPrefixFromReference(publishResult.Reference),
 			},
 		},
 	}
-}
-
-func backendRepositoryMetadataPrefix(reference string) string {
-	repository := repositoryPathFromOCIReference(reference)
-	if repository == "" {
-		return ""
-	}
-	return path.Join("dmcr", "docker", "registry", "v2", "repositories", repository)
-}
-
-func repositoryPathFromOCIReference(reference string) string {
-	cleanReference := strings.TrimSpace(strings.SplitN(reference, "@", 2)[0])
-	registry, repository, found := strings.Cut(cleanReference, "/")
-	if !found || strings.TrimSpace(registry) == "" {
-		return ""
-	}
-	repository = strings.TrimSpace(repository)
-	if repository == "" {
-		return ""
-	}
-	repositoryPart := repository[strings.LastIndex(repository, "/")+1:]
-	if strings.Contains(repositoryPart, ":") {
-		repository = repository[:strings.LastIndex(repository, ":")]
-	}
-	return strings.Trim(repository, "/")
 }
 
 func run(ctx context.Context, options Options) (publicationartifact.Result, error) {

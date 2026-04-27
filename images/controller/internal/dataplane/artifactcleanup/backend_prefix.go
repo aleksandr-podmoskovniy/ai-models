@@ -17,10 +17,10 @@ limitations under the License.
 package artifactcleanup
 
 import (
-	"path"
 	"slices"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/dataplane/backendprefix"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
@@ -42,12 +42,7 @@ func backendRepositoryMetadataPrefix(handle cleanuphandle.Handle) string {
 	if value := strings.Trim(strings.TrimSpace(handle.Backend.RepositoryMetadataPrefix), "/"); value != "" {
 		return value
 	}
-
-	repository := repositoryPathFromOCIReference(handle.Backend.Reference)
-	if repository == "" {
-		return ""
-	}
-	return path.Join("dmcr", "docker", "registry", "v2", "repositories", repository)
+	return backendprefix.RepositoryMetadataPrefixFromReference(handle.Backend.Reference)
 }
 
 func backendSourceMirrorPrefix(handle cleanuphandle.Handle) string {
@@ -55,21 +50,4 @@ func backendSourceMirrorPrefix(handle cleanuphandle.Handle) string {
 		return ""
 	}
 	return strings.Trim(strings.TrimSpace(handle.Backend.SourceMirrorPrefix), "/")
-}
-
-func repositoryPathFromOCIReference(reference string) string {
-	cleanReference := strings.TrimSpace(strings.SplitN(reference, "@", 2)[0])
-	registry, repository, found := strings.Cut(cleanReference, "/")
-	if !found || strings.TrimSpace(registry) == "" {
-		return ""
-	}
-	repository = strings.TrimSpace(repository)
-	if repository == "" {
-		return ""
-	}
-	repositoryPart := repository[strings.LastIndex(repository, "/")+1:]
-	if strings.Contains(repositoryPart, ":") {
-		repository = repository[:strings.LastIndex(repository, ":")]
-	}
-	return strings.Trim(repository, "/")
 }

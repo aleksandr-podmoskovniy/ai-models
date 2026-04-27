@@ -152,10 +152,7 @@ func SaveMultipartSecret(secret *corev1.Secret, state uploadsessionruntime.Sessi
 	if err := setMultipartState(secret, state); err != nil {
 		return err
 	}
-	ensureData(secret)
-	secret.Data[phaseKey] = []byte(string(PhaseUploading))
-	delete(secret.Data, failureMessageKey)
-	delete(secret.Data, stagedHandleKey)
+	setRuntimePhase(secret, PhaseUploading, true)
 	return nil
 }
 
@@ -252,7 +249,7 @@ func MarkUploadedSecret(secret *corev1.Secret, handle cleanuphandle.Handle) erro
 		return err
 	}
 	ensureData(secret)
-	secret.Data[phaseKey] = []byte(string(PhaseUploaded))
+	setPhase(secret, PhaseUploaded)
 	secret.Data[stagedHandleKey] = []byte(encoded)
 	delete(secret.Data, failureMessageKey)
 	return nil
@@ -271,9 +268,7 @@ func MarkPublishingSecret(secret *corev1.Secret) error {
 		return nil
 	default:
 	}
-	ensureData(secret)
-	secret.Data[phaseKey] = []byte(string(PhasePublishing))
-	delete(secret.Data, failureMessageKey)
+	setRuntimePhase(secret, PhasePublishing, false)
 	return nil
 }
 
@@ -290,10 +285,7 @@ func MarkCompletedSecret(secret *corev1.Secret) error {
 		return nil
 	default:
 	}
-	ensureData(secret)
-	secret.Data[phaseKey] = []byte(string(PhaseCompleted))
-	delete(secret.Data, failureMessageKey)
-	delete(secret.Data, stagedHandleKey)
+	setRuntimePhase(secret, PhaseCompleted, true)
 	return nil
 }
 

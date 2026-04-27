@@ -83,6 +83,28 @@ func TestRunPrunesBackendRepositoryMetadataPrefix(t *testing.T) {
 	}
 }
 
+func TestRunPrunesDerivedBackendRepositoryMetadataPrefix(t *testing.T) {
+	t.Parallel()
+
+	remover := &fakeRemover{}
+	prefixRemover := &fakePrefixRemover{}
+	err := Run(context.Background(), Options{
+		HandleJSON:          `{"kind":"BackendArtifact","artifact":{"kind":"OCI","uri":"registry.example.com/model@sha256:deadbeef"},"backend":{"reference":"registry.example.com/ai-models/catalog/namespaced/team-a/model/1111@sha256:deadbeef"}}`,
+		Remover:             remover,
+		PrefixRemover:       prefixRemover,
+		ObjectStorageBucket: "artifacts",
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got, want := len(prefixRemover.calls), 1; got != want {
+		t.Fatalf("unexpected prefix remover call count %d", got)
+	}
+	if got, want := prefixRemover.calls[0].Prefix, "dmcr/docker/registry/v2/repositories/ai-models/catalog/namespaced/team-a/model/1111"; got != want {
+		t.Fatalf("unexpected derived metadata prefix %q", got)
+	}
+}
+
 func TestRunPrunesSourceMirrorPrefix(t *testing.T) {
 	t.Parallel()
 

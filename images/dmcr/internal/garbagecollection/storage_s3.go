@@ -117,19 +117,8 @@ func (s *s3PrefixStore) ForEachObjectInfo(ctx context.Context, prefix string, vi
 		return errors.New("prefix store must not be nil")
 	}
 
-	listPrefix := normalizedListPrefix(prefix, false)
-	var continuationToken *string
-	for {
-		output, err := s.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket:            aws.String(s.bucket),
-			Prefix:            aws.String(listPrefix),
-			ContinuationToken: continuationToken,
-		})
-		if err != nil {
-			return err
-		}
-
-		for _, object := range output.Contents {
+	return s.forEachObjectPage(ctx, traversalListPrefix(prefix), func(objects []types.Object) error {
+		for _, object := range objects {
 			key := cleanStoragePath(aws.ToString(object.Key))
 			if key == "" {
 				continue
@@ -139,12 +128,8 @@ func (s *s3PrefixStore) ForEachObjectInfo(ctx context.Context, prefix string, vi
 				LastModified: aws.ToTime(object.LastModified).UTC(),
 			})
 		}
-
-		if !aws.ToBool(output.IsTruncated) {
-			return nil
-		}
-		continuationToken = output.NextContinuationToken
-	}
+		return nil
+	})
 }
 
 func (s *s3PrefixStore) GetObject(ctx context.Context, key string) ([]byte, error) {
@@ -174,24 +159,14 @@ func (s *s3PrefixStore) DeletePrefix(ctx context.Context, prefix string) error {
 		return errors.New("prefix store must not be nil")
 	}
 
-	cleanPrefix := normalizedListPrefix(prefix, true)
+	cleanPrefix := destructiveListPrefix(prefix)
 	if strings.Trim(cleanPrefix, "/") == "" {
 		return errors.New("delete prefix must not be empty")
 	}
 
-	var continuationToken *string
-	for {
-		listOutput, err := s.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
-			Bucket:            aws.String(s.bucket),
-			Prefix:            aws.String(cleanPrefix),
-			ContinuationToken: continuationToken,
-		})
-		if err != nil {
-			return err
-		}
-
-		identifiers := make([]types.ObjectIdentifier, 0, len(listOutput.Contents))
-		for _, object := range listOutput.Contents {
+	return s.forEachObjectPage(ctx, cleanPrefix, func(objects []types.Object) error {
+		identifiers := make([]types.ObjectIdentifier, 0, len(objects))
+		for _, object := range objects {
 			key := cleanStoragePath(aws.ToString(object.Key))
 			if key == "" {
 				continue
@@ -211,11 +186,31 @@ func (s *s3PrefixStore) DeletePrefix(ctx context.Context, prefix string) error {
 				return err
 			}
 		}
+		return nil
+	})
+}
 
-		if !aws.ToBool(listOutput.IsTruncated) {
+func (s *s3PrefixStore) forEachObjectPage(ctx context.Context, listPrefix string, visit func([]types.Object) error) error {
+	var continuationToken *string
+	for {
+		output, err := s.client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(s.bucket),
+			Prefix:            aws.String(listPrefix),
+			ContinuationToken: continuationToken,
+		})
+		if err != nil {
+			return err
+		}
+		if err := visit(output.Contents); err != nil {
+			return err
+		}
+		if !aws.ToBool(output.IsTruncated) {
 			return nil
 		}
-		continuationToken = listOutput.NextContinuationToken
+		if err := requireNextStringCursor("list S3 objects", continuationToken, output.NextContinuationToken); err != nil {
+			return err
+		}
+		continuationToken = output.NextContinuationToken
 	}
 }
 
@@ -252,12 +247,25 @@ func deletePrefixErrors(errors []types.Error) error {
 	return fmt.Errorf("delete prefix returned object errors: %s", strings.Join(messages, ", "))
 }
 
-func normalizedListPrefix(prefix string, preserveTrailingSlash bool) string {
+func traversalListPrefix(prefix string) string {
 	cleanPrefix := strings.TrimLeft(strings.TrimSpace(prefix), "/")
-	if !preserveTrailingSlash {
-		cleanPrefix = strings.TrimRight(cleanPrefix, "/")
+	return strings.TrimRight(cleanPrefix, "/")
+}
+
+func destructiveListPrefix(prefix string) string {
+	return strings.TrimLeft(strings.TrimSpace(prefix), "/")
+}
+
+func requireNextStringCursor(operation string, current, next *string) error {
+	nextValue := strings.TrimSpace(aws.ToString(next))
+	if nextValue == "" {
+		return fmt.Errorf("%s returned truncated page without next cursor", operation)
 	}
-	return cleanPrefix
+	currentValue := strings.TrimSpace(aws.ToString(current))
+	if currentValue != "" && currentValue == nextValue {
+		return fmt.Errorf("%s returned truncated page with repeated cursor %q", operation, nextValue)
+	}
+	return nil
 }
 
 func newS3HTTPClient(config S3StorageConfig) (*awshttp.BuildableClient, error) {

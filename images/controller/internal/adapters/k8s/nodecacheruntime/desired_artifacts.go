@@ -72,16 +72,27 @@ func (c *DesiredArtifactsClient) LoadNodeDesiredArtifacts(ctx context.Context, n
 		return nil, errors.New("node cache runtime node name must not be empty")
 	}
 
+	pods, err := c.scheduledPods(ctx, nodeName)
+	if err != nil {
+		return nil, err
+	}
+	return desiredArtifactsFromScheduledPods(pods, nodeName)
+}
+
+func (c *DesiredArtifactsClient) scheduledPods(ctx context.Context, nodeName string) ([]corev1.Pod, error) {
 	podList, err := c.client.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
 		FieldSelector: fields.OneTermEqualSelector(podNodeNameFieldSelector, nodeName).String(),
 	})
 	if err != nil {
 		return nil, err
 	}
+	return podList.Items, nil
+}
 
-	artifacts := make([]nodecache.DesiredArtifact, 0, len(podList.Items))
-	for index := range podList.Items {
-		pod := &podList.Items[index]
+func desiredArtifactsFromScheduledPods(pods []corev1.Pod, nodeName string) ([]nodecache.DesiredArtifact, error) {
+	artifacts := make([]nodecache.DesiredArtifact, 0, len(pods))
+	for index := range pods {
+		pod := &pods[index]
 		if strings.TrimSpace(pod.Spec.NodeName) != nodeName || !IsActiveScheduledPod(pod) {
 			continue
 		}
@@ -113,22 +124,44 @@ func (c *DesiredArtifactsClient) AllowCSIPublish(ctx context.Context, nodeName s
 }
 
 func (c *DesiredArtifactsClient) csiPublishPod(ctx context.Context, nodeName string, attributes map[string]string, digest string) (*corev1.Pod, bool, error) {
-	nodeName = strings.TrimSpace(nodeName)
-	podName := strings.TrimSpace(attributes[csiPodNameAttribute])
-	podNamespace := strings.TrimSpace(attributes[csiPodNamespaceAttribute])
-	podUID := strings.TrimSpace(attributes[csiPodUIDAttribute])
-	if nodeName == "" || podName == "" || podNamespace == "" || podUID == "" || strings.TrimSpace(digest) == "" {
+	request, ok := csiPublishRequestFromAttributes(nodeName, attributes, digest)
+	if !ok {
 		return nil, false, nil
 	}
+	return c.loadActiveCSIPublishPod(ctx, request)
+}
 
-	pod, err := c.client.CoreV1().Pods(podNamespace).Get(ctx, podName, metav1.GetOptions{})
+type csiPublishRequest struct {
+	NodeName     string
+	PodName      string
+	PodNamespace string
+	PodUID       string
+	Digest       string
+}
+
+func csiPublishRequestFromAttributes(nodeName string, attributes map[string]string, digest string) (csiPublishRequest, bool) {
+	request := csiPublishRequest{
+		NodeName:     strings.TrimSpace(nodeName),
+		PodName:      strings.TrimSpace(attributes[csiPodNameAttribute]),
+		PodNamespace: strings.TrimSpace(attributes[csiPodNamespaceAttribute]),
+		PodUID:       strings.TrimSpace(attributes[csiPodUIDAttribute]),
+		Digest:       strings.TrimSpace(digest),
+	}
+	if request.NodeName == "" || request.PodName == "" || request.PodNamespace == "" || request.PodUID == "" || request.Digest == "" {
+		return csiPublishRequest{}, false
+	}
+	return request, true
+}
+
+func (c *DesiredArtifactsClient) loadActiveCSIPublishPod(ctx context.Context, request csiPublishRequest) (*corev1.Pod, bool, error) {
+	pod, err := c.client.CoreV1().Pods(request.PodNamespace).Get(ctx, request.PodName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil, false, nil
 	}
 	if err != nil {
 		return nil, false, err
 	}
-	if string(pod.UID) != podUID || strings.TrimSpace(pod.Spec.NodeName) != nodeName || !IsActiveScheduledPod(pod) {
+	if string(pod.UID) != request.PodUID || strings.TrimSpace(pod.Spec.NodeName) != request.NodeName || !IsActiveScheduledPod(pod) {
 		return nil, false, nil
 	}
 	return pod, true, nil

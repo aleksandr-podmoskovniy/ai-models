@@ -33,8 +33,13 @@ Read-only subagents перед implementation:
 - `publication-runtime-chaos-resilience` — archived to
   `plans/archive/2026/publication-runtime-chaos-resilience`; this metadata
   bundle no longer treats it as active work.
-- `codebase-slimming-pass` — keep. Отдельный executable workstream для
-  package-boundary slimming; metadata changes must not absorb those slices.
+- `codebase-slimming-pass` — archived to
+  `plans/archive/2026/codebase-slimming-pass`; metadata changes must not absorb
+  follow-up slimming slices.
+- `dmcr-gc-s3-consolidation` — archived to
+  `plans/archive/2026/dmcr-gc-s3-consolidation`.
+- `controller-backend-prefix-consolidation` — archived to
+  `plans/archive/2026/controller-backend-prefix-consolidation`.
 - `model-metadata-contract` — current. Новый workstream про metadata contract и
   будущий inference consumer semantics.
 

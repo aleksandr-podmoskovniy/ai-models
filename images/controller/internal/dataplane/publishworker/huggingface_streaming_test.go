@@ -20,19 +20,16 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
-	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 )
 
 func TestBuildHuggingFacePublishLayersUsesSourceMirrorObjectSource(t *testing.T) {
 	t.Parallel()
 
-	staging := &fakeMirrorReadStaging{
+	staging := &fakeUploadStaging{
 		objects: map[string][]byte{
 			"raw/1111-2222/source-url/.mirror/huggingface/owner/model/deadbeef/files/config.json":       []byte(`{"arch":"tiny"}`),
 			"raw/1111-2222/source-url/.mirror/huggingface/owner/model/deadbeef/files/model.safetensors": []byte("weights"),
@@ -142,71 +139,6 @@ func TestBuildHuggingFacePublishLayersUsesDirectRemoteObjectSource(t *testing.T)
 	if got, want := layers[1].TargetPath, "model/model.safetensors"; got != want {
 		t.Fatalf("unexpected second target path %q", got)
 	}
-}
-
-type fakeMirrorReadStaging struct {
-	objects map[string][]byte
-}
-
-func (f *fakeMirrorReadStaging) StartMultipartUpload(context.Context, uploadstagingports.StartMultipartUploadInput) (uploadstagingports.StartMultipartUploadOutput, error) {
-	return uploadstagingports.StartMultipartUploadOutput{}, nil
-}
-
-func (f *fakeMirrorReadStaging) PresignUploadPart(context.Context, uploadstagingports.PresignUploadPartInput) (uploadstagingports.PresignUploadPartOutput, error) {
-	return uploadstagingports.PresignUploadPartOutput{}, nil
-}
-
-func (f *fakeMirrorReadStaging) ListMultipartUploadParts(context.Context, uploadstagingports.ListMultipartUploadPartsInput) ([]uploadstagingports.UploadedPart, error) {
-	return nil, nil
-}
-
-func (f *fakeMirrorReadStaging) CompleteMultipartUpload(context.Context, uploadstagingports.CompleteMultipartUploadInput) error {
-	return nil
-}
-
-func (f *fakeMirrorReadStaging) AbortMultipartUpload(context.Context, uploadstagingports.AbortMultipartUploadInput) error {
-	return nil
-}
-
-func (f *fakeMirrorReadStaging) Stat(_ context.Context, input uploadstagingports.StatInput) (uploadstagingports.ObjectStat, error) {
-	payload, found := f.objects[input.Key]
-	if !found {
-		return uploadstagingports.ObjectStat{}, os.ErrNotExist
-	}
-	return uploadstagingports.ObjectStat{SizeBytes: int64(len(payload)), ETag: `"etag-complete"`}, nil
-}
-
-func (f *fakeMirrorReadStaging) Download(context.Context, uploadstagingports.DownloadInput) error {
-	return nil
-}
-
-func (f *fakeMirrorReadStaging) Upload(context.Context, uploadstagingports.UploadInput) error {
-	return nil
-}
-
-func (f *fakeMirrorReadStaging) Delete(context.Context, uploadstagingports.DeleteInput) error {
-	return nil
-}
-
-func (f *fakeMirrorReadStaging) DeletePrefix(_ context.Context, input uploadstagingports.DeletePrefixInput) error {
-	for key := range f.objects {
-		if strings.HasPrefix(key, input.Prefix) {
-			delete(f.objects, key)
-		}
-	}
-	return nil
-}
-
-func (f *fakeMirrorReadStaging) OpenRead(_ context.Context, input uploadstagingports.OpenReadInput) (uploadstagingports.OpenReadOutput, error) {
-	payload, found := f.objects[input.Key]
-	if !found {
-		return uploadstagingports.OpenReadOutput{}, os.ErrNotExist
-	}
-	return uploadstagingports.OpenReadOutput{
-		Body:      io.NopCloser(bytes.NewReader(payload)),
-		SizeBytes: int64(len(payload)),
-		ETag:      `"etag-complete"`,
-	}, nil
 }
 
 type fakeRemoteReadSource struct{}

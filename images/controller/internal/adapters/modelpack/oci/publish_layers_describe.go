@@ -131,33 +131,15 @@ func plannedPublishLayerCompression(layer modelpackports.PublishLayer) modelpack
 }
 
 func describePublishLayer(ctx context.Context, layer modelpackports.PublishLayer) (publishLayerDescriptor, error) {
-	if strings.TrimSpace(layer.TargetPath) == "" {
-		return publishLayerDescriptor{}, errors.New("target path must not be empty")
-	}
-	if err := validatePublishLayerBase(layer.Base); err != nil {
-		return publishLayerDescriptor{}, err
-	}
-	if err := validatePublishLayerFormat(layer.Format); err != nil {
-		return publishLayerDescriptor{}, err
-	}
-	if err := validatePublishLayerCompression(layer.Compression); err != nil {
-		return publishLayerDescriptor{}, err
-	}
-	mediaType, err := buildLayerMediaType(layer.Base, layer.Format, layer.Compression)
+	plan, err := planPublishLayer(layer)
 	if err != nil {
 		return publishLayerDescriptor{}, err
 	}
-	if strings.Contains(strings.TrimSpace(layer.TargetPath), `\`) {
-		return publishLayerDescriptor{}, fmt.Errorf("target path %q must use slash separators", layer.TargetPath)
-	}
 	if layer.ObjectSource != nil {
-		return describeObjectSourcePublishLayer(ctx, layer, mediaType)
+		return describeObjectSourcePublishLayer(ctx, layer, plan.MediaType)
 	}
 	if layer.Archive != nil {
-		return describeArchiveSourcePublishLayer(ctx, layer, mediaType)
-	}
-	if strings.TrimSpace(layer.SourcePath) == "" {
-		return publishLayerDescriptor{}, errors.New("source path must not be empty")
+		return describeArchiveSourcePublishLayer(ctx, layer, plan.MediaType)
 	}
 
 	info, err := os.Stat(layer.SourcePath)
@@ -165,9 +147,9 @@ func describePublishLayer(ctx context.Context, layer modelpackports.PublishLayer
 		return publishLayerDescriptor{}, err
 	}
 	if layer.Format == modelpackports.LayerFormatRaw {
-		return describeRawPublishLayer(layer, info, mediaType)
+		return describeRawPublishLayer(layer, info, plan.MediaType)
 	}
-	return describeArchivePublishLayer(layer, info, mediaType)
+	return describeArchivePublishLayer(layer, info, plan.MediaType)
 }
 
 func describeRawPublishLayer(

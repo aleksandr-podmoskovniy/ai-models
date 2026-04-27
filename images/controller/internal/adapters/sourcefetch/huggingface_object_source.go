@@ -37,23 +37,22 @@ func buildHuggingFaceObjectSource(
 		token:      options.HFToken,
 	}
 	for _, filePath := range selectedFiles {
-		cleanPath, err := cleanRemoteRelativePath(filePath)
-		if err != nil {
-			return nil, err
-		}
-		sourceURL, err := (&huggingFaceHTTPSnapshotDownloader{BaseURL: huggingFaceBaseURL}).resolveURL(repoID, resolvedRevision, cleanPath)
-		if err != nil {
-			return nil, err
-		}
-		sizeBytes, etag, err := headHuggingFaceRemoteObject(ctx, sourceURL, options.HFToken)
+		metadata, err := describeHuggingFaceRemoteFile(
+			ctx,
+			repoID,
+			resolvedRevision,
+			options.HFToken,
+			filePath,
+			"huggingface object-source",
+		)
 		if err != nil {
 			return nil, err
 		}
 		files = append(files, RemoteObjectFile{
-			SourcePath: sourceURL,
-			TargetPath: cleanPath,
-			SizeBytes:  sizeBytes,
-			ETag:       etag,
+			SourcePath: metadata.SourceURL,
+			TargetPath: metadata.TargetPath,
+			SizeBytes:  metadata.SizeBytes,
+			ETag:       metadata.ETag,
 		})
 	}
 	return &RemoteObjectSource{
@@ -62,20 +61,47 @@ func buildHuggingFaceObjectSource(
 	}, nil
 }
 
-func headHuggingFaceRemoteObject(ctx context.Context, sourceURL string, token string) (int64, string, error) {
+type huggingFaceRemoteFileMetadata struct {
+	SourceURL  string
+	TargetPath string
+	SizeBytes  int64
+	ETag       string
+}
+
+func describeHuggingFaceRemoteFile(
+	ctx context.Context,
+	repoID string,
+	revision string,
+	token string,
+	relativePath string,
+	requestLabel string,
+) (huggingFaceRemoteFileMetadata, error) {
+	cleanPath, err := cleanRemoteRelativePath(relativePath)
+	if err != nil {
+		return huggingFaceRemoteFileMetadata{}, err
+	}
+	sourceURL, err := (&huggingFaceHTTPSnapshotDownloader{BaseURL: huggingFaceBaseURL}).resolveURL(repoID, revision, cleanPath)
+	if err != nil {
+		return huggingFaceRemoteFileMetadata{}, err
+	}
 	response, err := doHEAD(ctx, http.DefaultClient, sourceURL, bearerAuthHeaders(token))
 	if err != nil {
-		return 0, "", err
+		return huggingFaceRemoteFileMetadata{}, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return 0, "", unexpectedStatusError(response, "huggingface object-source HEAD request")
+		return huggingFaceRemoteFileMetadata{}, unexpectedStatusError(response, requestLabel+" HEAD request")
 	}
 	sizeBytes, err := responseContentLength(response)
 	if err != nil {
-		return 0, "", err
+		return huggingFaceRemoteFileMetadata{}, fmt.Errorf("%s HEAD response for %q: %w", requestLabel, cleanPath, err)
 	}
-	return sizeBytes, strings.TrimSpace(response.Header.Get("ETag")), nil
+	return huggingFaceRemoteFileMetadata{
+		SourceURL:  sourceURL,
+		TargetPath: cleanPath,
+		SizeBytes:  sizeBytes,
+		ETag:       strings.TrimSpace(response.Header.Get("ETag")),
+	}, nil
 }
 
 func responseContentLength(response *http.Response) (int64, error) {

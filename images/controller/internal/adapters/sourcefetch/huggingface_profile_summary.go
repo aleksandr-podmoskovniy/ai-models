@@ -19,10 +19,8 @@ package sourcefetch
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -107,17 +105,24 @@ func fetchHuggingFaceGGUFProfileSummary(
 		return nil, errors.New("huggingface gguf summary requires selected .gguf file")
 	}
 
-	modelSizeBytes, err := headHuggingFaceFileSize(ctx, repoID, resolvedRevision, options.HFToken, modelFileName)
+	metadata, err := describeHuggingFaceRemoteFile(
+		ctx,
+		repoID,
+		resolvedRevision,
+		options.HFToken,
+		modelFileName,
+		"huggingface profile summary",
+	)
 	if err != nil {
 		return nil, err
 	}
-	if modelSizeBytes <= 0 {
+	if metadata.SizeBytes <= 0 {
 		return nil, errors.New("huggingface gguf summary requires positive remote model bytes")
 	}
 
 	return &RemoteProfileSummary{
 		ModelFileName:  modelFileName,
-		ModelSizeBytes: modelSizeBytes,
+		ModelSizeBytes: metadata.SizeBytes,
 	}, nil
 }
 
@@ -159,46 +164,18 @@ func sumHuggingFaceWeightStats(
 		if !strings.HasSuffix(strings.ToLower(cleanPath), ".safetensors") {
 			continue
 		}
-		sizeBytes, err := headHuggingFaceFileSize(ctx, repoID, revision, token, cleanPath)
+		metadata, err := describeHuggingFaceRemoteFile(
+			ctx,
+			repoID,
+			revision,
+			token,
+			cleanPath,
+			"huggingface profile summary",
+		)
 		if err != nil {
 			return WeightStats{}, err
 		}
-		stats.add(sizeBytes)
+		stats.add(metadata.SizeBytes)
 	}
 	return stats, nil
-}
-
-func headHuggingFaceFileSize(
-	ctx context.Context,
-	repoID string,
-	revision string,
-	token string,
-	relativePath string,
-) (int64, error) {
-	sourceURL, err := (&huggingFaceHTTPSnapshotDownloader{BaseURL: huggingFaceBaseURL}).resolveURL(repoID, revision, relativePath)
-	if err != nil {
-		return 0, err
-	}
-	response, err := doHEAD(ctx, http.DefaultClient, sourceURL, bearerAuthHeaders(token))
-	if err != nil {
-		return 0, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return 0, unexpectedStatusError(response, "huggingface profile summary HEAD request")
-	}
-
-	contentLength := response.ContentLength
-	if contentLength >= 0 {
-		return contentLength, nil
-	}
-	rawLength := strings.TrimSpace(response.Header.Get("Content-Length"))
-	if rawLength == "" {
-		return 0, fmt.Errorf("huggingface profile summary HEAD response for %q missing Content-Length", relativePath)
-	}
-	sizeBytes, err := strconv.ParseInt(rawLength, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("huggingface profile summary HEAD response for %q has invalid Content-Length %q: %w", relativePath, rawLength, err)
-	}
-	return sizeBytes, nil
 }

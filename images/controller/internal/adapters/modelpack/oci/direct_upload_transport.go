@@ -35,6 +35,85 @@ type describedDirectUploadState struct {
 	partNumber    int
 }
 
+type directUploadOpenSessionHooks struct {
+	prepareNew    func(*modelpackports.DirectUploadCurrentLayer) error
+	prepareResume func(context.Context, *modelpackports.DirectUploadCurrentLayer, int64) error
+}
+
+type directUploadOpenSessionResult struct {
+	session       directUploadSession
+	uploadedParts []uploadedDirectPart
+	current       modelpackports.DirectUploadCurrentLayer
+	offset        int64
+	partNumber    int
+}
+
+func openDirectUploadSession(
+	ctx context.Context,
+	helperClient *directUploadClient,
+	repository string,
+	plan publishLayerDescriptor,
+	totalSize int64,
+	checkpoint *directUploadCheckpoint,
+	hooks directUploadOpenSessionHooks,
+) (directUploadOpenSessionResult, error) {
+	if current := checkpoint.currentLayer(plan); current != nil {
+		if current.TotalSizeBytes != totalSize {
+			return directUploadOpenSessionResult{}, fmt.Errorf("persisted direct upload size %d does not match layer size %d", current.TotalSizeBytes, totalSize)
+		}
+		uploadedParts, err := helperClient.listParts(ctx, current.SessionToken)
+		switch {
+		case err == nil:
+			offset, partNumber, err := nextDirectUploadPosition(uploadedParts)
+			if err != nil {
+				return directUploadOpenSessionResult{}, err
+			}
+			if offset < current.UploadedSizeBytes {
+				return directUploadOpenSessionResult{}, fmt.Errorf("remote direct upload offset %d is behind persisted offset %d", offset, current.UploadedSizeBytes)
+			}
+			if hooks.prepareResume != nil {
+				if err := hooks.prepareResume(ctx, current, offset); err != nil {
+					return directUploadOpenSessionResult{}, err
+				}
+			}
+			current.UploadedSizeBytes = offset
+			if err := checkpoint.saveRunningLayer(ctx, *current, modelpackports.DirectUploadStateStageResumed); err != nil {
+				return directUploadOpenSessionResult{}, err
+			}
+			return directUploadOpenSessionResult{
+				session:       directUploadSession{SessionToken: current.SessionToken, PartSizeBytes: current.PartSizeBytes},
+				uploadedParts: uploadedParts,
+				current:       *current,
+				offset:        offset,
+				partNumber:    partNumber,
+			}, nil
+		case !isDirectUploadStatus(err, http.StatusNotFound):
+			return directUploadOpenSessionResult{}, err
+		}
+	}
+
+	session, err := helperClient.start(ctx, repository)
+	if err != nil {
+		return directUploadOpenSessionResult{}, err
+	}
+	current := modelpackports.DirectUploadCurrentLayer{
+		Key:               directUploadLayerKey(plan),
+		SessionToken:      session.SessionToken,
+		PartSizeBytes:     session.PartSizeBytes,
+		TotalSizeBytes:    totalSize,
+		UploadedSizeBytes: 0,
+	}
+	if hooks.prepareNew != nil {
+		if err := hooks.prepareNew(&current); err != nil {
+			return directUploadOpenSessionResult{}, err
+		}
+	}
+	if err := checkpoint.saveRunningLayer(ctx, current, modelpackports.DirectUploadStateStageStarting); err != nil {
+		return directUploadOpenSessionResult{}, err
+	}
+	return directUploadOpenSessionResult{session: session, current: current, offset: 0, partNumber: 1}, nil
+}
+
 func pushDescribedLayerDirectToBackingStorage(
 	ctx context.Context,
 	_ *http.Client,
@@ -87,26 +166,28 @@ func prepareDescribedDirectUpload(
 		return nil, describedDirectUploadState{}, err
 	}
 
-	session, uploadedParts, current, offset, partNumber, err := openDescribedDirectUploadSession(
+	sessionResult, err := openDirectUploadSession(
 		ctx,
 		helperClient,
 		parsedReference.Repository,
 		descriptor,
+		descriptor.Size,
 		checkpoint,
+		directUploadOpenSessionHooks{},
 	)
 	if err != nil {
 		return nil, describedDirectUploadState{}, err
 	}
-	if session.PartSizeBytes <= 0 {
+	if sessionResult.session.PartSizeBytes <= 0 {
 		return nil, describedDirectUploadState{}, errors.New("DMCR direct upload session returned non-positive part size")
 	}
 
 	return helperClient, describedDirectUploadState{
-		session:       session,
-		uploadedParts: uploadedParts,
-		current:       current,
-		offset:        offset,
-		partNumber:    partNumber,
+		session:       sessionResult.session,
+		uploadedParts: sessionResult.uploadedParts,
+		current:       sessionResult.current,
+		offset:        sessionResult.offset,
+		partNumber:    sessionResult.partNumber,
 	}, nil
 }
 

@@ -98,68 +98,51 @@ func openRawDirectUploadSession(
 	int,
 	error,
 ) {
-	if current := checkpoint.currentLayer(plan); current != nil {
-		if current.TotalSizeBytes != totalSize {
-			return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, nil, 0, 0, fmt.Errorf("persisted direct upload size %d does not match raw layer size %d", current.TotalSizeBytes, totalSize)
-		}
-		hasher, err := restoreDirectUploadDigestState(current.DigestState)
-		if err != nil {
-			return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, nil, 0, 0, err
-		}
-		uploadedParts, err := helperClient.listParts(ctx, current.SessionToken)
-		if err != nil {
-			if !isDirectUploadStatus(err, http.StatusNotFound) {
-				return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, nil, 0, 0, err
-			}
-		} else {
-			offset, partNumber, err := nextDirectUploadPosition(uploadedParts)
-			if err != nil {
-				return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, nil, 0, 0, err
-			}
-			if offset < current.UploadedSizeBytes {
-				return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, nil, 0, 0, fmt.Errorf("remote direct upload offset %d is behind persisted offset %d", offset, current.UploadedSizeBytes)
-			}
-			if offset > current.UploadedSizeBytes {
-				if err := hashPublishLayerRange(ctx, hasher, layer, current.UploadedSizeBytes, offset-current.UploadedSizeBytes); err != nil {
-					return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, nil, 0, 0, err
+	var nextHasher hash.Hash
+	result, err := openDirectUploadSession(
+		ctx,
+		helperClient,
+		repository,
+		plan,
+		totalSize,
+		checkpoint,
+		directUploadOpenSessionHooks{
+			prepareNew: func(current *modelpackports.DirectUploadCurrentLayer) error {
+				hasher := sha256.New()
+				digestState, err := marshalDirectUploadDigestState(hasher)
+				if err != nil {
+					return err
 				}
-			}
-			current.UploadedSizeBytes = offset
-			current.DigestState, err = marshalDirectUploadDigestState(hasher)
-			if err != nil {
-				return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, nil, 0, 0, err
-			}
-			if err := checkpoint.saveRunningLayer(ctx, *current, modelpackports.DirectUploadStateStageResumed); err != nil {
-				return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, nil, 0, 0, err
-			}
-			return directUploadSession{
-				SessionToken:  current.SessionToken,
-				PartSizeBytes: current.PartSizeBytes,
-			}, uploadedParts, *current, hasher, offset, partNumber, nil
-		}
-	}
-
-	session, err := helperClient.start(ctx, repository)
+				current.DigestState = digestState
+				nextHasher = hasher
+				return nil
+			},
+			prepareResume: func(ctx context.Context, current *modelpackports.DirectUploadCurrentLayer, offset int64) error {
+				hasher, err := restoreDirectUploadDigestState(current.DigestState)
+				if err != nil {
+					return err
+				}
+				if offset > current.UploadedSizeBytes {
+					if err := hashPublishLayerRange(ctx, hasher, layer, current.UploadedSizeBytes, offset-current.UploadedSizeBytes); err != nil {
+						return err
+					}
+				}
+				current.DigestState, err = marshalDirectUploadDigestState(hasher)
+				if err != nil {
+					return err
+				}
+				nextHasher = hasher
+				return nil
+			},
+		},
+	)
 	if err != nil {
 		return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, nil, 0, 0, err
 	}
-	hasher := sha256.New()
-	digestState, err := marshalDirectUploadDigestState(hasher)
-	if err != nil {
-		return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, nil, 0, 0, err
+	if nextHasher == nil {
+		nextHasher = sha256.New()
 	}
-	current := modelpackports.DirectUploadCurrentLayer{
-		Key:               directUploadLayerKey(plan),
-		SessionToken:      session.SessionToken,
-		PartSizeBytes:     session.PartSizeBytes,
-		TotalSizeBytes:    totalSize,
-		UploadedSizeBytes: 0,
-		DigestState:       digestState,
-	}
-	if err := checkpoint.saveRunningLayer(ctx, current, modelpackports.DirectUploadStateStageStarting); err != nil {
-		return directUploadSession{}, nil, modelpackports.DirectUploadCurrentLayer{}, nil, 0, 0, err
-	}
-	return session, nil, current, hasher, 0, 1, nil
+	return result.session, result.uploadedParts, result.current, nextHasher, result.offset, result.partNumber, nil
 }
 
 func uploadOrRecoverRawDirectBlobPart(

@@ -32,11 +32,7 @@ var managedNodeCacheRuntimeLabels = client.MatchingLabels{
 
 func (c *Collector) listNodeCacheRuntimePods(ctx context.Context) ([]corev1.Pod, error) {
 	var list corev1.PodList
-	options := []client.ListOption{managedNodeCacheRuntimeLabels, client.UnsafeDisableDeepCopy}
-	if strings.TrimSpace(c.runtimeNamespace) != "" {
-		options = append(options, client.InNamespace(c.runtimeNamespace))
-	}
-	if err := c.reader.List(ctx, &list, options...); err != nil {
+	if err := c.reader.List(ctx, &list, c.nodeCacheRuntimeListOptions()...); err != nil {
 		return nil, err
 	}
 	return list.Items, nil
@@ -44,14 +40,18 @@ func (c *Collector) listNodeCacheRuntimePods(ctx context.Context) ([]corev1.Pod,
 
 func (c *Collector) listNodeCacheRuntimePVCs(ctx context.Context) ([]corev1.PersistentVolumeClaim, error) {
 	var list corev1.PersistentVolumeClaimList
+	if err := c.reader.List(ctx, &list, c.nodeCacheRuntimeListOptions()...); err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func (c *Collector) nodeCacheRuntimeListOptions() []client.ListOption {
 	options := []client.ListOption{managedNodeCacheRuntimeLabels, client.UnsafeDisableDeepCopy}
 	if strings.TrimSpace(c.runtimeNamespace) != "" {
 		options = append(options, client.InNamespace(c.runtimeNamespace))
 	}
-	if err := c.reader.List(ctx, &list, options...); err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return options
 }
 
 func (c *Collector) listSelectedNodes(ctx context.Context) ([]corev1.Node, error) {
@@ -76,23 +76,8 @@ func reportNodeCacheRuntimePod(ch chan<- prometheus.Metric, pod *corev1.Pod) {
 	nodeName := podNodeName(pod)
 	phase := podPhase(pod)
 
-	ch <- prometheus.MustNewConstMetric(
-		nodeCacheRuntimePodPhaseMetric.desc,
-		prometheus.GaugeValue,
-		1,
-		namespace,
-		name,
-		nodeName,
-		phase,
-	)
-	ch <- prometheus.MustNewConstMetric(
-		nodeCacheRuntimePodReadyMetric.desc,
-		prometheus.GaugeValue,
-		boolToFloat64(podReady(pod)),
-		namespace,
-		name,
-		nodeName,
-	)
+	reportGauge(ch, nodeCacheRuntimePodPhaseMetric, 1, namespace, name, nodeName, phase)
+	reportGauge(ch, nodeCacheRuntimePodReadyMetric, boolToFloat64(podReady(pod)), namespace, name, nodeName)
 }
 
 func reportNodeCacheRuntimePVC(ch chan<- prometheus.Metric, pvc *corev1.PersistentVolumeClaim) {
@@ -106,24 +91,8 @@ func reportNodeCacheRuntimePVC(ch chan<- prometheus.Metric, pvc *corev1.Persiste
 	storageClassName := pvcStorageClassName(pvc)
 	requestedBytes := pvcRequestedBytes(pvc)
 
-	ch <- prometheus.MustNewConstMetric(
-		nodeCacheRuntimePVCBoundMetric.desc,
-		prometheus.GaugeValue,
-		boolToFloat64(pvc.Status.Phase == corev1.ClaimBound),
-		namespace,
-		name,
-		nodeName,
-		storageClassName,
-	)
-	ch <- prometheus.MustNewConstMetric(
-		nodeCacheRuntimePVCRequestedBytesMetric.desc,
-		prometheus.GaugeValue,
-		requestedBytes,
-		namespace,
-		name,
-		nodeName,
-		storageClassName,
-	)
+	reportGauge(ch, nodeCacheRuntimePVCBoundMetric, boolToFloat64(pvc.Status.Phase == corev1.ClaimBound), namespace, name, nodeName, storageClassName)
+	reportGauge(ch, nodeCacheRuntimePVCRequestedBytesMetric, requestedBytes, namespace, name, nodeName, storageClassName)
 }
 
 func reportNodeCacheRuntimeSummary(
@@ -133,36 +102,15 @@ func reportNodeCacheRuntimeSummary(
 	pods []corev1.Pod,
 	pvcs []corev1.PersistentVolumeClaim,
 ) {
-	ch <- prometheus.MustNewConstMetric(
-		nodeCacheRuntimeNodesDesiredMetric.desc,
-		prometheus.GaugeValue,
-		float64(len(nodes)),
-		runtimeNamespace,
-	)
-	ch <- prometheus.MustNewConstMetric(
-		nodeCacheRuntimePodsManagedMetric.desc,
-		prometheus.GaugeValue,
-		float64(len(pods)),
-		runtimeNamespace,
-	)
-	ch <- prometheus.MustNewConstMetric(
-		nodeCacheRuntimePodsReadyMetric.desc,
-		prometheus.GaugeValue,
-		float64(countReadyPods(pods)),
-		runtimeNamespace,
-	)
-	ch <- prometheus.MustNewConstMetric(
-		nodeCacheRuntimePVCsManagedMetric.desc,
-		prometheus.GaugeValue,
-		float64(len(pvcs)),
-		runtimeNamespace,
-	)
-	ch <- prometheus.MustNewConstMetric(
-		nodeCacheRuntimePVCsBoundMetric.desc,
-		prometheus.GaugeValue,
-		float64(countBoundPVCs(pvcs)),
-		runtimeNamespace,
-	)
+	reportGauge(ch, nodeCacheRuntimeNodesDesiredMetric, float64(len(nodes)), runtimeNamespace)
+	reportGauge(ch, nodeCacheRuntimePodsManagedMetric, float64(len(pods)), runtimeNamespace)
+	reportGauge(ch, nodeCacheRuntimePodsReadyMetric, float64(countReadyPods(pods)), runtimeNamespace)
+	reportGauge(ch, nodeCacheRuntimePVCsManagedMetric, float64(len(pvcs)), runtimeNamespace)
+	reportGauge(ch, nodeCacheRuntimePVCsBoundMetric, float64(countBoundPVCs(pvcs)), runtimeNamespace)
+}
+
+func reportGauge(ch chan<- prometheus.Metric, metric metricInfo, value float64, labelValues ...string) {
+	ch <- prometheus.MustNewConstMetric(metric.desc, prometheus.GaugeValue, value, labelValues...)
 }
 
 func podNodeName(pod *corev1.Pod) string {

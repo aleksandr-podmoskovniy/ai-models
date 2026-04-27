@@ -17,10 +17,8 @@ limitations under the License.
 package publishworker
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +26,6 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
-	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
 
@@ -89,7 +86,7 @@ func TestPublishFromUploadStageStreamsArchiveWithoutLocalDownload(t *testing.T) 
 			if err != nil {
 				t.Fatalf("ReadFile(%s) error = %v", tc.fileName, err)
 			}
-			staging := &fakeUploadStagingForPublish{
+			staging := &fakeUploadStaging{
 				payload: payload,
 			}
 			publisher := fakePublisher{
@@ -146,82 +143,4 @@ func TestPublishFromUploadStageStreamsArchiveWithoutLocalDownload(t *testing.T) 
 			}
 		})
 	}
-}
-
-type fakeUploadStagingForPublish struct {
-	payload             []byte
-	downloadDestination string
-	deleteCalls         int
-}
-
-func (f *fakeUploadStagingForPublish) StartMultipartUpload(context.Context, uploadstagingports.StartMultipartUploadInput) (uploadstagingports.StartMultipartUploadOutput, error) {
-	return uploadstagingports.StartMultipartUploadOutput{}, nil
-}
-
-func (f *fakeUploadStagingForPublish) PresignUploadPart(context.Context, uploadstagingports.PresignUploadPartInput) (uploadstagingports.PresignUploadPartOutput, error) {
-	return uploadstagingports.PresignUploadPartOutput{}, nil
-}
-
-func (f *fakeUploadStagingForPublish) ListMultipartUploadParts(context.Context, uploadstagingports.ListMultipartUploadPartsInput) ([]uploadstagingports.UploadedPart, error) {
-	return nil, nil
-}
-
-func (f *fakeUploadStagingForPublish) CompleteMultipartUpload(context.Context, uploadstagingports.CompleteMultipartUploadInput) error {
-	return nil
-}
-
-func (f *fakeUploadStagingForPublish) AbortMultipartUpload(context.Context, uploadstagingports.AbortMultipartUploadInput) error {
-	return nil
-}
-
-func (f *fakeUploadStagingForPublish) Stat(context.Context, uploadstagingports.StatInput) (uploadstagingports.ObjectStat, error) {
-	return uploadstagingports.ObjectStat{SizeBytes: int64(len(f.payload)), ETag: `"stage-etag"`}, nil
-}
-
-func (f *fakeUploadStagingForPublish) Download(_ context.Context, input uploadstagingports.DownloadInput) error {
-	f.downloadDestination = input.DestinationPath
-	return os.WriteFile(input.DestinationPath, f.payload, 0o644)
-}
-
-func (f *fakeUploadStagingForPublish) OpenRead(context.Context, uploadstagingports.OpenReadInput) (uploadstagingports.OpenReadOutput, error) {
-	return uploadstagingports.OpenReadOutput{
-		Body:      io.NopCloser(bytes.NewReader(f.payload)),
-		SizeBytes: int64(len(f.payload)),
-		ETag:      `"stage-etag"`,
-	}, nil
-}
-
-func (f *fakeUploadStagingForPublish) OpenReadRange(_ context.Context, input uploadstagingports.OpenReadRangeInput) (uploadstagingports.OpenReadOutput, error) {
-	start := input.Offset
-	if start < 0 {
-		start = 0
-	}
-	end := int64(len(f.payload))
-	if input.Length >= 0 && start+input.Length < end {
-		end = start + input.Length
-	}
-	if start > int64(len(f.payload)) {
-		start = int64(len(f.payload))
-	}
-	if end < start {
-		end = start
-	}
-	return uploadstagingports.OpenReadOutput{
-		Body:      io.NopCloser(bytes.NewReader(f.payload[start:end])),
-		SizeBytes: end - start,
-		ETag:      `"stage-etag"`,
-	}, nil
-}
-
-func (f *fakeUploadStagingForPublish) Upload(context.Context, uploadstagingports.UploadInput) error {
-	return nil
-}
-
-func (f *fakeUploadStagingForPublish) Delete(context.Context, uploadstagingports.DeleteInput) error {
-	f.deleteCalls++
-	return nil
-}
-
-func (*fakeUploadStagingForPublish) DeletePrefix(context.Context, uploadstagingports.DeletePrefixInput) error {
-	return nil
 }

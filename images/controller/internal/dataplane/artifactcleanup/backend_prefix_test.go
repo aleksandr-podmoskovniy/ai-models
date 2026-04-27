@@ -37,6 +37,22 @@ func TestBackendRepositoryMetadataPrefixFallsBackToReference(t *testing.T) {
 	}
 }
 
+func TestBackendRepositoryMetadataPrefixPrefersStoredValue(t *testing.T) {
+	t.Parallel()
+
+	handle := cleanuphandle.Handle{
+		Kind: cleanuphandle.KindBackendArtifact,
+		Backend: &cleanuphandle.BackendArtifactHandle{
+			Reference:                "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/team-a/model/1111@sha256:deadbeef",
+			RepositoryMetadataPrefix: " /stored/repository/prefix/ ",
+		},
+	}
+
+	if got, want := backendRepositoryMetadataPrefix(handle), "stored/repository/prefix"; got != want {
+		t.Fatalf("unexpected metadata prefix %q", got)
+	}
+}
+
 func TestBackendObjectStoragePrefixesIncludesSourceMirror(t *testing.T) {
 	t.Parallel()
 

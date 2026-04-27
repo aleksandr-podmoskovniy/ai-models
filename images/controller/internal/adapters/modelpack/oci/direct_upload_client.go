@@ -182,6 +182,10 @@ func (c *directUploadClient) complete(
 		return directUploadCompleteResult{}, errors.New("DMCR direct upload complete response is missing digest")
 	case result.SizeBytes <= 0:
 		return directUploadCompleteResult{}, errors.New("DMCR direct upload complete response has non-positive sizeBytes")
+	case strings.TrimSpace(digest) != "" && result.Digest != strings.TrimSpace(digest):
+		return directUploadCompleteResult{}, fmt.Errorf("DMCR verified digest %q does not match expected digest %q", result.Digest, strings.TrimSpace(digest))
+	case sizeBytes > 0 && result.SizeBytes != sizeBytes:
+		return directUploadCompleteResult{}, fmt.Errorf("DMCR verified sizeBytes %d does not match expected sizeBytes %d", result.SizeBytes, sizeBytes)
 	}
 	return result, nil
 }

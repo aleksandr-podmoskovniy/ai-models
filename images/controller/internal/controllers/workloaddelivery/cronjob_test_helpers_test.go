@@ -17,48 +17,19 @@ limitations under the License.
 package workloaddelivery
 
 import (
-	"context"
-	"log/slog"
 	"testing"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
-	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func newCronJobReconciler(t *testing.T, objects ...client.Object) (*baseReconciler, client.Client) {
-	t.Helper()
-
-	serviceOptions := modeldelivery.ServiceOptions{
-		Render: modeldelivery.Options{
-			RuntimeImage: "example.com/ai-models/controller-runtime:dev",
-		},
-		RegistrySourceNamespace:      testRegistryNamespace,
-		RegistrySourceAuthSecretName: testRegistryAuthName,
-		RuntimeImagePullSecretName:   testRuntimePullSecret,
-	}
-	scheme := testkit.NewScheme(t, batchv1.AddToScheme)
-	objects = append(objects, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, serviceOptions.RuntimeImagePullSecretName))
-	kubeClient := testkit.NewFakeClient(t, scheme, nil, objects...)
-	service, err := modeldelivery.NewService(kubeClient, scheme, serviceOptions)
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-
-	return &baseReconciler{
-		client:   kubeClient,
-		reader:   kubeClient,
-		delivery: service,
-		options:  Options{Service: serviceOptions},
-		logger:   slog.Default(),
-		recorder: record.NewFakeRecorder(16),
-	}, kubeClient
+	return newWorkloadReconcilerWithOptions(t, batchv1.AddToScheme, defaultServiceOptions(), objects...)
 }
 
 func annotatedCronJob(annotations map[string]string, volumeSource corev1.VolumeSource) *batchv1.CronJob {
@@ -95,11 +66,5 @@ func annotatedCronJob(annotations map[string]string, volumeSource corev1.VolumeS
 }
 
 func reconcileCronJob(t *testing.T, reconciler *baseReconciler, workload *batchv1.CronJob) ctrl.Result {
-	t.Helper()
-
-	result, err := reconciler.reconcileWorkload(context.Background(), workload)
-	if err != nil {
-		t.Fatalf("reconcileWorkload() error = %v", err)
-	}
-	return result
+	return reconcileWorkload(t, reconciler, workload)
 }
