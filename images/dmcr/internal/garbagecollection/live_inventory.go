@@ -89,12 +89,12 @@ func collectLivePrefixesFromSecret(secret *corev1.Secret, live *livePrefixSet) e
 		return nil
 	}
 
-	if prefix := strings.Trim(strings.TrimSpace(handle.Backend.RepositoryMetadataPrefix), "/"); prefix != "" {
+	if prefix := cleanStoragePath(handle.Backend.RepositoryMetadataPrefix); prefix != "" {
 		live.addRepository(prefix)
 	} else if prefix := repositoryMetadataPrefixFromReference(handle.Backend.Reference); prefix != "" {
 		live.addRepository(prefix)
 	}
-	if prefix := strings.Trim(strings.TrimSpace(handle.Backend.SourceMirrorPrefix), "/"); prefix != "" {
+	if prefix := cleanStoragePath(handle.Backend.SourceMirrorPrefix); prefix != "" {
 		live.addRaw(prefix)
 	}
 	return nil

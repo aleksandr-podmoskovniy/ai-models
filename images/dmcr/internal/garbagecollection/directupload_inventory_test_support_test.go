@@ -58,7 +58,7 @@ func newFakePrefixStore(objects ...fakePrefixObject) *fakePrefixStore {
 		multipartUploadPartErrs: make(map[directUploadMultipartTarget]error),
 	}
 	for _, object := range objects {
-		result.objects[strings.Trim(strings.TrimSpace(object.key), "/")] = object
+		result.objects[cleanStoragePath(object.key)] = object
 	}
 	return result
 }
@@ -109,7 +109,7 @@ func (s *fakePrefixStore) ForEachObjectInfo(_ context.Context, prefix string, vi
 }
 
 func (s *fakePrefixStore) GetObject(_ context.Context, key string) ([]byte, error) {
-	object, found := s.objects[strings.Trim(strings.TrimSpace(key), "/")]
+	object, found := s.objects[cleanStoragePath(key)]
 	if !found {
 		return nil, fmt.Errorf("object %s not found", key)
 	}
@@ -117,7 +117,7 @@ func (s *fakePrefixStore) GetObject(_ context.Context, key string) ([]byte, erro
 }
 
 func (s *fakePrefixStore) ForEachMultipartUpload(_ context.Context, prefix string, visit func(multipartUploadInfo)) error {
-	cleanPrefix := strings.Trim(strings.TrimSpace(prefix), "/")
+	cleanPrefix := cleanStoragePath(prefix)
 	targets := make([]directUploadMultipartTarget, 0, len(s.multipartUploads))
 	for target := range s.multipartUploads {
 		if cleanPrefix == "" || target.ObjectKey == cleanPrefix || strings.HasPrefix(target.ObjectKey, cleanPrefix+"/") {
@@ -183,7 +183,7 @@ func (s *deletingFakePrefixStore) DeletePrefix(_ context.Context, prefix string)
 }
 
 func (s *fakePrefixStore) matchingKeys(prefix string) []string {
-	cleanPrefix := strings.Trim(strings.TrimSpace(prefix), "/")
+	cleanPrefix := cleanStoragePath(prefix)
 	keys := make([]string, 0, len(s.objects))
 	for key := range s.objects {
 		if cleanPrefix == "" || key == cleanPrefix || strings.HasPrefix(key, cleanPrefix+"/") {
@@ -195,7 +195,7 @@ func (s *fakePrefixStore) matchingKeys(prefix string) []string {
 }
 
 func (s *deletingFakePrefixStore) hasObject(key string) bool {
-	_, found := s.objects[strings.Trim(strings.TrimSpace(key), "/")]
+	_, found := s.objects[cleanStoragePath(key)]
 	return found
 }
 

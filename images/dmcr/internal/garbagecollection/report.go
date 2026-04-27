@@ -58,7 +58,7 @@ func newLivePrefixSet() livePrefixSet {
 }
 
 func (s *livePrefixSet) addRepository(prefix string) {
-	cleanPrefix := strings.Trim(strings.TrimSpace(prefix), "/")
+	cleanPrefix := cleanStoragePath(prefix)
 	if cleanPrefix == "" {
 		return
 	}
@@ -66,7 +66,7 @@ func (s *livePrefixSet) addRepository(prefix string) {
 }
 
 func (s *livePrefixSet) addRaw(prefix string) {
-	cleanPrefix := strings.Trim(strings.TrimSpace(prefix), "/")
+	cleanPrefix := cleanStoragePath(prefix)
 	if cleanPrefix == "" {
 		return
 	}
@@ -91,7 +91,7 @@ func buildReport(
 func staleEntries(live map[string]struct{}, stored []PrefixInventoryEntry) []PrefixInventoryEntry {
 	stale := make([]PrefixInventoryEntry, 0, len(stored))
 	for _, entry := range stored {
-		cleanPrefix := strings.Trim(strings.TrimSpace(entry.Prefix), "/")
+		cleanPrefix := cleanStoragePath(entry.Prefix)
 		if cleanPrefix == "" {
 			continue
 		}
@@ -101,7 +101,7 @@ func staleEntries(live map[string]struct{}, stored []PrefixInventoryEntry) []Pre
 		stale = append(stale, PrefixInventoryEntry{
 			Prefix:          cleanPrefix,
 			ObjectCount:     entry.ObjectCount,
-			SampleObjectKey: strings.Trim(strings.TrimSpace(entry.SampleObjectKey), "/"),
+			SampleObjectKey: cleanStoragePath(entry.SampleObjectKey),
 		})
 	}
 	sort.Slice(stale, func(i, j int) bool {
@@ -167,10 +167,10 @@ func (r Report) Format() string {
 
 func formatReportEntry(entry PrefixInventoryEntry) string {
 	parts := []string{
-		"- " + strings.Trim(strings.TrimSpace(entry.Prefix), "/"),
+		"- " + cleanStoragePath(entry.Prefix),
 		fmt.Sprintf("objects=%d", entry.ObjectCount),
 	}
-	if sample := strings.Trim(strings.TrimSpace(entry.SampleObjectKey), "/"); sample != "" {
+	if sample := cleanStoragePath(entry.SampleObjectKey); sample != "" {
 		parts = append(parts, "sample="+sample)
 	}
 	return strings.Join(parts, " ")
@@ -178,8 +178,8 @@ func formatReportEntry(entry PrefixInventoryEntry) string {
 
 func formatMultipartUploadReportEntry(entry MultipartUploadInventoryEntry) string {
 	parts := []string{
-		"- " + strings.Trim(strings.TrimSpace(entry.Prefix), "/"),
-		"object=" + strings.Trim(strings.TrimSpace(entry.ObjectKey), "/"),
+		"- " + cleanStoragePath(entry.Prefix),
+		"object=" + cleanStoragePath(entry.ObjectKey),
 		"upload_id=" + strings.TrimSpace(entry.UploadID),
 		fmt.Sprintf("parts=%d", entry.PartCount),
 	}

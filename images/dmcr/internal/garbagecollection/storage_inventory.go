@@ -21,7 +21,15 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 )
+
+type storedPrefixEntry struct {
+	Prefix          string
+	ObjectCount     int
+	SampleObjectKey string
+	LastModifiedAt  time.Time
+}
 
 func DiscoverStoredPrefixes(
 	ctx context.Context,
@@ -61,9 +69,24 @@ func collectStoredPrefixes(
 	basePrefix string,
 	infer func(string) (string, bool),
 ) ([]PrefixInventoryEntry, error) {
-	entriesByPrefix := make(map[string]PrefixInventoryEntry)
-	if err := store.ForEachObject(ctx, basePrefix, func(key string) {
-		prefix, ok := infer(key)
+	entries, err := collectStoredPrefixEntries(ctx, store, basePrefix, func(info prefixObjectInfo) (string, bool) {
+		return infer(info.Key)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return prefixInventoryEntries(entries), nil
+}
+
+func collectStoredPrefixEntries(
+	ctx context.Context,
+	store prefixStore,
+	basePrefix string,
+	infer func(prefixObjectInfo) (string, bool),
+) ([]storedPrefixEntry, error) {
+	entriesByPrefix := make(map[string]storedPrefixEntry)
+	if err := store.ForEachObjectInfo(ctx, basePrefix, func(info prefixObjectInfo) {
+		prefix, ok := infer(info)
 		if !ok {
 			return
 		}
@@ -71,14 +94,17 @@ func collectStoredPrefixes(
 		entry.Prefix = prefix
 		entry.ObjectCount++
 		if entry.SampleObjectKey == "" {
-			entry.SampleObjectKey = strings.Trim(strings.TrimSpace(key), "/")
+			entry.SampleObjectKey = cleanStoragePath(info.Key)
+		}
+		if info.LastModified.After(entry.LastModifiedAt) {
+			entry.LastModifiedAt = info.LastModified.UTC()
 		}
 		entriesByPrefix[prefix] = entry
 	}); err != nil {
 		return nil, err
 	}
 
-	result := make([]PrefixInventoryEntry, 0, len(entriesByPrefix))
+	result := make([]storedPrefixEntry, 0, len(entriesByPrefix))
 	for _, entry := range entriesByPrefix {
 		result = append(result, entry)
 	}
@@ -88,14 +114,26 @@ func collectStoredPrefixes(
 	return result, nil
 }
 
+func prefixInventoryEntries(entries []storedPrefixEntry) []PrefixInventoryEntry {
+	result := make([]PrefixInventoryEntry, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, PrefixInventoryEntry{
+			Prefix:          entry.Prefix,
+			ObjectCount:     entry.ObjectCount,
+			SampleObjectKey: entry.SampleObjectKey,
+		})
+	}
+	return result
+}
+
 func repositoryInventoryBasePrefix(rootDirectory string) string {
 	return path.Join(withOptionalRoot(rootDirectory, "docker/registry/v2/repositories"), "ai-models", "catalog")
 }
 
 func inferRepositoryMetadataPrefix(rootDirectory string, objectKey string) (string, bool) {
 	basePrefix := withOptionalRoot(rootDirectory, "docker/registry/v2/repositories")
-	cleanKey := strings.Trim(strings.TrimSpace(objectKey), "/")
-	cleanBase := strings.Trim(strings.TrimSpace(basePrefix), "/")
+	cleanKey := cleanStoragePath(objectKey)
+	cleanBase := cleanStoragePath(basePrefix)
 	if cleanKey == cleanBase || !strings.HasPrefix(cleanKey, cleanBase+"/") {
 		return "", false
 	}
@@ -123,7 +161,7 @@ func inferRepositoryMetadataPrefix(rootDirectory string, objectKey string) (stri
 }
 
 func inferSourceMirrorPrefix(objectKey string) (string, bool) {
-	cleanKey := strings.Trim(strings.TrimSpace(objectKey), "/")
+	cleanKey := cleanStoragePath(objectKey)
 	if cleanKey == "" {
 		return "", false
 	}
@@ -146,7 +184,7 @@ func inferSourceMirrorPrefix(objectKey string) (string, bool) {
 }
 
 func cleanSourceMirrorPrefix(prefix string) (string, bool) {
-	cleanPrefix := strings.Trim(strings.TrimSpace(prefix), "/")
+	cleanPrefix := cleanStoragePath(prefix)
 	if cleanPrefix == "" || !strings.Contains(cleanPrefix, "/source-url/.mirror/") {
 		return "", false
 	}
@@ -154,7 +192,7 @@ func cleanSourceMirrorPrefix(prefix string) (string, bool) {
 }
 
 func splitKey(raw string) []string {
-	parts := strings.Split(strings.Trim(strings.TrimSpace(raw), "/"), "/")
+	parts := strings.Split(cleanStoragePath(raw), "/")
 	result := make([]string, 0, len(parts))
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
@@ -167,10 +205,14 @@ func splitKey(raw string) []string {
 }
 
 func withOptionalRoot(rootDirectory string, objectPath string) string {
-	cleanRoot := strings.Trim(strings.TrimSpace(rootDirectory), "/")
-	cleanPath := strings.Trim(strings.TrimSpace(objectPath), "/")
+	cleanRoot := cleanStoragePath(rootDirectory)
+	cleanPath := cleanStoragePath(objectPath)
 	if cleanRoot == "" {
 		return cleanPath
 	}
 	return path.Join(cleanRoot, cleanPath)
+}
+
+func cleanStoragePath(raw string) string {
+	return strings.Trim(strings.TrimSpace(raw), "/")
 }

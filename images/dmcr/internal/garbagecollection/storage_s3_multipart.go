@@ -51,7 +51,7 @@ func (s *s3PrefixStore) ForEachMultipartUpload(ctx context.Context, prefix strin
 		}
 
 		for _, upload := range output.Uploads {
-			key := strings.Trim(strings.TrimSpace(aws.ToString(upload.Key)), "/")
+			key := cleanStoragePath(aws.ToString(upload.Key))
 			uploadID := strings.TrimSpace(aws.ToString(upload.UploadId))
 			if key == "" || uploadID == "" {
 				continue
@@ -76,7 +76,7 @@ func (s *s3PrefixStore) CountMultipartUploadParts(ctx context.Context, objectKey
 		return 0, errors.New("prefix store must not be nil")
 	}
 
-	cleanObjectKey := strings.Trim(strings.TrimSpace(objectKey), "/")
+	cleanObjectKey := cleanStoragePath(objectKey)
 	cleanUploadID := strings.TrimSpace(uploadID)
 	if cleanObjectKey == "" {
 		return 0, errors.New("multipart object key must not be empty")
@@ -114,7 +114,7 @@ func (s *s3PrefixStore) AbortMultipartUpload(ctx context.Context, objectKey, upl
 		return errors.New("prefix store must not be nil")
 	}
 
-	cleanObjectKey := strings.Trim(strings.TrimSpace(objectKey), "/")
+	cleanObjectKey := cleanStoragePath(objectKey)
 	cleanUploadID := strings.TrimSpace(uploadID)
 	if cleanObjectKey == "" {
 		return errors.New("multipart object key must not be empty")
@@ -147,5 +147,5 @@ func isNoSuchUploadError(err error) bool {
 }
 
 func formatMultipartUploadTargetError(objectKey, uploadID string, err error) error {
-	return fmt.Errorf("multipart upload %s (%s): %w", strings.Trim(strings.TrimSpace(objectKey), "/"), strings.TrimSpace(uploadID), err)
+	return fmt.Errorf("multipart upload %s (%s): %w", cleanStoragePath(objectKey), strings.TrimSpace(uploadID), err)
 }

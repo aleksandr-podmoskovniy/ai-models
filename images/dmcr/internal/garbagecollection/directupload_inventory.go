@@ -36,13 +36,6 @@ type directUploadInventory struct {
 	StalePrefixes        []PrefixInventoryEntry
 }
 
-type directUploadStoredEntry struct {
-	Prefix          string
-	ObjectCount     int
-	SampleObjectKey string
-	LastModifiedAt  time.Time
-}
-
 func discoverDirectUploadInventory(
 	ctx context.Context,
 	store prefixStore,
@@ -73,37 +66,20 @@ func collectStoredDirectUploadPrefixes(
 	ctx context.Context,
 	store prefixStore,
 	rootDirectory string,
-) ([]directUploadStoredEntry, error) {
-	entriesByPrefix := make(map[string]directUploadStoredEntry)
-	if err := store.ForEachObjectInfo(ctx, directUploadInventoryBasePrefix(rootDirectory), func(info prefixObjectInfo) {
+) ([]storedPrefixEntry, error) {
+	result, err := collectStoredPrefixEntries(ctx, store, directUploadInventoryBasePrefix(rootDirectory), func(info prefixObjectInfo) (string, bool) {
 		prefix, ok := inferDirectUploadPrefix(rootDirectory, info.Key)
-		if !ok {
-			return
-		}
-		entry := entriesByPrefix[prefix]
-		entry.Prefix = prefix
-		entry.ObjectCount++
-		if entry.SampleObjectKey == "" {
-			entry.SampleObjectKey = strings.Trim(strings.TrimSpace(info.Key), "/")
-		}
-		if info.LastModified.After(entry.LastModifiedAt) {
-			entry.LastModifiedAt = info.LastModified.UTC()
-		}
-		entriesByPrefix[prefix] = entry
-	}); err != nil {
+		return prefix, ok
+	})
+	if err != nil {
 		return nil, fmt.Errorf("discover direct-upload object prefixes: %w", err)
 	}
 
-	result := make([]directUploadStoredEntry, 0, len(entriesByPrefix))
-	for _, entry := range entriesByPrefix {
+	for _, entry := range result {
 		if entry.LastModifiedAt.IsZero() {
 			return nil, fmt.Errorf("direct-upload prefix %s is missing last-modified timestamp", entry.Prefix)
 		}
-		result = append(result, entry)
 	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Prefix < result[j].Prefix
-	})
 	return result, nil
 }
 
@@ -111,7 +87,7 @@ func collectProtectedDirectUploadPrefixes(ctx context.Context, store prefixStore
 	metadataKeys := make([]string, 0, 128)
 	if err := store.ForEachObject(ctx, blobInventoryBasePrefix(rootDirectory), func(key string) {
 		if sealedblob.IsMetadataPath(key) {
-			metadataKeys = append(metadataKeys, strings.Trim(strings.TrimSpace(key), "/"))
+			metadataKeys = append(metadataKeys, cleanStoragePath(key))
 		}
 	}); err != nil {
 		return nil, fmt.Errorf("list sealed blob metadata objects: %w", err)
@@ -138,7 +114,7 @@ func collectProtectedDirectUploadPrefixes(ctx context.Context, store prefixStore
 }
 
 func staleDirectUploadPrefixes(
-	stored []directUploadStoredEntry,
+	stored []storedPrefixEntry,
 	protected map[string]struct{},
 	now time.Time,
 	policy cleanupPolicy,
@@ -189,7 +165,7 @@ func normalizeCleanupPolicy(policy cleanupPolicy) cleanupPolicy {
 }
 
 func normalizeDirectUploadPrefixTarget(prefix string) string {
-	return strings.Trim(strings.TrimSpace(prefix), "/")
+	return cleanStoragePath(prefix)
 }
 
 func directUploadInventoryBasePrefix(rootDirectory string) string {
@@ -201,8 +177,8 @@ func blobInventoryBasePrefix(rootDirectory string) string {
 }
 
 func inferDirectUploadPrefix(rootDirectory string, rawPath string) (string, bool) {
-	cleanPath := strings.Trim(strings.TrimSpace(rawPath), "/")
-	cleanRoot := strings.Trim(strings.TrimSpace(rootDirectory), "/")
+	cleanPath := cleanStoragePath(rawPath)
+	cleanRoot := cleanStoragePath(rootDirectory)
 	if cleanRoot != "" && strings.HasPrefix(cleanPath, cleanRoot+"/") {
 		cleanPath = strings.TrimPrefix(cleanPath, cleanRoot+"/")
 	}

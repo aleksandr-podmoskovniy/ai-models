@@ -81,10 +81,10 @@ Subagent conclusions:
   post-implementation/live-rollout record and currently has only external
   rollout blockers, not an executable in-repo slice.
 - `codebase-slimming-pass` — current. Compact workstream для планомерного
-  сокращения live code. Current completed slice: `DMCR request-cycle replay
-  proof after partial completion failure`. Next executable slice:
-  `DMCR direct-upload completion cleanup extraction`; no controller/DMCR
-  direct-upload cross-image helper deduplication.
+  сокращения live code. Current completed slice: `DMCR GC inventory/helper
+  normalization`. Next executable slice: `ModelPack OCI direct-upload session
+  runner slimming`; no controller/DMCR direct-upload cross-image helper
+  deduplication.
 
 Working-tree note:
 
@@ -381,29 +381,127 @@ Evidence:
 - `cd images/dmcr && go test ./...`
 - `git diff --check && git diff --cached --check`
 
-## 6. Next executable slice
-
-### ModelPack OCI object-source tar-entry shaping
+### Completed slice 11. DMCR direct-upload support/log slimming
 
 Цель:
 
-- схлопнуть duplicated tar path/header shaping между full-stream и ranged
+- убрать повторяющиеся direct-upload test helpers and verification log
+  formatting without changing upload protocol, token format, registry layout
+  or verification precedence;
+- keep all edits inside `images/dmcr/internal/directupload`.
+
+Файлы:
+
+- `images/dmcr/internal/directupload/verification.go`
+- `images/dmcr/internal/directupload/service_test_support_test.go`
+- `images/dmcr/internal/directupload/service_fake_backend_test.go`
+- `images/dmcr/internal/directupload/service_assertions_test.go`
+
+Поведение:
+
+- client-asserted verification logging now has one local formatting helper;
+- test support is split into fake backend, HTTP harness and assertions;
+- repeated response decoders collapsed into one generic helper.
+
+Проверки:
+
+- `cd images/dmcr && go test ./internal/directupload`
+- `cd images/dmcr && go test -count=3 ./internal/directupload`
+- `cd images/dmcr && go test -race ./internal/directupload`
+- `cd images/dmcr && go test ./...`
+- `git diff --check && git diff --cached --check`
+
+### Completed slice 12. ModelPack OCI object-source tar-entry shaping
+
+Цель:
+
+- схлопнуть duplicated tar path/header shaping между full-stream and ranged
   object-source publish paths;
-- сохранить byte path, direct-upload protocol, layer media types, digest
-  calculation and archive/object-source fallback behavior;
-- не трогать DMCR server-side direct-upload helpers и не вводить shared helper
-  across image boundary.
+- preserve exact archive path construction, direct-upload protocol, layer media
+  types, digest calculation and compressed fallback behavior;
+- keep helpers package-local and do not share controller helpers with DMCR
+  server-side direct-upload code.
 
 Файлы:
 
 - `images/controller/internal/adapters/modelpack/oci/publish_object_source.go`
 - `images/controller/internal/adapters/modelpack/oci/publish_object_source_range.go`
+- `images/controller/internal/adapters/modelpack/oci/layer_matrix_object_source_test.go`
+
+Поведение:
+
+- generated archive and ranged archive now use the same package-local tar
+  header/path helper;
+- uncompressed tar object-source direct-upload can resume via ranged object
+  reads after an interrupted upload;
+- compressed tar object-source keeps the generated-archive fallback.
+
+Проверки:
+
+- `cd images/controller && go test ./internal/adapters/modelpack/oci`
+- `cd images/controller && go test -count=3 -run 'Test.*ObjectSource|Test.*Range|Test.*DirectUpload' ./internal/adapters/modelpack/oci`
+- `cd images/controller && go test -race ./internal/adapters/modelpack/oci`
+- `git diff --check && git diff --cached --check`
+
+### Completed slice 13. DMCR GC inventory/helper normalization
+
+Цель:
+
+- collapse duplicated storage-key normalization and stored-prefix scan skeleton
+  inside DMCR GC;
+- preserve cleanup request lifecycle, maintenance gate/quorum/release,
+  direct-upload stale-age/protected-prefix policy, multipart gone-upload
+  handling, report fields and delete behavior;
+- keep `directUploadDeletePrefix` trailing-slash deletion guard explicit.
+
+Файлы:
+
+- `images/dmcr/internal/garbagecollection/storage_inventory.go`
+- `images/dmcr/internal/garbagecollection/directupload_inventory.go`
+- `images/dmcr/internal/garbagecollection/multipart_inventory.go`
+- `images/dmcr/internal/garbagecollection/storage_s3.go`
+- `images/dmcr/internal/garbagecollection/storage_s3_multipart.go`
+- adjacent report/live/config/test-support key-normalization call sites.
+
+Поведение:
+
+- repository/raw and direct-upload object inventory now share the same
+  package-local prefix scan helper for normalized key handling, prefix
+  inference, object counting, sample capture and deterministic sorting;
+- direct-upload timestamp fail-closed check stays in direct-upload inventory;
+- direct-upload stale/protected/target policy and multipart part-count/gone
+  semantics stay separate.
+
+Проверки:
+
+- `cd images/dmcr && go test ./internal/garbagecollection`
+- `cd images/dmcr && go test -count=3 -run 'TestDiscoverDirectUploadInventory|TestDeletePostGarbageCollectDirectUploadPrefixes|TestBuildReportKeepsFreshDirectUploadPrefixAgeBounded|TestDiscoverDirectUploadMultipartInventory|TestBuildReportIncludesDirectUploadMultipartResidue|TestBuildReportKeepsFreshMultipartUploadAgeBounded|TestDeleteStalePrefixesAbortsMultipartUploads|TestCleanupPolicyForActiveRequests|TestInferRepositoryMetadataPrefix|TestInferSourceMirrorPrefix' ./internal/garbagecollection`
+- `cd images/dmcr && go test -race ./internal/garbagecollection`
+- `git diff --check && git diff --cached --check`
+
+## 6. Next executable slice
+
+### ModelPack OCI direct-upload session runner slimming
+
+Цель:
+
+- reduce duplicated direct-upload session progress/finalization plumbing inside
+  `modelpack/oci`;
+- preserve direct-upload protocol, late digest, retry/resume behavior,
+  object-source ranged reads and registry verification semantics;
+- keep this controller-side client path separate from DMCR server-side helpers.
+
+Файлы:
+
+- `images/controller/internal/adapters/modelpack/oci/direct_upload.go`
+- `images/controller/internal/adapters/modelpack/oci/direct_upload_session.go`
+- `images/controller/internal/adapters/modelpack/oci/publish_layers.go`
 - package-local `modelpack/oci` tests only.
 
 Проверки:
 
 - `cd images/controller && go test ./internal/adapters/modelpack/oci`
-- targeted `go test -count=3 -run 'Test.*ObjectSource|Test.*Range|Test.*DirectUpload' ./internal/adapters/modelpack/oci`
+- targeted `go test -count=3 -run 'Test.*DirectUpload|Test.*ObjectSource|Test.*Range' ./internal/adapters/modelpack/oci`
 - `git diff --check && git diff --cached --check`
 
 ## 7. Future candidates
@@ -423,7 +521,6 @@ server-side helpers across image boundary.
 
 Резать только package-local and byte-path-safe:
 
-- object-source tar entry shaping;
 - direct-upload session runner inside `modelpack/oci`;
 - no cross-image shared protocol helpers.
 
@@ -490,11 +587,24 @@ history lives in the chat/run logs, not in this active bundle.
   `service_test_support_test.go` is 154 LOC, all directupload files remain
   below the 350 LOC budget. Targeted package, `-count=3`, race and diff checks
   passed.
+- Slice 12: `modelpack/oci` object-source tar shaping now has one
+  package-local header/path helper shared by generated and ranged archive
+  paths. New tests prove byte-for-byte equality for ranged tar output,
+  compressed fallback to generated archive, and interrupted direct-upload
+  resume through ranged reads for uncompressed tar object-source layers.
+  Targeted package, repeated object-source/range/direct-upload and race checks
+  passed.
+- Slice 13: DMCR GC inventory now has one package-local storage path
+  normalizer and one stored-prefix scan helper shared by repository/raw and
+  direct-upload inventories. Direct-upload timestamp fail-closed behavior,
+  stale-age/protected-prefix policy, multipart gone-upload handling and
+  trailing-slash delete scope remain in their original owner paths. Package,
+  targeted inventory/report/delete `-count=3`, race and diff checks passed.
 
 Final check before handoff:
 
-- `make verify` — pass after slice 10 direct-upload replay-safe finalization
-  follow-up.
+- `make verify` — pass after slice 13 GC inventory/helper normalization and
+  `modelpack/oci` object-source tar-entry shaping.
 
 ## 9. Rollback point
 

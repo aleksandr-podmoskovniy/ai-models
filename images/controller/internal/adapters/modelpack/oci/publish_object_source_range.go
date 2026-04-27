@@ -17,12 +17,9 @@ limitations under the License.
 package oci
 
 import (
-	"archive/tar"
 	"bytes"
 	"context"
 	"io"
-	"path/filepath"
-	"strings"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
@@ -60,31 +57,19 @@ func buildObjectSourceArchiveSegments(layer modelpackports.PublishLayer) ([]obje
 		if err != nil {
 			return nil, err
 		}
-		header, err := tarHeaderBytes(filepath.ToSlash(strings.Trim(strings.TrimSpace(layer.TargetPath), "/")+"/"+strings.Trim(strings.TrimSpace(targetPath), "/")), file.SizeBytes)
+		header, err := objectSourceTarHeaderBytes(layer.TargetPath, file, targetPath)
 		if err != nil {
 			return nil, err
 		}
+		file := file
 		segments = append(segments, objectSourceArchiveSegment{
 			header: header,
-			file:   &modelpackports.PublishObjectFile{SourcePath: file.SourcePath, TargetPath: file.TargetPath, SizeBytes: file.SizeBytes, ETag: file.ETag},
+			file:   &file,
 			pad:    tarPaddingSize(file.SizeBytes),
 		})
 	}
 	segments = append(segments, objectSourceArchiveSegment{pad: 1024})
 	return segments, nil
-}
-
-func tarHeaderBytes(name string, size int64) ([]byte, error) {
-	var buffer bytes.Buffer
-	writer := tar.NewWriter(&buffer)
-	if err := writer.WriteHeader(&tar.Header{
-		Name: name,
-		Mode: 0o644,
-		Size: size,
-	}); err != nil {
-		return nil, err
-	}
-	return buffer.Bytes(), nil
 }
 
 func tarPaddingSize(size int64) int64 {

@@ -231,7 +231,7 @@ func newPrefixStoreFromConfig(configPath string) (prefixStore, string, error) {
 }
 
 func directUploadDeletePrefix(prefix string) string {
-	cleanPrefix := strings.Trim(strings.TrimSpace(prefix), "/")
+	cleanPrefix := cleanStoragePath(prefix)
 	if cleanPrefix == "" {
 		return ""
 	}

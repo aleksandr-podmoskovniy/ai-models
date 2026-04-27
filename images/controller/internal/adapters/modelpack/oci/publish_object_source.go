@@ -18,6 +18,7 @@ package oci
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -244,12 +245,7 @@ func writeLayerArchiveFromObjectSource(ctx context.Context, writer io.Writer, la
 			_ = object.Body.Close()
 			return err
 		}
-		header := &tar.Header{
-			Name: filepath.ToSlash(strings.Trim(strings.TrimSpace(layer.TargetPath), "/") + "/" + strings.Trim(strings.TrimSpace(targetPath), "/")),
-			Mode: 0o644,
-			Size: file.SizeBytes,
-		}
-		if err := tarWriter.WriteHeader(header); err != nil {
+		if err := writeObjectSourceTarHeader(tarWriter, layer.TargetPath, file, targetPath); err != nil {
 			_ = object.Body.Close()
 			return err
 		}
@@ -262,6 +258,27 @@ func writeLayerArchiveFromObjectSource(ctx context.Context, writer io.Writer, la
 		}
 	}
 	return tarWriter.Close()
+}
+
+func writeObjectSourceTarHeader(writer *tar.Writer, layerTargetPath string, file modelpackports.PublishObjectFile, targetPath string) error {
+	return writer.WriteHeader(&tar.Header{
+		Name: objectSourceArchivePath(layerTargetPath, targetPath),
+		Mode: 0o644,
+		Size: file.SizeBytes,
+	})
+}
+
+func objectSourceTarHeaderBytes(layerTargetPath string, file modelpackports.PublishObjectFile, targetPath string) ([]byte, error) {
+	var buffer bytes.Buffer
+	writer := tar.NewWriter(&buffer)
+	if err := writeObjectSourceTarHeader(writer, layerTargetPath, file, targetPath); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
+}
+
+func objectSourceArchivePath(layerTargetPath, fileTargetPath string) string {
+	return filepath.ToSlash(strings.Trim(strings.TrimSpace(layerTargetPath), "/") + "/" + strings.Trim(strings.TrimSpace(fileTargetPath), "/"))
 }
 
 func validateOpenedObjectSource(file modelpackports.PublishObjectFile, object modelpackports.OpenReadResult) error {

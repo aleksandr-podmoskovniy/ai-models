@@ -84,7 +84,7 @@ func LoadStorageConfig(configPath string) (S3StorageConfig, error) {
 		Bucket:        strings.TrimSpace(config.Storage.SealedS3.Bucket),
 		Region:        strings.TrimSpace(config.Storage.SealedS3.Region),
 		EndpointURL:   endpointURL,
-		RootDirectory: strings.Trim(strings.TrimSpace(config.Storage.SealedS3.RootDirectory), "/"),
+		RootDirectory: cleanStoragePath(config.Storage.SealedS3.RootDirectory),
 		UsePathStyle:  config.Storage.SealedS3.ForcePathStyle,
 		Insecure:      config.Storage.SealedS3.SkipVerify,
 		AccessKey:     accessKey,

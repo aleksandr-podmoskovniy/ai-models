@@ -130,7 +130,7 @@ func (s *s3PrefixStore) ForEachObjectInfo(ctx context.Context, prefix string, vi
 		}
 
 		for _, object := range output.Contents {
-			key := strings.Trim(strings.TrimSpace(aws.ToString(object.Key)), "/")
+			key := cleanStoragePath(aws.ToString(object.Key))
 			if key == "" {
 				continue
 			}
@@ -152,7 +152,7 @@ func (s *s3PrefixStore) GetObject(ctx context.Context, key string) ([]byte, erro
 		return nil, errors.New("prefix store must not be nil")
 	}
 
-	cleanKey := strings.Trim(strings.TrimSpace(key), "/")
+	cleanKey := cleanStoragePath(key)
 	if cleanKey == "" {
 		return nil, errors.New("get object key must not be empty")
 	}
@@ -192,7 +192,7 @@ func (s *s3PrefixStore) DeletePrefix(ctx context.Context, prefix string) error {
 
 		identifiers := make([]types.ObjectIdentifier, 0, len(listOutput.Contents))
 		for _, object := range listOutput.Contents {
-			key := strings.Trim(strings.TrimSpace(aws.ToString(object.Key)), "/")
+			key := cleanStoragePath(aws.ToString(object.Key))
 			if key == "" {
 				continue
 			}

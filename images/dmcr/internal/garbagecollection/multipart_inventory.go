@@ -74,7 +74,7 @@ func discoverDirectUploadMultipartInventory(
 
 	for _, upload := range uploads {
 		if upload.InitiatedAt.IsZero() {
-			return directUploadMultipartInventory{}, fmt.Errorf("multipart upload %s (%s) is missing initiated timestamp", strings.Trim(strings.TrimSpace(upload.Key), "/"), strings.TrimSpace(upload.UploadID))
+			return directUploadMultipartInventory{}, fmt.Errorf("multipart upload %s (%s) is missing initiated timestamp", cleanStoragePath(upload.Key), strings.TrimSpace(upload.UploadID))
 		}
 
 		partCount, err := store.CountMultipartUploadParts(ctx, upload.Key, upload.UploadID)
@@ -96,11 +96,11 @@ func discoverDirectUploadMultipartInventory(
 
 		prefix, ok := inferDirectUploadPrefix(rootDirectory, upload.Key)
 		if !ok {
-			return directUploadMultipartInventory{}, fmt.Errorf("multipart upload %s (%s) does not point to a valid direct-upload object prefix", strings.Trim(strings.TrimSpace(upload.Key), "/"), strings.TrimSpace(upload.UploadID))
+			return directUploadMultipartInventory{}, fmt.Errorf("multipart upload %s (%s) does not point to a valid direct-upload object prefix", cleanStoragePath(upload.Key), strings.TrimSpace(upload.UploadID))
 		}
 		staleUploads = append(staleUploads, MultipartUploadInventoryEntry{
 			Prefix:      prefix,
-			ObjectKey:   strings.Trim(strings.TrimSpace(upload.Key), "/"),
+			ObjectKey:   cleanStoragePath(upload.Key),
 			UploadID:    strings.TrimSpace(upload.UploadID),
 			PartCount:   partCount,
 			InitiatedAt: upload.InitiatedAt.UTC(),
@@ -116,7 +116,7 @@ func discoverDirectUploadMultipartInventory(
 
 func normalizeDirectUploadMultipartTarget(target directUploadMultipartTarget) directUploadMultipartTarget {
 	return directUploadMultipartTarget{
-		ObjectKey: strings.Trim(strings.TrimSpace(target.ObjectKey), "/"),
+		ObjectKey: cleanStoragePath(target.ObjectKey),
 		UploadID:  strings.TrimSpace(target.UploadID),
 	}
 }
