@@ -152,7 +152,12 @@ doc и ADR в `internal-docs`. Runtime/code/API не меняются.
 ## 8. Validation evidence
 
 - `git diff --check` — passed.
+- `git diff --cached --check` — passed.
 - `git -C /Users/myskat_90/flant/aleksandr-podmoskovniy/internal-docs diff --check` — passed.
+- `git -C /Users/myskat_90/flant/aleksandr-podmoskovniy/internal-docs diff --cached --check` — passed.
 - `rg -n "[ \t]+$" docs/development/MODEL_METADATA_CONTRACT.ru.md plans/active/model-metadata-contract/TASK.ru.md plans/active/model-metadata-contract/PLAN.ru.md /Users/myskat_90/flant/aleksandr-podmoskovniy/internal-docs/2026-04-26-ai-models-metadata-profile.md` — passed.
 - Launch profile refinement — passed with the same whitespace/diff checks;
   no runtime/code/API schema changed.
+- Review gate — no critical findings for this docs/design slice. Public CRD
+  remains unchanged; `ResolvedPlanningProfile` is explicitly internal until
+  an `ai-inference` consumer proves the public projection.
