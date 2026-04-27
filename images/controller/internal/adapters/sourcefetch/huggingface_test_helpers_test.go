@@ -107,8 +107,10 @@ func newTestSourceMirrorOptions(client SourceMirrorTransportClient, store source
 
 func defaultHuggingFaceProfileSummary() *RemoteProfileSummary {
 	return &RemoteProfileSummary{
-		ConfigPayload: []byte(`{"architectures":["LlamaForCausalLM"]}`),
-		WeightBytes:   14,
+		ConfigPayload:          []byte(`{"architectures":["LlamaForCausalLM"]}`),
+		WeightBytes:            14,
+		LargestWeightFileBytes: 14,
+		WeightFileCount:        1,
 	}
 }
 

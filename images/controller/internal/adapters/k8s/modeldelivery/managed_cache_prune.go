@@ -26,12 +26,7 @@ func PruneManagedCacheTemplateState(template *corev1.PodTemplateSpec, volumeName
 	if template == nil {
 		return false
 	}
-	keep := make(map[string]struct{}, len(keepNames))
-	for _, name := range keepNames {
-		if strings.TrimSpace(name) != "" {
-			keep[name] = struct{}{}
-		}
-	}
+	keep := managedCacheKeepSet(keepNames)
 	changed := false
 	containers, removed := pruneManagedCacheVolumeMounts(template.Spec.Containers, volumeName, keep)
 	if removed {
@@ -53,12 +48,10 @@ func PruneManagedCacheTemplateState(template *corev1.PodTemplateSpec, volumeName
 
 func pruneManagedCacheVolumeMounts(containers []corev1.Container, name string, keep map[string]struct{}) ([]corev1.Container, bool) {
 	removed := false
-	prefix := strings.TrimSpace(name) + "-"
 	for index := range containers {
 		filtered := containers[index].VolumeMounts[:0]
 		for _, mount := range containers[index].VolumeMounts {
-			_, keepMount := keep[mount.Name]
-			if !keepMount && (mount.Name == name || strings.HasPrefix(mount.Name, prefix)) {
+			if managedCacheNamePruned(mount.Name, name, keep) {
 				removed = true
 				continue
 			}
@@ -71,15 +64,35 @@ func pruneManagedCacheVolumeMounts(containers []corev1.Container, name string, k
 
 func pruneManagedCacheVolumes(volumes []corev1.Volume, name string, keep map[string]struct{}) ([]corev1.Volume, bool) {
 	removed := false
-	prefix := strings.TrimSpace(name) + "-"
 	filtered := volumes[:0]
 	for _, volume := range volumes {
-		_, keepVolume := keep[volume.Name]
-		if !keepVolume && (volume.Name == name || strings.HasPrefix(volume.Name, prefix)) {
+		if managedCacheNamePruned(volume.Name, name, keep) {
 			removed = true
 			continue
 		}
 		filtered = append(filtered, volume)
 	}
 	return filtered, removed
+}
+
+func managedCacheKeepSet(names []string) map[string]struct{} {
+	keep := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if name = strings.TrimSpace(name); name != "" {
+			keep[name] = struct{}{}
+		}
+	}
+	return keep
+}
+
+func managedCacheNamePruned(value, baseName string, keep map[string]struct{}) bool {
+	if _, found := keep[value]; found {
+		return false
+	}
+	return managedCacheNameMatches(value, baseName)
+}
+
+func managedCacheNameMatches(value, baseName string) bool {
+	baseName = strings.TrimSpace(baseName)
+	return value == baseName || strings.HasPrefix(value, baseName+"-")
 }

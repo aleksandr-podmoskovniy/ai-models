@@ -34,11 +34,7 @@ func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest s
 	case len(rendered.InitContainers) > 0:
 		template.Spec.InitContainers = upsertContainers(template.Spec.InitContainers, rendered.InitContainers)
 		template.Spec.InitContainers = removeManagedInitContainersExcept(template.Spec.InitContainers, rendered.InitContainerName, rendered.InitContainerNames)
-	case rendered.HasInitContainer:
-		template.Spec.InitContainers = upsertContainer(template.Spec.InitContainers, rendered.InitContainer)
-		template.Spec.InitContainers = removeManagedInitContainersExcept(template.Spec.InitContainers, rendered.InitContainerName, []string{rendered.InitContainerName})
 	default:
-		template.Spec.InitContainers = removeContainerByName(template.Spec.InitContainers, rendered.InitContainerName)
 		template.Spec.InitContainers = removeManagedInitContainersExcept(template.Spec.InitContainers, rendered.InitContainerName, nil)
 	}
 	template.Spec.Containers = replaceManagedRuntimeEnv(template.Spec.Containers, rendered.RuntimeEnv)
@@ -144,20 +140,6 @@ func upsertVolumes(existing []corev1.Volume, desired []corev1.Volume) []corev1.V
 		}
 	}
 	return existing
-}
-
-func removeContainerByName(existing []corev1.Container, name string) []corev1.Container {
-	if name == "" || len(existing) == 0 {
-		return existing
-	}
-	filtered := existing[:0]
-	for _, container := range existing {
-		if container.Name == name {
-			continue
-		}
-		filtered = append(filtered, container)
-	}
-	return filtered
 }
 
 func removeManagedInitContainersExcept(existing []corev1.Container, baseName string, keep []string) []corev1.Container {

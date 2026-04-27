@@ -19,7 +19,6 @@ package directupload
 import (
 	"errors"
 	"net/http"
-	"slices"
 	"strings"
 	"testing"
 
@@ -35,7 +34,7 @@ func TestServiceCompleteWritesRepositoryLinkAndSealedMetadata(t *testing.T) {
 	digest := digestForParts(parts)
 	completeResp := h.completeUpload(t, startPayload.SessionToken, parts, digest, 12)
 	expectStatus(t, completeResp, http.StatusOK)
-	completePayload := decodeCompleteResponse(t, completeResp)
+	completePayload := decodeResponse[completeResponse](t, completeResp)
 	if completePayload.Digest != digest {
 		t.Fatalf("complete digest = %q, want %q", completePayload.Digest, digest)
 	}
@@ -43,21 +42,10 @@ func TestServiceCompleteWritesRepositoryLinkAndSealedMetadata(t *testing.T) {
 		t.Fatalf("complete sizeBytes = %d, want 12", completePayload.SizeBytes)
 	}
 
-	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", "ai-models/catalog/model", digest)
-	if err != nil {
-		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
-	}
-	if got, want := string(h.backend.objects[linkKey]), digest; got != want {
-		t.Fatalf("link payload = %q, want %q", got, want)
-	}
+	assertLinkPayload(t, h.backend, "ai-models/catalog/model", digest)
 
-	blobKey, err := BlobDataObjectKey("/dmcr", digest)
-	if err != nil {
-		t.Fatalf("BlobDataObjectKey() error = %v", err)
-	}
-	if _, exists := h.backend.objects[blobKey]; exists {
-		t.Fatalf("canonical blob object %q exists, want sealed metadata only", blobKey)
-	}
+	blobKey := mustBlobDataKey(t, digest)
+	assertObjectMissing(t, h.backend, blobKey)
 
 	metadataPayload, exists := h.backend.objects[sealedblob.MetadataPath(blobKey)]
 	if !exists {
@@ -77,12 +65,8 @@ func TestServiceCompleteWritesRepositoryLinkAndSealedMetadata(t *testing.T) {
 	if metadata.SizeBytes != 12 {
 		t.Fatalf("metadata.SizeBytes = %d, want %d", metadata.SizeBytes, 12)
 	}
-	if _, exists := h.backend.objects[claims.ObjectKey]; !exists {
-		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
-	}
-	if got := h.backend.readerCalls; got != 0 {
-		t.Fatalf("Reader() call count = %d, want 0 for default client-asserted path", got)
-	}
+	assertObjectExists(t, h.backend, claims.ObjectKey)
+	assertReaderCalls(t, h.backend, 0)
 }
 
 func TestServiceCompleteUsesTrustedBackendDigestWithoutReadingObject(t *testing.T) {
@@ -105,9 +89,7 @@ func TestServiceCompleteUsesTrustedBackendDigestWithoutReadingObject(t *testing.
 	if got := h.backend.attributesCalls; got != 1 {
 		t.Fatalf("ObjectAttributes() call count = %d, want 1", got)
 	}
-	if got := h.backend.readerCalls; got != 0 {
-		t.Fatalf("Reader() call count = %d, want 0 for trusted backend digest path", got)
-	}
+	assertReaderCalls(t, h.backend, 0)
 }
 
 func TestServiceCompleteTrustsClientDigestWhenBackendDigestLookupFailsByDefault(t *testing.T) {
@@ -120,9 +102,7 @@ func TestServiceCompleteTrustsClientDigestWhenBackendDigestLookupFailsByDefault(
 	digest := digestForParts(parts)
 	completeResp := h.completeUpload(t, startPayload.SessionToken, parts, digest, 12)
 	expectStatus(t, completeResp, http.StatusOK)
-	if got := h.backend.readerCalls; got != 0 {
-		t.Fatalf("Reader() call count = %d, want 0 for default client-asserted path", got)
-	}
+	assertReaderCalls(t, h.backend, 0)
 }
 
 func TestServiceCompleteTrustsClientDigestWhenTrustedBackendDigestIsMalformedByDefault(t *testing.T) {
@@ -141,9 +121,7 @@ func TestServiceCompleteTrustsClientDigestWhenTrustedBackendDigestIsMalformedByD
 	}
 	completeResp := h.completeUpload(t, startPayload.SessionToken, parts, digest, 12)
 	expectStatus(t, completeResp, http.StatusOK)
-	if got := h.backend.readerCalls; got != 0 {
-		t.Fatalf("Reader() call count = %d, want 0 for default client-asserted path", got)
-	}
+	assertReaderCalls(t, h.backend, 0)
 }
 
 func TestServiceCompleteRejectsTrustedBackendSizeMismatch(t *testing.T) {
@@ -162,19 +140,9 @@ func TestServiceCompleteRejectsTrustedBackendSizeMismatch(t *testing.T) {
 	}
 	completeResp := h.completeUpload(t, startPayload.SessionToken, parts, digest, 12)
 	expectStatus(t, completeResp, http.StatusConflict)
-	if !slices.Contains(h.backend.deleted, claims.ObjectKey) {
-		t.Fatalf("expected physical upload object %q to be deleted, deleted = %#v", claims.ObjectKey, h.backend.deleted)
-	}
-	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", testRepository, digest)
-	if err != nil {
-		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
-	}
-	if _, exists := h.backend.objects[linkKey]; exists {
-		t.Fatalf("repository link %q exists after trusted size mismatch", linkKey)
-	}
-	if got := h.backend.readerCalls; got != 0 {
-		t.Fatalf("Reader() call count = %d, want 0 when trusted size mismatches", got)
-	}
+	assertDeleted(t, h.backend, claims.ObjectKey)
+	assertObjectMissing(t, h.backend, mustRepositoryLinkKey(t, testRepository, digest))
+	assertReaderCalls(t, h.backend, 0)
 }
 
 func TestServiceCompleteRejectsTrustedBackendDigestMismatch(t *testing.T) {
@@ -193,19 +161,9 @@ func TestServiceCompleteRejectsTrustedBackendDigestMismatch(t *testing.T) {
 	}
 	completeResp := h.completeUpload(t, startPayload.SessionToken, parts, expectedDigest, 12)
 	expectStatus(t, completeResp, http.StatusConflict)
-	if !slices.Contains(h.backend.deleted, claims.ObjectKey) {
-		t.Fatalf("expected physical upload object %q to be deleted, deleted = %#v", claims.ObjectKey, h.backend.deleted)
-	}
-	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", testRepository, expectedDigest)
-	if err != nil {
-		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
-	}
-	if _, exists := h.backend.objects[linkKey]; exists {
-		t.Fatalf("repository link %q exists after trusted digest mismatch", linkKey)
-	}
-	if got := h.backend.readerCalls; got != 0 {
-		t.Fatalf("Reader() call count = %d, want 0 when trusted digest mismatches", got)
-	}
+	assertDeleted(t, h.backend, claims.ObjectKey)
+	assertObjectMissing(t, h.backend, mustRepositoryLinkKey(t, testRepository, expectedDigest))
+	assertReaderCalls(t, h.backend, 0)
 }
 
 func TestServiceCompleteTrustsExpectedDigestWithoutTrustedBackendChecksumByDefault(t *testing.T) {
@@ -217,22 +175,10 @@ func TestServiceCompleteTrustsExpectedDigestWithoutTrustedBackendChecksumByDefau
 	trustedDigest := "sha256:" + strings.Repeat("f", 64)
 	completeResp := h.completeUpload(t, startPayload.SessionToken, parts, trustedDigest, 8)
 	expectStatus(t, completeResp, http.StatusOK)
-	if slices.Contains(h.backend.deleted, claims.ObjectKey) {
-		t.Fatalf("physical upload object %q was deleted, deleted = %#v", claims.ObjectKey, h.backend.deleted)
-	}
-	if got := h.backend.readerCalls; got != 0 {
-		t.Fatalf("Reader() call count = %d, want 0 for default client-asserted path", got)
-	}
-	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", testRepository, trustedDigest)
-	if err != nil {
-		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
-	}
-	if got, want := string(h.backend.objects[linkKey]), trustedDigest; got != want {
-		t.Fatalf("link payload = %q, want %q", got, want)
-	}
-	if _, exists := h.backend.objects[claims.ObjectKey]; !exists {
-		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
-	}
+	assertNotDeleted(t, h.backend, claims.ObjectKey)
+	assertReaderCalls(t, h.backend, 0)
+	assertLinkPayload(t, h.backend, testRepository, trustedDigest)
+	assertObjectExists(t, h.backend, claims.ObjectKey)
 }
 
 func TestServiceCompleteComputesDigestWithoutClientDigest(t *testing.T) {
@@ -247,7 +193,7 @@ func TestServiceCompleteComputesDigestWithoutClientDigest(t *testing.T) {
 		Parts:        parts,
 	})
 	expectStatus(t, completeResp, http.StatusOK)
-	completePayload := decodeCompleteResponse(t, completeResp)
+	completePayload := decodeResponse[completeResponse](t, completeResp)
 	digest := digestForParts(parts)
 	if completePayload.Digest != digest {
 		t.Fatalf("complete digest = %q, want %q", completePayload.Digest, digest)
@@ -255,19 +201,9 @@ func TestServiceCompleteComputesDigestWithoutClientDigest(t *testing.T) {
 	if completePayload.SizeBytes != 8 {
 		t.Fatalf("complete sizeBytes = %d, want 8", completePayload.SizeBytes)
 	}
-	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", testRepository, digest)
-	if err != nil {
-		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
-	}
-	if got, want := string(h.backend.objects[linkKey]), digest; got != want {
-		t.Fatalf("link payload = %q, want %q", got, want)
-	}
-	if _, exists := h.backend.objects[claims.ObjectKey]; !exists {
-		t.Fatalf("physical upload object %q does not exist", claims.ObjectKey)
-	}
-	if got := h.backend.readerCalls; got != 1 {
-		t.Fatalf("Reader() call count = %d, want 1 when client digest is absent", got)
-	}
+	assertLinkPayload(t, h.backend, testRepository, digest)
+	assertObjectExists(t, h.backend, claims.ObjectKey)
+	assertReaderCalls(t, h.backend, 1)
 }
 
 func TestServiceCompleteRejectsBackendSizeMismatchWithoutChecksumByDefault(t *testing.T) {
@@ -285,10 +221,6 @@ func TestServiceCompleteRejectsBackendSizeMismatchWithoutChecksumByDefault(t *te
 	}
 	completeResp := h.completeUpload(t, startPayload.SessionToken, parts, digest, 12)
 	expectStatus(t, completeResp, http.StatusConflict)
-	if !slices.Contains(h.backend.deleted, claims.ObjectKey) {
-		t.Fatalf("expected physical upload object %q to be deleted, deleted = %#v", claims.ObjectKey, h.backend.deleted)
-	}
-	if got := h.backend.readerCalls; got != 0 {
-		t.Fatalf("Reader() call count = %d, want 0 without reread in default policy", got)
-	}
+	assertDeleted(t, h.backend, claims.ObjectKey)
+	assertReaderCalls(t, h.backend, 0)
 }

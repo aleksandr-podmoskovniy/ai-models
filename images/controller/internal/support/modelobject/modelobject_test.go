@@ -87,3 +87,46 @@ func TestStatusRoundTrip(t *testing.T) {
 		t.Fatalf("expected ready phase, got %#v", got)
 	}
 }
+
+func TestSpecForClusterModelReturnsRuntimeModelSpec(t *testing.T) {
+	t.Parallel()
+
+	object := &modelsv1alpha1.ClusterModel{
+		Spec: modelsv1alpha1.ClusterModelSpec{
+			Source: modelsv1alpha1.ClusterModelSourceSpec{
+				URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
+			},
+		},
+	}
+
+	spec, err := SpecFor(object)
+	if err != nil {
+		t.Fatalf("SpecFor() error = %v", err)
+	}
+	if spec.Source.URL != "https://huggingface.co/deepseek-ai/DeepSeek-R1" {
+		t.Fatalf("unexpected source URL %q", spec.Source.URL)
+	}
+	if spec.Source.AuthSecretRef != nil {
+		t.Fatalf("cluster model runtime spec must not synthesize authSecretRef")
+	}
+}
+
+func TestSpecForClusterModelRejectsAuthSecretRef(t *testing.T) {
+	t.Parallel()
+
+	object := &modelsv1alpha1.ClusterModel{
+		Spec: modelsv1alpha1.ClusterModelSpec{
+			Source: modelsv1alpha1.ClusterModelSourceSpec{
+				URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1",
+				AuthSecretRef: &modelsv1alpha1.SecretReference{
+					Namespace: "team-a",
+					Name:      "hf-token",
+				},
+			},
+		},
+	}
+
+	if _, err := SpecFor(object); err == nil {
+		t.Fatalf("SpecFor() expected authSecretRef rejection")
+	}
+}

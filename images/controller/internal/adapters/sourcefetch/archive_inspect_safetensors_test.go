@@ -52,8 +52,14 @@ func TestInspectTarModelArchiveBuildsSafetensorsSummaryAndRootPrefix(t *testing.
 	if len(inspection.ConfigPayload) == 0 {
 		t.Fatal("expected config payload")
 	}
-	if got, want := inspection.WeightBytes, int64(len("weights")); got != want {
+	if got, want := inspection.WeightStats.TotalBytes, int64(len("weights")); got != want {
 		t.Fatalf("unexpected weight bytes %d", got)
+	}
+	if got, want := inspection.WeightStats.LargestFileBytes, int64(len("weights")); got != want {
+		t.Fatalf("unexpected largest weight bytes %d", got)
+	}
+	if got, want := inspection.WeightStats.FileCount, int64(1); got != want {
+		t.Fatalf("unexpected weight file count %d", got)
 	}
 }
 
@@ -76,7 +82,7 @@ func TestInspectTarModelArchiveSupportsGzip(t *testing.T) {
 	if got, want := inspection.RootPrefix, "checkpoint"; got != want {
 		t.Fatalf("unexpected root prefix %q", got)
 	}
-	if got, want := inspection.WeightBytes, int64(len("weights")); got != want {
+	if got, want := inspection.WeightStats.TotalBytes, int64(len("weights")); got != want {
 		t.Fatalf("unexpected weight bytes %d", got)
 	}
 }

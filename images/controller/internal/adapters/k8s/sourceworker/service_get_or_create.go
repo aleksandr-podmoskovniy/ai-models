@@ -36,7 +36,7 @@ func (s *Service) prepareRequestState(
 	request publicationports.Request,
 	plan SourceWorkerPlan,
 ) (*corev1.Secret, modelpackports.DirectUploadState, error) {
-	if err := s.preflight(ctx, request, plan); err != nil {
+	if err := s.preflight(request, plan); err != nil {
 		return nil, modelpackports.DirectUploadState{}, err
 	}
 	directUploadStateSecret, err := s.ensureDirectUploadStateSecret(ctx, owner, request.Owner)

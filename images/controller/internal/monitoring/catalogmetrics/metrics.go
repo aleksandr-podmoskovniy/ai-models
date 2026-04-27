@@ -64,20 +64,10 @@ var (
 		"Whether the ClusterModel is ready for consumption.",
 		clusterModelLabels()...,
 	)
-	modelValidatedMetric = newMetricInfo(
-		"model_validated",
-		"Whether the Model passed publication-time policy validation.",
-		modelLabels()...,
-	)
 	modelConditionMetric = newMetricInfo(
 		"model_condition",
 		"The current Model condition status and reason projected from status.conditions.",
 		modelLabels("type", "status", "reason")...,
-	)
-	clusterModelValidatedMetric = newMetricInfo(
-		"clustermodel_validated",
-		"Whether the ClusterModel passed publication-time policy validation.",
-		clusterModelLabels()...,
 	)
 	clusterModelConditionMetric = newMetricInfo(
 		"clustermodel_condition",
@@ -87,12 +77,12 @@ var (
 	modelInfoMetric = newMetricInfo(
 		"model_info",
 		"Static public Model catalog information.",
-		modelLabels("resolved_source_type", "format", "task", "framework", "artifact_kind")...,
+		modelLabels("resolved_source_type", "format", "task", "artifact_kind")...,
 	)
 	clusterModelInfoMetric = newMetricInfo(
 		"clustermodel_info",
 		"Static public ClusterModel catalog information.",
-		clusterModelLabels("resolved_source_type", "format", "task", "framework", "artifact_kind")...,
+		clusterModelLabels("resolved_source_type", "format", "task", "artifact_kind")...,
 	)
 	modelArtifactSizeMetric = newMetricInfo(
 		"model_artifact_size_bytes",

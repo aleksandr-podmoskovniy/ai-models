@@ -47,7 +47,7 @@ func TestInspectModelArchiveSupportsZstdTar(t *testing.T) {
 	if got, want := inspection.RootPrefix, "checkpoint"; got != want {
 		t.Fatalf("unexpected root prefix %q", got)
 	}
-	if got, want := inspection.WeightBytes, int64(len("weights")); got != want {
+	if got, want := inspection.WeightStats.TotalBytes, int64(len("weights")); got != want {
 		t.Fatalf("unexpected weight bytes %d", got)
 	}
 }

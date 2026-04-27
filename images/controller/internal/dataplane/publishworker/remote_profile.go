@@ -35,10 +35,12 @@ func resolveRemoteProfile(
 	switch remote.InputFormat {
 	case modelsv1alpha1.ModelInputFormatSafetensors:
 		resolved, err := safetensorsprofile.ResolveSummary(safetensorsprofile.SummaryInput{
-			ConfigPayload: remote.ProfileSummary.ConfigPayload,
-			WeightBytes:   remote.ProfileSummary.WeightBytes,
-			Task:          options.Task,
-			TaskHint:      remote.Fallbacks.TaskHint,
+			ConfigPayload:          remote.ProfileSummary.ConfigPayload,
+			WeightBytes:            remote.ProfileSummary.WeightBytes,
+			LargestWeightFileBytes: remote.ProfileSummary.LargestWeightFileBytes,
+			WeightFileCount:        remote.ProfileSummary.WeightFileCount,
+			Task:                   options.Task,
+			TaskHint:               remote.Fallbacks.TaskHint,
 		})
 		if err != nil {
 			return nil, err

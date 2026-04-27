@@ -44,9 +44,7 @@ type BindingInput struct {
 }
 
 type Rendered struct {
-	InitContainer             corev1.Container
 	InitContainers            []corev1.Container
-	HasInitContainer          bool
 	InitContainerName         string
 	InitContainerNames        []string
 	RuntimeEnv                []corev1.EnvVar
@@ -85,11 +83,6 @@ func Render(input Input, options Options) (Rendered, error) {
 		return Rendered{}, errors.New("runtime delivery cache mount contract is inconsistent")
 	}
 
-	initMounts := append([]corev1.VolumeMount{{
-		Name:      input.CacheMount.VolumeName,
-		MountPath: options.CacheMountPath,
-	}}, ociregistry.VolumeMounts(input.RegistryAccess.CASecretName)...)
-
 	if aliasContract {
 		return renderAliasBindings(input, options, bindings)
 	}
@@ -100,7 +93,6 @@ func Render(input Input, options Options) (Rendered, error) {
 	}
 	if input.TopologyKind == CacheTopologyDirect {
 		return Rendered{
-			HasInitContainer:          false,
 			InitContainerName:         options.InitContainerName,
 			RuntimeEnv:                buildRuntimeEnv(input, options, modelPath),
 			ImagePullSecretNamesPrune: buildImagePullSecretNamesPrune(input.RuntimeImagePullSecretName),
@@ -110,23 +102,19 @@ func Render(input Input, options Options) (Rendered, error) {
 		}, nil
 	}
 
+	initContainers := []corev1.Container{
+		buildMaterializerContainer(options.InitContainerName, input, options, bindings[0], input.TopologyKind == CacheTopologySharedPVC, ""),
+	}
 	return Rendered{
-		HasInitContainer:  true,
-		InitContainerName: options.InitContainerName,
-		InitContainer: corev1.Container{
-			Name:            options.InitContainerName,
-			Image:           options.RuntimeImage,
-			ImagePullPolicy: options.ImagePullPolicy,
-			Args:            []string{"materialize-artifact"},
-			Env:             buildInitEnv(input, options),
-			VolumeMounts:    initMounts,
-		},
-		RuntimeEnv:       buildRuntimeEnv(input, options, modelPath),
-		Volumes:          ociregistry.Volumes(input.RegistryAccess.CASecretName),
-		ImagePullSecrets: buildImagePullSecrets(input.RuntimeImagePullSecretName),
-		ModelPath:        modelPath,
-		ArtifactURI:      strings.TrimSpace(input.Artifact.URI),
-		ArtifactFamily:   strings.TrimSpace(input.ArtifactFamily),
+		InitContainerName:  options.InitContainerName,
+		InitContainerNames: initContainerNames(initContainers),
+		InitContainers:     initContainers,
+		RuntimeEnv:         buildRuntimeEnv(input, options, modelPath),
+		Volumes:            ociregistry.Volumes(input.RegistryAccess.CASecretName),
+		ImagePullSecrets:   buildImagePullSecrets(input.RuntimeImagePullSecretName),
+		ModelPath:          modelPath,
+		ArtifactURI:        strings.TrimSpace(input.Artifact.URI),
+		ArtifactFamily:     strings.TrimSpace(input.ArtifactFamily),
 	}, nil
 }
 
@@ -144,15 +132,39 @@ func buildImagePullSecretNamesPrune(secretName string) []string {
 	return []string{strings.TrimSpace(secretName)}
 }
 
-func buildInitEnv(input Input, options Options) []corev1.EnvVar {
+func buildMaterializerContainer(name string, input Input, options Options, binding BindingInput, sharedStore bool, alias string) corev1.Container {
+	return corev1.Container{
+		Name:            name,
+		Image:           options.RuntimeImage,
+		ImagePullPolicy: options.ImagePullPolicy,
+		Args:            []string{"materialize-artifact"},
+		Env:             buildMaterializeEnv(input, options, binding, sharedStore, alias),
+		VolumeMounts:    buildMaterializerVolumeMounts(input, options),
+	}
+}
+
+func buildMaterializerVolumeMounts(input Input, options Options) []corev1.VolumeMount {
+	return append([]corev1.VolumeMount{{
+		Name:      input.CacheMount.VolumeName,
+		MountPath: options.CacheMountPath,
+	}}, ociregistry.VolumeMounts(input.RegistryAccess.CASecretName)...)
+}
+
+func buildMaterializeEnv(input Input, options Options, binding BindingInput, sharedStore bool, alias string) []corev1.EnvVar {
 	env := ociregistry.Env(options.OCIInsecure, input.RegistryAccess.AuthSecretName, input.RegistryAccess.CASecretName)
 	env = append(env,
 		corev1.EnvVar{Name: LogFormatEnv, Value: options.LogFormat},
 		corev1.EnvVar{Name: LogLevelEnv, Value: options.LogLevel},
-		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_URI", Value: input.Artifact.URI},
-		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_DIGEST", Value: input.Artifact.Digest},
+		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_URI", Value: binding.Artifact.URI},
+		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_DIGEST", Value: binding.Artifact.Digest},
 		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_CACHE_ROOT", Value: options.CacheMountPath},
 	)
+	if sharedStore {
+		env = append(env, corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_SHARED_STORE", Value: "true"})
+	}
+	if alias = strings.TrimSpace(alias); alias != "" {
+		env = append(env, corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_MODEL_ALIAS", Value: alias})
+	}
 	if strings.TrimSpace(input.Coordination.Mode) == CoordinationModeShared {
 		env = append(env,
 			corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_COORDINATION_MODE", Value: input.Coordination.Mode},
@@ -164,10 +176,7 @@ func buildInitEnv(input Input, options Options) []corev1.EnvVar {
 			},
 		)
 	}
-	if input.TopologyKind == CacheTopologySharedPVC {
-		env = append(env, corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_SHARED_STORE", Value: "true"})
-	}
-	if family := strings.TrimSpace(input.ArtifactFamily); family != "" {
+	if family := strings.TrimSpace(binding.ArtifactFamily); family != "" {
 		env = append(env, corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_FAMILY", Value: family})
 	}
 	return env

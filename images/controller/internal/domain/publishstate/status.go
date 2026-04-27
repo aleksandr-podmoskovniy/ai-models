@@ -86,7 +86,7 @@ func ProjectStatus(
 			return Projection{}, errors.New("publication operation cleanup handle must not be empty")
 		}
 		return Projection{
-			Status:        readyStatus(current, spec, generation, sourceType, *observation.Snapshot),
+			Status:        readyStatus(current, generation, sourceType, *observation.Snapshot),
 			CleanupHandle: observation.CleanupHandle,
 		}, nil
 	default:

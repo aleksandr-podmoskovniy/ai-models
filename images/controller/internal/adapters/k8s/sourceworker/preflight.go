@@ -17,26 +17,18 @@ limitations under the License.
 package sourceworker
 
 import (
-	"context"
-
-	"github.com/deckhouse/ai-models/controller/internal/application/sourceadmission"
 	"github.com/deckhouse/ai-models/controller/internal/domain/ingestadmission"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 )
 
 func (s *Service) preflight(
-	ctx context.Context,
 	request publicationports.Request,
 	_ SourceWorkerPlan,
 ) error {
-	return sourceadmission.Preflight(ctx, sourceadmission.PreflightInput{
-		Owner: ingestadmission.OwnerBinding{
-			Kind:      request.Owner.Kind,
-			Name:      request.Owner.Name,
-			Namespace: request.Owner.Namespace,
-			UID:       string(request.Owner.UID),
-		},
-		Identity: request.Identity,
-		Spec:     request.Spec,
-	})
+	return ingestadmission.ValidateOwnerBinding(ingestadmission.OwnerBinding{
+		Kind:      request.Owner.Kind,
+		Name:      request.Owner.Name,
+		Namespace: request.Owner.Namespace,
+		UID:       string(request.Owner.UID),
+	}, request.Identity)
 }

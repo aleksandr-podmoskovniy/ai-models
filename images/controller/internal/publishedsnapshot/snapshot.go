@@ -55,28 +55,23 @@ type PublishedArtifact struct {
 }
 
 type ResolvedProfile struct {
-	Task                         string
-	Framework                    string
-	Family                       string
-	License                      string
-	Architecture                 string
-	Format                       string
-	ParameterCount               int64
-	Quantization                 string
-	ContextWindowTokens          int64
-	SourceRepoID                 string
-	SupportedEndpointTypes       []string
-	CompatibleRuntimes           []string
-	CompatibleAcceleratorVendors []string
-	CompatiblePrecisions         []string
-	MinimumLaunch                MinimumLaunch
-}
-
-type MinimumLaunch struct {
-	PlacementType        string
-	AcceleratorCount     int64
-	AcceleratorMemoryGiB int64
-	SharingMode          string
+	Task                          string
+	TaskConfidence                ProfileConfidence
+	Family                        string
+	FamilyConfidence              ProfileConfidence
+	License                       string
+	Architecture                  string
+	ArchitectureConfidence        ProfileConfidence
+	Format                        string
+	ParameterCount                int64
+	ParameterCountConfidence      ProfileConfidence
+	Quantization                  string
+	QuantizationConfidence        ProfileConfidence
+	ContextWindowTokens           int64
+	ContextWindowTokensConfidence ProfileConfidence
+	SourceRepoID                  string
+	SupportedEndpointTypes        []string
+	Footprint                     ProfileFootprint
 }
 
 type Result struct {

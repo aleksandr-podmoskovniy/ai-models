@@ -14,61 +14,63 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha1
+package modelsource
 
 import (
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
+
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 )
 
 var (
-	ErrUnsupportedSourceURLScheme = errors.New("unsupported source URL scheme")
-	ErrUnsupportedSourceURLHost   = errors.New("unsupported source URL host")
+	ErrUnsupportedURLScheme = errors.New("unsupported source URL scheme")
+	ErrUnsupportedURLHost   = errors.New("unsupported source URL host")
 )
 
-func (s ModelSourceSpec) DetectType() (ModelSourceType, error) {
+func DetectType(source modelsv1alpha1.ModelSourceSpec) (modelsv1alpha1.ModelSourceType, error) {
 	switch {
-	case s.Upload != nil && strings.TrimSpace(s.URL) != "":
+	case source.Upload != nil && strings.TrimSpace(source.URL) != "":
 		return "", fmt.Errorf("exactly one of source.url or source.upload must be specified")
-	case s.Upload != nil:
-		return ModelSourceTypeUpload, nil
-	case strings.TrimSpace(s.URL) == "":
+	case source.Upload != nil:
+		return modelsv1alpha1.ModelSourceTypeUpload, nil
+	case strings.TrimSpace(source.URL) == "":
 		return "", fmt.Errorf("source.url or source.upload must be specified")
 	default:
-		return DetectRemoteSourceType(s.URL)
+		return DetectRemoteType(source.URL)
 	}
 }
 
-func DetectRemoteSourceType(rawURL string) (ModelSourceType, error) {
+func DetectRemoteType(rawURL string) (modelsv1alpha1.ModelSourceType, error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return "", err
 	}
 	if parsed.Scheme != "https" {
-		return "", fmt.Errorf("%w %q", ErrUnsupportedSourceURLScheme, parsed.Scheme)
+		return "", fmt.Errorf("%w %q", ErrUnsupportedURLScheme, parsed.Scheme)
 	}
 
 	host := strings.ToLower(parsed.Hostname())
 	switch host {
 	case "huggingface.co", "www.huggingface.co", "hf.co":
-		return ModelSourceTypeHuggingFace, nil
+		return modelsv1alpha1.ModelSourceTypeHuggingFace, nil
 	default:
-		return "", fmt.Errorf("%w %q", ErrUnsupportedSourceURLHost, parsed.Hostname())
+		return "", fmt.Errorf("%w %q", ErrUnsupportedURLHost, parsed.Hostname())
 	}
 }
 
-func IsUnsupportedRemoteSourceError(err error) bool {
-	return errors.Is(err, ErrUnsupportedSourceURLScheme) || errors.Is(err, ErrUnsupportedSourceURLHost)
+func IsUnsupportedRemoteError(err error) bool {
+	return errors.Is(err, ErrUnsupportedURLScheme) || errors.Is(err, ErrUnsupportedURLHost)
 }
 
 func ParseHuggingFaceURL(rawURL string) (string, string, error) {
-	sourceType, err := DetectRemoteSourceType(rawURL)
+	sourceType, err := DetectRemoteType(rawURL)
 	if err != nil {
 		return "", "", err
 	}
-	if sourceType != ModelSourceTypeHuggingFace {
+	if sourceType != modelsv1alpha1.ModelSourceTypeHuggingFace {
 		return "", "", fmt.Errorf("source URL is not a Hugging Face URL")
 	}
 

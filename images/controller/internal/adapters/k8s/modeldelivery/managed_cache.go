@@ -69,24 +69,7 @@ func RemoveManagedCacheTemplateState(template *corev1.PodTemplateSpec, options S
 	}
 
 	managed := NormalizeManagedCacheOptions(options.ManagedCache)
-	changed := false
-	containers, removed := removeManagedCacheVolumeMounts(template.Spec.Containers, managed.VolumeName)
-	if removed {
-		template.Spec.Containers = containers
-		changed = true
-	}
-	initContainers, removed := removeManagedCacheVolumeMounts(template.Spec.InitContainers, managed.VolumeName)
-	if removed {
-		template.Spec.InitContainers = initContainers
-		changed = true
-	}
-	volumes, removed := removeManagedCacheVolumes(template.Spec.Volumes, managed.VolumeName)
-	if removed {
-		template.Spec.Volumes = volumes
-		changed = true
-	}
-
-	return changed
+	return PruneManagedCacheTemplateState(template, managed.VolumeName, nil)
 }
 
 func upsertManagedCacheVolume(volumes []corev1.Volume, options ManagedCacheOptions, artifact publication.PublishedArtifact, family string) ([]corev1.Volume, error) {
@@ -164,41 +147,9 @@ func ensureManagedCacheVolumeMounts(containers []corev1.Container, volumeName, m
 	return containers
 }
 
-func removeManagedCacheVolumeMounts(containers []corev1.Container, name string) ([]corev1.Container, bool) {
-	removed := false
-	prefix := strings.TrimSpace(name) + "-"
-	for index := range containers {
-		filtered := containers[index].VolumeMounts[:0]
-		for _, mount := range containers[index].VolumeMounts {
-			if mount.Name == name || strings.HasPrefix(mount.Name, prefix) {
-				removed = true
-				continue
-			}
-			filtered = append(filtered, mount)
-		}
-		containers[index].VolumeMounts = filtered
-	}
-	return containers, removed
-}
-
-func removeManagedCacheVolumes(volumes []corev1.Volume, name string) ([]corev1.Volume, bool) {
-	removed := false
-	prefix := strings.TrimSpace(name) + "-"
-	filtered := volumes[:0]
-	for _, volume := range volumes {
-		if volume.Name == name || strings.HasPrefix(volume.Name, prefix) {
-			removed = true
-			continue
-		}
-		filtered = append(filtered, volume)
-	}
-	return filtered, removed
-}
-
 func hasManagedCacheVolume(volumes []corev1.Volume, name string) bool {
-	prefix := strings.TrimSpace(name) + "-"
 	for _, volume := range volumes {
-		if volume.Name == name || strings.HasPrefix(volume.Name, prefix) {
+		if managedCacheNameMatches(volume.Name, name) {
 			return true
 		}
 	}
@@ -206,10 +157,9 @@ func hasManagedCacheVolume(volumes []corev1.Volume, name string) bool {
 }
 
 func containersMountManagedVolume(containers []corev1.Container, name string) bool {
-	prefix := strings.TrimSpace(name) + "-"
 	for _, container := range containers {
 		for _, mount := range container.VolumeMounts {
-			if mount.Name == name || strings.HasPrefix(mount.Name, prefix) {
+			if managedCacheNameMatches(mount.Name, name) {
 				return true
 			}
 		}

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deckhouse/ai-models/dmcr/internal/leaseutil"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -101,14 +102,14 @@ func (g *LeaseGate) upsert(ctx context.Context, active bool) (string, error) {
 	updated := lease.DeepCopy()
 	sequence := leaseSequence(lease)
 	if active {
-		holder := leaseHolder(lease)
+		holder := leaseutil.Holder(lease)
 		if holder != "" && holder != g.identity && leaseActive(lease, now) {
 			return "", fmt.Errorf("dmcr maintenance gate %s/%s is held by %s", g.namespace, g.name, holder)
 		}
 		sequence = nextLeaseSequence(lease)
 		g.activateLease(updated, lease, now, sequence)
 	} else {
-		holder := leaseHolder(lease)
+		holder := leaseutil.Holder(lease)
 		if holder != "" && holder != g.identity && leaseActive(lease, now) {
 			return sequence, nil
 		}
@@ -133,75 +134,43 @@ func (g *LeaseGate) newLease(now time.Time) *coordinationv1.Lease {
 			Annotations: map[string]string{GateSequenceAnnotationKey: "1"},
 		},
 		Spec: coordinationv1.LeaseSpec{
-			HolderIdentity:       stringPtr(g.identity),
-			LeaseDurationSeconds: int32Ptr(leaseDurationSeconds(g.duration)),
+			HolderIdentity:       leaseutil.StringPtr(g.identity),
+			LeaseDurationSeconds: leaseutil.Int32Ptr(leaseDurationSeconds(g.duration)),
 			AcquireTime:          &microTime,
 			RenewTime:            &microTime,
-			LeaseTransitions:     int32Ptr(0),
+			LeaseTransitions:     leaseutil.Int32Ptr(0),
 		},
 	}
 }
 
 func (g *LeaseGate) activateLease(updated, current *coordinationv1.Lease, now time.Time, sequence string) {
 	microTime := metav1.NewMicroTime(now)
-	holder := leaseHolder(current)
+	holder := leaseutil.Holder(current)
 	if updated.Annotations == nil {
 		updated.Annotations = make(map[string]string, 1)
 	}
 	updated.Annotations[GateSequenceAnnotationKey] = sequence
-	updated.Spec.HolderIdentity = stringPtr(g.identity)
-	updated.Spec.LeaseDurationSeconds = int32Ptr(leaseDurationSeconds(g.duration))
+	updated.Spec.HolderIdentity = leaseutil.StringPtr(g.identity)
+	updated.Spec.LeaseDurationSeconds = leaseutil.Int32Ptr(leaseDurationSeconds(g.duration))
 	updated.Spec.RenewTime = &microTime
 	if holder != g.identity {
 		updated.Spec.AcquireTime = &microTime
-		updated.Spec.LeaseTransitions = int32Ptr(incrementLeaseTransitions(current))
+		updated.Spec.LeaseTransitions = leaseutil.Int32Ptr(incrementLeaseTransitions(current))
 	}
 }
 
 func (g *LeaseGate) releaseLease(updated *coordinationv1.Lease, now time.Time) {
 	microTime := metav1.NewMicroTime(now)
 	updated.Spec.HolderIdentity = nil
-	updated.Spec.LeaseDurationSeconds = int32Ptr(1)
+	updated.Spec.LeaseDurationSeconds = leaseutil.Int32Ptr(1)
 	updated.Spec.RenewTime = &microTime
 }
 
 func leaseActive(lease *coordinationv1.Lease, now time.Time) bool {
-	if leaseHolder(lease) == "" {
+	if leaseutil.Holder(lease) == "" {
 		return false
 	}
-	return !leaseExpired(lease, now)
-}
-
-func leaseExpired(lease *coordinationv1.Lease, now time.Time) bool {
-	referenceTime, ok := leaseReferenceTime(lease)
-	if !ok {
-		return true
-	}
-	duration := time.Second
-	if lease.Spec.LeaseDurationSeconds != nil && *lease.Spec.LeaseDurationSeconds > 0 {
-		duration = time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second
-	}
-	return !now.Before(referenceTime.Add(duration))
-}
-
-func leaseReferenceTime(lease *coordinationv1.Lease) (time.Time, bool) {
-	if lease == nil {
-		return time.Time{}, false
-	}
-	if lease.Spec.RenewTime != nil {
-		return lease.Spec.RenewTime.Time, true
-	}
-	if lease.Spec.AcquireTime != nil {
-		return lease.Spec.AcquireTime.Time, true
-	}
-	return time.Time{}, false
-}
-
-func leaseHolder(lease *coordinationv1.Lease) string {
-	if lease == nil || lease.Spec.HolderIdentity == nil {
-		return ""
-	}
-	return strings.TrimSpace(*lease.Spec.HolderIdentity)
+	return !leaseutil.Expired(lease, now, time.Second, false)
 }
 
 func leaseSequence(lease *coordinationv1.Lease) string {
@@ -232,12 +201,4 @@ func leaseDurationSeconds(duration time.Duration) int32 {
 		return 1
 	}
 	return int32(seconds)
-}
-
-func stringPtr(value string) *string {
-	return &value
-}
-
-func int32Ptr(value int32) *int32 {
-	return &value
 }

@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/domain/modelsource"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -40,10 +41,8 @@ type objectMetric struct {
 	sourceType       string
 	format           string
 	task             string
-	framework        string
 	artifactKind     string
 	ready            bool
-	validated        bool
 	artifactSizeByte float64
 	conditions       []metav1.Condition
 }
@@ -73,9 +72,18 @@ func newClusterModelMetric(object *modelsv1alpha1.ClusterModel) *objectMetric {
 		object.Name,
 		"",
 		string(object.UID),
-		object.Spec,
+		modelSpecFromClusterSpec(object.Spec),
 		object.Status,
 	)
+}
+
+func modelSpecFromClusterSpec(spec modelsv1alpha1.ClusterModelSpec) modelsv1alpha1.ModelSpec {
+	return modelsv1alpha1.ModelSpec{
+		Source: modelsv1alpha1.ModelSourceSpec{
+			URL:    spec.Source.URL,
+			Upload: spec.Source.Upload,
+		},
+	}
 }
 
 func newObjectMetric(
@@ -95,10 +103,8 @@ func newObjectMetric(
 		sourceType:       effectiveSourceType(spec, status),
 		format:           effectiveFormat(spec, status),
 		task:             effectiveTask(spec, status),
-		framework:        trimString(resolvedFramework(status)),
 		artifactKind:     trimString(artifactKind(status)),
 		ready:            conditionTrue(status.Conditions, modelsv1alpha1.ModelConditionReady),
-		validated:        conditionTrue(status.Conditions, modelsv1alpha1.ModelConditionValidated),
 		artifactSizeByte: artifactSize(status),
 		conditions:       status.Conditions,
 	}
@@ -117,7 +123,7 @@ func effectiveSourceType(spec modelsv1alpha1.ModelSpec, status modelsv1alpha1.Mo
 		return string(status.Source.ResolvedType)
 	}
 
-	sourceType, err := spec.Source.DetectType()
+	sourceType, err := modelsource.DetectType(spec.Source)
 	if err != nil {
 		return ""
 	}
@@ -127,8 +133,8 @@ func effectiveSourceType(spec modelsv1alpha1.ModelSpec, status modelsv1alpha1.Mo
 
 func effectiveFormat(spec modelsv1alpha1.ModelSpec, status modelsv1alpha1.ModelStatus) string {
 	_ = spec
-	if status.Resolved != nil && strings.TrimSpace(status.Resolved.Format) != "" {
-		return status.Resolved.Format
+	if status.Resolved != nil && strings.TrimSpace(string(status.Resolved.Format)) != "" {
+		return string(status.Resolved.Format)
 	}
 
 	return ""
@@ -141,14 +147,6 @@ func effectiveTask(spec modelsv1alpha1.ModelSpec, status modelsv1alpha1.ModelSta
 	}
 
 	return ""
-}
-
-func resolvedFramework(status modelsv1alpha1.ModelStatus) string {
-	if status.Resolved == nil {
-		return ""
-	}
-
-	return status.Resolved.Framework
 }
 
 func artifactKind(status modelsv1alpha1.ModelStatus) string {

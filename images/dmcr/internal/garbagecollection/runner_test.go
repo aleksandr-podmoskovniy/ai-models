@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -28,7 +29,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func TestRunRequestCycleArmsQueuedRequestsAndLogs(t *testing.T) {
@@ -230,5 +233,61 @@ func TestRunRequestCycleMarksActiveRequestsDoneAndLogs(t *testing.T) {
 
 	if got := entries[1]["registry_output"]; got != "gc-ok" {
 		t.Fatalf("registry_output = %v, want gc-ok", got)
+	}
+}
+
+func TestRunRequestCycleReplaysPartialCompletionFailure(t *testing.T) {
+	first := activeRequestForResultTest("dmcr-gc-a", time.Date(2026, 4, 13, 13, 40, 0, 0, time.UTC))
+	second := activeRequestForResultTest("dmcr-gc-b", time.Date(2026, 4, 13, 13, 41, 0, 0, time.UTC))
+	client := fake.NewSimpleClientset(first.DeepCopy(), second.DeepCopy())
+
+	failSecondUpdateOnce := true
+	client.Fake.PrependReactor("update", "secrets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		updated := action.(k8stesting.UpdateAction).GetObject().(*corev1.Secret)
+		if updated.Name != "dmcr-gc-b" || !failSecondUpdateOnce {
+			return false, nil, nil
+		}
+		failSecondUpdateOnce = false
+		return true, nil, errors.New("temporary update failure")
+	})
+
+	previousCleanupRunner := cleanupRunner
+	cleanupRuns := 0
+	cleanupRunner = func(context.Context, string, string, time.Duration, cleanupPolicy) (CleanupResult, error) {
+		cleanupRuns++
+		return CleanupResult{RegistryOutput: "gc-ok"}, nil
+	}
+	t.Cleanup(func() {
+		cleanupRunner = previousCleanupRunner
+	})
+
+	options := Options{
+		RequestNamespace:     "d8-ai-models",
+		RequestLabelSelector: DefaultRequestLabelSelector(),
+		GCTimeout:            time.Minute,
+	}
+
+	handled, err := runRequestCycle(context.Background(), client, options, time.Now)
+	if err == nil {
+		t.Fatal("first runRequestCycle() error = nil, want completion update failure")
+	}
+	if !handled {
+		t.Fatal("first runRequestCycle() = false, want true after cleanup ran")
+	}
+	assertCompletedRequestForTest(t, getRequestForTest(t, client, "dmcr-gc-a"))
+	if secondAfterFailure := getRequestForTest(t, client, "dmcr-gc-b"); !shouldRunGarbageCollection(secondAfterFailure) {
+		t.Fatalf("failed request should remain active for replay: %#v", secondAfterFailure.Annotations)
+	}
+
+	handled, err = runRequestCycle(context.Background(), client, options, time.Now)
+	if err != nil {
+		t.Fatalf("second runRequestCycle() error = %v", err)
+	}
+	if !handled {
+		t.Fatal("second runRequestCycle() = false, want true")
+	}
+	assertCompletedRequestForTest(t, getRequestForTest(t, client, "dmcr-gc-b"))
+	if got, want := cleanupRuns, 2; got != want {
+		t.Fatalf("cleanup runs = %d, want %d", got, want)
 	}
 }

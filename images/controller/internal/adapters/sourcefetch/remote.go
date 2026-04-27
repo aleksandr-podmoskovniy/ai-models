@@ -25,6 +25,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
+	"github.com/deckhouse/ai-models/controller/internal/domain/modelsource"
 	sourcemirrorports "github.com/deckhouse/ai-models/controller/internal/ports/sourcemirror"
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 )
@@ -63,10 +64,12 @@ type RemoteResult struct {
 }
 
 type RemoteProfileSummary struct {
-	ConfigPayload  []byte
-	WeightBytes    int64
-	ModelFileName  string
-	ModelSizeBytes int64
+	ConfigPayload          []byte
+	WeightBytes            int64
+	LargestWeightFileBytes int64
+	WeightFileCount        int64
+	ModelFileName          string
+	ModelSizeBytes         int64
 }
 
 type RemoteOpenReadResult struct {
@@ -121,7 +124,7 @@ func FetchRemoteModel(ctx context.Context, options RemoteOptions) (RemoteResult,
 		return RemoteResult{}, errors.New("remote source URL must not be empty")
 	}
 
-	sourceType, err := modelsv1alpha1.DetectRemoteSourceType(options.URL)
+	sourceType, err := modelsource.DetectRemoteType(options.URL)
 	if err != nil {
 		return RemoteResult{}, err
 	}

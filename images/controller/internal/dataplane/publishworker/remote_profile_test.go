@@ -46,7 +46,9 @@ func TestResolveRemoteProfileSafetensorsSummary(t *testing.T) {
     "vocab_size":151936
   }
 }`),
-			WeightBytes: 24,
+			WeightBytes:            24,
+			LargestWeightFileBytes: 14,
+			WeightFileCount:        2,
 		},
 	})
 	if err != nil {
@@ -60,6 +62,12 @@ func TestResolveRemoteProfileSafetensorsSummary(t *testing.T) {
 	}
 	if got, want := resolved.Task, "text-generation"; got != want {
 		t.Fatalf("unexpected task %q", got)
+	}
+	if got, want := resolved.Footprint.LargestWeightFileBytes, int64(14); got != want {
+		t.Fatalf("unexpected largest weight bytes %d", got)
+	}
+	if got, want := resolved.Footprint.ShardCount, int64(2); got != want {
+		t.Fatalf("unexpected shard count %d", got)
 	}
 }
 

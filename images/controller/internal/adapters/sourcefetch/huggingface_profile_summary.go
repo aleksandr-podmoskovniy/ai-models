@@ -69,17 +69,19 @@ func fetchHuggingFaceSafetensorsProfileSummary(
 		return nil, err
 	}
 
-	weightBytes, err := sumHuggingFaceWeightBytes(ctx, repoID, resolvedRevision, options.HFToken, selectedFiles)
+	weightStats, err := sumHuggingFaceWeightStats(ctx, repoID, resolvedRevision, options.HFToken, selectedFiles)
 	if err != nil {
 		return nil, err
 	}
-	if weightBytes <= 0 {
+	if weightStats.TotalBytes <= 0 {
 		return nil, errors.New("huggingface safetensors summary requires positive remote weight bytes")
 	}
 
 	return &RemoteProfileSummary{
-		ConfigPayload: configPayload,
-		WeightBytes:   weightBytes,
+		ConfigPayload:          configPayload,
+		WeightBytes:            weightStats.TotalBytes,
+		LargestWeightFileBytes: weightStats.LargestFileBytes,
+		WeightFileCount:        weightStats.FileCount,
 	}, nil
 }
 
@@ -141,29 +143,29 @@ func fetchHuggingFaceFile(
 	return io.ReadAll(response.Body)
 }
 
-func sumHuggingFaceWeightBytes(
+func sumHuggingFaceWeightStats(
 	ctx context.Context,
 	repoID string,
 	revision string,
 	token string,
 	selectedFiles []string,
-) (int64, error) {
-	var total int64
+) (WeightStats, error) {
+	var stats WeightStats
 	for _, file := range selectedFiles {
 		cleanPath, err := cleanRemoteRelativePath(file)
 		if err != nil {
-			return 0, err
+			return WeightStats{}, err
 		}
 		if !strings.HasSuffix(strings.ToLower(cleanPath), ".safetensors") {
 			continue
 		}
 		sizeBytes, err := headHuggingFaceFileSize(ctx, repoID, revision, token, cleanPath)
 		if err != nil {
-			return 0, err
+			return WeightStats{}, err
 		}
-		total += sizeBytes
+		stats.add(sizeBytes)
 	}
-	return total, nil
+	return stats, nil
 }
 
 func headHuggingFaceFileSize(

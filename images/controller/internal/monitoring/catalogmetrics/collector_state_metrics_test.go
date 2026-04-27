@@ -37,13 +37,11 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 			SizeBytes: &modelArtifactSize,
 		},
 		Resolved: &modelsv1alpha1.ModelResolvedStatus{
-			Task:      "text-generation",
-			Format:    "Safetensors",
-			Framework: "transformers",
+			Task:   "text-generation",
+			Format: modelsv1alpha1.ModelInputFormatSafetensors,
 		},
 		Conditions: []metav1.Condition{
 			{Type: string(modelsv1alpha1.ModelConditionReady), Status: metav1.ConditionTrue, Reason: string(modelsv1alpha1.ModelConditionReasonReady)},
-			{Type: string(modelsv1alpha1.ModelConditionValidated), Status: metav1.ConditionTrue, Reason: string(modelsv1alpha1.ModelConditionReasonValidationSucceeded)},
 		},
 	}
 
@@ -55,13 +53,11 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 			ResolvedType: modelsv1alpha1.ModelSourceTypeHuggingFace,
 		},
 		Resolved: &modelsv1alpha1.ModelResolvedStatus{
-			Task:      "text-generation",
-			Format:    "GGUF",
-			Framework: "llama.cpp",
+			Task:   "text-generation",
+			Format: modelsv1alpha1.ModelInputFormatGGUF,
 		},
 		Conditions: []metav1.Condition{
 			{Type: string(modelsv1alpha1.ModelConditionReady), Status: metav1.ConditionFalse, Reason: string(modelsv1alpha1.ModelConditionReasonFailed)},
-			{Type: string(modelsv1alpha1.ModelConditionValidated), Status: metav1.ConditionFalse, Reason: string(modelsv1alpha1.ModelConditionReasonPublicationFailed)},
 		},
 	}
 
@@ -86,11 +82,6 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 		"namespace": model.Namespace,
 		"uid":       string(model.UID),
 	}, 1)
-	assertGaugeValue(t, families, "d8_ai_models_model_validated", map[string]string{
-		"name":      model.Name,
-		"namespace": model.Namespace,
-		"uid":       string(model.UID),
-	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_model_condition", map[string]string{
 		"name":      model.Name,
 		"namespace": model.Namespace,
@@ -98,14 +89,6 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 		"type":      string(modelsv1alpha1.ModelConditionReady),
 		"status":    string(metav1.ConditionTrue),
 		"reason":    string(modelsv1alpha1.ModelConditionReasonReady),
-	}, 1)
-	assertGaugeValue(t, families, "d8_ai_models_model_condition", map[string]string{
-		"name":      model.Name,
-		"namespace": model.Namespace,
-		"uid":       string(model.UID),
-		"type":      string(modelsv1alpha1.ModelConditionValidated),
-		"status":    string(metav1.ConditionTrue),
-		"reason":    string(modelsv1alpha1.ModelConditionReasonValidationSucceeded),
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_model_condition", map[string]string{
 		"name":      model.Name,
@@ -122,7 +105,6 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 		"resolved_source_type": string(modelsv1alpha1.ModelSourceTypeHuggingFace),
 		"format":               "Safetensors",
 		"task":                 "text-generation",
-		"framework":            "transformers",
 		"artifact_kind":        string(modelsv1alpha1.ModelArtifactLocationKindOCI),
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_model_artifact_size_bytes", map[string]string{
@@ -141,23 +123,12 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 		"name": clusterModel.Name,
 		"uid":  string(clusterModel.UID),
 	}, 0)
-	assertGaugeValue(t, families, "d8_ai_models_clustermodel_validated", map[string]string{
-		"name": clusterModel.Name,
-		"uid":  string(clusterModel.UID),
-	}, 0)
 	assertGaugeValue(t, families, "d8_ai_models_clustermodel_condition", map[string]string{
 		"name":   clusterModel.Name,
 		"uid":    string(clusterModel.UID),
 		"type":   string(modelsv1alpha1.ModelConditionReady),
 		"status": string(metav1.ConditionFalse),
 		"reason": string(modelsv1alpha1.ModelConditionReasonFailed),
-	}, 1)
-	assertGaugeValue(t, families, "d8_ai_models_clustermodel_condition", map[string]string{
-		"name":   clusterModel.Name,
-		"uid":    string(clusterModel.UID),
-		"type":   string(modelsv1alpha1.ModelConditionValidated),
-		"status": string(metav1.ConditionFalse),
-		"reason": string(modelsv1alpha1.ModelConditionReasonPublicationFailed),
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_clustermodel_condition", map[string]string{
 		"name":   clusterModel.Name,
@@ -172,7 +143,6 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 		"resolved_source_type": string(modelsv1alpha1.ModelSourceTypeHuggingFace),
 		"format":               "GGUF",
 		"task":                 "text-generation",
-		"framework":            "llama.cpp",
 		"artifact_kind":        "",
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_clustermodel_artifact_size_bytes", map[string]string{

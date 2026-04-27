@@ -106,7 +106,6 @@ func uploadSessionFailureMessage(
 		}
 		switch modelsv1alpha1.ModelConditionType(condition.Type) {
 		case modelsv1alpha1.ModelConditionReady,
-			modelsv1alpha1.ModelConditionValidated,
 			modelsv1alpha1.ModelConditionArtifactResolved:
 			if message := strings.TrimSpace(condition.Message); message != "" {
 				return message

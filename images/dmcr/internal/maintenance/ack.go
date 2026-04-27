@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deckhouse/ai-models/dmcr/internal/leaseutil"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -148,8 +149,8 @@ func (m *AckMirror) upsert(ctx context.Context, sequence string, now time.Time) 
 		updated.Annotations = make(map[string]string, 1)
 	}
 	updated.Annotations[GateSequenceAnnotationKey] = sequence
-	updated.Spec.HolderIdentity = stringPtr(m.identity)
-	updated.Spec.LeaseDurationSeconds = int32Ptr(leaseDurationSeconds(m.ttl))
+	updated.Spec.HolderIdentity = leaseutil.StringPtr(m.identity)
+	updated.Spec.LeaseDurationSeconds = leaseutil.Int32Ptr(leaseDurationSeconds(m.ttl))
 	updated.Spec.RenewTime = &renewTime
 	if updated.Spec.AcquireTime == nil {
 		updated.Spec.AcquireTime = &renewTime
@@ -176,7 +177,7 @@ func (m *AckMirror) release(ctx context.Context) error {
 	updated := lease.DeepCopy()
 	now := metav1.NewMicroTime(m.now().UTC())
 	updated.Spec.HolderIdentity = nil
-	updated.Spec.LeaseDurationSeconds = int32Ptr(1)
+	updated.Spec.LeaseDurationSeconds = leaseutil.Int32Ptr(1)
 	updated.Spec.RenewTime = &now
 	_, err = leaseClient.Update(ctx, updated, metav1.UpdateOptions{})
 	if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
@@ -195,11 +196,11 @@ func (m *AckMirror) newLease(sequence string, now time.Time) *coordinationv1.Lea
 			Annotations: map[string]string{GateSequenceAnnotationKey: sequence},
 		},
 		Spec: coordinationv1.LeaseSpec{
-			HolderIdentity:       stringPtr(m.identity),
-			LeaseDurationSeconds: int32Ptr(leaseDurationSeconds(m.ttl)),
+			HolderIdentity:       leaseutil.StringPtr(m.identity),
+			LeaseDurationSeconds: leaseutil.Int32Ptr(leaseDurationSeconds(m.ttl)),
 			AcquireTime:          &microTime,
 			RenewTime:            &microTime,
-			LeaseTransitions:     int32Ptr(0),
+			LeaseTransitions:     leaseutil.Int32Ptr(0),
 		},
 	}
 }

@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deckhouse/ai-models/dmcr/internal/leaseutil"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -114,8 +116,119 @@ func TestFileMirrorTreatsExpiredLeaseAsInactive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get(lease) error = %v", err)
 	}
-	if leaseHolder(updated) != "pod-a" {
-		t.Fatalf("lease holder changed unexpectedly: %q", leaseHolder(updated))
+	if leaseutil.Holder(updated) != "pod-a" {
+		t.Fatalf("lease holder changed unexpectedly: %q", leaseutil.Holder(updated))
+	}
+}
+
+func TestLeaseGateTakesOverExpiredLeaseWithMissingTransitions(t *testing.T) {
+	now := time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC)
+	first, err := NewLeaseGate(fake.NewSimpleClientset(), "d8-ai-models", "dmcr-gc-maintenance", "pod-a", time.Minute)
+	if err != nil {
+		t.Fatalf("NewLeaseGate(first) error = %v", err)
+	}
+	lease := first.newLease(now.Add(-2 * time.Minute))
+	lease.Spec.LeaseTransitions = nil
+
+	client := fake.NewSimpleClientset(lease)
+	second, err := NewLeaseGate(client, "d8-ai-models", "dmcr-gc-maintenance", "pod-b", time.Minute)
+	if err != nil {
+		t.Fatalf("NewLeaseGate(second) error = %v", err)
+	}
+	second.now = func() time.Time { return now }
+
+	sequence, _, err := second.Activate(context.Background())
+	if err != nil {
+		t.Fatalf("Activate() error = %v", err)
+	}
+	if sequence != "2" {
+		t.Fatalf("sequence = %q, want 2", sequence)
+	}
+	updated, err := client.CoordinationV1().Leases("d8-ai-models").Get(context.Background(), "dmcr-gc-maintenance", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(lease) error = %v", err)
+	}
+	if leaseutil.Holder(updated) != "pod-b" {
+		t.Fatalf("lease holder = %q, want pod-b", leaseutil.Holder(updated))
+	}
+	if updated.Spec.LeaseTransitions == nil || *updated.Spec.LeaseTransitions != 0 {
+		t.Fatalf("leaseTransitions = %v, want 0", updated.Spec.LeaseTransitions)
+	}
+}
+
+func TestLeaseGateDoesNotTreatCreationTimestampOnlyForeignLeaseAsActive(t *testing.T) {
+	now := time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC)
+	lease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "dmcr-gc-maintenance",
+			Namespace:         "d8-ai-models",
+			CreationTimestamp: metav1.NewTime(now.Add(-time.Second)),
+			Annotations:       map[string]string{GateSequenceAnnotationKey: "1"},
+		},
+		Spec: coordinationv1.LeaseSpec{
+			HolderIdentity:       leaseutil.StringPtr("pod-a"),
+			LeaseDurationSeconds: leaseutil.Int32Ptr(60),
+		},
+	}
+	client := fake.NewSimpleClientset(lease)
+	gate, err := NewLeaseGate(client, "d8-ai-models", "dmcr-gc-maintenance", "pod-b", time.Minute)
+	if err != nil {
+		t.Fatalf("NewLeaseGate() error = %v", err)
+	}
+	gate.now = func() time.Time { return now }
+
+	sequence, _, err := gate.Activate(context.Background())
+	if err != nil {
+		t.Fatalf("Activate() error = %v", err)
+	}
+	if sequence != "2" {
+		t.Fatalf("sequence = %q, want 2", sequence)
+	}
+	updated, err := client.CoordinationV1().Leases("d8-ai-models").Get(context.Background(), "dmcr-gc-maintenance", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(lease) error = %v", err)
+	}
+	if leaseutil.Holder(updated) != "pod-b" {
+		t.Fatalf("lease holder = %q, want pod-b", leaseutil.Holder(updated))
+	}
+}
+
+func TestFileMirrorTreatsLeaseWithOnlyCreationTimestampAsInactive(t *testing.T) {
+	now := time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC)
+	lease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "dmcr-gc-maintenance",
+			Namespace:         "d8-ai-models",
+			CreationTimestamp: metav1.NewTime(now.Add(-30 * time.Second)),
+			Annotations:       map[string]string{GateSequenceAnnotationKey: "1"},
+		},
+		Spec: coordinationv1.LeaseSpec{
+			HolderIdentity:       leaseutil.StringPtr("pod-a"),
+			LeaseDurationSeconds: leaseutil.Int32Ptr(60),
+		},
+	}
+	client := fake.NewSimpleClientset(lease)
+	path := filepath.Join(t.TempDir(), "gate.json")
+	mirror, err := NewFileMirror(client, "d8-ai-models", "dmcr-gc-maintenance", path)
+	if err != nil {
+		t.Fatalf("NewFileMirror() error = %v", err)
+	}
+	mirror.now = func() time.Time { return now }
+	if err := mirror.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+
+	checker, err := NewFileChecker(path)
+	if err != nil {
+		t.Fatalf("NewFileChecker() error = %v", err)
+	}
+	checker.now = func() time.Time { return now }
+	active, err := checker.Active(context.Background())
+	if err != nil {
+		t.Fatalf("Active() error = %v", err)
+	}
+	if active {
+		t.Fatal("expected timestamp-less maintenance gate to be inactive")
 	}
 }
 

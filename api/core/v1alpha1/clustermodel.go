@@ -28,7 +28,6 @@ const (
 // +genclient
 // +genclient:nonNamespaced
 // +kubebuilder:object:root=true
-// +kubebuilder:validation:XValidation:rule="!has(self.spec.source.authSecretRef)",message="spec.source.authSecretRef is not supported for ClusterModel"
 // +kubebuilder:metadata:labels={heritage=deckhouse,module=ai-models}
 // +kubebuilder:resource:categories={ai-models},scope=Cluster,singular=clustermodel
 // +kubebuilder:subresource:status
@@ -41,8 +40,8 @@ type ClusterModel struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ModelSpec   `json:"spec"`
-	Status ModelStatus `json:"status,omitempty"`
+	Spec   ClusterModelSpec `json:"spec"`
+	Status ModelStatus      `json:"status,omitempty"`
 }
 
 // ClusterModelList contains a list of ClusterModel objects.

@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deckhouse/ai-models/dmcr/internal/leaseutil"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -139,6 +140,59 @@ func TestExecutorLeaseRenewsOwnLease(t *testing.T) {
 	}
 }
 
+func TestExecutorLeaseUsesCreationTimestampWhenLeaseTimesAreMissing(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name        string
+		createdAt   time.Time
+		acquired    bool
+		holder      string
+		transitions int32
+	}{
+		{
+			name:        "live",
+			createdAt:   now.Add(-10 * time.Second),
+			acquired:    false,
+			holder:      "pod-b",
+			transitions: 2,
+		},
+		{
+			name:        "expired",
+			createdAt:   now.Add(-45 * time.Second),
+			acquired:    true,
+			holder:      "pod-a",
+			transitions: 3,
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			existing := leaseWithCreationTimestampForTest("d8-ai-models", "dmcr-gc-executor", "pod-b", tc.createdAt, 30*time.Second, 2)
+			client := fake.NewSimpleClientset(existing)
+			runner := newTestExecutorLeaseRunner(client, now)
+
+			acquired, err := runner.acquireOrRenew(context.Background())
+			if err != nil {
+				t.Fatalf("acquireOrRenew() error = %v", err)
+			}
+			if acquired != tc.acquired {
+				t.Fatalf("acquireOrRenew() = %t, want %t", acquired, tc.acquired)
+			}
+			lease, err := client.CoordinationV1().Leases("d8-ai-models").Get(context.Background(), "dmcr-gc-executor", metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("get lease error = %v", err)
+			}
+			assertLeaseHolder(t, lease, tc.holder)
+			if lease.Spec.LeaseTransitions == nil || *lease.Spec.LeaseTransitions != tc.transitions {
+				t.Fatalf("leaseTransitions = %v, want %d", lease.Spec.LeaseTransitions, tc.transitions)
+			}
+		})
+	}
+}
+
 func newTestExecutorLeaseRunner(client *fake.Clientset, now time.Time) *executorLeaseRunner {
 	return &executorLeaseRunner{
 		client:        client,
@@ -154,7 +208,7 @@ func newTestExecutorLeaseRunner(client *fake.Clientset, now time.Time) *executor
 }
 
 func leaseForTest(namespace, name, holder string, renewTime time.Time, duration time.Duration, transitions int32) *coordinationv1.Lease {
-	durationSeconds := leaseDurationSeconds(duration)
+	durationSeconds := leaseutil.DurationSeconds(duration, DefaultExecutorLeaseDuration)
 	microTime := metav1.NewMicroTime(renewTime)
 	return &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
@@ -162,11 +216,33 @@ func leaseForTest(namespace, name, holder string, renewTime time.Time, duration 
 			Namespace: namespace,
 		},
 		Spec: coordinationv1.LeaseSpec{
-			HolderIdentity:       stringPtr(holder),
-			LeaseDurationSeconds: int32Ptr(durationSeconds),
+			HolderIdentity:       leaseutil.StringPtr(holder),
+			LeaseDurationSeconds: leaseutil.Int32Ptr(durationSeconds),
 			AcquireTime:          &microTime,
 			RenewTime:            &microTime,
-			LeaseTransitions:     int32Ptr(transitions),
+			LeaseTransitions:     leaseutil.Int32Ptr(transitions),
+		},
+	}
+}
+
+func leaseWithCreationTimestampForTest(
+	namespace string,
+	name string,
+	holder string,
+	createdAt time.Time,
+	duration time.Duration,
+	transitions int32,
+) *coordinationv1.Lease {
+	return &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              name,
+			Namespace:         namespace,
+			CreationTimestamp: metav1.NewTime(createdAt),
+		},
+		Spec: coordinationv1.LeaseSpec{
+			HolderIdentity:       leaseutil.StringPtr(holder),
+			LeaseDurationSeconds: leaseutil.Int32Ptr(leaseutil.DurationSeconds(duration, DefaultExecutorLeaseDuration)),
+			LeaseTransitions:     leaseutil.Int32Ptr(transitions),
 		},
 	}
 }

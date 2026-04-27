@@ -39,10 +39,46 @@ const (
 	cronJobControllerName     = defaultControllerNamePrefix + "-cronjob"
 )
 
-type deploymentReconciler struct{ baseReconciler }
-type statefulSetReconciler struct{ baseReconciler }
-type daemonSetReconciler struct{ baseReconciler }
-type cronJobReconciler struct{ baseReconciler }
+var errUnexpectedWorkloadListItem = errors.New("workload list returned a non-object item")
+
+type workloadKind struct {
+	kind           string
+	controllerName string
+	object         func() client.Object
+	list           func() client.ObjectList
+}
+
+var workloadKinds = []workloadKind{
+	{
+		kind:           "Deployment",
+		controllerName: deploymentControllerName,
+		object:         func() client.Object { return &appsv1.Deployment{} },
+		list:           func() client.ObjectList { return &appsv1.DeploymentList{} },
+	},
+	{
+		kind:           "StatefulSet",
+		controllerName: statefulSetControllerName,
+		object:         func() client.Object { return &appsv1.StatefulSet{} },
+		list:           func() client.ObjectList { return &appsv1.StatefulSetList{} },
+	},
+	{
+		kind:           "DaemonSet",
+		controllerName: daemonSetControllerName,
+		object:         func() client.Object { return &appsv1.DaemonSet{} },
+		list:           func() client.ObjectList { return &appsv1.DaemonSetList{} },
+	},
+	{
+		kind:           "CronJob",
+		controllerName: cronJobControllerName,
+		object:         func() client.Object { return &batchv1.CronJob{} },
+		list:           func() client.ObjectList { return &batchv1.CronJobList{} },
+	},
+}
+
+type workloadReconciler struct {
+	baseReconciler
+	newObject func() client.Object
+}
 
 func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	if mgr == nil {
@@ -64,125 +100,37 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 		return err
 	}
 
-	if err := setupDeploymentController(mgr, baseReconciler{
-		client:   mgr.GetClient(),
-		reader:   mgr.GetAPIReader(),
-		delivery: deliveryService,
-		options:  options,
-		logger:   controllerLogger("Deployment"),
-		recorder: mgr.GetEventRecorderFor(deploymentControllerName),
-	}); err != nil {
-		return err
-	}
-	if err := setupStatefulSetController(mgr, baseReconciler{
-		client:   mgr.GetClient(),
-		reader:   mgr.GetAPIReader(),
-		delivery: deliveryService,
-		options:  options,
-		logger:   controllerLogger("StatefulSet"),
-		recorder: mgr.GetEventRecorderFor(statefulSetControllerName),
-	}); err != nil {
-		return err
-	}
-	if err := setupDaemonSetController(mgr, baseReconciler{
-		client:   mgr.GetClient(),
-		reader:   mgr.GetAPIReader(),
-		delivery: deliveryService,
-		options:  options,
-		logger:   controllerLogger("DaemonSet"),
-		recorder: mgr.GetEventRecorderFor(daemonSetControllerName),
-	}); err != nil {
-		return err
-	}
-	if err := setupCronJobController(mgr, baseReconciler{
-		client:   mgr.GetClient(),
-		reader:   mgr.GetAPIReader(),
-		delivery: deliveryService,
-		options:  options,
-		logger:   controllerLogger("CronJob"),
-		recorder: mgr.GetEventRecorderFor(cronJobControllerName),
-	}); err != nil {
-		return err
+	for _, kind := range workloadKinds {
+		if err := setupWorkloadController(mgr, kind, baseReconciler{
+			client:   mgr.GetClient(),
+			reader:   mgr.GetAPIReader(),
+			delivery: deliveryService,
+			options:  options,
+			logger:   controllerLogger(kind.kind),
+			recorder: mgr.GetEventRecorderFor(kind.controllerName),
+		}); err != nil {
+			return err
+		}
 	}
 	return setupAdmission(mgr)
 }
 
-func setupDeploymentController(mgr ctrl.Manager, base baseReconciler) error {
+func setupWorkloadController(mgr ctrl.Manager, kind workloadKind, base baseReconciler) error {
 	controller := ctrl.NewControllerManagedBy(mgr).
-		Named(deploymentControllerName).
-		For(&appsv1.Deployment{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
-		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapDeploymentsForModel)).
-		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapDeploymentsForClusterModel))
+		Named(kind.controllerName).
+		For(kind.object(), builder.WithPredicates(workloadEventFilter(base.options.Service))).
+		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapWorkloadsForModel(kind))).
+		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapWorkloadsForClusterModel(kind)))
 	if base.options.Service.ManagedCache.Enabled {
-		controller = controller.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(base.mapDeploymentsForNodeCacheReadiness), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
+		controller = controller.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(base.mapWorkloadsForNodeCacheReadiness(kind)), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
 	}
-	return controller.Complete(&deploymentReconciler{base})
+	return controller.Complete(&workloadReconciler{baseReconciler: base, newObject: kind.object})
 }
 
-func setupStatefulSetController(mgr ctrl.Manager, base baseReconciler) error {
-	controller := ctrl.NewControllerManagedBy(mgr).
-		Named(statefulSetControllerName).
-		For(&appsv1.StatefulSet{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
-		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapStatefulSetsForModel)).
-		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapStatefulSetsForClusterModel))
-	if base.options.Service.ManagedCache.Enabled {
-		controller = controller.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(base.mapStatefulSetsForNodeCacheReadiness), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
-	}
-	return controller.Complete(&statefulSetReconciler{base})
-}
-
-func setupDaemonSetController(mgr ctrl.Manager, base baseReconciler) error {
-	controller := ctrl.NewControllerManagedBy(mgr).
-		Named(daemonSetControllerName).
-		For(&appsv1.DaemonSet{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
-		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapDaemonSetsForModel)).
-		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapDaemonSetsForClusterModel))
-	if base.options.Service.ManagedCache.Enabled {
-		controller = controller.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(base.mapDaemonSetsForNodeCacheReadiness), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
-	}
-	return controller.Complete(&daemonSetReconciler{base})
-}
-
-func setupCronJobController(mgr ctrl.Manager, base baseReconciler) error {
-	controller := ctrl.NewControllerManagedBy(mgr).
-		Named(cronJobControllerName).
-		For(&batchv1.CronJob{}, builder.WithPredicates(workloadEventFilter(base.options.Service))).
-		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapCronJobsForModel)).
-		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapCronJobsForClusterModel))
-	if base.options.Service.ManagedCache.Enabled {
-		controller = controller.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(base.mapCronJobsForNodeCacheReadiness), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
-	}
-	return controller.Complete(&cronJobReconciler{base})
-}
-
-func (r *deploymentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var object appsv1.Deployment
-	if err := r.client.Get(ctx, req.NamespacedName, &object); err != nil {
+func (r *workloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	object := r.newObject()
+	if err := r.client.Get(ctx, req.NamespacedName, object); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	return r.reconcileWorkload(ctx, &object)
-}
-
-func (r *statefulSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var object appsv1.StatefulSet
-	if err := r.client.Get(ctx, req.NamespacedName, &object); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-	return r.reconcileWorkload(ctx, &object)
-}
-
-func (r *daemonSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var object appsv1.DaemonSet
-	if err := r.client.Get(ctx, req.NamespacedName, &object); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-	return r.reconcileWorkload(ctx, &object)
-}
-
-func (r *cronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var object batchv1.CronJob
-	if err := r.client.Get(ctx, req.NamespacedName, &object); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-	return r.reconcileWorkload(ctx, &object)
+	return r.reconcileWorkload(ctx, object)
 }

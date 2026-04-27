@@ -18,10 +18,16 @@ package v1alpha1
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-// ModelSpec is the shared desired state for both Model and ClusterModel.
+// ModelSpec is the desired state for a namespaced Model.
 // +kubebuilder:validation:XValidation:rule="self.source == oldSelf.source",message="spec.source is immutable"
 type ModelSpec struct {
 	Source ModelSourceSpec `json:"source"`
+}
+
+// ClusterModelSpec is the desired state for a cluster-scoped ClusterModel.
+// +kubebuilder:validation:XValidation:rule="self.source == oldSelf.source",message="spec.source is immutable"
+type ClusterModelSpec struct {
+	Source ClusterModelSourceSpec `json:"source"`
 }
 
 // ModelStatus is the shared observed state for both Model and ClusterModel.
@@ -50,6 +56,18 @@ type ModelSourceSpec struct {
 	// +kubebuilder:validation:Pattern=`^https:\/\/((www\.)?huggingface\.co|hf\.co)\/.+$`
 	URL string `json:"url,omitempty"`
 	// For namespaced Model, empty Namespace resolves to the object's namespace.
+	AuthSecretRef *SecretReference   `json:"authSecretRef,omitempty"`
+	Upload        *UploadModelSource `json:"upload,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:rule="((has(self.url) && size(self.url) > 0 ? 1 : 0) + (has(self.upload) ? 1 : 0)) == 1",message="exactly one of source.url or source.upload must be specified"
+// +kubebuilder:validation:XValidation:rule="!has(self.authSecretRef)",message="source.authSecretRef is not supported for ClusterModel"
+type ClusterModelSourceSpec struct {
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Pattern=`^https:\/\/((www\.)?huggingface\.co|hf\.co)\/.+$`
+	URL string `json:"url,omitempty"`
+	// AuthSecretRef is intentionally forbidden for ClusterModel because a
+	// cluster-scoped object must not point at namespaced credentials.
 	AuthSecretRef *SecretReference   `json:"authSecretRef,omitempty"`
 	Upload        *UploadModelSource `json:"upload,omitempty"`
 }
@@ -87,34 +105,17 @@ type ModelArtifactStatus struct {
 }
 
 type ModelResolvedStatus struct {
-	Task         string `json:"task,omitempty"`
-	Framework    string `json:"framework,omitempty"`
-	Family       string `json:"family,omitempty"`
-	Architecture string `json:"architecture,omitempty"`
-	Format       string `json:"format,omitempty"`
+	Task         string           `json:"task,omitempty"`
+	Family       string           `json:"family,omitempty"`
+	Architecture string           `json:"architecture,omitempty"`
+	Format       ModelInputFormat `json:"format,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	ParameterCount *int64  `json:"parameterCount,omitempty"`
 	Quantization   *string `json:"quantization,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	ContextWindowTokens *int64 `json:"contextWindowTokens,omitempty"`
 	// +listType=set
-	SupportedEndpointTypes []string `json:"supportedEndpointTypes,omitempty"`
-	// +listType=set
-	CompatibleRuntimes []string `json:"compatibleRuntimes,omitempty"`
-	// +listType=set
-	CompatibleAcceleratorVendors []string `json:"compatibleAcceleratorVendors,omitempty"`
-	// +listType=set
-	CompatiblePrecisions []string                  `json:"compatiblePrecisions,omitempty"`
-	MinimumLaunch        *ModelMinimumLaunchStatus `json:"minimumLaunch,omitempty"`
-}
-
-type ModelMinimumLaunchStatus struct {
-	PlacementType string `json:"placementType,omitempty"`
-	// +kubebuilder:validation:Minimum=1
-	AcceleratorCount *int64 `json:"acceleratorCount,omitempty"`
-	// +kubebuilder:validation:Minimum=1
-	AcceleratorMemoryGiB *int64 `json:"acceleratorMemoryGiB,omitempty"`
-	SharingMode          string `json:"sharingMode,omitempty"`
+	SupportedEndpointTypes []ModelEndpointType `json:"supportedEndpointTypes,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=HuggingFace;Upload
@@ -131,16 +132,6 @@ type ModelInputFormat string
 const (
 	ModelInputFormatSafetensors ModelInputFormat = "Safetensors"
 	ModelInputFormatGGUF        ModelInputFormat = "GGUF"
-)
-
-// +kubebuilder:validation:Enum=VLLM;Ollama;TGI;Custom
-type ModelRuntimeEngine string
-
-const (
-	ModelRuntimeEngineVLLM   ModelRuntimeEngine = "VLLM"
-	ModelRuntimeEngineOllama ModelRuntimeEngine = "Ollama"
-	ModelRuntimeEngineTGI    ModelRuntimeEngine = "TGI"
-	ModelRuntimeEngineCustom ModelRuntimeEngine = "Custom"
 )
 
 // +kubebuilder:validation:Enum=OCI
@@ -160,4 +151,16 @@ const (
 	ModelPhaseReady         ModelPhase = "Ready"
 	ModelPhaseFailed        ModelPhase = "Failed"
 	ModelPhaseDeleting      ModelPhase = "Deleting"
+)
+
+// +kubebuilder:validation:Enum=Chat;TextGeneration;Embeddings;Rerank;SpeechToText;Translation
+type ModelEndpointType string
+
+const (
+	ModelEndpointTypeChat           ModelEndpointType = "Chat"
+	ModelEndpointTypeTextGeneration ModelEndpointType = "TextGeneration"
+	ModelEndpointTypeEmbeddings     ModelEndpointType = "Embeddings"
+	ModelEndpointTypeRerank         ModelEndpointType = "Rerank"
+	ModelEndpointTypeSpeechToText   ModelEndpointType = "SpeechToText"
+	ModelEndpointTypeTranslation    ModelEndpointType = "Translation"
 )

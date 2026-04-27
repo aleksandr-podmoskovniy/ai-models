@@ -73,7 +73,7 @@ func buildWithPlan(
 			Labels:      buildLabels(request.Owner),
 			Annotations: resourcenames.OwnerAnnotations(request.Owner.Kind, request.Owner.Name, request.Owner.Namespace),
 		},
-		Spec: buildPodSpec(options, sourcePlan, projectedAuthSecretName, container),
+		Spec: buildPodSpec(options, sourcePlan, container),
 	}, nil
 }
 

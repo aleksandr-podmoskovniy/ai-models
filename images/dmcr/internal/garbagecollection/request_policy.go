@@ -35,21 +35,7 @@ type directUploadSessionClaims struct {
 
 func cleanupPolicyForActiveRequests(configPath string, activeSecrets []corev1.Secret) (cleanupPolicy, error) {
 	policy := cleanupPolicy{}
-	if len(activeSecrets) == 0 {
-		return policy, nil
-	}
-
-	var (
-		targetTokens []string
-	)
-	for _, secret := range activeSecrets {
-		if strings.TrimSpace(secret.Annotations[directUploadModeAnnotationKey]) != directUploadModeImmediate {
-			continue
-		}
-		if token := strings.TrimSpace(string(secret.Data[directUploadTokenDataKey])); token != "" {
-			targetTokens = append(targetTokens, token)
-		}
-	}
+	targetTokens := collectDirectUploadImmediateTokens(activeSecrets)
 	if len(targetTokens) == 0 {
 		return policy, nil
 	}
@@ -64,14 +50,31 @@ func cleanupPolicyForActiveRequests(configPath string, activeSecrets []corev1.Se
 		return cleanupPolicy{}, err
 	}
 
-	targetPrefixes := make(map[string]struct{}, len(targetTokens))
-	targetMultipartUploads := make(map[directUploadMultipartTarget]struct{}, len(targetTokens))
-	for _, token := range targetTokens {
+	return directUploadCleanupPolicyForTokens(storageConfig.RootDirectory, tokenSecret, targetTokens), nil
+}
+
+func collectDirectUploadImmediateTokens(activeSecrets []corev1.Secret) []string {
+	tokens := make([]string, 0, len(activeSecrets))
+	for _, secret := range activeSecrets {
+		if strings.TrimSpace(secret.Annotations[directUploadModeAnnotationKey]) != directUploadModeImmediate {
+			continue
+		}
+		if token := strings.TrimSpace(string(secret.Data[directUploadTokenDataKey])); token != "" {
+			tokens = append(tokens, token)
+		}
+	}
+	return tokens
+}
+
+func directUploadCleanupPolicyForTokens(rootDirectory string, tokenSecret []byte, tokens []string) cleanupPolicy {
+	targetPrefixes := make(map[string]struct{}, len(tokens))
+	targetMultipartUploads := make(map[directUploadMultipartTarget]struct{}, len(tokens))
+	for _, token := range tokens {
 		claims, err := decodeDirectUploadSessionToken(tokenSecret, token)
 		if err != nil {
 			continue
 		}
-		prefix, ok := inferDirectUploadPrefix(storageConfig.RootDirectory, claims.ObjectKey)
+		prefix, ok := inferDirectUploadPrefix(rootDirectory, claims.ObjectKey)
 		if !ok {
 			continue
 		}
@@ -83,9 +86,10 @@ func cleanupPolicyForActiveRequests(configPath string, activeSecrets []corev1.Se
 			})] = struct{}{}
 		}
 	}
-	policy.targetDirectUploadPrefixes = targetPrefixes
-	policy.targetDirectUploadMultipartUploads = targetMultipartUploads
-	return policy, nil
+	return cleanupPolicy{
+		targetDirectUploadPrefixes:         targetPrefixes,
+		targetDirectUploadMultipartUploads: targetMultipartUploads,
+	}
 }
 
 func decodeDirectUploadSessionToken(secret []byte, token string) (directUploadSessionClaims, error) {

@@ -73,7 +73,6 @@ func renderAliasBindings(input Input, options Options, bindings []BindingInput) 
 		return rendered, nil
 	}
 
-	rendered.HasInitContainer = true
 	rendered.InitContainers = buildAliasInitContainers(input, options, bindings)
 	rendered.InitContainerNames = initContainerNames(rendered.InitContainers)
 	rendered.Volumes = ociregistry.Volumes(input.RegistryAccess.CASecretName)
@@ -147,48 +146,16 @@ func buildAliasRuntimeEnv(options Options, entries []runtimeModelEntry) []corev1
 func buildAliasInitContainers(input Input, options Options, bindings []BindingInput) []corev1.Container {
 	containers := make([]corev1.Container, 0, len(bindings))
 	for _, binding := range bindings {
-		initMounts := append([]corev1.VolumeMount{{
-			Name:      input.CacheMount.VolumeName,
-			MountPath: options.CacheMountPath,
-		}}, ociregistry.VolumeMounts(input.RegistryAccess.CASecretName)...)
-		containers = append(containers, corev1.Container{
-			Name:            managedInitContainerName(options.InitContainerName, binding.Alias),
-			Image:           options.RuntimeImage,
-			ImagePullPolicy: options.ImagePullPolicy,
-			Args:            []string{"materialize-artifact"},
-			Env:             buildAliasInitEnv(input, options, binding),
-			VolumeMounts:    initMounts,
-		})
+		containers = append(containers, buildMaterializerContainer(
+			managedInitContainerName(options.InitContainerName, binding.Alias),
+			input,
+			options,
+			binding,
+			true,
+			binding.Alias,
+		))
 	}
 	return containers
-}
-
-func buildAliasInitEnv(input Input, options Options, binding BindingInput) []corev1.EnvVar {
-	env := ociregistry.Env(options.OCIInsecure, input.RegistryAccess.AuthSecretName, input.RegistryAccess.CASecretName)
-	env = append(env,
-		corev1.EnvVar{Name: LogFormatEnv, Value: options.LogFormat},
-		corev1.EnvVar{Name: LogLevelEnv, Value: options.LogLevel},
-		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_URI", Value: binding.Artifact.URI},
-		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_DIGEST", Value: binding.Artifact.Digest},
-		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_CACHE_ROOT", Value: options.CacheMountPath},
-		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_SHARED_STORE", Value: "true"},
-		corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_MODEL_ALIAS", Value: binding.Alias},
-	)
-	if family := strings.TrimSpace(binding.ArtifactFamily); family != "" {
-		env = append(env, corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_ARTIFACT_FAMILY", Value: family})
-	}
-	if strings.TrimSpace(input.Coordination.Mode) == CoordinationModeShared {
-		env = append(env,
-			corev1.EnvVar{Name: "AI_MODELS_MATERIALIZE_COORDINATION_MODE", Value: input.Coordination.Mode},
-			corev1.EnvVar{
-				Name: "AI_MODELS_MATERIALIZE_COORDINATION_HOLDER_ID",
-				ValueFrom: &corev1.EnvVarSource{
-					FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
-				},
-			},
-		)
-	}
-	return env
 }
 
 func buildAliasCSIVolumes(volumeNamePrefix string, bindings []BindingInput) []corev1.Volume {

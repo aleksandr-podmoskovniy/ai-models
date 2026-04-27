@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	profilecommon "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/common"
+	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
 func resolveArchitecture(config map[string]any) string {
@@ -28,16 +29,16 @@ func resolveArchitecture(config map[string]any) string {
 	return firstNonEmpty(architectures...)
 }
 
-func resolveFamily(config map[string]any, architecture string) string {
+func resolveFamily(config map[string]any, architecture string) (string, publicationdata.ProfileConfidence) {
 	if family := strings.TrimSpace(stringValue(config["model_type"])); family != "" {
-		return strings.ToLower(family)
+		return strings.ToLower(family), publicationdata.ProfileConfidenceExact
 	}
 
 	if normalized := normalizeArchitecture(architecture); normalized != "" {
-		return strings.ToLower(normalized)
+		return strings.ToLower(normalized), publicationdata.ProfileConfidenceDerived
 	}
 
-	return ""
+	return "", ""
 }
 
 func normalizeArchitecture(value string) string {
@@ -128,10 +129,15 @@ func detectPrecision(config map[string]any, quantization string) string {
 	}
 }
 
-func estimateParameterCount(config map[string]any) int64 {
+func resolveParameterCount(
+	config map[string]any,
+	weightBytes int64,
+	precision string,
+	quantization string,
+) (int64, publicationdata.ProfileConfidence) {
 	for _, key := range []string{"num_parameters", "parameter_count"} {
 		if direct := int64Value(config[key]); direct > 0 {
-			return direct
+			return direct, publicationdata.ProfileConfidenceExact
 		}
 	}
 
@@ -142,7 +148,7 @@ func estimateParameterCount(config map[string]any) int64 {
 	numKeyValueHeads := int64Value(summaryValue(config, "num_key_value_heads"))
 	vocabSize := int64Value(summaryValue(config, "vocab_size"))
 	if hiddenSize <= 0 || intermediateSize <= 0 || numLayers <= 0 || vocabSize <= 0 {
-		return 0
+		return estimatedParameterCount(weightBytes, precision, quantization)
 	}
 
 	kvHiddenSize := hiddenSize
@@ -156,12 +162,17 @@ func estimateParameterCount(config map[string]any) int64 {
 	mlp := 3 * hiddenSize * intermediateSize
 	perLayer := attention + mlp
 
-	return embedding + (numLayers * perLayer)
+	return embedding + (numLayers * perLayer), publicationdata.ProfileConfidenceEstimated
 }
 
-func compatiblePrecisions(precision string) []string {
-	if strings.TrimSpace(precision) == "" {
-		return nil
+func estimatedParameterCount(
+	weightBytes int64,
+	precision string,
+	quantization string,
+) (int64, publicationdata.ProfileConfidence) {
+	parameterCount := profilecommon.EstimateParameterCountFromBytes(weightBytes, precision, quantization)
+	if parameterCount <= 0 {
+		return 0, ""
 	}
-	return []string{strings.TrimSpace(precision)}
+	return parameterCount, publicationdata.ProfileConfidenceEstimated
 }

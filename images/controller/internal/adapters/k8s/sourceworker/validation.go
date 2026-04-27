@@ -23,6 +23,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
+	"github.com/deckhouse/ai-models/controller/internal/domain/modelsource"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
@@ -119,7 +120,7 @@ func planSourceWorker(
 	ownerNamespace string,
 	uploadStage *cleanuphandle.UploadStagingHandle,
 ) (SourceWorkerPlan, error) {
-	sourceType, err := spec.Source.DetectType()
+	sourceType, err := modelsource.DetectType(spec.Source)
 	if err != nil {
 		return SourceWorkerPlan{}, err
 	}
@@ -127,7 +128,7 @@ func planSourceWorker(
 
 	switch sourceType {
 	case modelsv1alpha1.ModelSourceTypeHuggingFace:
-		repoID, revision, err := modelsv1alpha1.ParseHuggingFaceURL(spec.Source.URL)
+		repoID, revision, err := modelsource.ParseHuggingFaceURL(spec.Source.URL)
 		if err != nil {
 			return SourceWorkerPlan{}, err
 		}

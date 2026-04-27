@@ -52,16 +52,16 @@ func TestRenderBuildsMaterializerAgainstExistingCacheMount(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	if got, want := rendered.InitContainer.Name, DefaultInitContainerName; got != want {
+	if got, want := rendered.InitContainers[0].Name, DefaultInitContainerName; got != want {
 		t.Fatalf("init container name = %q, want %q", got, want)
 	}
-	if got, want := rendered.InitContainer.Args, []string{"materialize-artifact"}; len(got) != len(want) || got[0] != want[0] {
+	if got, want := rendered.InitContainers[0].Args, []string{"materialize-artifact"}; len(got) != len(want) || got[0] != want[0] {
 		t.Fatalf("unexpected init args %#v", got)
 	}
 	if got, want := rendered.ModelPath, nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
 		t.Fatalf("model path = %q, want %q", got, want)
 	}
-	if got, want := rendered.InitContainer.VolumeMounts[0].Name, "model-cache"; got != want {
+	if got, want := rendered.InitContainers[0].VolumeMounts[0].Name, "model-cache"; got != want {
 		t.Fatalf("cache volume name = %q, want %q", got, want)
 	}
 	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
@@ -73,13 +73,13 @@ func TestRenderBuildsMaterializerAgainstExistingCacheMount(t *testing.T) {
 	if got, want := envValue(rendered.RuntimeEnv, ModelFamilyEnv), "hf-safetensors-v1"; got != want {
 		t.Fatalf("runtime model family env = %q, want %q", got, want)
 	}
-	if got := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_CACHE_ROOT"); got != DefaultCacheMountPath {
+	if got := envValue(rendered.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_CACHE_ROOT"); got != DefaultCacheMountPath {
 		t.Fatalf("cache root env = %q, want %q", got, DefaultCacheMountPath)
 	}
-	if got := envValue(rendered.InitContainer.Env, LogLevelEnv); got != defaultLogLevel {
+	if got := envValue(rendered.InitContainers[0].Env, LogLevelEnv); got != defaultLogLevel {
 		t.Fatalf("log level env = %q, want %q", got, defaultLogLevel)
 	}
-	if got := envValue(rendered.InitContainer.Env, "AI_MODELS_OCI_CA_FILE"); got != ociregistry.CAFilePath {
+	if got := envValue(rendered.InitContainers[0].Env, "AI_MODELS_OCI_CA_FILE"); got != ociregistry.CAFilePath {
 		t.Fatalf("unexpected OCI CA env %q", got)
 	}
 	if got := len(rendered.Volumes); got != 1 {
@@ -118,7 +118,7 @@ func TestRenderBuildsDigestScopedModelPathForSharedPVCTopology(t *testing.T) {
 	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.SharedArtifactModelPath(DefaultCacheMountPath, "sha256:deadbeef"); got != want {
 		t.Fatalf("runtime model path env = %q, want %q", got, want)
 	}
-	if got := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_SHARED_STORE"); got != "true" {
+	if got := envValue(rendered.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_SHARED_STORE"); got != "true" {
 		t.Fatalf("shared store env = %q, want true", got)
 	}
 }
@@ -146,8 +146,8 @@ func TestRenderBuildsSharedDirectWithoutMaterializer(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	if rendered.HasInitContainer {
-		t.Fatalf("did not expect init container for shared-direct render")
+	if len(rendered.InitContainers) != 0 {
+		t.Fatalf("did not expect init containers for shared-direct render")
 	}
 	if got, want := rendered.InitContainerName, DefaultInitContainerName; got != want {
 		t.Fatalf("init container name = %q, want %q", got, want)
@@ -224,20 +224,20 @@ func TestRenderBuildsSharedCacheCoordinationEnv(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	if got, want := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_COORDINATION_MODE"), CoordinationModeShared; got != want {
+	if got, want := envValue(rendered.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_COORDINATION_MODE"), CoordinationModeShared; got != want {
 		t.Fatalf("coordination mode = %q, want %q", got, want)
 	}
 	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.SharedArtifactModelPath(DefaultCacheMountPath, "sha256:deadbeef"); got != want {
 		t.Fatalf("runtime model path env = %q, want %q", got, want)
 	}
-	if got := envValue(rendered.InitContainer.Env, "AI_MODELS_MATERIALIZE_COORDINATION_NAMESPACE"); got != "" {
+	if got := envValue(rendered.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_COORDINATION_NAMESPACE"); got != "" {
 		t.Fatalf("did not expect coordination namespace env, got %q", got)
 	}
 
 	var holderEnv *corev1.EnvVar
-	for i := range rendered.InitContainer.Env {
-		if rendered.InitContainer.Env[i].Name == "AI_MODELS_MATERIALIZE_COORDINATION_HOLDER_ID" {
-			holderEnv = &rendered.InitContainer.Env[i]
+	for i := range rendered.InitContainers[0].Env {
+		if rendered.InitContainers[0].Env[i].Name == "AI_MODELS_MATERIALIZE_COORDINATION_HOLDER_ID" {
+			holderEnv = &rendered.InitContainers[0].Env[i]
 			break
 		}
 	}

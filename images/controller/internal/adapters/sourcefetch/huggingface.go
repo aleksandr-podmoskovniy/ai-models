@@ -25,6 +25,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
+	"github.com/deckhouse/ai-models/controller/internal/domain/modelsource"
 	sourcemirrorports "github.com/deckhouse/ai-models/controller/internal/ports/sourcemirror"
 )
 
@@ -59,7 +60,7 @@ type huggingFaceCardData struct {
 }
 
 func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteResult, error) {
-	repoID, revision, err := modelsv1alpha1.ParseHuggingFaceURL(options.URL)
+	repoID, revision, err := modelsource.ParseHuggingFaceURL(options.URL)
 	if err != nil {
 		return RemoteResult{}, err
 	}

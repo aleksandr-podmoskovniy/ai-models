@@ -23,6 +23,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publicationapp "github.com/deckhouse/ai-models/controller/internal/application/publishobserve"
+	"github.com/deckhouse/ai-models/controller/internal/domain/modelsource"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/modelobject"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -57,12 +58,16 @@ func (r *ClusterModelReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	operationRequest, err := modelobject.PublicationRequest(&object, object.Spec, uploadStage)
+	spec, err := modelobject.SpecFor(&object)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	operationRequest, err := modelobject.PublicationRequest(&object, spec, uploadStage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	return r.reconcileObject(ctx, &object, object.Spec, &object.Status, operationRequest)
+	return r.reconcileObject(ctx, &object, spec, &object.Status, operationRequest)
 }
 
 func (r *baseReconciler) reconcileObject(
@@ -86,7 +91,7 @@ func (r *baseReconciler) reconcileObject(
 		hasHandle,
 	)
 	if err != nil {
-		if modelsv1alpha1.IsUnsupportedRemoteSourceError(err) {
+		if modelsource.IsUnsupportedRemoteError(err) {
 			return r.failUnsupportedSource(ctx, object, status, err.Error())
 		}
 		return ctrl.Result{}, err

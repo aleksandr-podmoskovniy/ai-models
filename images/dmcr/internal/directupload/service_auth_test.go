@@ -27,7 +27,7 @@ func TestServiceStartReturnsSessionToken(t *testing.T) {
 
 	response := postJSON(t, newServiceHarness(t).server.URL+"/v2/blob-uploads", "writer", "secret", startRequest{Repository: testRepository})
 	expectStatus(t, response, http.StatusOK)
-	payload := decodeStartResponse(t, response)
+	payload := decodeResponse[startResponse](t, response)
 	if payload.SessionToken == "" {
 		t.Fatal("SessionToken = empty, want non-empty token")
 	}

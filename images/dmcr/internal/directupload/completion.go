@@ -167,85 +167,17 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if exists, err := s.sealedBlobExists(request.Context(), blobKey); err != nil {
-		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
-		log.Printf(
-			"direct upload sealed blob existence check failed repository=%q objectKey=%q blobKey=%q error=%v",
-			claims.Repository,
-			claims.ObjectKey,
-			blobKey,
-			err,
-		)
-		http.Error(writer, err.Error(), http.StatusInternalServerError)
-		return
-	} else if exists {
-		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
-		if err := s.backend.PutContent(request.Context(), linkKey, []byte(sealed.Digest)); err != nil {
-			log.Printf(
-				"direct upload repository link write failed repository=%q objectKey=%q blobKey=%q error=%v",
-				claims.Repository,
-				claims.ObjectKey,
-				blobKey,
-				err,
-			)
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		log.Printf(
-			"direct upload complete finished repository=%q objectKey=%q digest=%q deduplicated=true durationMs=%d",
-			claims.Repository,
-			claims.ObjectKey,
-			sealed.Digest,
-			s.now().Sub(completeStarted).Milliseconds(),
-		)
-		writeJSON(writer, completeResponse{
-			OK:        true,
-			Digest:    sealed.Digest,
-			SizeBytes: sealed.SizeBytes,
-		})
-		return
-	}
-	physicalPath := storageDriverPathForObjectKey(s.rootDirectory, claims.ObjectKey)
-	if err := s.writeSealedBlobMetadata(request.Context(), blobKey, sealed, physicalPath); err != nil {
-		_ = s.backend.DeleteObject(request.Context(), claims.ObjectKey)
-		log.Printf(
-			"direct upload sealed metadata write failed repository=%q objectKey=%q blobKey=%q error=%v",
-			claims.Repository,
-			claims.ObjectKey,
-			blobKey,
-			err,
-		)
-		http.Error(writer, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := s.backend.PutContent(request.Context(), linkKey, []byte(sealed.Digest)); err != nil {
-		if cleanupErr := s.cleanupSealedUpload(request.Context(), blobKey, claims.ObjectKey); cleanupErr != nil {
-			log.Printf(
-				"direct upload repository link write failed after metadata repository=%q objectKey=%q blobKey=%q error=%v cleanupError=%v",
-				claims.Repository,
-				claims.ObjectKey,
-				blobKey,
-				err,
-				cleanupErr,
-			)
-			http.Error(writer, fmt.Sprintf("%s; cleanup failed: %v", err.Error(), cleanupErr), http.StatusInternalServerError)
-			return
-		}
-		log.Printf(
-			"direct upload repository link write failed repository=%q objectKey=%q blobKey=%q error=%v",
-			claims.Repository,
-			claims.ObjectKey,
-			blobKey,
-			err,
-		)
+	deduplicated, err := s.finalizeVerifiedUpload(request.Context(), claims, blobKey, linkKey, sealed)
+	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	log.Printf(
-		"direct upload complete finished repository=%q objectKey=%q digest=%q deduplicated=false durationMs=%d",
+		"direct upload complete finished repository=%q objectKey=%q digest=%q deduplicated=%t durationMs=%d",
 		claims.Repository,
 		claims.ObjectKey,
 		sealed.Digest,
+		deduplicated,
 		s.now().Sub(completeStarted).Milliseconds(),
 	)
 	writeJSON(writer, completeResponse{
@@ -253,6 +185,66 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		Digest:    sealed.Digest,
 		SizeBytes: sealed.SizeBytes,
 	})
+}
+
+func (s *Service) finalizeVerifiedUpload(ctx context.Context, claims sessionTokenClaims, blobKey, linkKey string, sealed sealedUpload) (bool, error) {
+	uploadedPhysicalPath := storageDriverPathForObjectKey(s.rootDirectory, claims.ObjectKey)
+	state, err := s.sealedBlobState(ctx, blobKey, sealed, uploadedPhysicalPath)
+	if err != nil {
+		log.Printf(
+			"direct upload sealed blob state check failed repository=%q objectKey=%q blobKey=%q error=%v",
+			claims.Repository,
+			claims.ObjectKey,
+			blobKey,
+			err,
+		)
+		return false, err
+	}
+	if state.exists {
+		if err := s.backend.PutContent(ctx, linkKey, []byte(sealed.Digest)); err != nil {
+			log.Printf(
+				"direct upload repository link write failed repository=%q objectKey=%q blobKey=%q error=%v",
+				claims.Repository,
+				claims.ObjectKey,
+				blobKey,
+				err,
+			)
+			return false, err
+		}
+		if state.deleteUploadedObject {
+			if err := s.backend.DeleteObject(ctx, claims.ObjectKey); err != nil {
+				log.Printf(
+					"direct upload duplicate object cleanup failed repository=%q objectKey=%q blobKey=%q error=%v",
+					claims.Repository,
+					claims.ObjectKey,
+					blobKey,
+					err,
+				)
+			}
+		}
+		return state.deleteUploadedObject, nil
+	}
+	if err := s.writeSealedBlobMetadata(ctx, blobKey, sealed, uploadedPhysicalPath); err != nil {
+		log.Printf(
+			"direct upload sealed metadata write failed repository=%q objectKey=%q blobKey=%q error=%v",
+			claims.Repository,
+			claims.ObjectKey,
+			blobKey,
+			err,
+		)
+		return false, err
+	}
+	if err := s.backend.PutContent(ctx, linkKey, []byte(sealed.Digest)); err != nil {
+		log.Printf(
+			"direct upload repository link write failed repository=%q objectKey=%q blobKey=%q error=%v",
+			claims.Repository,
+			claims.ObjectKey,
+			blobKey,
+			err,
+		)
+		return false, err
+	}
+	return false, nil
 }
 
 func (s *Service) completeMultipartUploadOrUseCompletedObject(ctx context.Context, objectKey, uploadID string, parts []UploadedPart) error {

@@ -62,26 +62,20 @@ func TestResolveProfile(t *testing.T) {
 	if got := resolved.ParameterCount; got <= 0 {
 		t.Fatalf("expected parameter count, got %d", got)
 	}
+	if got, want := resolved.ParameterCountConfidence, "Estimated"; string(got) != want {
+		t.Fatalf("unexpected parameter count confidence %q", got)
+	}
 	if got, want := resolved.ContextWindowTokens, int64(32768); got != want {
 		t.Fatalf("unexpected context window %d", got)
-	}
-	if len(resolved.CompatibleRuntimes) != 0 {
-		t.Fatalf("expected unresolved compatible runtimes, got %#v", resolved.CompatibleRuntimes)
 	}
 	if len(resolved.SupportedEndpointTypes) == 0 {
 		t.Fatal("expected supported endpoint types")
 	}
-	if len(resolved.CompatibleAcceleratorVendors) != 2 {
-		t.Fatalf("unexpected compatible accelerator vendors %#v", resolved.CompatibleAcceleratorVendors)
+	if got, want := resolved.Footprint.ShardCount, int64(2); got != want {
+		t.Fatalf("unexpected shard count %d", got)
 	}
-	if len(resolved.CompatiblePrecisions) != 1 || resolved.CompatiblePrecisions[0] != "bf16" {
-		t.Fatalf("unexpected compatible precisions %#v", resolved.CompatiblePrecisions)
-	}
-	if got, want := resolved.MinimumLaunch.PlacementType, "GPU"; got != want {
-		t.Fatalf("unexpected placement type %q", got)
-	}
-	if resolved.MinimumLaunch.AcceleratorMemoryGiB <= 0 {
-		t.Fatalf("unexpected minimum launch %#v", resolved.MinimumLaunch)
+	if resolved.Footprint.EstimatedWorkingSetGiB <= 0 {
+		t.Fatalf("expected estimated working set, got %#v", resolved.Footprint)
 	}
 }
 
@@ -138,8 +132,11 @@ func TestResolveProfileUsesTaskHintAsFallback(t *testing.T) {
 	if got, want := resolved.Task, "feature-extraction"; got != want {
 		t.Fatalf("unexpected task %q", got)
 	}
-	if len(resolved.SupportedEndpointTypes) == 0 || resolved.SupportedEndpointTypes[0] != "Embeddings" {
-		t.Fatalf("unexpected endpoint types %#v", resolved.SupportedEndpointTypes)
+	if got, want := resolved.TaskConfidence, "Hint"; string(got) != want {
+		t.Fatalf("unexpected task confidence %q", got)
+	}
+	if len(resolved.SupportedEndpointTypes) != 0 {
+		t.Fatalf("hint-only task must not project endpoint types, got %#v", resolved.SupportedEndpointTypes)
 	}
 }
 
@@ -200,5 +197,8 @@ func TestResolveSummary(t *testing.T) {
 	}
 	if got, want := resolved.Task, "text-generation"; got != want {
 		t.Fatalf("unexpected task %q", got)
+	}
+	if got, want := resolved.TaskConfidence, "Derived"; string(got) != want {
+		t.Fatalf("unexpected task confidence %q", got)
 	}
 }

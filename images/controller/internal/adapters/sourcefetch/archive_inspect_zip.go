@@ -20,11 +20,9 @@ import (
 	"archive/zip"
 	"errors"
 	"io"
-	"path/filepath"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
 	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
@@ -61,40 +59,22 @@ func inspectZipArchiveFiles(files []*zip.File, requested modelsv1alpha1.ModelInp
 	}
 
 	rootPrefix := deriveArchiveRootPrefix(meaningfulRoots, hasArchiveRootFile)
-	normalizedFiles := make([]string, 0, len(archiveFiles))
-	for _, file := range archiveFiles {
-		normalized, ok := normalizedArchiveFilePath(file.RelativePath, rootPrefix)
-		if !ok {
-			continue
-		}
-		normalizedFiles = append(normalizedFiles, normalized)
-	}
-
-	inputFormat, err := resolveRemoteFormat(normalizedFiles, requested)
-	if err != nil {
-		return ArchiveInspection{}, err
-	}
-	selectedFiles, err := modelformat.SelectRemoteFiles(inputFormat, normalizedFiles)
+	inspection, err := prepareArchiveInspection(archiveFiles, rootPrefix, requested)
 	if err != nil {
 		return ArchiveInspection{}, err
 	}
 
-	inspection := ArchiveInspection{
-		RootPrefix:    rootPrefix,
-		InputFormat:   inputFormat,
-		SelectedFiles: selectedFiles,
-	}
-	switch inputFormat {
+	switch inspection.InputFormat {
 	case modelsv1alpha1.ModelInputFormatSafetensors:
-		configPayload, weightBytes, err := summarizeZipSafetensorsArchive(files, rootPrefix, selectedFiles)
+		configPayload, weightStats, err := summarizeZipSafetensorsArchive(files, rootPrefix, inspection.SelectedFiles)
 		if err != nil {
 			return ArchiveInspection{}, err
 		}
 		inspection.ConfigPayload = configPayload
-		inspection.WeightBytes = weightBytes
+		inspection.WeightStats = weightStats
 		return inspection, nil
 	case modelsv1alpha1.ModelInputFormatGGUF:
-		modelFile, modelFileSize, err := summarizeGGUFArchive(archiveFiles, rootPrefix, selectedFiles)
+		modelFile, modelFileSize, err := summarizeGGUFArchive(archiveFiles, rootPrefix, inspection.SelectedFiles)
 		if err != nil {
 			return ArchiveInspection{}, err
 		}
@@ -120,20 +100,17 @@ func classifyZipArchiveEntry(file *zip.File) (string, bool, error) {
 	return relative, true, nil
 }
 
-func summarizeZipSafetensorsArchive(files []*zip.File, rootPrefix string, selectedFiles []string) ([]byte, int64, error) {
-	selected := make(map[string]struct{}, len(selectedFiles))
-	for _, file := range selectedFiles {
-		selected[strings.TrimSpace(filepath.ToSlash(file))] = struct{}{}
-	}
+func summarizeZipSafetensorsArchive(files []*zip.File, rootPrefix string, selectedFiles []string) ([]byte, WeightStats, error) {
+	selected := archiveFileSet(selectedFiles)
 
 	var (
 		configPayload []byte
-		weightBytes   int64
+		weightStats   WeightStats
 	)
 	for _, file := range files {
 		relative, keep, err := classifyZipArchiveEntry(file)
 		if err != nil {
-			return nil, 0, err
+			return nil, WeightStats{}, err
 		}
 		if !keep {
 			continue
@@ -149,23 +126,23 @@ func summarizeZipSafetensorsArchive(files []*zip.File, rootPrefix string, select
 		case normalized == "config.json":
 			stream, err := file.Open()
 			if err != nil {
-				return nil, 0, err
+				return nil, WeightStats{}, err
 			}
 			configPayload, err = io.ReadAll(stream)
 			_ = stream.Close()
 			if err != nil {
-				return nil, 0, err
+				return nil, WeightStats{}, err
 			}
 		case strings.HasSuffix(strings.ToLower(normalized), ".safetensors"):
-			weightBytes += int64(file.UncompressedSize64)
+			weightStats.add(int64(file.UncompressedSize64))
 		}
 	}
 
 	if len(configPayload) == 0 {
-		return nil, 0, errors.New("zip safetensors summary requires config.json in selected files")
+		return nil, WeightStats{}, errors.New("zip safetensors summary requires config.json in selected files")
 	}
-	if weightBytes <= 0 {
-		return nil, 0, errors.New("zip safetensors summary requires positive safetensors weight bytes")
+	if weightStats.TotalBytes <= 0 {
+		return nil, WeightStats{}, errors.New("zip safetensors summary requires positive safetensors weight bytes")
 	}
-	return configPayload, weightBytes, nil
+	return configPayload, weightStats, nil
 }

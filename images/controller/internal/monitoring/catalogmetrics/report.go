@@ -34,7 +34,6 @@ var phaseValues = []modelsv1alpha1.ModelPhase{
 var conditionTypes = []modelsv1alpha1.ModelConditionType{
 	modelsv1alpha1.ModelConditionArtifactResolved,
 	modelsv1alpha1.ModelConditionMetadataResolved,
-	modelsv1alpha1.ModelConditionValidated,
 	modelsv1alpha1.ModelConditionReady,
 }
 
@@ -44,8 +43,6 @@ func collectorDescs() []*prometheus.Desc {
 		clusterModelStatusPhaseMetric.desc,
 		modelReadyMetric.desc,
 		clusterModelReadyMetric.desc,
-		modelValidatedMetric.desc,
-		clusterModelValidatedMetric.desc,
 		modelConditionMetric.desc,
 		clusterModelConditionMetric.desc,
 		modelInfoMetric.desc,
@@ -106,14 +103,6 @@ func (c *Collector) reportObjectMetrics(ch chan<- prometheus.Metric, metric *obj
 			metric.uid,
 		)
 		ch <- prometheus.MustNewConstMetric(
-			modelValidatedMetric.desc,
-			prometheus.GaugeValue,
-			boolFloat64(metric.validated),
-			metric.name,
-			metric.namespace,
-			metric.uid,
-		)
-		ch <- prometheus.MustNewConstMetric(
 			modelInfoMetric.desc,
 			prometheus.GaugeValue,
 			1,
@@ -123,7 +112,6 @@ func (c *Collector) reportObjectMetrics(ch chan<- prometheus.Metric, metric *obj
 			metric.sourceType,
 			metric.format,
 			metric.task,
-			metric.framework,
 			metric.artifactKind,
 		)
 		ch <- prometheus.MustNewConstMetric(
@@ -143,13 +131,6 @@ func (c *Collector) reportObjectMetrics(ch chan<- prometheus.Metric, metric *obj
 			metric.uid,
 		)
 		ch <- prometheus.MustNewConstMetric(
-			clusterModelValidatedMetric.desc,
-			prometheus.GaugeValue,
-			boolFloat64(metric.validated),
-			metric.name,
-			metric.uid,
-		)
-		ch <- prometheus.MustNewConstMetric(
 			clusterModelInfoMetric.desc,
 			prometheus.GaugeValue,
 			1,
@@ -158,7 +139,6 @@ func (c *Collector) reportObjectMetrics(ch chan<- prometheus.Metric, metric *obj
 			metric.sourceType,
 			metric.format,
 			metric.task,
-			metric.framework,
 			metric.artifactKind,
 		)
 		ch <- prometheus.MustNewConstMetric(

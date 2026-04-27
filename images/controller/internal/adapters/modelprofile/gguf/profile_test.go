@@ -49,14 +49,11 @@ func TestResolve(t *testing.T) {
 	if got, want := profile.ParameterCount, int64(8_000_000_000); got != want {
 		t.Fatalf("unexpected parameter count %d", got)
 	}
-	if got, want := profile.MinimumLaunch.PlacementType, "GPU"; got != want {
-		t.Fatalf("unexpected placement type %q", got)
+	if got, want := profile.ParameterCountConfidence, "Hint"; string(got) != want {
+		t.Fatalf("unexpected parameter count confidence %q", got)
 	}
-	if len(profile.CompatibleAcceleratorVendors) != 2 {
-		t.Fatalf("unexpected compatible accelerator vendors %#v", profile.CompatibleAcceleratorVendors)
-	}
-	if profile.MinimumLaunch.AcceleratorMemoryGiB <= 0 {
-		t.Fatalf("unexpected minimum launch %#v", profile.MinimumLaunch)
+	if profile.Footprint.EstimatedWorkingSetGiB <= 0 {
+		t.Fatalf("expected estimated working set, got %#v", profile.Footprint)
 	}
 	if len(profile.SupportedEndpointTypes) == 0 {
 		t.Fatal("expected endpoint types")

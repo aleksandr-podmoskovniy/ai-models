@@ -93,6 +93,107 @@ func TestShouldRunGarbageCollection(t *testing.T) {
 	}
 }
 
+func TestRequestClassificationPrecedence(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		labels      map[string]string
+		annotations map[string]string
+		want        requestState
+	}{
+		{
+			name:        "non request is ignored even with switch",
+			annotations: map[string]string{switchAnnotationKey: "2026-04-10T00:00:00Z"},
+			want:        requestStateIgnored,
+		},
+		{
+			name:   "done wins over switch",
+			labels: map[string]string{RequestLabelKey: RequestLabelValue},
+			annotations: map[string]string{
+				phaseAnnotationKey:  phaseDone,
+				switchAnnotationKey: "2026-04-10T00:00:00Z",
+			},
+			want: requestStateCompleted,
+		},
+		{
+			name:   "switch wins over requested at",
+			labels: map[string]string{RequestLabelKey: RequestLabelValue},
+			annotations: map[string]string{
+				RequestQueuedAtAnnotationKey: "2026-04-10T00:00:00Z",
+				switchAnnotationKey:          "2026-04-10T00:00:00Z",
+			},
+			want: requestStateActive,
+		},
+		{
+			name:        "phase queued alone is not lifecycle truth",
+			labels:      map[string]string{RequestLabelKey: RequestLabelValue},
+			annotations: map[string]string{phaseAnnotationKey: phaseQueued},
+			want:        requestStateIgnored,
+		},
+		{
+			name:        "phase armed alone is not lifecycle truth",
+			labels:      map[string]string{RequestLabelKey: RequestLabelValue},
+			annotations: map[string]string{phaseAnnotationKey: phaseArmed},
+			want:        requestStateIgnored,
+		},
+		{
+			name:   "requested at selects queued",
+			labels: map[string]string{RequestLabelKey: RequestLabelValue},
+			annotations: map[string]string{
+				RequestQueuedAtAnnotationKey: "2026-04-10T00:00:00Z",
+				phaseAnnotationKey:           phaseQueued,
+			},
+			want: requestStateQueued,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got := classifyRequest(corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+				Labels:      test.labels,
+				Annotations: test.annotations,
+			}})
+			if got != test.want {
+				t.Fatalf("classifyRequest() = %s, want %s", requestStateName(got), requestStateName(test.want))
+			}
+		})
+	}
+}
+
+func TestHasPendingRequestUsesQueuedAndActiveOnly(t *testing.T) {
+	t.Parallel()
+
+	done := corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Labels:      map[string]string{RequestLabelKey: RequestLabelValue},
+		Annotations: map[string]string{phaseAnnotationKey: phaseDone},
+	}}
+	ignored := corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Labels:      map[string]string{RequestLabelKey: RequestLabelValue},
+		Annotations: map[string]string{phaseAnnotationKey: phaseArmed},
+	}}
+	queued := corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Labels:      map[string]string{RequestLabelKey: RequestLabelValue},
+		Annotations: map[string]string{RequestQueuedAtAnnotationKey: "2026-04-10T00:00:00Z"},
+	}}
+	active := corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Labels:      map[string]string{RequestLabelKey: RequestLabelValue},
+		Annotations: map[string]string{switchAnnotationKey: "2026-04-10T00:00:00Z"},
+	}}
+
+	if hasPendingRequest([]corev1.Secret{done, ignored}) {
+		t.Fatal("hasPendingRequest(done, ignored) = true, want false")
+	}
+	if !hasPendingRequest([]corev1.Secret{done, queued}) {
+		t.Fatal("hasPendingRequest(done, queued) = false, want true")
+	}
+	if !hasPendingRequest([]corev1.Secret{done, active}) {
+		t.Fatal("hasPendingRequest(done, active) = false, want true")
+	}
+}
+
 func TestShouldActivateGarbageCollection(t *testing.T) {
 	t.Parallel()
 
@@ -174,5 +275,20 @@ func TestShouldActivateGarbageCollection(t *testing.T) {
 				t.Fatalf("shouldActivateGarbageCollection() = %t, want %t", got, test.want)
 			}
 		})
+	}
+}
+
+func requestStateName(state requestState) string {
+	switch state {
+	case requestStateIgnored:
+		return "ignored"
+	case requestStateQueued:
+		return "queued"
+	case requestStateActive:
+		return "active"
+	case requestStateCompleted:
+		return "completed"
+	default:
+		return "unknown"
 	}
 }

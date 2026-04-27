@@ -18,17 +18,58 @@ package directupload
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"io"
 	"strings"
 
 	"github.com/deckhouse/ai-models/dmcr/internal/sealedblob"
 )
 
-func (s *Service) sealedBlobExists(ctx context.Context, blobKey string) (bool, error) {
+type sealedBlobState struct {
+	exists               bool
+	deleteUploadedObject bool
+}
+
+func (s *Service) sealedBlobState(ctx context.Context, blobKey string, sealed sealedUpload, uploadedPhysicalPath string) (sealedBlobState, error) {
 	if exists, err := s.backend.ObjectExists(ctx, blobKey); err != nil || exists {
-		return exists, err
+		return sealedBlobState{exists: exists, deleteUploadedObject: exists}, err
 	}
-	return s.backend.ObjectExists(ctx, sealedblob.MetadataPath(blobKey))
+	metadata, exists, err := s.readSealedBlobMetadata(ctx, blobKey)
+	if err != nil || !exists {
+		return sealedBlobState{exists: exists}, err
+	}
+	if strings.TrimSpace(metadata.Digest) != strings.TrimSpace(sealed.Digest) {
+		return sealedBlobState{}, fmt.Errorf("sealed metadata digest %q does not match digest %q", metadata.Digest, sealed.Digest)
+	}
+	if metadata.SizeBytes != sealed.SizeBytes {
+		return sealedBlobState{}, fmt.Errorf("sealed metadata sizeBytes %d does not match sizeBytes %d", metadata.SizeBytes, sealed.SizeBytes)
+	}
+	return sealedBlobState{
+		exists:               true,
+		deleteUploadedObject: strings.TrimSpace(metadata.PhysicalPath) != strings.TrimSpace(uploadedPhysicalPath),
+	}, nil
+}
+
+func (s *Service) readSealedBlobMetadata(ctx context.Context, blobKey string) (sealedblob.Metadata, bool, error) {
+	metadataKey := sealedblob.MetadataPath(blobKey)
+	exists, err := s.backend.ObjectExists(ctx, metadataKey)
+	if err != nil || !exists {
+		return sealedblob.Metadata{}, exists, err
+	}
+	reader, err := s.backend.Reader(ctx, metadataKey, 0)
+	if err != nil {
+		return sealedblob.Metadata{}, true, err
+	}
+	payload, readErr := io.ReadAll(reader)
+	closeErr := reader.Close()
+	if readErr != nil {
+		return sealedblob.Metadata{}, true, readErr
+	}
+	if closeErr != nil {
+		return sealedblob.Metadata{}, true, closeErr
+	}
+	metadata, err := sealedblob.Unmarshal(payload)
+	return metadata, true, err
 }
 
 func (s *Service) writeSealedBlobMetadata(ctx context.Context, blobKey string, sealed sealedUpload, physicalPath string) error {
@@ -42,15 +83,4 @@ func (s *Service) writeSealedBlobMetadata(ctx context.Context, blobKey string, s
 		return err
 	}
 	return s.backend.PutContent(ctx, sealedblob.MetadataPath(blobKey), payload)
-}
-
-func (s *Service) cleanupSealedUpload(ctx context.Context, blobKey, physicalPath string) error {
-	var cleanupErrs []error
-	if err := s.backend.DeleteObject(ctx, strings.TrimSpace(physicalPath)); err != nil {
-		cleanupErrs = append(cleanupErrs, err)
-	}
-	if err := s.backend.DeleteObject(ctx, sealedblob.MetadataPath(blobKey)); err != nil {
-		cleanupErrs = append(cleanupErrs, err)
-	}
-	return errors.Join(cleanupErrs...)
 }

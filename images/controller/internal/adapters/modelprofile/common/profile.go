@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
 func EndpointTypes(task string) []string {
@@ -42,10 +41,6 @@ func EndpointTypes(task string) []string {
 	default:
 		return nil
 	}
-}
-
-func GPUVendors() []string {
-	return []string{"NVIDIA", "AMD"}
 }
 
 func EstimateParameterCountFromBytes(modelBytes int64, precision, quantization string) int64 {
@@ -91,7 +86,7 @@ func BytesPerParameter(precision, quantization string) float64 {
 	}
 }
 
-func GPUWorkingSetGiB(modelBytes, parameterCount int64, precision, quantization string) int64 {
+func EstimatedWorkingSetGiB(modelBytes, parameterCount int64, precision, quantization string) int64 {
 	estimatedBytes := modelBytes
 	if estimatedBytes <= 0 && parameterCount > 0 {
 		estimatedBytes = int64(float64(parameterCount) * BytesPerParameter(precision, quantization))
@@ -106,28 +101,6 @@ func GPUWorkingSetGiB(modelBytes, parameterCount int64, precision, quantization 
 		return 1
 	}
 	return workingSetGiB
-}
-
-func MinimumGPULaunch(workingSetGiB int64) publicationdata.MinimumLaunch {
-	if workingSetGiB <= 0 {
-		return publicationdata.MinimumLaunch{}
-	}
-
-	acceleratorCount := int64(math.Ceil(float64(workingSetGiB) / 80.0))
-	if acceleratorCount <= 0 {
-		acceleratorCount = 1
-	}
-	perAcceleratorGiB := int64(math.Ceil(float64(workingSetGiB) / float64(acceleratorCount)))
-	if perAcceleratorGiB <= 0 {
-		perAcceleratorGiB = 1
-	}
-
-	return publicationdata.MinimumLaunch{
-		PlacementType:        "GPU",
-		AcceleratorCount:     acceleratorCount,
-		AcceleratorMemoryGiB: perAcceleratorGiB,
-		SharingMode:          "Exclusive",
-	}
 }
 
 func normalize(value string) string {

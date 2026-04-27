@@ -111,7 +111,7 @@ func TestRenderBuildsAliasCSIVolumesForMultipleSharedDirectModels(t *testing.T) 
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	if len(rendered.InitContainers) != 0 || rendered.HasInitContainer {
+	if len(rendered.InitContainers) != 0 {
 		t.Fatalf("did not expect materializers for shared-direct multi-model render")
 	}
 	if got, want := len(rendered.Volumes), 2; got != want {

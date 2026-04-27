@@ -61,6 +61,29 @@ func SetStatus(object client.Object, status modelsv1alpha1.ModelStatus) error {
 	}
 }
 
+func SpecFor(object client.Object) (modelsv1alpha1.ModelSpec, error) {
+	switch typed := object.(type) {
+	case *modelsv1alpha1.Model:
+		return typed.Spec, nil
+	case *modelsv1alpha1.ClusterModel:
+		return modelSpecFromClusterSpec(typed.Spec)
+	default:
+		return modelsv1alpha1.ModelSpec{}, fmt.Errorf("unsupported model object type %T", object)
+	}
+}
+
+func modelSpecFromClusterSpec(spec modelsv1alpha1.ClusterModelSpec) (modelsv1alpha1.ModelSpec, error) {
+	if spec.Source.AuthSecretRef != nil {
+		return modelsv1alpha1.ModelSpec{}, fmt.Errorf("cluster model source authSecretRef is not supported")
+	}
+	return modelsv1alpha1.ModelSpec{
+		Source: modelsv1alpha1.ModelSourceSpec{
+			URL:    spec.Source.URL,
+			Upload: spec.Source.Upload,
+		},
+	}, nil
+}
+
 func PublicationRequest(
 	object client.Object,
 	spec modelsv1alpha1.ModelSpec,

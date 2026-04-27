@@ -76,7 +76,6 @@ func resolveAndPublishWithLayers(
 		slog.Int64("durationMs", time.Since(resolveStarted).Milliseconds()),
 		slog.String("resolvedTask", strings.TrimSpace(resolvedProfile.Task)),
 		slog.String("resolvedFamily", strings.TrimSpace(resolvedProfile.Family)),
-		slog.Int("compatibleRuntimeCount", len(resolvedProfile.CompatibleRuntimes)),
 		slog.Int("supportedEndpointTypeCount", len(resolvedProfile.SupportedEndpointTypes)),
 		slog.Int64("parameterCount", resolvedProfile.ParameterCount),
 	)

@@ -62,14 +62,15 @@ spec:
           metadata:
             type: object
           spec:
-            description: ModelSpec is the shared desired state for both Model and
+            description: ClusterModelSpec is the desired state for a cluster-scoped
               ClusterModel.
             properties:
               source:
                 properties:
                   authSecretRef:
-                    description: For namespaced Model, empty Namespace resolves to
-                      the object's namespace.
+                    description: |-
+                      AuthSecretRef is intentionally forbidden for ClusterModel because a
+                      cluster-scoped object must not point at namespaced credentials.
                     properties:
                       name:
                         minLength: 1
@@ -91,8 +92,8 @@ spec:
                 - message: exactly one of source.url or source.upload must be specified
                   rule: '((has(self.url) && size(self.url) > 0 ? 1 : 0) + (has(self.upload)
                     ? 1 : 0)) == 1'
-                - message: source.authSecretRef is only allowed for source.url
-                  rule: 'has(self.upload) ? !has(self.authSecretRef) : true'
+                - message: source.authSecretRef is not supported for ClusterModel
+                  rule: '!has(self.authSecretRef)'
             required:
             - source
             type: object
@@ -201,21 +202,6 @@ spec:
                 properties:
                   architecture:
                     type: string
-                  compatibleAcceleratorVendors:
-                    items:
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: set
-                  compatiblePrecisions:
-                    items:
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: set
-                  compatibleRuntimes:
-                    items:
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: set
                   contextWindowTokens:
                     format: int64
                     minimum: 1
@@ -223,24 +209,10 @@ spec:
                   family:
                     type: string
                   format:
+                    enum:
+                    - Safetensors
+                    - GGUF
                     type: string
-                  framework:
-                    type: string
-                  minimumLaunch:
-                    properties:
-                      acceleratorCount:
-                        format: int64
-                        minimum: 1
-                        type: integer
-                      acceleratorMemoryGiB:
-                        format: int64
-                        minimum: 1
-                        type: integer
-                      placementType:
-                        type: string
-                      sharingMode:
-                        type: string
-                    type: object
                   parameterCount:
                     format: int64
                     minimum: 1
@@ -249,6 +221,13 @@ spec:
                     type: string
                   supportedEndpointTypes:
                     items:
+                      enum:
+                      - Chat
+                      - TextGeneration
+                      - Embeddings
+                      - Rerank
+                      - SpeechToText
+                      - Translation
                       type: string
                     type: array
                     x-kubernetes-list-type: set
@@ -281,9 +260,6 @@ spec:
         required:
         - spec
         type: object
-        x-kubernetes-validations:
-        - message: spec.source.authSecretRef is not supported for ClusterModel
-          rule: '!has(self.spec.source.authSecretRef)'
     served: true
     storage: true
     subresources:

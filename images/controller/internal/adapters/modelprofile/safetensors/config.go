@@ -40,8 +40,14 @@ func decodeConfig(payload []byte) (map[string]any, error) {
 	return config, nil
 }
 
-func totalWeightBytes(root string) (int64, error) {
-	var total int64
+type weightStats struct {
+	totalBytes       int64
+	largestFileBytes int64
+	fileCount        int64
+}
+
+func totalWeightStats(root string) (weightStats, error) {
+	var stats weightStats
 
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -58,14 +64,19 @@ func totalWeightBytes(root string) (int64, error) {
 		if err != nil {
 			return err
 		}
-		total += info.Size()
+		size := info.Size()
+		stats.totalBytes += size
+		stats.fileCount++
+		if size > stats.largestFileBytes {
+			stats.largestFileBytes = size
+		}
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return weightStats{}, err
 	}
 
-	return total, nil
+	return stats, nil
 }
 
 func summaryValue(config map[string]any, key string) any {

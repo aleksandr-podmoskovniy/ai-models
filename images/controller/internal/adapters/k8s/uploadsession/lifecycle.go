@@ -26,6 +26,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsessionstate"
 	"github.com/deckhouse/ai-models/controller/internal/domain/ingestadmission"
+	"github.com/deckhouse/ai-models/controller/internal/domain/modelsource"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -167,7 +168,7 @@ func validateRequest(request publicationports.Request) error {
 	if err := request.Validate(); err != nil {
 		return err
 	}
-	sourceType, err := request.Spec.Source.DetectType()
+	sourceType, err := modelsource.DetectType(request.Spec.Source)
 	if err != nil {
 		return err
 	}

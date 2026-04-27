@@ -21,10 +21,10 @@ import (
 	"log/slog"
 	"strings"
 
-	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -36,40 +36,19 @@ const (
 )
 
 func indexWorkloadReferences(ctx context.Context, indexer client.FieldIndexer) error {
-	if err := indexer.IndexField(ctx, &appsv1.Deployment{}, workloadReferenceIndexField, workloadReferenceIndex); err != nil {
-		return err
+	for _, kind := range workloadKinds {
+		object := kind.object()
+		if err := indexer.IndexField(ctx, object, workloadReferenceIndexField, workloadReferenceIndex); err != nil {
+			return err
+		}
+		if err := indexer.IndexField(ctx, object, modelReferenceIndexField, modelReferenceIndexValue); err != nil {
+			return err
+		}
+		if err := indexer.IndexField(ctx, object, clusterModelReferenceIndexField, clusterModelReferenceIndexValue); err != nil {
+			return err
+		}
 	}
-	if err := indexer.IndexField(ctx, &appsv1.Deployment{}, modelReferenceIndexField, modelReferenceIndexValue); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &appsv1.Deployment{}, clusterModelReferenceIndexField, clusterModelReferenceIndexValue); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &appsv1.StatefulSet{}, workloadReferenceIndexField, workloadReferenceIndex); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &appsv1.StatefulSet{}, modelReferenceIndexField, modelReferenceIndexValue); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &appsv1.StatefulSet{}, clusterModelReferenceIndexField, clusterModelReferenceIndexValue); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &appsv1.DaemonSet{}, workloadReferenceIndexField, workloadReferenceIndex); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &appsv1.DaemonSet{}, modelReferenceIndexField, modelReferenceIndexValue); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &appsv1.DaemonSet{}, clusterModelReferenceIndexField, clusterModelReferenceIndexValue); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &batchv1.CronJob{}, workloadReferenceIndexField, workloadReferenceIndex); err != nil {
-		return err
-	}
-	if err := indexer.IndexField(ctx, &batchv1.CronJob{}, modelReferenceIndexField, modelReferenceIndexValue); err != nil {
-		return err
-	}
-	return indexer.IndexField(ctx, &batchv1.CronJob{}, clusterModelReferenceIndexField, clusterModelReferenceIndexValue)
+	return nil
 }
 
 func workloadReferenceIndex(object client.Object) []string {
@@ -103,113 +82,45 @@ func referenceNamesByScope(object client.Object, scope ReferenceScope) []string 
 	return names
 }
 
-func (r *baseReconciler) mapDeploymentsForModel(ctx context.Context, object client.Object) []reconcile.Request {
-	return r.listDeploymentRequests(ctx, client.InNamespace(object.GetNamespace()), client.MatchingFields{modelReferenceIndexField: object.GetName()})
+func (r *baseReconciler) mapWorkloadsForModel(kind workloadKind) handler.MapFunc {
+	return func(ctx context.Context, object client.Object) []reconcile.Request {
+		return r.listWorkloadRequests(ctx, kind, client.InNamespace(object.GetNamespace()), client.MatchingFields{modelReferenceIndexField: object.GetName()})
+	}
 }
 
-func (r *baseReconciler) mapDeploymentsForClusterModel(ctx context.Context, object client.Object) []reconcile.Request {
-	return r.listDeploymentRequests(ctx, client.MatchingFields{clusterModelReferenceIndexField: object.GetName()})
+func (r *baseReconciler) mapWorkloadsForClusterModel(kind workloadKind) handler.MapFunc {
+	return func(ctx context.Context, object client.Object) []reconcile.Request {
+		return r.listWorkloadRequests(ctx, kind, client.MatchingFields{clusterModelReferenceIndexField: object.GetName()})
+	}
 }
 
-func (r *baseReconciler) mapStatefulSetsForModel(ctx context.Context, object client.Object) []reconcile.Request {
-	return r.listStatefulSetRequests(ctx, client.InNamespace(object.GetNamespace()), client.MatchingFields{modelReferenceIndexField: object.GetName()})
+func (r *baseReconciler) mapWorkloadsForNodeCacheReadiness(kind workloadKind) handler.MapFunc {
+	return func(ctx context.Context, _ client.Object) []reconcile.Request {
+		return r.listWorkloadRequests(ctx, kind, client.MatchingFields{workloadReferenceIndexField: workloadReferenceIndexValue})
+	}
 }
 
-func (r *baseReconciler) mapStatefulSetsForClusterModel(ctx context.Context, object client.Object) []reconcile.Request {
-	return r.listStatefulSetRequests(ctx, client.MatchingFields{clusterModelReferenceIndexField: object.GetName()})
-}
-
-func (r *baseReconciler) mapDaemonSetsForModel(ctx context.Context, object client.Object) []reconcile.Request {
-	return r.listDaemonSetRequests(ctx, client.InNamespace(object.GetNamespace()), client.MatchingFields{modelReferenceIndexField: object.GetName()})
-}
-
-func (r *baseReconciler) mapDaemonSetsForClusterModel(ctx context.Context, object client.Object) []reconcile.Request {
-	return r.listDaemonSetRequests(ctx, client.MatchingFields{clusterModelReferenceIndexField: object.GetName()})
-}
-
-func (r *baseReconciler) mapCronJobsForModel(ctx context.Context, object client.Object) []reconcile.Request {
-	return r.listCronJobRequests(ctx, client.InNamespace(object.GetNamespace()), client.MatchingFields{modelReferenceIndexField: object.GetName()})
-}
-
-func (r *baseReconciler) mapCronJobsForClusterModel(ctx context.Context, object client.Object) []reconcile.Request {
-	return r.listCronJobRequests(ctx, client.MatchingFields{clusterModelReferenceIndexField: object.GetName()})
-}
-
-func (r *baseReconciler) mapDeploymentsForNodeCacheReadiness(ctx context.Context, _ client.Object) []reconcile.Request {
-	return r.listDeploymentRequests(ctx, client.MatchingFields{workloadReferenceIndexField: workloadReferenceIndexValue})
-}
-
-func (r *baseReconciler) mapStatefulSetsForNodeCacheReadiness(ctx context.Context, _ client.Object) []reconcile.Request {
-	return r.listStatefulSetRequests(ctx, client.MatchingFields{workloadReferenceIndexField: workloadReferenceIndexValue})
-}
-
-func (r *baseReconciler) mapDaemonSetsForNodeCacheReadiness(ctx context.Context, _ client.Object) []reconcile.Request {
-	return r.listDaemonSetRequests(ctx, client.MatchingFields{workloadReferenceIndexField: workloadReferenceIndexValue})
-}
-
-func (r *baseReconciler) mapCronJobsForNodeCacheReadiness(ctx context.Context, _ client.Object) []reconcile.Request {
-	return r.listCronJobRequests(ctx, client.MatchingFields{workloadReferenceIndexField: workloadReferenceIndexValue})
-}
-
-func (r *baseReconciler) listDeploymentRequests(ctx context.Context, options ...client.ListOption) []reconcile.Request {
-	var list appsv1.DeploymentList
-	if err := r.client.List(ctx, &list, options...); err != nil {
-		r.logMapListFailure("Deployment", err)
+func (r *baseReconciler) listWorkloadRequests(ctx context.Context, kind workloadKind, options ...client.ListOption) []reconcile.Request {
+	list := kind.list()
+	if err := r.client.List(ctx, list, options...); err != nil {
+		r.logMapListFailure(kind.kind, err)
 		return nil
 	}
-	requests := make([]reconcile.Request, 0, len(list.Items))
-	for _, item := range list.Items {
-		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
-			Namespace: item.Namespace,
-			Name:      item.Name,
-		}})
-	}
-	return requests
-}
-
-func (r *baseReconciler) listStatefulSetRequests(ctx context.Context, options ...client.ListOption) []reconcile.Request {
-	var list appsv1.StatefulSetList
-	if err := r.client.List(ctx, &list, options...); err != nil {
-		r.logMapListFailure("StatefulSet", err)
+	items, err := apimeta.ExtractList(list)
+	if err != nil {
+		r.logMapListFailure(kind.kind, err)
 		return nil
 	}
-	requests := make([]reconcile.Request, 0, len(list.Items))
-	for _, item := range list.Items {
+	requests := make([]reconcile.Request, 0, len(items))
+	for _, item := range items {
+		object, ok := item.(client.Object)
+		if !ok {
+			r.logMapListFailure(kind.kind, errUnexpectedWorkloadListItem)
+			return nil
+		}
 		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
-			Namespace: item.Namespace,
-			Name:      item.Name,
-		}})
-	}
-	return requests
-}
-
-func (r *baseReconciler) listDaemonSetRequests(ctx context.Context, options ...client.ListOption) []reconcile.Request {
-	var list appsv1.DaemonSetList
-	if err := r.client.List(ctx, &list, options...); err != nil {
-		r.logMapListFailure("DaemonSet", err)
-		return nil
-	}
-	requests := make([]reconcile.Request, 0, len(list.Items))
-	for _, item := range list.Items {
-		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
-			Namespace: item.Namespace,
-			Name:      item.Name,
-		}})
-	}
-	return requests
-}
-
-func (r *baseReconciler) listCronJobRequests(ctx context.Context, options ...client.ListOption) []reconcile.Request {
-	var list batchv1.CronJobList
-	if err := r.client.List(ctx, &list, options...); err != nil {
-		r.logMapListFailure("CronJob", err)
-		return nil
-	}
-	requests := make([]reconcile.Request, 0, len(list.Items))
-	for _, item := range list.Items {
-		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
-			Namespace: item.Namespace,
-			Name:      item.Name,
+			Namespace: object.GetNamespace(),
+			Name:      object.GetName(),
 		}})
 	}
 	return requests

@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deckhouse/ai-models/dmcr/internal/leaseutil"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -194,19 +195,11 @@ func (m *FileMirror) Sync(ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("maintenance gate lease is missing expiry reference")
 	}
-	return writeGateFile(m.path, fileState{ExpiresAt: expiresAt, Holder: leaseHolder(lease), Sequence: leaseSequence(lease)})
+	return writeGateFile(m.path, fileState{ExpiresAt: expiresAt, Holder: leaseutil.Holder(lease), Sequence: leaseSequence(lease)})
 }
 
 func leaseExpiresAt(lease *coordinationv1.Lease) (time.Time, bool) {
-	referenceTime, ok := leaseReferenceTime(lease)
-	if !ok {
-		return time.Time{}, false
-	}
-	duration := time.Second
-	if lease.Spec.LeaseDurationSeconds != nil && *lease.Spec.LeaseDurationSeconds > 0 {
-		duration = time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second
-	}
-	return referenceTime.Add(duration), true
+	return leaseutil.ExpiresAt(lease, time.Second, false)
 }
 
 func writeGateFile(path string, state fileState) error {

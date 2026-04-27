@@ -213,6 +213,18 @@ func TestSourcePlanBuildsStagedUploadPlan(t *testing.T) {
 	}
 }
 
+func TestPreflightRejectsOwnerIdentityMismatch(t *testing.T) {
+	t.Parallel()
+
+	request := testOperationRequest()
+	request.Owner.Name = "other-model"
+
+	var service Service
+	if err := service.preflight(request, SourceWorkerPlan{}); err == nil {
+		t.Fatal("expected owner binding error")
+	}
+}
+
 func TestOptionsValidateDirectHuggingFaceDoesNotRequireObjectStorage(t *testing.T) {
 	t.Parallel()
 

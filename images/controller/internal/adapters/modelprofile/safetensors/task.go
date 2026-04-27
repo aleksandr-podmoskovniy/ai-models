@@ -16,16 +16,28 @@ limitations under the License.
 
 package safetensors
 
-import "strings"
+import (
+	"strings"
 
-func resolveTask(config map[string]any, architecture, explicitTask, sourceHint string) string {
+	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
+)
+
+func resolveTask(
+	config map[string]any,
+	architecture string,
+	explicitTask string,
+	sourceHint string,
+) (string, publicationdata.ProfileConfidence) {
 	if task := strings.TrimSpace(explicitTask); task != "" {
-		return task
+		return task, publicationdata.ProfileConfidenceExact
 	}
 	if inferred := inferTaskFromCheckpoint(config, architecture); inferred != "" {
-		return inferred
+		return inferred, publicationdata.ProfileConfidenceDerived
 	}
-	return strings.TrimSpace(sourceHint)
+	if hint := strings.TrimSpace(sourceHint); hint != "" {
+		return hint, publicationdata.ProfileConfidenceHint
+	}
+	return "", ""
 }
 
 func inferTaskFromCheckpoint(config map[string]any, architecture string) string {

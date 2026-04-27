@@ -46,7 +46,11 @@ test -s "${OUTPUT_DIR}/ai.deckhouse.io_clustermodels.yaml"
 grep -Fq "x-kubernetes-validations:" "${OUTPUT_DIR}/ai.deckhouse.io_models.yaml"
 grep -Fq "spec.source is immutable" "${OUTPUT_DIR}/ai.deckhouse.io_models.yaml"
 grep -Fq "exactly one of source.url or source.upload must be specified" "${OUTPUT_DIR}/ai.deckhouse.io_models.yaml"
-grep -Fq "spec.source.authSecretRef is not supported for ClusterModel" "${OUTPUT_DIR}/ai.deckhouse.io_clustermodels.yaml"
+
+grep -Fq "x-kubernetes-validations:" "${OUTPUT_DIR}/ai.deckhouse.io_clustermodels.yaml"
+grep -Fq "spec.source is immutable" "${OUTPUT_DIR}/ai.deckhouse.io_clustermodels.yaml"
+grep -Fq "exactly one of source.url or source.upload must be specified" "${OUTPUT_DIR}/ai.deckhouse.io_clustermodels.yaml"
+grep -Fq "source.authSecretRef is not supported for ClusterModel" "${OUTPUT_DIR}/ai.deckhouse.io_clustermodels.yaml"
 
 if [[ "${KEEP_OUTPUT}" == "true" ]]; then
   echo "==> CRD schema generated in ${OUTPUT_DIR}"

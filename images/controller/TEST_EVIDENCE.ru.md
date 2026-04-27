@@ -228,7 +228,6 @@ paths и test surfaces.
   - `runtime_decisions_test.go`
   - `status_test.go`
   - `status_success_test.go`
-  - `policy_validation_test.go`
 
 ### `internal/domain/ingestadmission`
 
@@ -245,6 +244,16 @@ paths и test surfaces.
   - `upload_probe_test.go`
   - `upload_probe_shape_test.go`
 
+### `internal/domain/modelsource`
+
+- Decision surface:
+  - source kind detection from `ModelSourceSpec`
+  - supported remote provider classification
+  - unsupported remote URL classification for fail-closed status
+  - Hugging Face repo/revision parsing outside public API schema
+- Primary evidence:
+  - `source_test.go`
+
 ### `internal/application/publishobserve`
 
 - Decision surface:
@@ -256,14 +265,6 @@ paths и test surfaces.
   - `observe_source_worker_test.go`
   - `observe_upload_session_test.go`
   - `status_mutation_test.go`
-
-### `internal/application/sourceadmission`
-
-- Decision surface:
-  - fail-fast preflight for `source.url`
-  - obvious non-HF remote rejection before byte-path starts
-- Primary evidence:
-  - `preflight_test.go`
 
 ### `internal/application/publishaudit`
 
@@ -363,7 +364,8 @@ paths и test surfaces.
 - Decision surface:
   - endpoint type mapping
   - precision / quantization inference
-  - parameter count and minimum launch estimation
+  - parameter count and working-set estimation
+  - confidence-aware public metadata projection inputs
   - format-specific profile extraction
 - Primary evidence:
   - `common/profile_test.go`
@@ -386,6 +388,7 @@ paths и test surfaces.
 - Decision surface:
   - worker Pod shaping
   - auth supplements
+  - owner-binding preflight before state/runtime creation
   - bounded resource contract
   - source-worker runtime result handoff
   - restart-safe worker recreation from persisted direct-upload state
@@ -647,7 +650,7 @@ paths и test surfaces.
   - `collector_workload_delivery_test.go`
   - `collector_test_helpers_test.go`
 - `internal/publicationartifact`: `contract_test.go`, `location_test.go`
-- `internal/publishedsnapshot`: `snapshot_test.go`
+- `internal/publishedsnapshot`: `snapshot_test.go`, `profile_test.go`
 - `internal/support/cleanuphandle`: `handle_test.go`
 - `internal/support/modelobject`: `modelobject_test.go`
 - `internal/support/resourcenames`: `names_test.go`

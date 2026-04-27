@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/domain/modelsource"
 	"github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 	"k8s.io/apimachinery/pkg/types"
@@ -54,7 +55,7 @@ func (r Request) Validate() error {
 	if err := r.Identity.Validate(); err != nil {
 		return err
 	}
-	sourceType, err := r.Spec.Source.DetectType()
+	sourceType, err := modelsource.DetectType(r.Spec.Source)
 	if err != nil {
 		return err
 	}
@@ -73,7 +74,7 @@ func (r Request) Validate() error {
 }
 
 func validateRequestSource(source modelsv1alpha1.ModelSourceSpec) error {
-	sourceType, err := source.DetectType()
+	sourceType, err := modelsource.DetectType(source)
 	if err != nil {
 		return err
 	}

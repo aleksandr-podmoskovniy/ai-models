@@ -190,6 +190,54 @@ func TestCleanupPolicyForActiveRequestsSkipsInvalidTokenAndKeepsValidTarget(t *t
 	}
 }
 
+func TestCleanupPolicyForActiveRequestsDeduplicatesDuplicateTargets(t *testing.T) {
+	t.Setenv(SealedS3AccessKeyEnv, "access")
+	t.Setenv(SealedS3SecretKeyEnv, "secret")
+	t.Setenv(directUploadTokenSecretEnv, "token-secret")
+
+	token := encodeDirectUploadSessionTokenForTest(t, []byte("token-secret"), directUploadSessionClaims{
+		ObjectKey: "dmcr/_ai_models/direct-upload/objects/session-a/data",
+		UploadID:  "upload-a",
+	})
+
+	policy, err := cleanupPolicyForActiveRequests(writeDirectUploadConfigForTest(t), []corev1.Secret{
+		directUploadImmediateRequestWithToken(token),
+		directUploadImmediateRequestWithToken(token),
+	})
+	if err != nil {
+		t.Fatalf("cleanupPolicyForActiveRequests() error = %v", err)
+	}
+	if len(policy.targetDirectUploadPrefixes) != 1 {
+		t.Fatalf("targeted direct-upload prefixes = %#v, want one deduplicated target", policy.targetDirectUploadPrefixes)
+	}
+	if len(policy.targetDirectUploadMultipartUploads) != 1 {
+		t.Fatalf("targeted multipart uploads = %#v, want one deduplicated target", policy.targetDirectUploadMultipartUploads)
+	}
+}
+
+func TestCleanupPolicyForActiveRequestsTargetsPrefixWithoutMultipartWhenUploadIDEmpty(t *testing.T) {
+	t.Setenv(SealedS3AccessKeyEnv, "access")
+	t.Setenv(SealedS3SecretKeyEnv, "secret")
+	t.Setenv(directUploadTokenSecretEnv, "token-secret")
+
+	token := encodeDirectUploadSessionTokenForTest(t, []byte("token-secret"), directUploadSessionClaims{
+		ObjectKey: "dmcr/_ai_models/direct-upload/objects/session-a/data",
+	})
+
+	policy, err := cleanupPolicyForActiveRequests(writeDirectUploadConfigForTest(t), []corev1.Secret{
+		directUploadImmediateRequestWithToken(token),
+	})
+	if err != nil {
+		t.Fatalf("cleanupPolicyForActiveRequests() error = %v", err)
+	}
+	if _, found := policy.targetDirectUploadPrefixes["dmcr/_ai_models/direct-upload/objects/session-a"]; !found {
+		t.Fatalf("expected targeted direct-upload prefix, got %#v", policy.targetDirectUploadPrefixes)
+	}
+	if len(policy.targetDirectUploadMultipartUploads) != 0 {
+		t.Fatalf("targeted multipart uploads = %#v, want none without uploadID", policy.targetDirectUploadMultipartUploads)
+	}
+}
+
 func writeDirectUploadConfigForTest(t *testing.T) string {
 	t.Helper()
 

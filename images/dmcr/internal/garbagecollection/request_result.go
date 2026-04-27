@@ -75,20 +75,6 @@ func completedRequestExpired(secret corev1.Secret, now time.Time, ttl time.Durat
 	return !now.UTC().Before(completedAt.Add(ttl))
 }
 
-func isCompletedRequest(secret corev1.Secret) bool {
-	return secret.Labels[RequestLabelKey] == RequestLabelValue &&
-		strings.TrimSpace(secret.Annotations[phaseAnnotationKey]) == phaseDone
-}
-
-func hasPendingRequest(secrets []corev1.Secret) bool {
-	for _, secret := range secrets {
-		if shouldRunGarbageCollection(secret) || isQueuedRequest(secret) {
-			return true
-		}
-	}
-	return false
-}
-
 func markRequestsCompleted(
 	ctx context.Context,
 	client kubernetes.Interface,

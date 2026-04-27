@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deckhouse/ai-models/dmcr/internal/leaseutil"
 	"github.com/deckhouse/ai-models/dmcr/internal/maintenance"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,8 +63,8 @@ func TestRunRequestCycleActivatesAndReleasesMaintenanceGate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Get(maintenance lease) error = %v", err)
 		}
-		if leaseHolder(lease) != "pod-a" {
-			t.Fatalf("maintenance gate holder = %q, want pod-a", leaseHolder(lease))
+		if leaseutil.Holder(lease) != "pod-a" {
+			t.Fatalf("maintenance gate holder = %q, want pod-a", leaseutil.Holder(lease))
 		}
 		return CleanupResult{}, nil
 	}
@@ -79,8 +80,8 @@ func TestRunRequestCycleActivatesAndReleasesMaintenanceGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get(maintenance lease) after run error = %v", err)
 	}
-	if leaseHolder(lease) != "" {
-		t.Fatalf("maintenance gate holder after release = %q, want empty", leaseHolder(lease))
+	if leaseutil.Holder(lease) != "" {
+		t.Fatalf("maintenance gate holder after release = %q, want empty", leaseutil.Holder(lease))
 	}
 }
 

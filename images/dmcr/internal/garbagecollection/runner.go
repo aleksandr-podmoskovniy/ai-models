@@ -237,57 +237,6 @@ func listRequestSecrets(ctx context.Context, client kubernetes.Interface, namesp
 	return secretList.Items, nil
 }
 
-func queuedRequestSecrets(secrets []corev1.Secret) []corev1.Secret {
-	queued := make([]corev1.Secret, 0, len(secrets))
-	for _, secret := range secrets {
-		if isQueuedRequest(secret) {
-			queued = append(queued, secret)
-		}
-	}
-	return queued
-}
-
-func activeRequestSecrets(secrets []corev1.Secret) []corev1.Secret {
-	active := make([]corev1.Secret, 0, len(secrets))
-	for _, secret := range secrets {
-		if shouldRunGarbageCollection(secret) {
-			active = append(active, secret)
-		}
-	}
-	return active
-}
-
-func shouldRunGarbageCollection(secret corev1.Secret) bool {
-	if secret.Labels[RequestLabelKey] != RequestLabelValue {
-		return false
-	}
-	if isCompletedRequest(secret) {
-		return false
-	}
-	return strings.TrimSpace(secret.Annotations[switchAnnotationKey]) != ""
-}
-
-func isQueuedRequest(secret corev1.Secret) bool {
-	if secret.Labels[RequestLabelKey] != RequestLabelValue {
-		return false
-	}
-	if isCompletedRequest(secret) {
-		return false
-	}
-	if strings.TrimSpace(secret.Annotations[switchAnnotationKey]) != "" {
-		return false
-	}
-	return strings.TrimSpace(secret.Annotations[RequestQueuedAtAnnotationKey]) != ""
-}
-
-func secretNames(secrets []corev1.Secret) []string {
-	names := make([]string, 0, len(secrets))
-	for _, secret := range secrets {
-		names = append(names, secret.Name)
-	}
-	return names
-}
-
 func shouldActivateGarbageCollection(secrets []corev1.Secret, now time.Time, activationDelay time.Duration) bool {
 	if len(secrets) == 0 {
 		return false

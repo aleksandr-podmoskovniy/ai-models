@@ -60,6 +60,12 @@ func TestFetchHuggingFaceProfileSummarySafetensors(t *testing.T) {
 	if got, want := summary.WeightBytes, int64(24); got != want {
 		t.Fatalf("unexpected weight bytes %d", got)
 	}
+	if got, want := summary.LargestWeightFileBytes, int64(13); got != want {
+		t.Fatalf("unexpected largest weight bytes %d", got)
+	}
+	if got, want := summary.WeightFileCount, int64(2); got != want {
+		t.Fatalf("unexpected weight file count %d", got)
+	}
 	if got, want := string(summary.ConfigPayload), `{"architectures":["LlamaForCausalLM"],"torch_dtype":"bfloat16"}`; got != want {
 		t.Fatalf("unexpected config payload %q", got)
 	}

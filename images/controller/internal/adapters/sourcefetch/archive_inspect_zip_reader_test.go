@@ -56,7 +56,7 @@ func TestInspectZipModelArchiveReaderAtBuildsSafetensorsSummary(t *testing.T) {
 	if got, want := inspection.InputFormat, modelsv1alpha1.ModelInputFormatSafetensors; got != want {
 		t.Fatalf("unexpected input format %q", got)
 	}
-	if got, want := inspection.WeightBytes, int64(len("weights")); got != want {
+	if got, want := inspection.WeightStats.TotalBytes, int64(len("weights")); got != want {
 		t.Fatalf("unexpected weight bytes %d", got)
 	}
 	if got, want := string(inspection.ConfigPayload), `{"architectures":["LlamaForCausalLM"]}`; got != want {

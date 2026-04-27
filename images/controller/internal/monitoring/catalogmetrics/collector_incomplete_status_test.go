@@ -40,11 +40,6 @@ func TestCollectorLeavesCalculatedFieldsEmptyWhenStatusIsIncomplete(t *testing.T
 		"namespace": model.Namespace,
 		"uid":       string(model.UID),
 	}, 0)
-	assertGaugeValue(t, families, "d8_ai_models_model_validated", map[string]string{
-		"name":      model.Name,
-		"namespace": model.Namespace,
-		"uid":       string(model.UID),
-	}, 0)
 	assertGaugeValue(t, families, "d8_ai_models_model_condition", map[string]string{
 		"name":      model.Name,
 		"namespace": model.Namespace,
@@ -60,7 +55,6 @@ func TestCollectorLeavesCalculatedFieldsEmptyWhenStatusIsIncomplete(t *testing.T
 		"resolved_source_type": string(modelsv1alpha1.ModelSourceTypeHuggingFace),
 		"format":               "",
 		"task":                 "",
-		"framework":            "",
 		"artifact_kind":        "",
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_model_artifact_size_bytes", map[string]string{

@@ -29,14 +29,13 @@ import (
 func buildPodSpec(
 	options Options,
 	sourcePlan SourceWorkerPlan,
-	projectedAuthSecretName string,
 	container corev1.Container,
 ) corev1.PodSpec {
 	return corev1.PodSpec{
 		RestartPolicy:      corev1.RestartPolicyNever,
 		ServiceAccountName: options.ServiceAccountName,
 		ImagePullSecrets:   imagePullSecrets(options.ImagePullSecretName),
-		Volumes:            buildVolumes(options, sourcePlan, projectedAuthSecretName),
+		Volumes:            buildVolumes(options, sourcePlan),
 		Containers:         []corev1.Container{container},
 	}
 }
@@ -91,7 +90,7 @@ func buildEnv(
 	)
 	if sourceUsesObjectStorage(plan, options) {
 		env = append(env, storageprojection.Env(options.ObjectStorage)...)
-	} else if publishUsesObjectStorageTrust(options) {
+	} else if directUploadTrustRequired(options) {
 		env = append(env, storageprojection.CAEnv(options.ObjectStorage)...)
 	}
 	if plan.HuggingFace != nil && plan.HuggingFace.AuthSecretRef != nil {
@@ -116,7 +115,7 @@ func buildEnv(
 
 func buildVolumeMounts(options Options, plan SourceWorkerPlan) []corev1.VolumeMount {
 	var extra []corev1.VolumeMount
-	if sourceUsesObjectStorage(plan, options) || publishUsesObjectStorageTrust(options) {
+	if sourceUsesObjectStorage(plan, options) || directUploadTrustRequired(options) {
 		extra = storageprojection.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
 	}
 	return append(ociregistry.VolumeMounts(options.OCIRegistryCASecretName), extra...)
@@ -125,10 +124,9 @@ func buildVolumeMounts(options Options, plan SourceWorkerPlan) []corev1.VolumeMo
 func buildVolumes(
 	options Options,
 	plan SourceWorkerPlan,
-	_ string,
 ) []corev1.Volume {
 	var extra []corev1.Volume
-	if sourceUsesObjectStorage(plan, options) || publishUsesObjectStorageTrust(options) {
+	if sourceUsesObjectStorage(plan, options) || directUploadTrustRequired(options) {
 		extra = storageprojection.Volumes(options.ObjectStorage.CASecretName, extra...)
 	}
 	return append(ociregistry.Volumes(options.OCIRegistryCASecretName), extra...)
@@ -142,6 +140,6 @@ func sourceUsesObjectStorage(plan SourceWorkerPlan, options Options) bool {
 		publicationports.NormalizeSourceFetchMode(options.SourceFetch) == publicationports.SourceFetchModeMirror
 }
 
-func publishUsesObjectStorageTrust(options Options) bool {
+func directUploadTrustRequired(options Options) bool {
 	return strings.TrimSpace(options.OCIDirectUploadEndpoint) != ""
 }

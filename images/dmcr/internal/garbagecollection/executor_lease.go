@@ -19,11 +19,11 @@ package garbagecollection
 import (
 	"context"
 	"fmt"
-	"math"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/deckhouse/ai-models/dmcr/internal/leaseutil"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -169,20 +169,20 @@ func (r *executorLeaseRunner) acquireOrRenew(ctx context.Context) (bool, error) 
 		return false, fmt.Errorf("get dmcr garbage-collection executor lease: %w", err)
 	}
 
-	holder := leaseHolder(lease)
-	if holder != "" && holder != r.identity && !leaseExpired(lease, now, r.duration) {
+	holder := leaseutil.Holder(lease)
+	if holder != "" && holder != r.identity && !leaseutil.Expired(lease, now, r.duration, true) {
 		return false, nil
 	}
 
 	updated := lease.DeepCopy()
-	durationSeconds := leaseDurationSeconds(r.duration)
+	durationSeconds := leaseutil.DurationSeconds(r.duration, DefaultExecutorLeaseDuration)
 	renewTime := metav1.NewMicroTime(now)
-	updated.Spec.HolderIdentity = stringPtr(r.identity)
-	updated.Spec.LeaseDurationSeconds = int32Ptr(durationSeconds)
+	updated.Spec.HolderIdentity = leaseutil.StringPtr(r.identity)
+	updated.Spec.LeaseDurationSeconds = leaseutil.Int32Ptr(durationSeconds)
 	updated.Spec.RenewTime = &renewTime
 	if holder != r.identity {
 		updated.Spec.AcquireTime = &renewTime
-		updated.Spec.LeaseTransitions = int32Ptr(incrementLeaseTransitions(lease))
+		updated.Spec.LeaseTransitions = leaseutil.Int32Ptr(incrementExecutorLeaseTransitions(lease))
 	} else if updated.Spec.AcquireTime == nil {
 		updated.Spec.AcquireTime = &renewTime
 	}
@@ -198,7 +198,7 @@ func (r *executorLeaseRunner) acquireOrRenew(ctx context.Context) (bool, error) 
 }
 
 func (r *executorLeaseRunner) newLease(now time.Time) *coordinationv1.Lease {
-	durationSeconds := leaseDurationSeconds(r.duration)
+	durationSeconds := leaseutil.DurationSeconds(r.duration, DefaultExecutorLeaseDuration)
 	microTime := metav1.NewMicroTime(now)
 
 	return &coordinationv1.Lease{
@@ -207,76 +207,18 @@ func (r *executorLeaseRunner) newLease(now time.Time) *coordinationv1.Lease {
 			Namespace: r.namespace,
 		},
 		Spec: coordinationv1.LeaseSpec{
-			HolderIdentity:       stringPtr(r.identity),
-			LeaseDurationSeconds: int32Ptr(durationSeconds),
+			HolderIdentity:       leaseutil.StringPtr(r.identity),
+			LeaseDurationSeconds: leaseutil.Int32Ptr(durationSeconds),
 			AcquireTime:          &microTime,
 			RenewTime:            &microTime,
-			LeaseTransitions:     int32Ptr(0),
+			LeaseTransitions:     leaseutil.Int32Ptr(0),
 		},
 	}
 }
 
-func leaseHolder(lease *coordinationv1.Lease) string {
-	if lease == nil || lease.Spec.HolderIdentity == nil {
-		return ""
-	}
-	return strings.TrimSpace(*lease.Spec.HolderIdentity)
-}
-
-func leaseExpired(lease *coordinationv1.Lease, now time.Time, fallbackDuration time.Duration) bool {
-	referenceTime, ok := leaseReferenceTime(lease)
-	if !ok {
-		return true
-	}
-
-	duration := fallbackDuration
-	if lease != nil && lease.Spec.LeaseDurationSeconds != nil && *lease.Spec.LeaseDurationSeconds > 0 {
-		duration = time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second
-	}
-	if duration <= 0 {
-		return true
-	}
-	return !referenceTime.Add(duration).After(now.UTC())
-}
-
-func leaseReferenceTime(lease *coordinationv1.Lease) (time.Time, bool) {
-	if lease == nil {
-		return time.Time{}, false
-	}
-	if lease.Spec.RenewTime != nil {
-		return lease.Spec.RenewTime.Time.UTC(), true
-	}
-	if lease.Spec.AcquireTime != nil {
-		return lease.Spec.AcquireTime.Time.UTC(), true
-	}
-	if !lease.CreationTimestamp.IsZero() {
-		return lease.CreationTimestamp.Time.UTC(), true
-	}
-	return time.Time{}, false
-}
-
-func incrementLeaseTransitions(lease *coordinationv1.Lease) int32 {
+func incrementExecutorLeaseTransitions(lease *coordinationv1.Lease) int32 {
 	if lease == nil || lease.Spec.LeaseTransitions == nil {
 		return 1
 	}
 	return *lease.Spec.LeaseTransitions + 1
-}
-
-func leaseDurationSeconds(duration time.Duration) int32 {
-	if duration <= 0 {
-		duration = DefaultExecutorLeaseDuration
-	}
-	seconds := int32(math.Ceil(duration.Seconds()))
-	if seconds < 1 {
-		return 1
-	}
-	return seconds
-}
-
-func stringPtr(value string) *string {
-	return &value
-}
-
-func int32Ptr(value int32) *int32 {
-	return &value
 }

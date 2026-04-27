@@ -25,21 +25,18 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
-func summarizeTarSafetensorsArchiveFromReader(path string, stream io.Reader, rootPrefix string, selectedFiles []string) ([]byte, int64, error) {
+func summarizeTarSafetensorsArchiveFromReader(path string, stream io.Reader, rootPrefix string, selectedFiles []string) ([]byte, WeightStats, error) {
 	reader, closeArchive, err := archiveio.NewClosableTarReader(path, stream)
 	if err != nil {
-		return nil, 0, err
+		return nil, WeightStats{}, err
 	}
 	defer func() { _ = closeArchive() }()
 
-	selected := make(map[string]struct{}, len(selectedFiles))
-	for _, file := range selectedFiles {
-		selected[strings.TrimSpace(filepath.ToSlash(file))] = struct{}{}
-	}
+	selected := archiveFileSet(selectedFiles)
 
 	var (
 		configPayload []byte
-		weightBytes   int64
+		weightStats   WeightStats
 	)
 	for {
 		header, err := reader.Next()
@@ -47,12 +44,12 @@ func summarizeTarSafetensorsArchiveFromReader(path string, stream io.Reader, roo
 			break
 		}
 		if err != nil {
-			return nil, 0, err
+			return nil, WeightStats{}, err
 		}
 
 		relative, keep, err := classifyArchiveEntry(header)
 		if err != nil {
-			return nil, 0, err
+			return nil, WeightStats{}, err
 		}
 		if !keep {
 			continue
@@ -68,27 +65,43 @@ func summarizeTarSafetensorsArchiveFromReader(path string, stream io.Reader, roo
 		case normalized == "config.json":
 			configPayload, err = io.ReadAll(reader)
 			if err != nil {
-				return nil, 0, err
+				return nil, WeightStats{}, err
 			}
 		case strings.HasSuffix(strings.ToLower(normalized), ".safetensors"):
-			weightBytes += header.Size
+			weightStats.add(header.Size)
 		}
 	}
 
 	if len(configPayload) == 0 {
-		return nil, 0, errors.New("tar safetensors summary requires config.json in selected files")
+		return nil, WeightStats{}, errors.New("tar safetensors summary requires config.json in selected files")
 	}
-	if weightBytes <= 0 {
-		return nil, 0, errors.New("tar safetensors summary requires positive safetensors weight bytes")
+	if weightStats.TotalBytes <= 0 {
+		return nil, WeightStats{}, errors.New("tar safetensors summary requires positive safetensors weight bytes")
 	}
-	return configPayload, weightBytes, nil
+	return configPayload, weightStats, nil
+}
+
+func archiveFileSet(files []string) map[string]struct{} {
+	selected := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		selected[strings.TrimSpace(filepath.ToSlash(file))] = struct{}{}
+	}
+	return selected
+}
+
+func (s *WeightStats) add(sizeBytes int64) {
+	if sizeBytes <= 0 {
+		return
+	}
+	s.TotalBytes += sizeBytes
+	if sizeBytes > s.LargestFileBytes {
+		s.LargestFileBytes = sizeBytes
+	}
+	s.FileCount++
 }
 
 func summarizeGGUFArchive(files []tarArchiveFile, rootPrefix string, selectedFiles []string) (string, int64, error) {
-	selected := make(map[string]struct{}, len(selectedFiles))
-	for _, file := range selectedFiles {
-		selected[strings.TrimSpace(filepath.ToSlash(file))] = struct{}{}
-	}
+	selected := archiveFileSet(selectedFiles)
 
 	for _, file := range files {
 		normalized, ok := normalizedArchiveFilePath(file.RelativePath, rootPrefix)

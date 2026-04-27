@@ -34,9 +34,15 @@ type ArchiveInspection struct {
 	InputFormat   modelsv1alpha1.ModelInputFormat
 	SelectedFiles []string
 	ConfigPayload []byte
-	WeightBytes   int64
+	WeightStats   WeightStats
 	ModelFile     string
 	ModelFileSize int64
+}
+
+type WeightStats struct {
+	TotalBytes       int64
+	LargestFileBytes int64
+	FileCount        int64
 }
 
 type tarArchiveFile struct {
@@ -82,6 +88,39 @@ func inspectTarModelArchiveReader(path string, openReader openArchiveReaderFunc,
 		return ArchiveInspection{}, err
 	}
 
+	inspection, err := prepareArchiveInspection(files, rootPrefix, requested)
+	if err != nil {
+		return ArchiveInspection{}, err
+	}
+
+	switch inspection.InputFormat {
+	case modelsv1alpha1.ModelInputFormatSafetensors:
+		stream, err := openReader()
+		if err != nil {
+			return ArchiveInspection{}, err
+		}
+		configPayload, weightStats, err := summarizeTarSafetensorsArchiveFromReader(path, stream, rootPrefix, inspection.SelectedFiles)
+		_ = stream.Close()
+		if err != nil {
+			return ArchiveInspection{}, err
+		}
+		inspection.ConfigPayload = configPayload
+		inspection.WeightStats = weightStats
+		return inspection, nil
+	case modelsv1alpha1.ModelInputFormatGGUF:
+		modelFile, modelFileSize, err := summarizeGGUFArchive(files, rootPrefix, inspection.SelectedFiles)
+		if err != nil {
+			return ArchiveInspection{}, err
+		}
+		inspection.ModelFile = modelFile
+		inspection.ModelFileSize = modelFileSize
+		return inspection, nil
+	default:
+		return inspection, nil
+	}
+}
+
+func prepareArchiveInspection(files []tarArchiveFile, rootPrefix string, requested modelsv1alpha1.ModelInputFormat) (ArchiveInspection, error) {
 	normalizedFiles := make([]string, 0, len(files))
 	for _, file := range files {
 		normalized, ok := normalizedArchiveFilePath(file.RelativePath, rootPrefix)
@@ -99,35 +138,9 @@ func inspectTarModelArchiveReader(path string, openReader openArchiveReaderFunc,
 	if err != nil {
 		return ArchiveInspection{}, err
 	}
-
-	inspection := ArchiveInspection{
+	return ArchiveInspection{
 		RootPrefix:    rootPrefix,
 		InputFormat:   inputFormat,
 		SelectedFiles: selectedFiles,
-	}
-	switch inputFormat {
-	case modelsv1alpha1.ModelInputFormatSafetensors:
-		stream, err := openReader()
-		if err != nil {
-			return ArchiveInspection{}, err
-		}
-		configPayload, weightBytes, err := summarizeTarSafetensorsArchiveFromReader(path, stream, rootPrefix, selectedFiles)
-		_ = stream.Close()
-		if err != nil {
-			return ArchiveInspection{}, err
-		}
-		inspection.ConfigPayload = configPayload
-		inspection.WeightBytes = weightBytes
-		return inspection, nil
-	case modelsv1alpha1.ModelInputFormatGGUF:
-		modelFile, modelFileSize, err := summarizeGGUFArchive(files, rootPrefix, selectedFiles)
-		if err != nil {
-			return ArchiveInspection{}, err
-		}
-		inspection.ModelFile = modelFile
-		inspection.ModelFileSize = modelFileSize
-		return inspection, nil
-	default:
-		return inspection, nil
-	}
+	}, nil
 }

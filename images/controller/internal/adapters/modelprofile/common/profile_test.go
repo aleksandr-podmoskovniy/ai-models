@@ -39,20 +39,12 @@ func TestEndpointTypes(t *testing.T) {
 	}
 }
 
-func TestGPUWorkingSetAndMinimumLaunch(t *testing.T) {
+func TestEstimatedWorkingSetGiB(t *testing.T) {
 	t.Parallel()
 
-	workingSet := GPUWorkingSetGiB(32<<30, 0, "", "")
+	workingSet := EstimatedWorkingSetGiB(32<<30, 0, "", "")
 	if got, want := workingSet, int64(40); got != want {
 		t.Fatalf("unexpected working set %d", got)
-	}
-
-	minimumLaunch := MinimumGPULaunch(120)
-	if got, want := minimumLaunch.AcceleratorCount, int64(2); got != want {
-		t.Fatalf("unexpected accelerator count %d", got)
-	}
-	if got, want := minimumLaunch.AcceleratorMemoryGiB, int64(60); got != want {
-		t.Fatalf("unexpected accelerator memory %d", got)
 	}
 }
 

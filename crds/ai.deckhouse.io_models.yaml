@@ -64,8 +64,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: ModelSpec is the shared desired state for both Model and
-              ClusterModel.
+            description: ModelSpec is the desired state for a namespaced Model.
             properties:
               source:
                 properties:
@@ -203,21 +202,6 @@ spec:
                 properties:
                   architecture:
                     type: string
-                  compatibleAcceleratorVendors:
-                    items:
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: set
-                  compatiblePrecisions:
-                    items:
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: set
-                  compatibleRuntimes:
-                    items:
-                      type: string
-                    type: array
-                    x-kubernetes-list-type: set
                   contextWindowTokens:
                     format: int64
                     minimum: 1
@@ -225,24 +209,10 @@ spec:
                   family:
                     type: string
                   format:
+                    enum:
+                    - Safetensors
+                    - GGUF
                     type: string
-                  framework:
-                    type: string
-                  minimumLaunch:
-                    properties:
-                      acceleratorCount:
-                        format: int64
-                        minimum: 1
-                        type: integer
-                      acceleratorMemoryGiB:
-                        format: int64
-                        minimum: 1
-                        type: integer
-                      placementType:
-                        type: string
-                      sharingMode:
-                        type: string
-                    type: object
                   parameterCount:
                     format: int64
                     minimum: 1
@@ -251,6 +221,13 @@ spec:
                     type: string
                   supportedEndpointTypes:
                     items:
+                      enum:
+                      - Chat
+                      - TextGeneration
+                      - Embeddings
+                      - Rerank
+                      - SpeechToText
+                      - Translation
                       type: string
                     type: array
                     x-kubernetes-list-type: set

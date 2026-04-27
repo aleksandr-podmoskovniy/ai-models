@@ -107,9 +107,11 @@ func resolveArchiveInspectionSummary(
 	switch inspection.InputFormat {
 	case modelsv1alpha1.ModelInputFormatSafetensors:
 		return safetensorsprofile.ResolveSummary(safetensorsprofile.SummaryInput{
-			ConfigPayload: inspection.ConfigPayload,
-			WeightBytes:   inspection.WeightBytes,
-			Task:          options.Task,
+			ConfigPayload:          inspection.ConfigPayload,
+			WeightBytes:            inspection.WeightStats.TotalBytes,
+			LargestWeightFileBytes: inspection.WeightStats.LargestFileBytes,
+			WeightFileCount:        inspection.WeightStats.FileCount,
+			Task:                   options.Task,
 		})
 	case modelsv1alpha1.ModelInputFormatGGUF:
 		return ggufprofile.ResolveSummary(ggufprofile.SummaryInput{

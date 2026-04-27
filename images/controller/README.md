@@ -166,25 +166,21 @@ Current phase-2 slice implemented here:
   rules applied before packaging; inspect/validate/select flow now reuses one
   package-local runner over format-specific rule sets, instead of repeating the
   same traversal in both `Safetensors` and `GGUF`;
-- `internal/domain/ingestadmission` and
-  `internal/application/sourceadmission` for the bounded fail-fast admission
-  stage before heavy remote fetch/materialization starts;
+- `internal/domain/ingestadmission` for source-agnostic fail-fast invariants
+  before heavy remote fetch/materialization starts; sourceworker keeps the
+  small owner-binding preflight local to its runtime request path;
 - `internal/adapters/modelprofile/safetensors` and
   `internal/adapters/modelprofile/gguf` for ai-inference-oriented metadata
   extraction from normalized model directories, with current live logic based
-  on real weight sizes, task-to-endpoint mapping, quantization/precision
-  inference, and minimum-launch estimation; endpoint metadata is now projected
-  as platform semantic endpoint types (`Chat`, `TextGeneration`, and peers)
-  rather than transport names, and runtime compatibility is no longer guessed
-  from publication hints or topology terms such as `KubeRay`; `Safetensors`
-  task resolution now prefers explicit user intent, then checkpoint
-  config/architecture, and only then source hints such as HF `pipeline_tag`;
-  `family` no longer falls back to source repo IDs and stays byte-derived only;
-  `framework` on the
-  `Safetensors` path is now a normalized format-default label
-  (`transformers`), not source-derived metadata; source provenance fields such
-  as `license` and `sourceRepoID` are now attached after resolution in
-  `publishworker`, not treated as resolver inputs, and no longer project into
+  on real weight sizes, confidence-tagged task/family/quantization extraction
+  and endpoint projection only from reliable task evidence; runtime
+  compatibility, launch sizing and topology terms such as `KubeRay`, `MIG` or
+  `MPS` are not guessed in catalog metadata; `Safetensors` task resolution now
+  prefers explicit metadata and checkpoint config/architecture before weaker
+  source hints such as HF `pipeline_tag`; `GGUF` filename-derived family and
+  quantization stay internal hints rather than public facts; source provenance
+  fields such as `license` and `sourceRepoID` are now attached after resolution
+  in `publishworker`, not treated as resolver inputs, and no longer project into
   public `status.resolved`;
 - `internal/adapters/k8s/sourceworker` for controller-owned worker Pods that turn
   accepted remote URLs into internal published artifacts, while reserving
@@ -300,10 +296,10 @@ Current phase-2 slice implemented here:
   garbage-collection progress instead of hand-assembling the same
   `FinalizeDeleteDecision` payload shape in multiple branches;
 - `internal/monitoring/catalogmetrics` for module-owned Prometheus collectors
-  over public `Model` / `ClusterModel` state: phase one-hot gauges,
-  ready/validated booleans, condition status/reason gauges, small info metrics,
-  and artifact size from public `spec/status` instead of runtime-local
-  counters or log parsing;
+  over public `Model` / `ClusterModel` state: phase one-hot gauges, ready
+  booleans, condition status/reason gauges, small info metrics, and artifact
+  size from public `spec/status` instead of runtime-local counters or log
+  parsing;
 - `internal/monitoring/runtimehealth` for module-owned Prometheus collectors
   over the managed node-cache runtime plane: stable per-node agent `Pod`
   phase/readiness, selector-scoped desired-vs-ready summary gauges, shared-

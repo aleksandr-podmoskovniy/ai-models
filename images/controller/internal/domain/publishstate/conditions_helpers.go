@@ -22,27 +22,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func conditionStatus(ok bool) metav1.ConditionStatus {
-	if ok {
-		return metav1.ConditionTrue
-	}
-	return metav1.ConditionFalse
-}
-
-func readyMessage(validation policyValidationResult) string {
-	if validation.Valid {
-		return "model is ready for platform consumption"
-	}
-	return validation.Message
-}
-
 func keepNonPublishConditions(conditions []metav1.Condition) []metav1.Condition {
 	result := make([]metav1.Condition, 0, len(conditions))
 	for _, condition := range conditions {
 		switch modelsv1alpha1.ModelConditionType(condition.Type) {
 		case modelsv1alpha1.ModelConditionArtifactResolved,
 			modelsv1alpha1.ModelConditionMetadataResolved,
-			modelsv1alpha1.ModelConditionValidated,
 			modelsv1alpha1.ModelConditionReady:
 			continue
 		default:
@@ -102,11 +87,4 @@ func setReadyCondition(
 		ObservedGeneration: generation,
 		LastTransitionTime: metav1.Now(),
 	})
-}
-
-func readyReason(ok bool) modelsv1alpha1.ModelConditionReason {
-	if ok {
-		return modelsv1alpha1.ModelConditionReasonReady
-	}
-	return modelsv1alpha1.ModelConditionReasonFailed
 }

@@ -77,30 +77,37 @@ func resolveFromSummary(stem string, modelSizeBytes int64, task string) publicat
 	quantization := detectQuantization(stem)
 	precision := detectPrecision(quantization)
 	parameterCount := detectParameterCount(stem)
+	parameterConfidence := publicationdata.ProfileConfidenceHint
 	if parameterCount <= 0 {
 		parameterCount = profilecommon.EstimateParameterCountFromBytes(modelSizeBytes, precision, quantization)
+		parameterConfidence = publicationdata.ProfileConfidenceEstimated
+	}
+	endpoints := []string(nil)
+	task = strings.TrimSpace(task)
+	taskConfidence := publicationdata.ProfileConfidence("")
+	if task != "" {
+		taskConfidence = publicationdata.ProfileConfidenceExact
+		endpoints = profilecommon.EndpointTypes(task)
 	}
 
-	resolved := publicationdata.ResolvedProfile{
-		Task:           strings.TrimSpace(task),
-		Framework:      "gguf",
-		Family:         normalizeFamily(stem),
-		Format:         "GGUF",
-		ParameterCount: parameterCount,
-		Quantization:   quantization,
-		SupportedEndpointTypes: profilecommon.EndpointTypes(
-			task,
-		),
-		CompatiblePrecisions: compatiblePrecisions(precision),
-		MinimumLaunch: profilecommon.MinimumGPULaunch(
-			profilecommon.GPUWorkingSetGiB(modelSizeBytes, parameterCount, precision, quantization),
-		),
+	return publicationdata.ResolvedProfile{
+		Task:                     task,
+		TaskConfidence:           taskConfidence,
+		Family:                   normalizeFamily(stem),
+		FamilyConfidence:         publicationdata.ProfileConfidenceHint,
+		Format:                   "GGUF",
+		ParameterCount:           parameterCount,
+		ParameterCountConfidence: parameterConfidence,
+		Quantization:             quantization,
+		QuantizationConfidence:   confidenceIfSet(quantization, publicationdata.ProfileConfidenceHint),
+		SupportedEndpointTypes:   endpoints,
+		Footprint: publicationdata.ProfileFootprint{
+			WeightsBytes:           modelSizeBytes,
+			LargestWeightFileBytes: modelSizeBytes,
+			ShardCount:             1,
+			EstimatedWorkingSetGiB: profilecommon.EstimatedWorkingSetGiB(modelSizeBytes, parameterCount, precision, quantization),
+		},
 	}
-	if resolved.MinimumLaunch.PlacementType == "GPU" {
-		resolved.CompatibleAcceleratorVendors = profilecommon.GPUVendors()
-	}
-
-	return resolved
 }
 
 func firstGGUFFile(root string) (string, int64, error) {
@@ -242,9 +249,9 @@ func normalizeFamily(name string) string {
 	return normalized
 }
 
-func compatiblePrecisions(precision string) []string {
-	if strings.TrimSpace(precision) == "" {
-		return nil
+func confidenceIfSet(value string, confidence publicationdata.ProfileConfidence) publicationdata.ProfileConfidence {
+	if strings.TrimSpace(value) == "" {
+		return ""
 	}
-	return []string{strings.TrimSpace(precision)}
+	return confidence
 }

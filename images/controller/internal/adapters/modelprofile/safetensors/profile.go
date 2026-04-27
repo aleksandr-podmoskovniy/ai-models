@@ -32,10 +32,12 @@ type Input struct {
 }
 
 type SummaryInput struct {
-	ConfigPayload []byte
-	WeightBytes   int64
-	Task          string
-	TaskHint      string
+	ConfigPayload          []byte
+	WeightBytes            int64
+	LargestWeightFileBytes int64
+	WeightFileCount        int64
+	Task                   string
+	TaskHint               string
 }
 
 func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
@@ -48,12 +50,12 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 		return publicationdata.ResolvedProfile{}, err
 	}
 
-	weightBytes, err := totalWeightBytes(input.CheckpointDir)
+	weights, err := totalWeightStats(input.CheckpointDir)
 	if err != nil {
 		return publicationdata.ResolvedProfile{}, err
 	}
 
-	return resolveSummary(config, weightBytes, input.Task, input.TaskHint)
+	return resolveSummary(config, weights, input.Task, input.TaskHint)
 }
 
 func ResolveSummary(input SummaryInput) (publicationdata.ResolvedProfile, error) {
@@ -69,46 +71,74 @@ func ResolveSummary(input SummaryInput) (publicationdata.ResolvedProfile, error)
 		return publicationdata.ResolvedProfile{}, err
 	}
 
-	return resolveSummary(config, input.WeightBytes, input.Task, input.TaskHint)
+	weights := weightStats{
+		totalBytes:       input.WeightBytes,
+		largestFileBytes: input.LargestWeightFileBytes,
+		fileCount:        input.WeightFileCount,
+	}
+	return resolveSummary(config, weights, input.Task, input.TaskHint)
 }
 
 func resolveSummary(
 	config map[string]any,
-	weightBytes int64,
+	weights weightStats,
 	task string,
 	taskHint string,
 ) (publicationdata.ResolvedProfile, error) {
 	architecture := resolveArchitecture(config)
-	family := resolveFamily(config, architecture)
-	task = resolveTask(config, architecture, task, taskHint)
+	family, familyConfidence := resolveFamily(config, architecture)
+	task, taskConfidence := resolveTask(config, architecture, task, taskHint)
 	contextWindow := detectContextWindow(config)
 	quantization := detectQuantization(config)
 	precision := detectPrecision(config, quantization)
-	parameterCount := estimateParameterCount(config)
-	if parameterCount <= 0 {
-		parameterCount = profilecommon.EstimateParameterCountFromBytes(weightBytes, precision, quantization)
+	parameterCount, parameterConfidence := resolveParameterCount(config, weights.totalBytes, precision, quantization)
+	endpoints := []string(nil)
+	if taskConfidence.ReliablePublicFact() {
+		endpoints = profilecommon.EndpointTypes(task)
 	}
-
-	minimumLaunch := profilecommon.MinimumGPULaunch(
-		profilecommon.GPUWorkingSetGiB(weightBytes, parameterCount, precision, quantization),
-	)
+	footprint := publicationdata.ProfileFootprint{
+		WeightsBytes:           weights.totalBytes,
+		LargestWeightFileBytes: weights.largestFileBytes,
+		ShardCount:             weights.fileCount,
+		EstimatedWorkingSetGiB: profilecommon.EstimatedWorkingSetGiB(
+			weights.totalBytes,
+			parameterCount,
+			precision,
+			quantization,
+		),
+	}
 
 	resolved := publicationdata.ResolvedProfile{
-		Task:                   task,
-		Framework:              "transformers",
-		Family:                 family,
-		Architecture:           architecture,
-		Format:                 "Safetensors",
-		ParameterCount:         parameterCount,
-		Quantization:           quantization,
-		ContextWindowTokens:    contextWindow,
-		SupportedEndpointTypes: profilecommon.EndpointTypes(task),
-		CompatiblePrecisions:   compatiblePrecisions(precision),
-		MinimumLaunch:          minimumLaunch,
-	}
-	if minimumLaunch.PlacementType == "GPU" {
-		resolved.CompatibleAcceleratorVendors = profilecommon.GPUVendors()
+		Task:                          task,
+		TaskConfidence:                taskConfidence,
+		Family:                        family,
+		FamilyConfidence:              familyConfidence,
+		Architecture:                  architecture,
+		ArchitectureConfidence:        confidenceIfSet(architecture, publicationdata.ProfileConfidenceExact),
+		Format:                        "Safetensors",
+		ParameterCount:                parameterCount,
+		ParameterCountConfidence:      parameterConfidence,
+		Quantization:                  quantization,
+		QuantizationConfidence:        confidenceIfSet(quantization, publicationdata.ProfileConfidenceExact),
+		ContextWindowTokens:           contextWindow,
+		ContextWindowTokensConfidence: confidenceIfPositive(contextWindow, publicationdata.ProfileConfidenceExact),
+		SupportedEndpointTypes:        endpoints,
+		Footprint:                     footprint,
 	}
 
 	return resolved, nil
+}
+
+func confidenceIfSet(value string, confidence publicationdata.ProfileConfidence) publicationdata.ProfileConfidence {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return confidence
+}
+
+func confidenceIfPositive(value int64, confidence publicationdata.ProfileConfidence) publicationdata.ProfileConfidence {
+	if value <= 0 {
+		return ""
+	}
+	return confidence
 }

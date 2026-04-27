@@ -22,6 +22,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deckhouse/ai-models/dmcr/internal/leaseutil"
+	coordinationv1 "k8s.io/api/coordination/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -147,5 +150,31 @@ func TestAckMirrorRejectsStaleSequence(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("ack count for stale sequence = %d, want 0", count)
+	}
+}
+
+func TestAckQuorumIgnoresLeaseWithOnlyCreationTimestamp(t *testing.T) {
+	now := time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC)
+	lease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "dmcr-gc-maintenance-ack-pod-a",
+			Namespace:         "d8-ai-models",
+			Labels:            ackLeaseLabels("dmcr-gc-maintenance"),
+			Annotations:       map[string]string{GateSequenceAnnotationKey: "7"},
+			CreationTimestamp: metav1.NewTime(now.Add(-time.Second)),
+		},
+		Spec: coordinationv1.LeaseSpec{
+			HolderIdentity:       leaseutil.StringPtr("pod-a"),
+			LeaseDurationSeconds: leaseutil.Int32Ptr(30),
+		},
+	}
+	client := fake.NewSimpleClientset(lease)
+
+	count, err := AckQuorumReady(context.Background(), client, "d8-ai-models", "dmcr-gc-maintenance", "7", 1, now)
+	if err != nil {
+		t.Fatalf("AckQuorumReady() error = %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("ack count for timestamp-less ack lease = %d, want 0", count)
 	}
 }

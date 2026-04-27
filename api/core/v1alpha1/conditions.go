@@ -21,26 +21,20 @@ type ModelConditionType string
 const (
 	ModelConditionArtifactResolved ModelConditionType = "ArtifactResolved"
 	ModelConditionMetadataResolved ModelConditionType = "MetadataResolved"
-	ModelConditionValidated        ModelConditionType = "Validated"
 	ModelConditionReady            ModelConditionType = "Ready"
 )
 
 type ModelConditionReason string
 
 const (
-	ModelConditionReasonPending                   ModelConditionReason = "Pending"
-	ModelConditionReasonWaitingForUserUpload      ModelConditionReason = "WaitingForUserUpload"
-	ModelConditionReasonPublishing                ModelConditionReason = "Publishing"
-	ModelConditionReasonArtifactPublished         ModelConditionReason = "ArtifactPublished"
-	ModelConditionReasonPublicationFailed         ModelConditionReason = "PublicationFailed"
-	ModelConditionReasonUnsupportedSource         ModelConditionReason = "UnsupportedSource"
-	ModelConditionReasonModelMetadataCalculated   ModelConditionReason = "ModelMetadataCalculated"
-	ModelConditionReasonValidationSucceeded       ModelConditionReason = "ValidationSucceeded"
-	ModelConditionReasonModelTypeMismatch         ModelConditionReason = "ModelTypeMismatch"
-	ModelConditionReasonEndpointTypeNotSupported  ModelConditionReason = "EndpointTypeNotSupported"
-	ModelConditionReasonRuntimeNotSupported       ModelConditionReason = "RuntimeNotSupported"
-	ModelConditionReasonAcceleratorPolicyConflict ModelConditionReason = "AcceleratorPolicyConflict"
-	ModelConditionReasonOptimizationNotSupported  ModelConditionReason = "OptimizationNotSupported"
-	ModelConditionReasonReady                     ModelConditionReason = "Ready"
-	ModelConditionReasonFailed                    ModelConditionReason = "Failed"
+	ModelConditionReasonPending                 ModelConditionReason = "Pending"
+	ModelConditionReasonWaitingForUserUpload    ModelConditionReason = "WaitingForUserUpload"
+	ModelConditionReasonPublishing              ModelConditionReason = "Publishing"
+	ModelConditionReasonArtifactPublished       ModelConditionReason = "ArtifactPublished"
+	ModelConditionReasonPublicationFailed       ModelConditionReason = "PublicationFailed"
+	ModelConditionReasonUnsupportedSource       ModelConditionReason = "UnsupportedSource"
+	ModelConditionReasonModelMetadataCalculated ModelConditionReason = "ModelMetadataCalculated"
+	ModelConditionReasonModelMetadataPartial    ModelConditionReason = "ModelMetadataPartial"
+	ModelConditionReasonReady                   ModelConditionReason = "Ready"
+	ModelConditionReasonFailed                  ModelConditionReason = "Failed"
 )

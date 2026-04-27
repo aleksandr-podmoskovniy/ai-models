@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/domain/modelsource"
 )
 
 type runtimeMode string
@@ -47,7 +48,7 @@ func decideCatalogStatusReconcile(
 		return reconcileDecision{Skip: true}, nil
 	}
 
-	sourceType, err := source.DetectType()
+	sourceType, err := modelsource.DetectType(source)
 	if err != nil {
 		return reconcileDecision{}, err
 	}
@@ -71,7 +72,7 @@ func decideCatalogStatusReconcile(
 }
 
 func sourceRuntimeMode(source modelsv1alpha1.ModelSourceSpec, uploadStagePresent bool) (runtimeMode, error) {
-	sourceType, err := source.DetectType()
+	sourceType, err := modelsource.DetectType(source)
 	if err != nil {
 		return "", err
 	}

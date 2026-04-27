@@ -19,7 +19,6 @@ package directupload
 import (
 	"errors"
 	"net/http"
-	"slices"
 	"testing"
 
 	"github.com/deckhouse/ai-models/dmcr/internal/sealedblob"
@@ -37,16 +36,8 @@ func TestServiceCompleteVerifiesAlreadyCompletedObject(t *testing.T) {
 
 	completeResp := h.completeUpload(t, startPayload.SessionToken, parts, digest, 8)
 	expectStatus(t, completeResp, http.StatusOK)
-	if got := h.backend.readerCalls; got != 0 {
-		t.Fatalf("Reader() call count = %d, want 0 for default client-asserted path", got)
-	}
-	linkKey, err := RepositoryBlobLinkObjectKey("/dmcr", testRepository, digest)
-	if err != nil {
-		t.Fatalf("RepositoryBlobLinkObjectKey() error = %v", err)
-	}
-	if got, want := string(h.backend.objects[linkKey]), digest; got != want {
-		t.Fatalf("link payload = %q, want %q", got, want)
-	}
+	assertReaderCalls(t, h.backend, 0)
+	assertLinkPayload(t, h.backend, testRepository, digest)
 }
 
 func TestServiceCompleteStrictPolicyKeepsPhysicalObjectWhenVerificationReadFails(t *testing.T) {
@@ -60,12 +51,8 @@ func TestServiceCompleteStrictPolicyKeepsPhysicalObjectWhenVerificationReadFails
 	parts := singlePart()
 	completeResp := h.completeUpload(t, startPayload.SessionToken, parts, digestForParts(parts), 8)
 	expectStatus(t, completeResp, http.StatusInternalServerError)
-	if slices.Contains(h.backend.deleted, claims.ObjectKey) {
-		t.Fatalf("physical upload object %q was deleted after temporary verification failure", claims.ObjectKey)
-	}
-	if _, exists := h.backend.objects[claims.ObjectKey]; !exists {
-		t.Fatalf("physical upload object %q does not exist after temporary verification failure", claims.ObjectKey)
-	}
+	assertNotDeleted(t, h.backend, claims.ObjectKey)
+	assertObjectExists(t, h.backend, claims.ObjectKey)
 }
 
 func TestServiceCompleteStrictPolicyFallsBackWhenBackendDigestLookupFails(t *testing.T) {
@@ -79,12 +66,10 @@ func TestServiceCompleteStrictPolicyFallsBackWhenBackendDigestLookupFails(t *tes
 	digest := digestForParts(parts)
 	completeResp := h.completeUpload(t, startPayload.SessionToken, parts, digest, 12)
 	expectStatus(t, completeResp, http.StatusOK)
-	if got := h.backend.readerCalls; got != 1 {
-		t.Fatalf("Reader() call count = %d, want 1 for strict reread policy", got)
-	}
+	assertReaderCalls(t, h.backend, 1)
 }
 
-func TestServiceCompleteCleansUpSealedObjectsWhenLinkWriteFails(t *testing.T) {
+func TestServiceCompleteKeepsSealedObjectsWhenLinkWriteFailsAndRetrySucceeds(t *testing.T) {
 	t.Parallel()
 
 	h := newServiceHarness(t)
@@ -96,17 +81,37 @@ func TestServiceCompleteCleansUpSealedObjectsWhenLinkWriteFails(t *testing.T) {
 	completeResp := h.completeUpload(t, startPayload.SessionToken, parts, digest, 8)
 	expectStatus(t, completeResp, http.StatusInternalServerError)
 
-	blobKey, err := BlobDataObjectKey("/dmcr", digest)
-	if err != nil {
-		t.Fatalf("BlobDataObjectKey() error = %v", err)
-	}
-	expectedDeleted := []string{claims.ObjectKey, sealedblob.MetadataPath(blobKey)}
-	for _, expectedPath := range expectedDeleted {
-		if !slices.Contains(h.backend.deleted, expectedPath) {
-			t.Fatalf("DeleteObject() did not remove %q, deleted = %#v", expectedPath, h.backend.deleted)
-		}
-		if _, exists := h.backend.objects[expectedPath]; exists {
-			t.Fatalf("object %q still exists after cleanup", expectedPath)
-		}
-	}
+	blobKey := mustBlobDataKey(t, digest)
+	assertNotDeleted(t, h.backend, claims.ObjectKey)
+	assertObjectExists(t, h.backend, claims.ObjectKey)
+	assertObjectExists(t, h.backend, sealedblob.MetadataPath(blobKey))
+
+	h.backend.putErr = nil
+	retryResp := h.completeUpload(t, startPayload.SessionToken, parts, digest, 8)
+	expectStatus(t, retryResp, http.StatusOK)
+	assertNotDeleted(t, h.backend, claims.ObjectKey)
+	assertLinkPayload(t, h.backend, testRepository, digest)
+}
+
+func TestServiceCompleteKeepsDuplicateUploadWhenDeduplicatedLinkWriteFails(t *testing.T) {
+	t.Parallel()
+
+	h := newServiceHarness(t)
+	firstPayload, firstClaims := h.startWithClaims(t)
+	parts := singlePart()
+	digest := digestForParts(parts)
+	expectStatus(t, h.completeUpload(t, firstPayload.SessionToken, parts, digest, 8), http.StatusOK)
+
+	secondPayload, secondClaims := h.startWithClaims(t)
+	h.backend.putErr = errors.New("link write failed")
+	h.backend.putErrPathSuffix = "/link"
+	expectStatus(t, h.completeUpload(t, secondPayload.SessionToken, parts, digest, 8), http.StatusInternalServerError)
+	assertNotDeleted(t, h.backend, secondClaims.ObjectKey)
+	assertObjectExists(t, h.backend, secondClaims.ObjectKey)
+	assertObjectExists(t, h.backend, firstClaims.ObjectKey)
+
+	h.backend.putErr = nil
+	expectStatus(t, h.completeUpload(t, secondPayload.SessionToken, parts, digest, 8), http.StatusOK)
+	assertDeleted(t, h.backend, secondClaims.ObjectKey)
+	assertObjectExists(t, h.backend, firstClaims.ObjectKey)
 }

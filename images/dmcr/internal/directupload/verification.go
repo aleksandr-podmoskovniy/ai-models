@@ -70,6 +70,8 @@ type verificationResult struct {
 }
 
 func (s *Service) verifyUploadedObject(ctx context.Context, objectKey string, expected sealedUpload) (verificationResult, error) {
+	objectKey = strings.TrimSpace(objectKey)
+	expected.Digest = strings.TrimSpace(expected.Digest)
 	result, err := s.inspectBackendVerification(ctx, objectKey)
 	result.Policy = s.verificationPolicy
 	if err != nil {
@@ -82,7 +84,7 @@ func (s *Service) verifyUploadedObject(ctx context.Context, objectKey string, ex
 	if result.Source == verificationSourceTrustedBackendSHA256 {
 		log.Printf(
 			"direct upload verification selected trusted backend checksum objectKey=%q verificationPolicy=%q verificationSource=%q digest=%q sizeBytes=%d backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q",
-			strings.TrimSpace(objectKey),
+			objectKey,
 			result.Policy,
 			result.Source,
 			result.Sealed.Digest,
@@ -101,9 +103,6 @@ func (s *Service) inspectBackendVerification(ctx context.Context, objectKey stri
 	attributes, err := s.backend.ObjectAttributes(ctx, strings.TrimSpace(objectKey))
 	if err != nil {
 		return verificationResult{}, err
-	}
-	if attributes.SizeBytes < 0 {
-		return verificationResult{}, fmt.Errorf("trusted backend sizeBytes must not be negative")
 	}
 
 	result := verificationResult{
@@ -133,52 +132,22 @@ func (s *Service) resolveFallbackVerification(
 	result verificationResult,
 	attributesErr error,
 ) (verificationResult, error) {
-	if strings.TrimSpace(expected.Digest) != "" && !s.verificationPolicy.requiresObjectRereadFallback() {
+	if expected.Digest != "" && !s.verificationPolicy.requiresObjectRereadFallback() {
 		result.Source = verificationSourceClientAsserted
 		result.Sealed = sealedUpload{
-			Digest:    strings.TrimSpace(expected.Digest),
+			Digest:    expected.Digest,
 			SizeBytes: result.resolvedSizeBytes(expected.SizeBytes),
 		}
-		if attributesErr != nil {
-			log.Printf(
-				"direct upload verification accepted client-declared digest objectKey=%q verificationPolicy=%q verificationSource=%q fallbackReason=%q declaredDigest=%q declaredSizeBytes=%d backendAttributesPresent=%t backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q error=%v",
-				strings.TrimSpace(objectKey),
-				result.Policy,
-				result.Source,
-				result.FallbackReason,
-				result.Sealed.Digest,
-				expected.SizeBytes,
-				result.BackendAttributesPresent,
-				result.BackendChecksumType,
-				result.BackendSHA256Present,
-				strings.Join(result.AvailableChecksums, ","),
-				attributesErr,
-			)
-			return result, nil
-		}
-		log.Printf(
-			"direct upload verification accepted client-declared digest objectKey=%q verificationPolicy=%q verificationSource=%q fallbackReason=%q declaredDigest=%q declaredSizeBytes=%d backendAttributesPresent=%t backendSizeBytes=%d backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q",
-			strings.TrimSpace(objectKey),
-			result.Policy,
-			result.Source,
-			result.FallbackReason,
-			result.Sealed.Digest,
-			expected.SizeBytes,
-			result.BackendAttributesPresent,
-			result.BackendSizeBytes,
-			result.BackendChecksumType,
-			result.BackendSHA256Present,
-			strings.Join(result.AvailableChecksums, ","),
-		)
+		logClientAssertedVerification(objectKey, result, expected, attributesErr)
 		return result, nil
 	}
 
-	if strings.TrimSpace(expected.Digest) == "" {
+	if expected.Digest == "" {
 		result.FallbackReason = verificationFallbackReasonDigestMissing
 	}
 	log.Printf(
 		"direct upload verification falling back to object reread objectKey=%q verificationPolicy=%q verificationSource=%q fallbackReason=%q backendAttributesPresent=%t backendSizeBytes=%d backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q",
-		strings.TrimSpace(objectKey),
+		objectKey,
 		result.Policy,
 		verificationSourceObjectRead,
 		result.FallbackReason,
@@ -189,6 +158,28 @@ func (s *Service) resolveFallbackVerification(
 		strings.Join(result.AvailableChecksums, ","),
 	)
 	return s.verifyUploadedObjectByReading(ctx, objectKey, expected.SizeBytes, result)
+}
+
+func logClientAssertedVerification(objectKey string, result verificationResult, expected sealedUpload, attributesErr error) {
+	message := "direct upload verification accepted client-declared digest objectKey=%q verificationPolicy=%q verificationSource=%q fallbackReason=%q declaredDigest=%q declaredSizeBytes=%d backendAttributesPresent=%t backendSizeBytes=%d backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q"
+	args := []any{
+		objectKey,
+		result.Policy,
+		result.Source,
+		result.FallbackReason,
+		result.Sealed.Digest,
+		expected.SizeBytes,
+		result.BackendAttributesPresent,
+		result.BackendSizeBytes,
+		result.BackendChecksumType,
+		result.BackendSHA256Present,
+		strings.Join(result.AvailableChecksums, ","),
+	}
+	if attributesErr != nil {
+		message += " error=%v"
+		args = append(args, attributesErr)
+	}
+	log.Printf(message, args...)
 }
 
 func (r verificationResult) resolvedSizeBytes(fallback int64) int64 {
@@ -229,13 +220,14 @@ func (s *Service) verifyUploadedObjectByReading(
 	expectedSizeBytes int64,
 	result verificationResult,
 ) (verificationResult, error) {
-	reader, err := s.backend.Reader(ctx, strings.TrimSpace(objectKey), 0)
+	objectKey = strings.TrimSpace(objectKey)
+	reader, err := s.backend.Reader(ctx, objectKey, 0)
 	if err != nil {
 		return verificationResult{}, fmt.Errorf("failed to open uploaded object for verification: %w", err)
 	}
 
 	hasher := sha256.New()
-	progressWriter := newVerificationReadProgressWriter(strings.TrimSpace(objectKey), expectedSizeBytes, s.now())
+	progressWriter := newVerificationReadProgressWriter(objectKey, expectedSizeBytes, s.now())
 	sizeBytes, copyErr := io.Copy(io.MultiWriter(hasher, progressWriter), reader)
 	closeErr := reader.Close()
 	switch {

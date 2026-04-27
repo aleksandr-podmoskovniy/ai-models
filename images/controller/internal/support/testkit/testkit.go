@@ -87,6 +87,14 @@ func UploadSpec() modelsv1alpha1.ModelSpec {
 	}
 }
 
+func HuggingFaceClusterSpec() modelsv1alpha1.ClusterModelSpec {
+	return modelsv1alpha1.ClusterModelSpec{
+		Source: modelsv1alpha1.ClusterModelSourceSpec{
+			URL: "https://huggingface.co/deepseek-ai/DeepSeek-R1?revision=main",
+		},
+	}
+}
+
 func NewModel() *modelsv1alpha1.Model {
 	return &modelsv1alpha1.Model{
 		ObjectMeta: metav1.ObjectMeta{
@@ -115,7 +123,7 @@ func NewClusterModel() *modelsv1alpha1.ClusterModel {
 			Name: "deepseek-r1",
 			UID:  types.UID("11111111-2222-3333-4444-555555555555"),
 		},
-		Spec: HuggingFaceSpec(),
+		Spec: HuggingFaceClusterSpec(),
 	}
 }
 
