@@ -218,6 +218,132 @@ rules:
             errors,
         )
 
+    @staticmethod
+    def _write_metrics_proxy_rbac_sources(
+        root: Path, dmcr_content: str | None = None
+    ) -> None:
+        controller = root / "templates/controller/rbac.yaml"
+        controller.parent.mkdir(parents=True, exist_ok=True)
+        controller.write_text(
+            """---
+kind: ClusterRole
+metadata:
+  name: {{ include "ai-models.controllerName" . }}-metrics-auth
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+---
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "ai-models.controllerName" . }}-metrics-auth
+roleRef:
+  kind: ClusterRole
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ai-models.controllerServiceAccountName" . }}
+""",
+            encoding="utf-8",
+        )
+
+        dmcr = root / "templates/dmcr/rbac.yaml"
+        dmcr.parent.mkdir(parents=True, exist_ok=True)
+        dmcr.write_text(
+            dmcr_content
+            or """---
+kind: ClusterRole
+metadata:
+  name: {{ include "ai-models.dmcrName" . }}-metrics-auth
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+---
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "ai-models.dmcrName" . }}-metrics-auth
+roleRef:
+  kind: ClusterRole
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ai-models.dmcrServiceAccountName" . }}
+""",
+            encoding="utf-8",
+        )
+
+        rbac_to_us = root / "templates/rbac-to-us.yaml"
+        rbac_to_us.parent.mkdir(parents=True, exist_ok=True)
+        rbac_to_us.write_text(
+            """---
+kind: Role
+metadata:
+  name: access-to-ai-models-prometheus-metrics
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/prometheus-metrics"]
+    resourceNames:
+      - {{ include "ai-models.controllerName" . }}
+      - {{ include "ai-models.dmcrName" . }}
+    verbs: ["get"]
+---
+kind: RoleBinding
+metadata:
+  name: access-to-ai-models-prometheus-metrics
+subjects:
+  - kind: User
+    name: d8-monitoring:scraper
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: d8-monitoring
+""",
+            encoding="utf-8",
+        )
+
+    def test_validate_metrics_proxy_rbac_accepts_authn_authz_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._write_metrics_proxy_rbac_sources(root)
+            errors = MODULE._validate_metrics_proxy_rbac_sources(root)
+
+        self.assertEqual(errors, [])
+
+    def test_validate_metrics_proxy_rbac_rejects_missing_dmcr_tokenreview(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            self._write_metrics_proxy_rbac_sources(
+                root,
+                dmcr_content="""---
+kind: ClusterRole
+metadata:
+  name: {{ include "ai-models.dmcrName" . }}-metrics-auth
+rules:
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+---
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "ai-models.dmcrName" . }}-metrics-auth
+roleRef:
+  kind: ClusterRole
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ai-models.dmcrServiceAccountName" . }}
+""",
+            )
+            errors = MODULE._validate_metrics_proxy_rbac_sources(root)
+
+        self.assertIn(
+            'templates/dmcr/rbac.yaml: missing resources: ["tokenreviews"]',
+            errors,
+        )
+
     def test_parse_secret_documents_reads_string_data(self) -> None:
         content = """---
 apiVersion: v1

@@ -25,6 +25,10 @@ unit/template-level evidence.
 
 - `live-e2e-ha-validation` — keep active. Это канонический executable runbook
   для следующего live запуска.
+- `observability-signal-hardening` — keep active. Первый code slice уже даёт
+  `collector_up` / scrape duration / last-success metrics и normalized `err`
+  logs; live e2e должен проверить их после rollout, а alert wiring остаётся
+  следующим observability slice.
 - `pod-placement-policy` — archived to
   `plans/archive/2026/pod-placement-policy`; placement slice завершён и теперь
   покрывается этим e2e runbook.
@@ -76,6 +80,8 @@ Pass:
 - до создания моделей подготовить evidence capture;
 - убедиться, что короткоживущие source-worker/upload artifacts можно прочитать
   после completion.
+- проверить, что новый observability hardening реально виден в live scrape, а
+  не только в unit tests.
 
 Проверки:
 
@@ -84,6 +90,17 @@ Pass:
   secrets;
 - DMCR logs include maintenance/direct-upload/GC fields;
 - metrics scrape reachable through module ServiceMonitor/kube-rbac-proxy;
+- kube-rbac-proxy service accounts can create `TokenReview` and
+  `SubjectAccessReview`, and Prometheus/scraper can `get`
+  `deployments/prometheus-metrics` for controller and DMCR;
+- `d8_ai_models_collector_up{collector="catalog-state"} == 1`;
+- `d8_ai_models_collector_up{collector="runtime-health"} == 1`;
+- `d8_ai_models_collector_up{collector="storage-usage"} == 1`;
+- `d8_ai_models_collector_scrape_duration_seconds` exists for all three
+  collectors and is bounded;
+- `d8_ai_models_collector_last_success_timestamp_seconds` is non-zero after a
+  successful scrape;
+- controller/runtime and DMCR structured error logs use `err`, not `error`;
 - runtime Pods/Secrets use e2e labels.
 
 Pass:
@@ -91,6 +108,8 @@ Pass:
 - для каждого runtime event есть correlation fields:
   `model`, `namespace`/cluster scope, `uid`, `publicationID`,
   `sourceFetchMode`, `sessionID` или direct-upload state reference.
+- missing collector health metric or `collector_up=0` is a stop condition
+  unless it is explained by a controlled negative test.
 
 ### Slice 3. HF Direct publication matrix
 
@@ -266,6 +285,8 @@ Pass:
 - доказать, что module-local RBAC следует Deckhouse/virtualization pattern:
   module adds only explicit access-level deltas, while base persona inheritance
   stays in `user-authz`.
+- доказать, что текущие rendered templates соответствуют hardening guardrails,
+  а не только live cluster случайно имеет старые/ручные роли.
 
 Проверки:
 
@@ -287,6 +308,9 @@ Pass:
   `use` must not accidentally grant ClusterModel;
 - no human role grants Secrets, exec/attach/port-forward, status/finalizers or
   internal runtime objects.
+- render validation must pass with RBAC fixture tests:
+  `python3 -m unittest tools/helm-tests/validate_renders_test.py`,
+  `make helm-template`, `make kubeconform`.
 
 Pass:
 

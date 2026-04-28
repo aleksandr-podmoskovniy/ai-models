@@ -49,6 +49,83 @@
 - storage usage/capacity metrics or explicit absence;
 - cleanup/GC result.
 
+## Что проверять после rollout
+
+Сначала проверяется не модель, а сама платформа модуля:
+
+- module rollout: `Module/ai-models` Ready, Deployments ready, no growing
+  restart count;
+- placement: controller и upload-gateway не закреплены на
+  master/control-plane; DMCR placement соответствует module policy;
+- TLS/ingress: upload-gateway использует отдельные certificate/custom
+  certificate templates, без inline secret material в Ingress;
+- alerts: нет `Firing` alerts по legacy backend или false `TargetAbsent`;
+- ServiceMonitor/service labels: controller и DMCR scrape targets совпадают.
+- metrics RBAC: `kube-rbac-proxy` service accounts have authn/authz review
+  rights, and `d8-monitoring:prometheus` / `d8-monitoring:scraper` can read
+  `deployments/prometheus-metrics` for controller and DMCR.
+
+Observability hardening:
+
+- `d8_ai_models_collector_up{collector="catalog-state"} == 1`;
+- `d8_ai_models_collector_up{collector="runtime-health"} == 1`;
+- `d8_ai_models_collector_up{collector="storage-usage"} == 1`;
+- `d8_ai_models_collector_scrape_duration_seconds` есть для всех collectors;
+- `d8_ai_models_collector_last_success_timestamp_seconds` не равен `0` после
+  успешного scrape;
+- в controller/runtime/DMCR structured logs error attribute называется `err`;
+- при controlled negative case collector health должен падать в `0`, но
+  `/metrics` endpoint должен оставаться живым.
+
+Storage/capacity:
+
+- module-wide storage limit/used/reserved/free видны в metrics/status там, где
+  limit задан;
+- upload с достаточным размером резервирует место до publish;
+- upload сверх доступного места получает понятный отказ без worker BackOff;
+- после delete/cleanup reservation/used корректно сходятся.
+
+Publication/runtime:
+
+- HF Direct: small Safetensors/GGUF `Model`;
+- HF Direct: small `ClusterModel`;
+- HF Mirror: durable mirror state, resume-safe publish, cleanup mirror prefix;
+- Upload: multipart upload через gateway, replay после restart gateway или
+  controller;
+- Diffusers: image generation и video generation layout либо публикуется как
+  `format=Diffusers`, либо получает explicit unsupported-layout reason до
+  тяжёлого byte path;
+- metadata/capabilities: chat, embeddings, rerank, STT, TTS, CV, multimodal,
+  image/video generation, tool-calling без overclaim MCP.
+
+Workload delivery:
+
+- single-model annotation;
+- `ClusterModel` annotation;
+- multi-model aliases and stable paths;
+- model switch on existing workload;
+- delete model while workload exists;
+- MaterializeBridge baseline;
+- SharedDirect только если node-cache/SDS/local storage preflight полностью
+  готов.
+
+HA/interruption:
+
+- delete controller pod during publication;
+- delete upload-gateway pod during upload;
+- delete DMCR pod during direct-upload;
+- delete active source-worker during raw-layer upload;
+- restart node-cache runtime during mount/materialization when SharedDirect is
+  enabled.
+
+Delete/GC:
+
+- finalizers released only after cleanup evidence;
+- cleanup-state/upload/session/source-worker secrets disappear;
+- DMCR GC request goes queued -> armed -> done;
+- `deletedRegistryBlobCount` or equivalent structured evidence is captured;
+- no e2e-labeled pods/secrets/jobs/leases remain.
+
 ## RBAC matrix gate
 
 RBAC проверяется до destructive HA шагов и повторяется после rollout, если
@@ -95,6 +172,9 @@ RBAC проверяется до destructive HA шагов и повторяет
 
 Evidence commands:
 
+- static/render:
+  `python3 -m unittest tools/helm-tests/validate_renders_test.py`,
+  `make helm-template`, `make kubeconform`;
 - render/static: `make helm-template`;
 - live matrix: `kubectl auth can-i --as=<e2e-subject> ...`;
 - service-account boundary:

@@ -96,6 +96,40 @@ HUMAN_RBAC_TEMPLATE_PATHS = (
     Path("templates/rbacv2/manage/view.yaml"),
     Path("templates/rbacv2/manage/edit.yaml"),
 )
+METRICS_PROXY_RBAC_SOURCE_MARKERS = {
+    "templates/controller/rbac.yaml": (
+        "kind: ClusterRole",
+        'name: {{ include "ai-models.controllerName" . }}-metrics-auth',
+        "kind: ClusterRoleBinding",
+        'apiGroups: ["authentication.k8s.io"]',
+        'resources: ["tokenreviews"]',
+        'verbs: ["create"]',
+        'apiGroups: ["authorization.k8s.io"]',
+        'resources: ["subjectaccessreviews"]',
+        'name: {{ include "ai-models.controllerServiceAccountName" . }}',
+    ),
+    "templates/dmcr/rbac.yaml": (
+        "kind: ClusterRole",
+        'name: {{ include "ai-models.dmcrName" . }}-metrics-auth',
+        "kind: ClusterRoleBinding",
+        'apiGroups: ["authentication.k8s.io"]',
+        'resources: ["tokenreviews"]',
+        'verbs: ["create"]',
+        'apiGroups: ["authorization.k8s.io"]',
+        'resources: ["subjectaccessreviews"]',
+        'name: {{ include "ai-models.dmcrServiceAccountName" . }}',
+    ),
+    "templates/rbac-to-us.yaml": (
+        "name: access-to-ai-models-prometheus-metrics",
+        'resources: ["deployments/prometheus-metrics"]',
+        'verbs: ["get"]',
+        '- {{ include "ai-models.controllerName" . }}',
+        '- {{ include "ai-models.dmcrName" . }}',
+        "name: d8-monitoring:scraper",
+        "name: prometheus",
+        "namespace: d8-monitoring",
+    ),
+}
 
 
 def _require_markers(
@@ -900,6 +934,20 @@ def _validate_human_rbac_sources(repo_root: Path) -> list[str]:
     return errors
 
 
+def _validate_metrics_proxy_rbac_sources(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+
+    for template, markers in METRICS_PROXY_RBAC_SOURCE_MARKERS.items():
+        _require_markers(
+            errors,
+            template,
+            (repo_root / template).read_text(encoding="utf-8"),
+            markers,
+        )
+
+    return errors
+
+
 def _validate_values_backed_tls_secrets(path: Path, content: str) -> list[str]:
     errors: list[str] = []
     for raw_document in _split_yaml_documents(content):
@@ -1213,6 +1261,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[2]
     errors.extend(_validate_template_sources(repo_root))
     errors.extend(_validate_human_rbac_sources(repo_root))
+    errors.extend(_validate_metrics_proxy_rbac_sources(repo_root))
     for render in sorted(renders_dir.glob("helm-template-*.yaml")):
         errors.extend(validate_render(render))
 
