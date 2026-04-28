@@ -88,7 +88,7 @@ func EnsureDesiredArtifacts(
 		slog.Default().Info(
 			"node cache prefetch started",
 			slog.String("artifactURI", artifact.ArtifactURI),
-			slog.String("digest", artifact.Digest),
+			slog.String("artifactDigest", artifact.Digest),
 			slog.String("destinationDir", destinationDir),
 		)
 		if err := run(ctx, artifact, destinationDir); err != nil {
@@ -140,7 +140,7 @@ func EnsureDesiredArtifactsWithRetry(
 			slog.Default().Info(
 				"node cache prefetch delayed by retry backoff",
 				slog.String("artifactURI", artifact.ArtifactURI),
-				slog.String("digest", artifact.Digest),
+				slog.String("artifactDigest", artifact.Digest),
 				slog.Time("nextAttemptAt", next),
 			)
 			continue
@@ -150,7 +150,7 @@ func EnsureDesiredArtifactsWithRetry(
 		slog.Default().Info(
 			"node cache prefetch started",
 			slog.String("artifactURI", artifact.ArtifactURI),
-			slog.String("digest", artifact.Digest),
+			slog.String("artifactDigest", artifact.Digest),
 			slog.String("destinationDir", destinationDir),
 		)
 		if err := run(ctx, artifact, destinationDir); err != nil {
@@ -158,7 +158,7 @@ func EnsureDesiredArtifactsWithRetry(
 			slog.Default().Warn(
 				"node cache prefetch failed; digest will be retried",
 				slog.String("artifactURI", artifact.ArtifactURI),
-				slog.String("digest", artifact.Digest),
+				slog.String("artifactDigest", artifact.Digest),
 				slog.Any("error", err),
 			)
 			continue

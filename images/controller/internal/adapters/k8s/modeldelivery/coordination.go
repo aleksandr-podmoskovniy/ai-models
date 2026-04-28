@@ -18,7 +18,6 @@ package modeldelivery
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
@@ -49,7 +48,7 @@ func (s *Service) resolveCoordination(
 
 	claimName := strings.TrimSpace(topology.ClaimName)
 	if claimName == "" {
-		return Coordination{}, fmt.Errorf("runtime delivery shared cache topology requires persistentVolumeClaim name")
+		return Coordination{}, NewWorkloadContractError("runtime delivery shared cache topology requires persistentVolumeClaim name")
 	}
 
 	claim := &corev1.PersistentVolumeClaim{}
@@ -57,7 +56,7 @@ func (s *Service) resolveCoordination(
 		return Coordination{}, err
 	}
 	if !supportsReadWriteMany(claim.Spec.AccessModes) {
-		return Coordination{}, fmt.Errorf("runtime delivery shared persistentVolumeClaim %q for replicas > 1 must support ReadWriteMany", claimName)
+		return Coordination{}, NewWorkloadContractError("runtime delivery shared persistentVolumeClaim %q for replicas > 1 must support ReadWriteMany", claimName)
 	}
 
 	return Coordination{

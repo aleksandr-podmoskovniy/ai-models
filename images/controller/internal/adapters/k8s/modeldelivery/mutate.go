@@ -112,7 +112,7 @@ func upsertVolumeMounts(existing []corev1.VolumeMount, desired []corev1.VolumeMo
 				existing[index] = item
 				replaced = true
 			case normalizeMountPath(existing[index].MountPath) == normalizeMountPath(item.MountPath):
-				return nil, errors.New("runtime delivery volume mount path conflicts with existing workload mount")
+				return nil, NewWorkloadContractError("runtime delivery volume mount path conflicts with existing workload mount")
 			}
 			if replaced {
 				break

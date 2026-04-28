@@ -127,6 +127,7 @@ func fetchRemoteAttempt(ctx context.Context, options Options) (sourcefetch.Remot
 		RequestedFormat:          options.InputFormat,
 		HFToken:                  options.HFToken,
 		SourceMirror:             remoteSourceMirror(options),
+		StorageReservation:       options.StorageReservation,
 		SkipLocalMaterialization: true,
 	})
 }

@@ -155,7 +155,7 @@ func runMaterializeArtifact(args []string) int {
 
 	logger.Info(
 		"artifact materialization completed",
-		slog.String("digest", result.Digest),
+		slog.String("artifactDigest", result.Digest),
 		slog.String("mediaType", result.MediaType),
 		slog.String("modelPath", result.ModelPath),
 		slog.String("markerPath", result.MarkerPath),

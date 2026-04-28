@@ -22,7 +22,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -82,16 +82,16 @@ func (s *Service) verifyUploadedObject(ctx context.Context, objectKey string, ex
 		return s.resolveFallbackVerification(ctx, objectKey, expected, result, err)
 	}
 	if result.Source == verificationSourceTrustedBackendSHA256 {
-		log.Printf(
-			"direct upload verification selected trusted backend checksum objectKey=%q verificationPolicy=%q verificationSource=%q digest=%q sizeBytes=%d backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q",
-			objectKey,
-			result.Policy,
-			result.Source,
-			result.Sealed.Digest,
-			result.Sealed.SizeBytes,
-			result.BackendChecksumType,
-			result.BackendSHA256Present,
-			strings.Join(result.AvailableChecksums, ","),
+		slog.Default().Info(
+			"direct upload verification selected trusted backend checksum",
+			slog.String("objectKey", objectKey),
+			slog.String("verificationPolicy", string(result.Policy)),
+			slog.String("verificationSource", string(result.Source)),
+			slog.String("artifactDigest", result.Sealed.Digest),
+			slog.Int64("sizeBytes", result.Sealed.SizeBytes),
+			slog.String("backendChecksumType", result.BackendChecksumType),
+			slog.Bool("backendSHA256Present", result.BackendSHA256Present),
+			slog.String("availableChecksums", strings.Join(result.AvailableChecksums, ",")),
 		)
 		return result, nil
 	}
@@ -145,41 +145,39 @@ func (s *Service) resolveFallbackVerification(
 	if expected.Digest == "" {
 		result.FallbackReason = verificationFallbackReasonDigestMissing
 	}
-	log.Printf(
-		"direct upload verification falling back to object reread objectKey=%q verificationPolicy=%q verificationSource=%q fallbackReason=%q backendAttributesPresent=%t backendSizeBytes=%d backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q",
-		objectKey,
-		result.Policy,
-		verificationSourceObjectRead,
-		result.FallbackReason,
-		result.BackendAttributesPresent,
-		result.BackendSizeBytes,
-		result.BackendChecksumType,
-		result.BackendSHA256Present,
-		strings.Join(result.AvailableChecksums, ","),
+	slog.Default().Info(
+		"direct upload verification falling back to object reread",
+		slog.String("objectKey", objectKey),
+		slog.String("verificationPolicy", string(result.Policy)),
+		slog.String("verificationSource", string(verificationSourceObjectRead)),
+		slog.String("fallbackReason", string(result.FallbackReason)),
+		slog.Bool("backendAttributesPresent", result.BackendAttributesPresent),
+		slog.Int64("backendSizeBytes", result.BackendSizeBytes),
+		slog.String("backendChecksumType", result.BackendChecksumType),
+		slog.Bool("backendSHA256Present", result.BackendSHA256Present),
+		slog.String("availableChecksums", strings.Join(result.AvailableChecksums, ",")),
 	)
 	return s.verifyUploadedObjectByReading(ctx, objectKey, expected.SizeBytes, result)
 }
 
 func logClientAssertedVerification(objectKey string, result verificationResult, expected sealedUpload, attributesErr error) {
-	message := "direct upload verification accepted client-declared digest objectKey=%q verificationPolicy=%q verificationSource=%q fallbackReason=%q declaredDigest=%q declaredSizeBytes=%d backendAttributesPresent=%t backendSizeBytes=%d backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q"
 	args := []any{
-		objectKey,
-		result.Policy,
-		result.Source,
-		result.FallbackReason,
-		result.Sealed.Digest,
-		expected.SizeBytes,
-		result.BackendAttributesPresent,
-		result.BackendSizeBytes,
-		result.BackendChecksumType,
-		result.BackendSHA256Present,
-		strings.Join(result.AvailableChecksums, ","),
+		slog.String("objectKey", objectKey),
+		slog.String("verificationPolicy", string(result.Policy)),
+		slog.String("verificationSource", string(result.Source)),
+		slog.String("fallbackReason", string(result.FallbackReason)),
+		slog.String("declaredDigest", result.Sealed.Digest),
+		slog.Int64("declaredSizeBytes", expected.SizeBytes),
+		slog.Bool("backendAttributesPresent", result.BackendAttributesPresent),
+		slog.Int64("backendSizeBytes", result.BackendSizeBytes),
+		slog.String("backendChecksumType", result.BackendChecksumType),
+		slog.Bool("backendSHA256Present", result.BackendSHA256Present),
+		slog.String("availableChecksums", strings.Join(result.AvailableChecksums, ",")),
 	}
 	if attributesErr != nil {
-		message += " error=%v"
-		args = append(args, attributesErr)
+		args = append(args, slog.Any("error", attributesErr))
 	}
-	log.Printf(message, args...)
+	slog.Default().Info("direct upload verification accepted client-declared digest", args...)
 }
 
 func (r verificationResult) resolvedSizeBytes(fallback int64) int64 {
@@ -264,7 +262,9 @@ func newVerificationReadProgressWriter(objectKey string, sizeBytes int64, starte
 		lastLoggedAt:      startedAt,
 		nextProgressBytes: verificationReadProgressStepBytes,
 		now:               time.Now,
-		emit:              log.Printf,
+		emit: func(message string, args ...any) {
+			slog.Default().Info(message, args...)
+		},
 	}
 }
 
@@ -310,21 +310,21 @@ func (w *verificationReadProgressWriter) logProgress() {
 			progressPercent = 100
 		}
 		w.emit(
-			"direct upload verification read progress objectKey=%q readBytes=%d sizeBytes=%d progressPercent=%d durationMs=%d throughputBytesPerSec=%d",
-			w.objectKey,
-			w.readBytes,
-			w.sizeBytes,
-			progressPercent,
-			elapsed.Milliseconds(),
-			throughputBytesPerSec,
+			"direct upload verification read progress",
+			slog.String("objectKey", w.objectKey),
+			slog.Int64("readBytes", w.readBytes),
+			slog.Int64("sizeBytes", w.sizeBytes),
+			slog.Int("progressPercent", progressPercent),
+			slog.Int64("durationMs", elapsed.Milliseconds()),
+			slog.Int64("throughputBytesPerSec", throughputBytesPerSec),
 		)
 		return
 	}
 	w.emit(
-		"direct upload verification read progress objectKey=%q readBytes=%d durationMs=%d throughputBytesPerSec=%d",
-		w.objectKey,
-		w.readBytes,
-		elapsed.Milliseconds(),
-		throughputBytesPerSec,
+		"direct upload verification read progress",
+		slog.String("objectKey", w.objectKey),
+		slog.Int64("readBytes", w.readBytes),
+		slog.Int64("durationMs", elapsed.Milliseconds()),
+		slog.Int64("throughputBytesPerSec", throughputBytesPerSec),
 	)
 }

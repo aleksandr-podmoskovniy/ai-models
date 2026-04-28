@@ -18,7 +18,6 @@ package modeldelivery
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -64,7 +63,7 @@ func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, 
 
 	volume, found := findVolumeByName(template.Spec.Volumes, cacheMount.VolumeName)
 	if !found {
-		return CacheTopology{}, fmt.Errorf("runtime delivery cache volume %q must be declared in pod template or provided via claim template", cacheMount.VolumeName)
+		return CacheTopology{}, NewWorkloadContractError("runtime delivery cache volume %q must be declared in pod template or provided via claim template", cacheMount.VolumeName)
 	}
 
 	switch {
@@ -78,7 +77,7 @@ func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, 
 	case volume.PersistentVolumeClaim != nil:
 		claimName := strings.TrimSpace(volume.PersistentVolumeClaim.ClaimName)
 		if claimName == "" {
-			return CacheTopology{}, fmt.Errorf("runtime delivery cache volume %q must reference a non-empty persistentVolumeClaim name", cacheMount.VolumeName)
+			return CacheTopology{}, NewWorkloadContractError("runtime delivery cache volume %q must reference a non-empty persistentVolumeClaim name", cacheMount.VolumeName)
 		}
 		return CacheTopology{
 			Kind:           CacheTopologySharedPVC,
@@ -99,7 +98,7 @@ func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, 
 			DeliveryReason: reason,
 		}, nil
 	default:
-		return CacheTopology{}, fmt.Errorf("runtime delivery cache volume %q uses unsupported source; expected csi, persistentVolumeClaim, emptyDir, ephemeral, or StatefulSet claim template", cacheMount.VolumeName)
+		return CacheTopology{}, NewWorkloadContractError("runtime delivery cache volume %q uses unsupported source; expected csi, persistentVolumeClaim, emptyDir, ephemeral, or StatefulSet claim template", cacheMount.VolumeName)
 	}
 }
 

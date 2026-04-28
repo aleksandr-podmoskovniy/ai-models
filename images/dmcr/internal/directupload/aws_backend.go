@@ -73,6 +73,8 @@ func NewS3Backend(config S3BackendConfig) (Backend, error) {
 			strings.TrimSpace(config.SecretKey),
 			"",
 		)),
+		awsconfig.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired),
+		awsconfig.WithResponseChecksumValidation(aws.ResponseChecksumValidationWhenRequired),
 	)
 	if err != nil {
 		return nil, err

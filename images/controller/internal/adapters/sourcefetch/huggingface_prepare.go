@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 )
@@ -71,16 +72,17 @@ func prepareHuggingFacePublishSource(
 	options RemoteOptions,
 	repoID string,
 	resolvedRevision string,
-	selectedFiles []string,
+	plannedFiles []RemoteObjectFile,
 	sourceMirrorSnapshot *SourceMirrorSnapshot,
 	profileSummary *RemoteProfileSummary,
 ) (string, *RemoteObjectSource, error) {
-	objectSource, err := buildDirectHuggingFaceObjectSource(ctx, options, logger, repoID, resolvedRevision, selectedFiles, sourceMirrorSnapshot, profileSummary)
+	objectSource, err := buildDirectHuggingFaceObjectSource(options, logger, plannedFiles, sourceMirrorSnapshot, profileSummary)
 	if err != nil {
 		return "", nil, err
 	}
 
 	if sourceMirrorSnapshot != nil {
+		selectedFiles := targetPathsForRemoteFiles(plannedFiles)
 		if err := transferHuggingFaceMirrorSnapshot(ctx, logger, options, repoID, resolvedRevision, selectedFiles, sourceMirrorSnapshot); err != nil {
 			return "", nil, err
 		}
@@ -92,4 +94,14 @@ func prepareHuggingFacePublishSource(
 		return "", objectSource, nil
 	}
 	return "", nil, errors.New("huggingface publish source planning produced neither source mirror nor direct object source")
+}
+
+func targetPathsForRemoteFiles(files []RemoteObjectFile) []string {
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		if strings.TrimSpace(file.TargetPath) != "" {
+			paths = append(paths, file.TargetPath)
+		}
+	}
+	return paths
 }

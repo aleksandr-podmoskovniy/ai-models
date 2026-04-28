@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/publicationartifact"
@@ -45,6 +46,7 @@ type Options struct {
 	Task                    string
 	HFToken                 string
 	UploadStaging           uploadStagingClient
+	StorageReservation      sourcefetch.RemoteStorageReservation
 	ModelPackPublisher      modelpackports.Publisher
 	RegistryAuth            modelpackports.RegistryAuth
 	DirectUploadState       modelpackports.DirectUploadStateStore

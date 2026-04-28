@@ -74,15 +74,22 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 		Topology:        hints,
 	}, template)
 	if err != nil {
+		if modeldelivery.IsWorkloadContractError(err) {
+			return r.blockWorkloadDelivery(ctx, object, original, template, err)
+		}
 		r.recorder.Event(object, "Warning", "ModelDeliveryFailed", err.Error())
 		return ctrl.Result{}, err
 	}
+	clearDeliveryBlockedState(template)
 
 	patchResult, err := r.patchAppliedWorkload(ctx, object, original, template)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	if !patchResult.patched || patchResult.currentState == patchResult.desiredState {
+		return ctrl.Result{}, nil
+	}
+	if r.recordDeliveryGate(object, result, resolution) {
 		return ctrl.Result{}, nil
 	}
 
@@ -94,9 +101,9 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 		message,
 		slog.String("namespace", object.GetNamespace()),
 		slog.String("name", object.GetName()),
-		slog.String("digest", resolution.Artifact.Digest),
+		slog.String("artifactDigest", resolution.Artifact.Digest),
 		slog.Int("modelCount", resolution.modelCount()),
-		slog.String("previousDigest", patchResult.currentState.Digest),
+		slog.String("previousArtifactDigest", patchResult.currentState.Digest),
 		slog.String("modelPath", result.ModelPath),
 		slog.String("previousModelPath", patchResult.currentState.ModelPath),
 		slog.String("topologyKind", string(result.TopologyKind)),

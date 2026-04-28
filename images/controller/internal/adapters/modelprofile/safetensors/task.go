@@ -32,8 +32,13 @@ func resolveTask(
 	if task := strings.TrimSpace(explicitTask); task != "" {
 		return task, publicationdata.ProfileConfidenceExact
 	}
-	if task := strings.TrimSpace(sourceDeclaredTask); task != "" {
+	if task := stableDeclaredTask(sourceDeclaredTask); task != "" {
 		return task, publicationdata.ProfileConfidenceDeclared
+	}
+	if broadTask(sourceDeclaredTask) == "any-to-any" || broadTask(sourceHint) == "any-to-any" {
+		if inferred := inferMultimodalTaskFromCheckpoint(config, architecture); inferred != "" {
+			return inferred, publicationdata.ProfileConfidenceDerived
+		}
 	}
 	if inferred := inferTaskFromCheckpoint(config, architecture); inferred != "" {
 		return inferred, publicationdata.ProfileConfidenceDerived
@@ -42,6 +47,34 @@ func resolveTask(
 		return hint, publicationdata.ProfileConfidenceHint
 	}
 	return "", ""
+}
+
+func stableDeclaredTask(task string) string {
+	normalized := strings.ToLower(strings.TrimSpace(task))
+	if normalized == "any-to-any" {
+		return ""
+	}
+	return strings.TrimSpace(task)
+}
+
+func broadTask(task string) string {
+	return strings.ToLower(strings.TrimSpace(task))
+}
+
+func inferMultimodalTaskFromCheckpoint(config map[string]any, architecture string) string {
+	if hasVisionConfig(config) || strings.Contains(strings.ToLower(architecture), "vision") {
+		return "image-text-to-text"
+	}
+	return ""
+}
+
+func hasVisionConfig(config map[string]any) bool {
+	for _, key := range []string{"vision_config", "visual_config", "vision_tower", "image_token_index"} {
+		if _, found := config[key]; found {
+			return true
+		}
+	}
+	return false
 }
 
 func inferTaskFromCheckpoint(config map[string]any, architecture string) string {

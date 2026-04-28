@@ -19,12 +19,24 @@ package catalogcleanup
 import (
 	"context"
 
+	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (r *baseReconciler) releasePublishedStorageUsage(ctx context.Context, object client.Object) error {
+func (r *baseReconciler) releaseStorageUsage(ctx context.Context, object client.Object) error {
 	if r == nil || r.storageUsage == nil || !r.storageUsage.Enabled() {
 		return nil
 	}
-	return r.storageUsage.ReleasePublished(ctx, string(object.GetUID()))
+	ownerUID := string(object.GetUID())
+	if err := r.storageUsage.ReleaseReservation(ctx, ownerUID); err != nil {
+		return err
+	}
+	uploadReservationID, err := resourcenames.UploadSessionSecretName(object.GetUID())
+	if err != nil {
+		return err
+	}
+	if err := r.storageUsage.ReleaseReservation(ctx, uploadReservationID); err != nil {
+		return err
+	}
+	return r.storageUsage.ReleasePublished(ctx, ownerUID)
 }

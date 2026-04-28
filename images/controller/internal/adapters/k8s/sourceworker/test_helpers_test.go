@@ -18,6 +18,7 @@ package sourceworker
 
 import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageaccounting"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
@@ -64,6 +65,11 @@ func testOptions() Options {
 				Region:                "us-east-1",
 				UsePathStyle:          true,
 				CredentialsSecretName: "ai-models-artifacts",
+			},
+			StorageAccounting: storageaccounting.Options{
+				Namespace:  "d8-ai-models",
+				SecretName: storageaccounting.DefaultSecretName,
+				LimitBytes: 100 << 30,
 			},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{

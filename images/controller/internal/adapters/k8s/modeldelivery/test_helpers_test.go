@@ -31,6 +31,7 @@ func publishedArtifact() publication.PublishedArtifact {
 		URI:       "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
 		Digest:    "sha256:deadbeef",
 		MediaType: "application/vnd.cncf.model.manifest.v1+json",
+		SizeBytes: 42,
 	}
 }
 

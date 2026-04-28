@@ -69,6 +69,30 @@ func TestStoreReleaseAndCommit(t *testing.T) {
 	}
 }
 
+func TestStoreCommitPublishedReplacingReservations(t *testing.T) {
+	store := newTestStore(t, Options{Namespace: "d8-ai-models", LimitBytes: 100})
+	owner := storagecapacity.Owner{Kind: "Model", Name: "llm", Namespace: "team-a", UID: "uid-1"}
+
+	if err := store.Reserve(context.Background(), storagecapacity.Reservation{ID: "uid-1", Owner: owner, SizeBytes: 80}); err != nil {
+		t.Fatalf("Reserve() error = %v", err)
+	}
+	if err := store.CommitPublishedReplacingReservations(context.Background(), []string{"uid-1"}, storagecapacity.PublishedArtifact{
+		ID:        "uid-1",
+		Owner:     owner,
+		SizeBytes: 80,
+	}); err != nil {
+		t.Fatalf("CommitPublishedReplacingReservations() error = %v", err)
+	}
+
+	usage, err := store.Usage(context.Background())
+	if err != nil {
+		t.Fatalf("Usage() error = %v", err)
+	}
+	if usage.UsedBytes != 80 || usage.ReservedBytes != 0 || usage.AvailableBytes != 20 {
+		t.Fatalf("unexpected usage %#v", usage)
+	}
+}
+
 func newTestStore(t *testing.T, options Options) *Store {
 	t.Helper()
 

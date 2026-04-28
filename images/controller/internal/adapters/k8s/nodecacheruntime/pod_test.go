@@ -101,6 +101,12 @@ func TestDesiredPod(t *testing.T) {
 	if env[RuntimeNodeNameEnv] != "worker-a" {
 		t.Fatalf("unexpected node name env %#v", env)
 	}
+	if got, want := envFieldPathByName(runtime.Env, RuntimePodNameEnv), "metadata.name"; got != want {
+		t.Fatalf("runtime pod name env fieldPath = %q, want %q", got, want)
+	}
+	if got, want := envFieldPathByName(runtime.Env, RuntimePodNamespaceEnv), "metadata.namespace"; got != want {
+		t.Fatalf("runtime pod namespace env fieldPath = %q, want %q", got, want)
+	}
 	if env["AI_MODELS_OCI_CA_FILE"] != registryCAFilePath {
 		t.Fatalf("unexpected registry CA env %#v", env)
 	}
@@ -213,6 +219,15 @@ func envByName(env []corev1.EnvVar, name string) string {
 	for _, item := range env {
 		if item.Name == name {
 			return item.Value
+		}
+	}
+	return ""
+}
+
+func envFieldPathByName(env []corev1.EnvVar, name string) string {
+	for _, item := range env {
+		if item.Name == name && item.ValueFrom != nil && item.ValueFrom.FieldRef != nil {
+			return item.ValueFrom.FieldRef.FieldPath
 		}
 	}
 	return ""

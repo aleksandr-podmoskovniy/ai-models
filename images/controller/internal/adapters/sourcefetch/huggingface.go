@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -103,6 +104,14 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 		return RemoteResult{}, err
 	}
 
+	plannedFiles, err := describeHuggingFaceRemoteFiles(ctx, options, repoID, resolvedRevision, selectedFiles, "huggingface storage planning")
+	if err != nil {
+		return RemoteResult{}, fmt.Errorf("huggingface storage planning failed: %w", err)
+	}
+	if err := reserveHuggingFaceStorage(ctx, options, info, repoID, resolvedRevision, plannedFiles); err != nil {
+		return RemoteResult{}, err
+	}
+
 	sourceMirrorSnapshot, err := prepareHuggingFaceSourceMirror(ctx, logger, options, repoID, resolvedRevision, selectedFiles)
 	if err != nil {
 		return RemoteResult{}, err
@@ -114,7 +123,7 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 		options,
 		repoID,
 		resolvedRevision,
-		selectedFiles,
+		plannedFiles,
 		sourceMirrorSnapshot,
 		profileSummary,
 	)
@@ -134,7 +143,8 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 			ResolvedRevision:  resolvedRevision,
 		},
 		Fallbacks: RemoteProfileFallbacks{
-			SourceDeclaredTask: firstNonEmpty(info.DeclaredTask, info.PipelineTag),
+			SourceDeclaredTask: info.DeclaredTask,
+			TaskHint:           info.PipelineTag,
 		},
 		Metadata: RemoteMetadata{
 			License:      info.License,
@@ -145,12 +155,9 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 }
 
 func buildDirectHuggingFaceObjectSource(
-	ctx context.Context,
 	options RemoteOptions,
 	logger *slog.Logger,
-	repoID string,
-	resolvedRevision string,
-	selectedFiles []string,
+	plannedFiles []RemoteObjectFile,
 	sourceMirrorSnapshot *SourceMirrorSnapshot,
 	profileSummary *RemoteProfileSummary,
 ) (*RemoteObjectSource, error) {
@@ -164,10 +171,7 @@ func buildDirectHuggingFaceObjectSource(
 		return nil, errors.New("huggingface direct object-source publish requires remote profile summary")
 	}
 
-	objectSource, err := buildHuggingFaceObjectSource(ctx, options, repoID, resolvedRevision, selectedFiles)
-	if err != nil {
-		return nil, fmt.Errorf("huggingface direct object-source planning failed: %w", err)
-	}
+	objectSource := buildHuggingFaceObjectSourceFromFiles(options, plannedFiles)
 	logger.Info("huggingface direct object-source publish planned", slog.Int("selectedFileCount", len(objectSource.Files)))
 	return objectSource, nil
 }
@@ -243,6 +247,35 @@ func transferHuggingFaceMirrorSnapshot(
 		slog.Int64("sourceMirrorSizeBytes", sourceMirrorSnapshot.SizeBytes),
 	)
 	return nil
+}
+
+func reserveHuggingFaceStorage(
+	ctx context.Context,
+	options RemoteOptions,
+	info HuggingFaceInfo,
+	repoID string,
+	resolvedRevision string,
+	files []RemoteObjectFile,
+) error {
+	if options.StorageReservation == nil {
+		return nil
+	}
+	mode := "direct"
+	if options.SourceMirror != nil {
+		mode = "mirror"
+	}
+	sizeBytes, err := huggingFaceStorageReservationBytes(files, options.SourceMirror != nil)
+	if err != nil {
+		return err
+	}
+	return options.StorageReservation.ReserveRemoteStorage(ctx, RemoteStorageReservationRequest{
+		SourceType:        modelsv1alpha1.ModelSourceTypeHuggingFace,
+		SourceFetchMode:   mode,
+		ExternalReference: strings.TrimSpace(firstNonEmpty(info.ID, repoID)),
+		ResolvedRevision:  strings.TrimSpace(resolvedRevision),
+		SelectedFileCount: len(files),
+		SizeBytes:         sizeBytes,
+	})
 }
 
 func sampleRemoteFiles(files []string, limit int) []string {

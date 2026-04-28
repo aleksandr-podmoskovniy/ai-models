@@ -61,6 +61,8 @@ type ApplyResult struct {
 	TopologyKind      CacheTopologyKind
 	DeliveryMode      DeliveryMode
 	DeliveryReason    DeliveryReason
+	GateReason        DeliveryGateReason
+	GateMessage       string
 }
 
 type Service struct {
@@ -101,7 +103,7 @@ func (s *Service) ApplyToPodTemplate(
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	readyNodes, err := s.readyNodesForTemplate(ctx, topology.Kind, template)
+	gate, err := s.deliveryGateForTemplate(ctx, topology.Kind, input, template)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -115,7 +117,7 @@ func (s *Service) ApplyToPodTemplate(
 		return ApplyResult{}, err
 	}
 	s.pruneManagedCacheTemplateState(template, topology, rendered, aliasContract)
-	applyReadyNodeSchedulingGate(template, topology.Kind, readyNodes)
+	applyReadyNodeSchedulingGate(template, topology.Kind, gate.Ready)
 
 	return ApplyResult{
 		CacheMountPath:    topology.CacheMount.MountPath,
@@ -125,6 +127,8 @@ func (s *Service) ApplyToPodTemplate(
 		TopologyKind:      topology.Kind,
 		DeliveryMode:      topology.DeliveryMode,
 		DeliveryReason:    topology.DeliveryReason,
+		GateReason:        gate.Reason,
+		GateMessage:       gate.Message,
 	}, nil
 }
 

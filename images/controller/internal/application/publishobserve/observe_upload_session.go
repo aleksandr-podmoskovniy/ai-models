@@ -21,7 +21,9 @@ import (
 	"strings"
 	"time"
 
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
+	"github.com/deckhouse/ai-models/controller/internal/domain/storagecapacity"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
 )
@@ -109,9 +111,14 @@ func decodeUploadStagingHandle(rawResult string) (*cleanuphandle.Handle, error) 
 }
 
 func failedObservation(message string) publicationdomain.Observation {
+	reason := modelsv1alpha1.ModelConditionReasonPublicationFailed
+	if storagecapacity.IsInsufficientStorageMessage(message) {
+		reason = modelsv1alpha1.ModelConditionReasonInsufficientStorage
+	}
 	return publicationdomain.Observation{
-		Phase:   publicationdomain.OperationPhaseFailed,
-		Message: message,
+		Phase:           publicationdomain.OperationPhaseFailed,
+		ConditionReason: reason,
+		Message:         message,
 	}
 }
 

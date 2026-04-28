@@ -19,6 +19,7 @@ package directupload
 import (
 	"bytes"
 	"encoding/base64"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -184,5 +185,37 @@ func TestVerificationReadProgressWriterLogsOnTimeInterval(t *testing.T) {
 	}
 	if len(messages) != 1 {
 		t.Fatalf("log count after second write = %d, want 1", len(messages))
+	}
+}
+
+func TestVerificationLogsStructuredFields(t *testing.T) {
+	var buffer bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buffer, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	logClientAssertedVerification("dmcr/_ai_models/direct-upload/objects/session/data", verificationResult{
+		Policy:                   VerificationPolicyTrustedBackendOrClientAsserted,
+		Source:                   verificationSourceClientAsserted,
+		FallbackReason:           verificationFallbackReasonChecksumMissing,
+		BackendAttributesPresent: true,
+		BackendSizeBytes:         42,
+		BackendChecksumType:      "COMPOSITE",
+		AvailableChecksums:       []string{"SHA256"},
+		Sealed: sealedUpload{
+			Digest:    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			SizeBytes: 42,
+		},
+	}, sealedUpload{SizeBytes: 42}, nil)
+
+	logs := buffer.String()
+	if !strings.Contains(logs, `"msg":"direct upload verification accepted client-declared digest"`) {
+		t.Fatalf("expected structured JSON log, got %q", logs)
+	}
+	if !strings.Contains(logs, `"objectKey":"dmcr/_ai_models/direct-upload/objects/session/data"`) {
+		t.Fatalf("expected objectKey field, got %q", logs)
+	}
+	if strings.Contains(logs, "objectKey=") || strings.Contains(logs, "durationMs=") {
+		t.Fatalf("log must not use printf-style key-value payloads: %q", logs)
 	}
 }

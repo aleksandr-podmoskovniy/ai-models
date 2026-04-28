@@ -78,6 +78,19 @@ func (s *Store) CommitPublished(ctx context.Context, artifact storagecapacity.Pu
 	})
 }
 
+func (s *Store) CommitPublishedReplacingReservations(
+	ctx context.Context,
+	reservationIDs []string,
+	artifact storagecapacity.PublishedArtifact,
+) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.update(ctx, func(ledger *storagecapacity.Ledger) error {
+		return ledger.CommitPublishedReplacingReservations(s.options.LimitBytes, reservationIDs, artifact)
+	})
+}
+
 func (s *Store) ReleasePublished(ctx context.Context, id string) error {
 	if !s.Enabled() {
 		return nil

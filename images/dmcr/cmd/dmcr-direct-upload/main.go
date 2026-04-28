@@ -18,13 +18,15 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/deckhouse/ai-models/dmcr/internal/directupload"
+	"github.com/deckhouse/ai-models/dmcr/internal/logging"
 	"github.com/deckhouse/ai-models/dmcr/internal/maintenance"
 )
 
@@ -47,11 +49,19 @@ const (
 	presignExpiryEnv      = "DMCR_DIRECT_UPLOAD_PRESIGN_EXPIRY"
 	sessionTTLEnv         = "DMCR_DIRECT_UPLOAD_SESSION_TTL"
 	verificationPolicyEnv = "DMCR_DIRECT_UPLOAD_VERIFICATION_POLICY"
+	logFormatEnv          = "LOG_FORMAT"
 	defaultListenAddr     = ":5002"
 	defaultPresignLife    = 15 * time.Minute
 )
 
 func main() {
+	logger, err := logging.NewComponentLogger(logging.EnvOr(logFormatEnv, logging.DefaultLogFormat), "dmcr-direct-upload")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	logging.SetDefaultLogger(logger)
+
 	backend, err := directupload.NewS3Backend(directupload.S3BackendConfig{
 		Bucket:        env(bucketEnv),
 		Region:        env(regionEnv),
@@ -63,7 +73,7 @@ func main() {
 		PresignExpiry: envDuration(presignExpiryEnv, defaultPresignLife),
 	})
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 
 	service, err := directupload.NewService(
@@ -76,23 +86,23 @@ func main() {
 		envDuration(sessionTTLEnv, directupload.DefaultSessionTTL),
 	)
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 	verificationPolicy, err := directupload.ParseVerificationPolicy(env(verificationPolicyEnv))
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 	if err := service.SetVerificationPolicy(verificationPolicy); err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 	maintenanceChecker, err := maintenance.NewFileCheckerFromEnv()
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 	service.SetMaintenanceChecker(maintenanceChecker)
 	observer, err := maintenance.NewFileAckObserverFromEnv("direct-upload", 0)
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 	if observer != nil {
 		observer.Start(context.Background())
@@ -105,9 +115,14 @@ func main() {
 		service,
 	)
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
-	log.Fatal(server.ListenAndServeTLS(env(tlsCertFileEnv), env(tlsKeyFileEnv)))
+	fatal(server.ListenAndServeTLS(env(tlsCertFileEnv), env(tlsKeyFileEnv)))
+}
+
+func fatal(err error) {
+	slog.Default().Error("dmcr-direct-upload exited with error", slog.Any("error", err))
+	os.Exit(1)
 }
 
 func env(name string) string {

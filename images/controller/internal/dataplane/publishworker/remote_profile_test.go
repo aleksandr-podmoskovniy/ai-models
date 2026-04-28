@@ -130,6 +130,45 @@ func TestResolveRemoteProfileUsesSourceDeclaredTask(t *testing.T) {
 	}
 }
 
+func TestResolveRemoteProfileProjectsAnyToAnyWithVisionEvidence(t *testing.T) {
+	t.Parallel()
+
+	resolved, err := resolveRemoteProfile(Options{}, sourcefetch.RemoteResult{
+		InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
+		Fallbacks: sourcefetch.RemoteProfileFallbacks{
+			TaskHint: "any-to-any",
+		},
+		ProfileSummary: &sourcefetch.RemoteProfileSummary{
+			ConfigPayload: []byte(`{
+  "model_type":"gemma",
+  "architectures":["GemmaForConditionalGeneration"],
+  "torch_dtype":"bfloat16",
+  "vision_config":{"image_size":896}
+}`),
+			WeightBytes:     24,
+			WeightFileCount: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolveRemoteProfile() error = %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("expected resolved remote profile")
+	}
+	if got, want := resolved.Task, "image-text-to-text"; got != want {
+		t.Fatalf("unexpected task %q", got)
+	}
+	if got, want := resolved.TaskConfidence, "Derived"; string(got) != want {
+		t.Fatalf("unexpected task confidence %q", got)
+	}
+	if got, want := resolved.SupportedEndpointTypes, []string{"Chat", "ImageToText"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("unexpected endpoint types %#v", got)
+	}
+	if got, want := resolved.SupportedFeatures, []string{"VisionInput", "MultiModalInput"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("unexpected features %#v", got)
+	}
+}
+
 func TestResolveRemoteProfileUsesDiffusersModelIndexForImageGeneration(t *testing.T) {
 	t.Parallel()
 

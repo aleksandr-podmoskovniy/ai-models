@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageaccounting"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +38,7 @@ type RuntimeOptions struct {
 	OCIRegistryCASecretName string
 	OCIDirectUploadEndpoint string
 	ObjectStorage           storageprojection.Options
+	StorageAccounting       storageaccounting.Options
 	SourceFetch             publicationports.SourceFetchMode
 	ImagePullPolicy         corev1.PullPolicy
 	Resources               corev1.ResourceRequirements
@@ -56,6 +58,9 @@ func ValidateRuntimeOptions(component string, options RuntimeOptions) error {
 		return errors.New("source worker runtime component name must not be empty")
 	}
 	if err := publicationports.ValidateSourceFetchMode(options.SourceFetch); err != nil {
+		return fmt.Errorf("%s %w", component, err)
+	}
+	if err := options.StorageAccounting.Validate(); err != nil {
 		return fmt.Errorf("%s %w", component, err)
 	}
 

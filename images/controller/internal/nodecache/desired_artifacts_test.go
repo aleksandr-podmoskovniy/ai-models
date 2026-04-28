@@ -23,7 +23,7 @@ func TestNormalizeDesiredArtifactsDeduplicatesAndSorts(t *testing.T) {
 
 	artifacts, err := NormalizeDesiredArtifacts([]DesiredArtifact{
 		{ArtifactURI: "oci://example/model-b", Digest: "sha256:b"},
-		{ArtifactURI: "oci://example/model-a", Digest: "sha256:a"},
+		{ArtifactURI: "oci://example/model-a", Digest: "sha256:a", SizeBytes: 42},
 		{ArtifactURI: "oci://example/model-a", Digest: "sha256:a", Family: "gguf-v1"},
 	})
 	if err != nil {
@@ -37,6 +37,9 @@ func TestNormalizeDesiredArtifactsDeduplicatesAndSorts(t *testing.T) {
 	}
 	if got, want := artifacts[0].Family, "gguf-v1"; got != want {
 		t.Fatalf("family = %q, want %q", got, want)
+	}
+	if got, want := artifacts[0].SizeBytes, int64(42); got != want {
+		t.Fatalf("size bytes = %d, want %d", got, want)
 	}
 }
 
@@ -82,8 +85,8 @@ func TestDesiredArtifactsFromWorkloadAnnotationsReadsResolvedModels(t *testing.T
 	artifacts, found, err := DesiredArtifactsFromWorkloadAnnotations(map[string]string{
 		WorkloadResolvedDeliveryModeAnnotation:   WorkloadDeliveryModeSharedDirect,
 		WorkloadResolvedDeliveryReasonAnnotation: WorkloadDeliveryReasonNodeCacheRuntime,
-		WorkloadResolvedModelsAnnotation: `[{"alias":"main","uri":"oci://example/model-a","digest":"sha256:a"},` +
-			`{"alias":"draft","uri":"oci://example/model-b","digest":"sha256:b","family":"safetensors-v1"}]`,
+		WorkloadResolvedModelsAnnotation: `[{"alias":"main","uri":"oci://example/model-a","digest":"sha256:a","sizeBytes":42},` +
+			`{"alias":"draft","uri":"oci://example/model-b","digest":"sha256:b","family":"safetensors-v1","sizeBytes":84}]`,
 	})
 	if err != nil {
 		t.Fatalf("DesiredArtifactsFromWorkloadAnnotations() error = %v", err)
@@ -93,6 +96,9 @@ func TestDesiredArtifactsFromWorkloadAnnotationsReadsResolvedModels(t *testing.T
 	}
 	if got, want := artifacts[1].Family, "safetensors-v1"; got != want {
 		t.Fatalf("second family = %q, want %q", got, want)
+	}
+	if got, want := artifacts[1].SizeBytes, int64(84); got != want {
+		t.Fatalf("second size bytes = %d, want %d", got, want)
 	}
 }
 

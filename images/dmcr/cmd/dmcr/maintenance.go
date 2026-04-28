@@ -18,8 +18,9 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/deckhouse/ai-models/dmcr/internal/maintenance"
 	"github.com/distribution/distribution/v3/configuration"
@@ -29,7 +30,7 @@ import (
 func registerMaintenanceGate() {
 	checker, err := maintenance.NewFileCheckerFromEnv()
 	if err != nil {
-		log.Fatalf("configure dmcr maintenance gate: %v", err)
+		fatalMaintenance("configure dmcr maintenance gate", err)
 	}
 	if checker == nil {
 		return
@@ -39,9 +40,14 @@ func registerMaintenanceGate() {
 	})
 	observer, err := maintenance.NewFileAckObserverFromEnv("dmcr", 0)
 	if err != nil {
-		log.Fatalf("configure dmcr maintenance ack observer: %v", err)
+		fatalMaintenance("configure dmcr maintenance ack observer", err)
 	}
 	if observer != nil {
 		observer.Start(context.Background())
 	}
+}
+
+func fatalMaintenance(message string, err error) {
+	slog.Default().Error(message, slog.Any("error", err))
+	os.Exit(1)
 }

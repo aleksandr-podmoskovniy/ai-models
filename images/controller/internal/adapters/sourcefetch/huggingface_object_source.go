@@ -24,27 +24,21 @@ import (
 	"strings"
 )
 
-func buildHuggingFaceObjectSource(
+func describeHuggingFaceRemoteFiles(
 	ctx context.Context,
 	options RemoteOptions,
 	repoID string,
 	resolvedRevision string,
 	selectedFiles []string,
-) (*RemoteObjectSource, error) {
+	requestLabel string,
+) ([]RemoteObjectFile, error) {
 	files := make([]RemoteObjectFile, 0, len(selectedFiles))
-	reader := huggingFaceHTTPObjectReader{
-		httpClient: http.DefaultClient,
-		token:      options.HFToken,
+	label := strings.TrimSpace(requestLabel)
+	if label == "" {
+		label = "huggingface remote file"
 	}
 	for _, filePath := range selectedFiles {
-		metadata, err := describeHuggingFaceRemoteFile(
-			ctx,
-			repoID,
-			resolvedRevision,
-			options.HFToken,
-			filePath,
-			"huggingface object-source",
-		)
+		metadata, err := describeHuggingFaceRemoteFile(ctx, repoID, resolvedRevision, options.HFToken, filePath, label)
 		if err != nil {
 			return nil, err
 		}
@@ -55,10 +49,18 @@ func buildHuggingFaceObjectSource(
 			ETag:       metadata.ETag,
 		})
 	}
+	return files, nil
+}
+
+func buildHuggingFaceObjectSourceFromFiles(options RemoteOptions, files []RemoteObjectFile) *RemoteObjectSource {
+	reader := huggingFaceHTTPObjectReader{
+		httpClient: http.DefaultClient,
+		token:      options.HFToken,
+	}
 	return &RemoteObjectSource{
 		Reader: reader,
 		Files:  files,
-	}, nil
+	}
 }
 
 type huggingFaceRemoteFileMetadata struct {

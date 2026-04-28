@@ -81,6 +81,11 @@ Storage/capacity:
 
 - module-wide storage limit/used/reserved/free видны в metrics/status там, где
   limit задан;
+- HF Direct reserve считается по сумме выбранных remote files до DMCR
+  direct-upload;
+- HF Mirror reserve считается как две module-owned копии: raw mirror +
+  canonical DMCR artifact; отказ по capacity должен происходить до mirror
+  transfer;
 - upload с достаточным размером резервирует место до publish;
 - upload сверх доступного места получает понятный отказ без worker BackOff;
 - после delete/cleanup reservation/used корректно сходятся.
@@ -107,7 +112,9 @@ Workload delivery:
 - delete model while workload exists;
 - MaterializeBridge baseline;
 - SharedDirect только если node-cache/SDS/local storage preflight полностью
-  готов.
+  готов;
+- SharedDirect получает scheduling gate, если сумма `sizeBytes` всех aliases
+  больше per-node shared cache capacity или size неизвестен.
 
 HA/interruption:
 

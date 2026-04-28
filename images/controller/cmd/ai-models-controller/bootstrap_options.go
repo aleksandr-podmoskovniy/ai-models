@@ -174,6 +174,7 @@ func (c managerConfig) nodeCacheSubstrateOptions(
 }
 
 func (c managerConfig) workloadDeliveryOptions(managedDeliveryNodeSelector map[string]string) workloaddelivery.Options {
+	cacheCapacityBytes, _ := cmdsupport.ParseOptionalPositiveBytesQuantity(c.NodeCacheSharedVolumeSize, "node-cache-shared-volume-size")
 	return workloaddelivery.Options{
 		Service: modeldelivery.ServiceOptions{
 			Render: modeldelivery.Options{
@@ -184,9 +185,11 @@ func (c managerConfig) workloadDeliveryOptions(managedDeliveryNodeSelector map[s
 				CacheMountPath: modeldelivery.DefaultCacheMountPath,
 			},
 			ManagedCache: modeldelivery.ManagedCacheOptions{
-				Enabled:      c.NodeCacheEnabled,
-				VolumeName:   modeldelivery.DefaultManagedCacheName,
-				NodeSelector: managedDeliveryNodeSelector,
+				Enabled:          c.NodeCacheEnabled,
+				VolumeName:       modeldelivery.DefaultManagedCacheName,
+				CapacityBytes:    cacheCapacityBytes,
+				RuntimeNamespace: c.CleanupNamespace,
+				NodeSelector:     managedDeliveryNodeSelector,
 			},
 			RegistrySourceNamespace:      cmdsupport.FallbackString(c.PublicationWorkerNamespace, c.CleanupNamespace),
 			RegistrySourceAuthSecretName: defaultDMCRReadAuthSecretName,

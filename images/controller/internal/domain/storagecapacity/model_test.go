@@ -69,6 +69,55 @@ func TestLedgerReserveIsIdempotentForSameReservation(t *testing.T) {
 	}
 }
 
+func TestLedgerCommitPublishedReplacingReservationsIsAtomic(t *testing.T) {
+	ledger := Ledger{}
+	owner := Owner{Kind: "Model", Name: "llm", Namespace: "team-a", UID: "uid-1"}
+
+	if err := ledger.Reserve(100, Reservation{ID: "uid-1", Owner: owner, SizeBytes: 70}); err != nil {
+		t.Fatalf("Reserve() error = %v", err)
+	}
+	if err := ledger.CommitPublishedReplacingReservations(100, []string{"uid-1"}, PublishedArtifact{
+		ID:        "uid-1",
+		Owner:     owner,
+		SizeBytes: 70,
+	}); err != nil {
+		t.Fatalf("CommitPublishedReplacingReservations() error = %v", err)
+	}
+
+	usage := ledger.Usage(100)
+	if usage.UsedBytes != 70 || usage.ReservedBytes != 0 || usage.AvailableBytes != 30 {
+		t.Fatalf("unexpected promoted usage %#v", usage)
+	}
+	if _, ok := ledger.Reservations["uid-1"]; ok {
+		t.Fatalf("reservation was not removed")
+	}
+}
+
+func TestLedgerCommitPublishedReplacingReservationsRejectsArtifactGrowth(t *testing.T) {
+	ledger := Ledger{}
+	owner := Owner{Kind: "Model", Name: "llm", Namespace: "team-a", UID: "uid-1"}
+
+	if err := ledger.CommitPublished(100, PublishedArtifact{ID: "existing", Owner: owner, SizeBytes: 20}); err != nil {
+		t.Fatalf("CommitPublished(existing) error = %v", err)
+	}
+	if err := ledger.Reserve(100, Reservation{ID: "uid-1", Owner: owner, SizeBytes: 70}); err != nil {
+		t.Fatalf("Reserve() error = %v", err)
+	}
+	err := ledger.CommitPublishedReplacingReservations(100, []string{"uid-1"}, PublishedArtifact{
+		ID:        "uid-1",
+		Owner:     owner,
+		SizeBytes: 90,
+	})
+	if !IsInsufficientStorage(err) {
+		t.Fatalf("CommitPublishedReplacingReservations() error = %v, want insufficient storage", err)
+	}
+
+	usage := ledger.Usage(100)
+	if usage.UsedBytes != 20 || usage.ReservedBytes != 70 {
+		t.Fatalf("unexpected usage after rejected promote %#v", usage)
+	}
+}
+
 func TestLedgerReleasePaths(t *testing.T) {
 	ledger := Ledger{}
 	owner := Owner{Kind: "Model", Name: "llm", Namespace: "team-a", UID: "uid-1"}

@@ -20,7 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -75,44 +75,44 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 	}
 	expectedDigest := strings.TrimSpace(payload.Digest)
 	completeStarted := s.now()
-	log.Printf(
-		"direct upload complete started repository=%q objectKey=%q sizeBytes=%d parts=%d",
-		claims.Repository,
-		claims.ObjectKey,
-		payload.SizeBytes,
-		len(parts),
+	slog.Default().Info(
+		"direct upload complete started",
+		slog.String("repository", claims.Repository),
+		slog.String("objectKey", claims.ObjectKey),
+		slog.Int64("sizeBytes", payload.SizeBytes),
+		slog.Int("partCount", len(parts)),
 	)
 	if err := s.completeMultipartUploadOrUseCompletedObject(request.Context(), claims.ObjectKey, claims.UploadID, parts); err != nil {
-		log.Printf(
-			"direct upload multipart completion failed repository=%q objectKey=%q error=%v",
-			claims.Repository,
-			claims.ObjectKey,
-			err,
+		slog.Default().Error(
+			"direct upload multipart completion failed",
+			slog.String("repository", claims.Repository),
+			slog.String("objectKey", claims.ObjectKey),
+			slog.Any("error", err),
 		)
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	sealStarted := s.now()
-	log.Printf(
-		"direct upload verification policy started repository=%q objectKey=%q sizeBytes=%d verificationPolicy=%q expectedDigestPresent=%t",
-		claims.Repository,
-		claims.ObjectKey,
-		payload.SizeBytes,
-		s.verificationPolicy,
-		expectedDigest != "",
+	slog.Default().Info(
+		"direct upload verification policy started",
+		slog.String("repository", claims.Repository),
+		slog.String("objectKey", claims.ObjectKey),
+		slog.Int64("sizeBytes", payload.SizeBytes),
+		slog.String("verificationPolicy", string(s.verificationPolicy)),
+		slog.Bool("expectedDigestPresent", expectedDigest != ""),
 	)
 	verification, err := s.verifyUploadedObject(request.Context(), claims.ObjectKey, sealedUpload{
 		Digest:    expectedDigest,
 		SizeBytes: payload.SizeBytes,
 	})
 	if err != nil {
-		log.Printf(
-			"direct upload verification failed repository=%q objectKey=%q verificationPolicy=%q error=%v",
-			claims.Repository,
-			claims.ObjectKey,
-			s.verificationPolicy,
-			err,
+		slog.Default().Error(
+			"direct upload verification failed",
+			slog.String("repository", claims.Repository),
+			slog.String("objectKey", claims.ObjectKey),
+			slog.String("verificationPolicy", string(s.verificationPolicy)),
+			slog.Any("error", err),
 		)
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
@@ -136,23 +136,23 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		)
 		return
 	}
-	log.Printf(
-		"direct upload verification source selected repository=%q objectKey=%q verificationPolicy=%q verificationSource=%q declaredDigest=%q declaredSizeBytes=%d digest=%q sizeBytes=%d fallbackReason=%q backendAttributesPresent=%t backendSizeBytes=%d backendChecksumType=%q backendSHA256Present=%t availableChecksums=%q durationMs=%d",
-		claims.Repository,
-		claims.ObjectKey,
-		verification.Policy,
-		verification.Source,
-		expectedDigest,
-		payload.SizeBytes,
-		sealed.Digest,
-		sealed.SizeBytes,
-		verification.FallbackReason,
-		verification.BackendAttributesPresent,
-		verification.BackendSizeBytes,
-		verification.BackendChecksumType,
-		verification.BackendSHA256Present,
-		strings.Join(verification.AvailableChecksums, ","),
-		s.now().Sub(sealStarted).Milliseconds(),
+	slog.Default().Info(
+		"direct upload verification source selected",
+		slog.String("repository", claims.Repository),
+		slog.String("objectKey", claims.ObjectKey),
+		slog.String("verificationPolicy", string(verification.Policy)),
+		slog.String("verificationSource", string(verification.Source)),
+		slog.String("declaredDigest", expectedDigest),
+		slog.Int64("declaredSizeBytes", payload.SizeBytes),
+		slog.String("artifactDigest", sealed.Digest),
+		slog.Int64("sizeBytes", sealed.SizeBytes),
+		slog.String("fallbackReason", string(verification.FallbackReason)),
+		slog.Bool("backendAttributesPresent", verification.BackendAttributesPresent),
+		slog.Int64("backendSizeBytes", verification.BackendSizeBytes),
+		slog.String("backendChecksumType", verification.BackendChecksumType),
+		slog.Bool("backendSHA256Present", verification.BackendSHA256Present),
+		slog.String("availableChecksums", strings.Join(verification.AvailableChecksums, ",")),
+		slog.Int64("durationMs", s.now().Sub(sealStarted).Milliseconds()),
 	)
 
 	blobKey, err := BlobDataObjectKey(s.rootDirectory, sealed.Digest)
@@ -172,13 +172,13 @@ func (s *Service) handleComplete(writer http.ResponseWriter, request *http.Reque
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	log.Printf(
-		"direct upload complete finished repository=%q objectKey=%q digest=%q deduplicated=%t durationMs=%d",
-		claims.Repository,
-		claims.ObjectKey,
-		sealed.Digest,
-		deduplicated,
-		s.now().Sub(completeStarted).Milliseconds(),
+	slog.Default().Info(
+		"direct upload complete finished",
+		slog.String("repository", claims.Repository),
+		slog.String("objectKey", claims.ObjectKey),
+		slog.String("artifactDigest", sealed.Digest),
+		slog.Bool("deduplicated", deduplicated),
+		slog.Int64("durationMs", s.now().Sub(completeStarted).Milliseconds()),
 	)
 	writeJSON(writer, completeResponse{
 		OK:        true,
@@ -191,56 +191,56 @@ func (s *Service) finalizeVerifiedUpload(ctx context.Context, claims sessionToke
 	uploadedPhysicalPath := storageDriverPathForObjectKey(s.rootDirectory, claims.ObjectKey)
 	state, err := s.sealedBlobState(ctx, blobKey, sealed, uploadedPhysicalPath)
 	if err != nil {
-		log.Printf(
-			"direct upload sealed blob state check failed repository=%q objectKey=%q blobKey=%q error=%v",
-			claims.Repository,
-			claims.ObjectKey,
-			blobKey,
-			err,
+		slog.Default().Error(
+			"direct upload sealed blob state check failed",
+			slog.String("repository", claims.Repository),
+			slog.String("objectKey", claims.ObjectKey),
+			slog.String("blobKey", blobKey),
+			slog.Any("error", err),
 		)
 		return false, err
 	}
 	if state.exists {
 		if err := s.backend.PutContent(ctx, linkKey, []byte(sealed.Digest)); err != nil {
-			log.Printf(
-				"direct upload repository link write failed repository=%q objectKey=%q blobKey=%q error=%v",
-				claims.Repository,
-				claims.ObjectKey,
-				blobKey,
-				err,
+			slog.Default().Error(
+				"direct upload repository link write failed",
+				slog.String("repository", claims.Repository),
+				slog.String("objectKey", claims.ObjectKey),
+				slog.String("blobKey", blobKey),
+				slog.Any("error", err),
 			)
 			return false, err
 		}
 		if state.deleteUploadedObject {
 			if err := s.backend.DeleteObject(ctx, claims.ObjectKey); err != nil {
-				log.Printf(
-					"direct upload duplicate object cleanup failed repository=%q objectKey=%q blobKey=%q error=%v",
-					claims.Repository,
-					claims.ObjectKey,
-					blobKey,
-					err,
+				slog.Default().Warn(
+					"direct upload duplicate object cleanup failed",
+					slog.String("repository", claims.Repository),
+					slog.String("objectKey", claims.ObjectKey),
+					slog.String("blobKey", blobKey),
+					slog.Any("error", err),
 				)
 			}
 		}
 		return state.deleteUploadedObject, nil
 	}
 	if err := s.writeSealedBlobMetadata(ctx, blobKey, sealed, uploadedPhysicalPath); err != nil {
-		log.Printf(
-			"direct upload sealed metadata write failed repository=%q objectKey=%q blobKey=%q error=%v",
-			claims.Repository,
-			claims.ObjectKey,
-			blobKey,
-			err,
+		slog.Default().Error(
+			"direct upload sealed metadata write failed",
+			slog.String("repository", claims.Repository),
+			slog.String("objectKey", claims.ObjectKey),
+			slog.String("blobKey", blobKey),
+			slog.Any("error", err),
 		)
 		return false, err
 	}
 	if err := s.backend.PutContent(ctx, linkKey, []byte(sealed.Digest)); err != nil {
-		log.Printf(
-			"direct upload repository link write failed repository=%q objectKey=%q blobKey=%q error=%v",
-			claims.Repository,
-			claims.ObjectKey,
-			blobKey,
-			err,
+		slog.Default().Error(
+			"direct upload repository link write failed",
+			slog.String("repository", claims.Repository),
+			slog.String("objectKey", claims.ObjectKey),
+			slog.String("blobKey", blobKey),
+			slog.Any("error", err),
 		)
 		return false, err
 	}

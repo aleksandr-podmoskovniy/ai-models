@@ -82,28 +82,25 @@ func TestCompletedRequestWithMalformedTimestampExpiresFailOpen(t *testing.T) {
 	}
 }
 
-func TestBoundedResultRegistryOutputTruncatesLargeOutput(t *testing.T) {
-	t.Parallel()
-
-	raw := strings.Repeat("x", maxResultRegistryOutputBytes+10)
-	got := boundedResultRegistryOutput(raw)
-	if len(got) <= maxResultRegistryOutputBytes {
-		t.Fatalf("bounded output length = %d, want truncation suffix", len(got))
-	}
-	if !strings.Contains(got, "...truncated...") {
-		t.Fatalf("bounded output = %q, want truncation marker", got)
-	}
-}
-
 func TestRequestResultIncludesDeletedRegistryBlobCount(t *testing.T) {
 	t.Parallel()
 
 	result := requestResult(CleanupResult{
 		DeletedRegistryBlobCount: 2,
+		RegistryOutput: strings.Join([]string{
+			`time="2026-04-27T20:21:55Z" level=info msg="Deleting blob: /docker/registry/v2/blobs/sha256/aa"`,
+			`time="2026-04-27T20:21:56Z" level=info msg="Deleting blob: /docker/registry/v2/blobs/sha256/bb"`,
+		}, "\n"),
 	}, time.Date(2026, 4, 26, 14, 0, 0, 0, time.UTC), []string{"dmcr-gc-a"})
 
 	if result.DeletedRegistryBlobCount != 2 {
 		t.Fatalf("deleted registry blob count = %d, want 2", result.DeletedRegistryBlobCount)
+	}
+	if result.RegistryOutputLineCount != 2 {
+		t.Fatalf("registry output line count = %d, want 2", result.RegistryOutputLineCount)
+	}
+	if result.RegistryOutputSHA256 == "" {
+		t.Fatal("registry output sha256 is empty")
 	}
 }
 

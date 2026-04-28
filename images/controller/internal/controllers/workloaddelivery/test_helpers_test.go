@@ -134,6 +134,12 @@ func readyModel() *modelsv1alpha1.Model {
 	return model
 }
 
+func readyModelWithArtifactSize(sizeBytes int64) *modelsv1alpha1.Model {
+	model := readyModel()
+	model.Status.Artifact.SizeBytes = &sizeBytes
+	return model
+}
+
 func readyClusterModel() *modelsv1alpha1.ClusterModel {
 	model := testkit.NewClusterModel()
 	model.Name = "cluster-gemma"

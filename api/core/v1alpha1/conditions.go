@@ -32,6 +32,7 @@ const (
 	ModelConditionReasonPublishing              ModelConditionReason = "Publishing"
 	ModelConditionReasonArtifactPublished       ModelConditionReason = "ArtifactPublished"
 	ModelConditionReasonPublicationFailed       ModelConditionReason = "PublicationFailed"
+	ModelConditionReasonInsufficientStorage     ModelConditionReason = "InsufficientStorage"
 	ModelConditionReasonUnsupportedSource       ModelConditionReason = "UnsupportedSource"
 	ModelConditionReasonModelMetadataCalculated ModelConditionReason = "ModelMetadataCalculated"
 	ModelConditionReasonModelMetadataPartial    ModelConditionReason = "ModelMetadataPartial"

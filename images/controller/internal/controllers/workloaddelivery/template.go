@@ -71,6 +71,8 @@ func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeld
 		modeldelivery.ResolvedDeliveryModeAnnotation,
 		modeldelivery.ResolvedDeliveryReasonAnnotation,
 		modeldelivery.ResolvedModelsAnnotation,
+		DeliveryBlockedReasonAnnotation,
+		DeliveryBlockedMessageAnnotation,
 	} {
 		var removed bool
 		template.Annotations, removed = removeAnnotation(template.Annotations, key)

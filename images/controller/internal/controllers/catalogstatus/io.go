@@ -186,7 +186,7 @@ func (r *baseReconciler) applyStatusMutation(
 	if err := r.updateStatus(ctx, object, current, desired); err != nil {
 		return err
 	}
-	if err := r.syncPublishedStorageUsage(ctx, object, desired); err != nil {
+	if err := r.syncPublishedStorageUsage(ctx, object, desired, observation); err != nil {
 		return err
 	}
 	if statusChanged {

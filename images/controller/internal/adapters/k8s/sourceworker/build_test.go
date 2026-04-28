@@ -46,6 +46,10 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	assertContains(t, pod.Spec.Containers[0].Args, "ai-models")
 	assertContains(t, pod.Spec.Containers[0].Args, "--raw-stage-key-prefix")
 	assertContains(t, pod.Spec.Containers[0].Args, "raw/1111-2222/source-url")
+	assertContains(t, pod.Spec.Containers[0].Args, "--storage-capacity-limit")
+	assertContains(t, pod.Spec.Containers[0].Args, "107374182400")
+	assertContains(t, pod.Spec.Containers[0].Args, "--storage-reservation-id")
+	assertContains(t, pod.Spec.Containers[0].Args, "1111-2222")
 	if got, want := pod.Spec.ServiceAccountName, "ai-models-controller"; got != want {
 		t.Fatalf("unexpected service account %q", got)
 	}

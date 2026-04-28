@@ -325,8 +325,8 @@ func TestRunRequestCycleMarksActiveRequestsDoneAndLogs(t *testing.T) {
 	if err := json.Unmarshal(updated.Data[resultDataKey], &result); err != nil {
 		t.Fatalf("decode result data error = %v", err)
 	}
-	if got, want := result.RegistryOutput, "gc-ok"; got != want {
-		t.Fatalf("result registry output = %q, want %q", got, want)
+	if result.DeletedRegistryBlobCount != 0 {
+		t.Fatalf("deleted registry blob count = %d, want 0", result.DeletedRegistryBlobCount)
 	}
 
 	entries := decodeJSONLogLines(t, buffer.Bytes())
@@ -334,8 +334,8 @@ func TestRunRequestCycleMarksActiveRequestsDoneAndLogs(t *testing.T) {
 	assertLogMessage(t, entries, "dmcr garbage collection completed")
 	assertLogMessage(t, entries, "dmcr garbage collection requests completed")
 
-	if got := entries[1]["registry_output"]; got != "gc-ok" {
-		t.Fatalf("registry_output = %v, want gc-ok", got)
+	if _, found := entries[1]["registry_output"]; found {
+		t.Fatalf("registry_output must not be logged on successful GC: %#v", entries[1])
 	}
 }
 

@@ -142,6 +142,22 @@ func TestObserveSourceWorker(t *testing.T) {
 			},
 		},
 		{
+			name:   "failed worker maps storage capacity failure to stable reason",
+			handle: publicationports.NewSourceWorkerHandle("worker-a", corev1.PodFailed, "artifact storage capacity exceeded: requested=100 available=10 used=90 reserved=0 limit=100", "", "", "", nil),
+			assert: func(t *testing.T, got RuntimeObservationDecision) {
+				t.Helper()
+				if got.Observation.Phase != publicationdomain.OperationPhaseFailed {
+					t.Fatalf("unexpected phase %q", got.Observation.Phase)
+				}
+				if got.Observation.ConditionReason != modelsv1alpha1.ModelConditionReasonInsufficientStorage {
+					t.Fatalf("unexpected failure reason %q", got.Observation.ConditionReason)
+				}
+				if !got.DeleteRuntime {
+					t.Fatal("expected delete for failed worker")
+				}
+			},
+		},
+		{
 			name: "interrupted worker stays running and deletes failed pod",
 			handle: publicationports.NewSourceWorkerHandle(
 				"worker-a",

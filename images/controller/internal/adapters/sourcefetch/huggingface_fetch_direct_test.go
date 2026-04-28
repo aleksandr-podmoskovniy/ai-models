@@ -118,10 +118,11 @@ func TestFetchRemoteModelHuggingFacePlansDirectDiffusersObjectSourceWithoutMirro
 	defer server.Close()
 
 	stubHuggingFaceInfo(t, HuggingFaceInfo{
-		ID:          testHuggingFaceSubject,
-		SHA:         testHuggingFaceRevision,
-		PipelineTag: "text-to-image",
-		License:     "apache-2.0",
+		ID:           testHuggingFaceSubject,
+		SHA:          testHuggingFaceRevision,
+		PipelineTag:  "text-to-image",
+		DeclaredTask: "text-to-image",
+		License:      "apache-2.0",
 		Files: []string{
 			"README.md",
 			"model_index.json",

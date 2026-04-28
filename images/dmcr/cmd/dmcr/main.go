@@ -17,16 +17,32 @@ limitations under the License.
 package main
 
 import (
+	"fmt"
+	"log/slog"
 	_ "net/http/pprof"
+	"os"
 
+	"github.com/deckhouse/ai-models/dmcr/internal/logging"
 	_ "github.com/deckhouse/ai-models/dmcr/internal/registrydriver/sealeds3"
 	"github.com/distribution/distribution/v3/registry"
 	_ "github.com/distribution/distribution/v3/registry/auth/htpasswd"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
 )
 
+const logFormatEnv = "LOG_FORMAT"
+
 func main() {
+	logger, err := logging.NewComponentLogger(logging.EnvOr(logFormatEnv, logging.DefaultLogFormat), "dmcr")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	logging.SetDefaultLogger(logger)
+
 	configureCommands()
 	registerMaintenanceGate()
-	_ = registry.RootCmd.Execute()
+	if err := registry.RootCmd.Execute(); err != nil {
+		slog.Default().Error("dmcr exited with error", slog.Any("error", err))
+		os.Exit(1)
+	}
 }

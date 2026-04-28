@@ -149,7 +149,7 @@ func (r *baseReconciler) maybeRemoveDeleteFinalizer(
 	if err := r.deletePublicationRuntimeResources(ctx, runtime.object); err != nil {
 		return ctrl.Result{}, true, err
 	}
-	if err := r.releasePublishedStorageUsage(ctx, runtime.object); err != nil {
+	if err := r.releaseStorageUsage(ctx, runtime.object); err != nil {
 		return ctrl.Result{}, true, err
 	}
 	if err := r.cleanupState.Delete(ctx, runtime.object); err != nil {

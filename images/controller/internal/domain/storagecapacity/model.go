@@ -66,9 +66,11 @@ type InsufficientStorageError struct {
 	AvailableBytes int64
 }
 
+const insufficientStorageErrorPrefix = "artifact storage capacity exceeded"
+
 func (e *InsufficientStorageError) Error() string {
 	return fmt.Sprintf(
-		"artifact storage capacity exceeded: requested=%d available=%d used=%d reserved=%d limit=%d",
+		insufficientStorageErrorPrefix+": requested=%d available=%d used=%d reserved=%d limit=%d",
 		e.RequestedBytes,
 		e.AvailableBytes,
 		e.UsedBytes,
@@ -80,6 +82,10 @@ func (e *InsufficientStorageError) Error() string {
 func IsInsufficientStorage(err error) bool {
 	var typed *InsufficientStorageError
 	return errors.As(err, &typed)
+}
+
+func IsInsufficientStorageMessage(message string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(message)), insufficientStorageErrorPrefix)
 }
 
 func (l *Ledger) Reserve(limitBytes int64, reservation Reservation) error {
@@ -117,7 +123,15 @@ func (l *Ledger) ReleaseReservation(id string) {
 	delete(l.Reservations, id)
 }
 
-func (l *Ledger) CommitPublished(_ int64, artifact PublishedArtifact) error {
+func (l *Ledger) CommitPublished(limitBytes int64, artifact PublishedArtifact) error {
+	return l.CommitPublishedReplacingReservations(limitBytes, nil, artifact)
+}
+
+func (l *Ledger) CommitPublishedReplacingReservations(
+	limitBytes int64,
+	reservationIDs []string,
+	artifact PublishedArtifact,
+) error {
 	if err := validateEntry(artifact.ID, artifact.Owner, artifact.SizeBytes, "published artifact"); err != nil {
 		return err
 	}
@@ -126,6 +140,24 @@ func (l *Ledger) CommitPublished(_ int64, artifact PublishedArtifact) error {
 		artifact.UpdatedAt = time.Now().UTC()
 	}
 
+	usage := l.Usage(limitBytes)
+	releasedReserved := l.reservedBytes(reservationIDs)
+	existingPublished := positive(l.Published[artifact.ID].SizeBytes)
+	nextUsed := usage.UsedBytes - existingPublished + artifact.SizeBytes
+	nextReserved := usage.ReservedBytes - releasedReserved
+	if limitBytes > 0 && nextUsed+nextReserved > limitBytes {
+		return &InsufficientStorageError{
+			RequestedBytes: artifact.SizeBytes,
+			LimitBytes:     limitBytes,
+			UsedBytes:      usage.UsedBytes - existingPublished,
+			ReservedBytes:  nextReserved,
+			AvailableBytes: maxInt64(0, limitBytes-(usage.UsedBytes-existingPublished)-nextReserved),
+		}
+	}
+
+	for _, id := range reservationIDs {
+		l.ReleaseReservation(id)
+	}
 	l.Published[artifact.ID] = artifact
 	return nil
 }
@@ -164,6 +196,26 @@ func (l *Ledger) ensure() {
 	if l.Published == nil {
 		l.Published = map[string]PublishedArtifact{}
 	}
+}
+
+func (l Ledger) reservedBytes(ids []string) int64 {
+	if len(ids) == 0 || len(l.Reservations) == 0 {
+		return 0
+	}
+	seen := map[string]struct{}{}
+	var total int64
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		total += positive(l.Reservations[id].SizeBytes)
+	}
+	return total
 }
 
 func validateEntry(id string, owner Owner, sizeBytes int64, kind string) error {

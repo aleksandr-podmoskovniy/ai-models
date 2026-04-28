@@ -88,10 +88,11 @@ type runtimeModelEntry struct {
 }
 
 type resolvedModelEntry struct {
-	Alias  string `json:"alias"`
-	URI    string `json:"uri"`
-	Digest string `json:"digest"`
-	Family string `json:"family,omitempty"`
+	Alias     string `json:"alias"`
+	URI       string `json:"uri"`
+	Digest    string `json:"digest"`
+	Family    string `json:"family,omitempty"`
+	SizeBytes int64  `json:"sizeBytes,omitempty"`
 }
 
 func runtimeModelEntries(options Options, bindings []BindingInput) []runtimeModelEntry {
@@ -111,10 +112,11 @@ func resolvedModelEntries(bindings []BindingInput) []resolvedModelEntry {
 	entries := make([]resolvedModelEntry, 0, len(bindings))
 	for _, binding := range bindings {
 		entries = append(entries, resolvedModelEntry{
-			Alias:  binding.Alias,
-			URI:    strings.TrimSpace(binding.Artifact.URI),
-			Digest: strings.TrimSpace(binding.Artifact.Digest),
-			Family: strings.TrimSpace(binding.ArtifactFamily),
+			Alias:     binding.Alias,
+			URI:       strings.TrimSpace(binding.Artifact.URI),
+			Digest:    strings.TrimSpace(binding.Artifact.Digest),
+			Family:    strings.TrimSpace(binding.ArtifactFamily),
+			SizeBytes: binding.Artifact.SizeBytes,
 		})
 	}
 	return entries

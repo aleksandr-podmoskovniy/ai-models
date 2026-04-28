@@ -35,6 +35,7 @@ type RemoteOptions struct {
 	RequestedFormat          modelsv1alpha1.ModelInputFormat
 	HFToken                  string
 	SourceMirror             *SourceMirrorOptions
+	StorageReservation       RemoteStorageReservation
 	SkipLocalMaterialization bool
 }
 
@@ -98,6 +99,19 @@ type RemoteObjectFile struct {
 type RemoteObjectSource struct {
 	Reader RemoteObjectReader
 	Files  []RemoteObjectFile
+}
+
+type RemoteStorageReservation interface {
+	ReserveRemoteStorage(ctx context.Context, request RemoteStorageReservationRequest) error
+}
+
+type RemoteStorageReservationRequest struct {
+	SourceType        modelsv1alpha1.ModelSourceType
+	SourceFetchMode   string
+	ExternalReference string
+	ResolvedRevision  string
+	SelectedFileCount int
+	SizeBytes         int64
 }
 
 type SourceMirrorSnapshot struct {

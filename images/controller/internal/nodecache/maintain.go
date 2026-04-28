@@ -93,7 +93,7 @@ func applyEvictionPlan(plan EvictionPlan) error {
 		slog.Default().Info(
 			"node cache entry evicted",
 			slog.String("destinationDir", candidate.DestinationDir),
-			slog.String("digest", candidate.Digest),
+			slog.String("artifactDigest", candidate.Digest),
 			slog.String("reason", string(candidate.Reason)),
 			slog.Int64("reclaimBytes", candidate.ReclaimBytes),
 		)

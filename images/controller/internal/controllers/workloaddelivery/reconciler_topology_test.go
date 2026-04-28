@@ -21,9 +21,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestDeploymentReconcilerRejectsSharedWorkloadPersistentVolumeClaimWithoutRWX(t *testing.T) {
@@ -44,12 +47,25 @@ func TestDeploymentReconcilerRejectsSharedWorkloadPersistentVolumeClaimWithoutRW
 	}
 	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, pvc, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
 
-	_, err := reconciler.reconcileWorkload(context.Background(), workload)
-	if err == nil {
-		t.Fatal("expected topology validation error for shared non-RWX PVC")
+	result := reconcileDeployment(t, reconciler, workload)
+	if result != (ctrl.Result{}) {
+		t.Fatalf("unexpected reconcile result %#v", result)
 	}
-	if !strings.Contains(err.Error(), "ReadWriteMany") {
-		t.Fatalf("unexpected topology error %v", err)
+	var blocked deployment
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &blocked); err != nil {
+		t.Fatalf("Get(deployment) error = %v", err)
+	}
+	if got, want := blocked.Spec.Template.Annotations[DeliveryBlockedReasonAnnotation], deliveryBlockedReasonInvalidSpec; got != want {
+		t.Fatalf("blocked reason = %q, want %q", got, want)
+	}
+	if got := blocked.Spec.Template.Annotations[DeliveryBlockedMessageAnnotation]; !strings.Contains(got, "ReadWriteMany") {
+		t.Fatalf("unexpected blocked message %q", got)
+	}
+	if !modeldelivery.HasSchedulingGate(&blocked.Spec.Template) {
+		t.Fatalf("expected scheduling gate for invalid runtime delivery spec")
 	}
 	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
+	if events := drainRecordedEvents(t, reconciler); countRecordedEvents(events, "ModelDeliveryBlocked") != 1 {
+		t.Fatalf("events = %#v, want one ModelDeliveryBlocked", events)
+	}
 }

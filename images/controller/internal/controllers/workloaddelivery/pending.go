@@ -33,22 +33,51 @@ func (r *baseReconciler) keepManagedDeliveryPending(
 	original client.Object,
 	template *corev1.PodTemplateSpec,
 ) error {
+	_, err := r.keepManagedDeliveryStopped(ctx, object, original, template, "", "")
+	return err
+}
+
+func (r *baseReconciler) keepManagedDeliveryBlocked(
+	ctx context.Context,
+	object client.Object,
+	original client.Object,
+	template *corev1.PodTemplateSpec,
+	reason string,
+	message string,
+) (bool, error) {
+	return r.keepManagedDeliveryStopped(ctx, object, original, template, reason, message)
+}
+
+func (r *baseReconciler) keepManagedDeliveryStopped(
+	ctx context.Context,
+	object client.Object,
+	original client.Object,
+	template *corev1.PodTemplateSpec,
+	reason string,
+	message string,
+) (bool, error) {
 	removeManagedTemplateState(template, r.options.Service)
+	if reason == "" {
+		clearDeliveryBlockedState(template)
+	}
 	modeldelivery.EnsureSchedulingGate(template)
+	if reason != "" {
+		setDeliveryBlockedState(template, reason, message)
+	}
 	if err := ociregistry.DeleteProjectedAccess(ctx, r.client, object.GetNamespace(), object.GetUID()); err != nil {
-		return err
+		return false, err
 	}
 	runtimeImagePullSecretName, err := resourcenames.RuntimeImagePullSecretName(object.GetUID())
 	if err != nil {
-		return err
+		return false, err
 	}
 	var removed bool
 	template.Spec.ImagePullSecrets, removed = removeImagePullSecretByName(template.Spec.ImagePullSecrets, runtimeImagePullSecretName)
 	if err := ociregistry.DeleteProjectedImagePullSecret(ctx, r.client, object.GetNamespace(), object.GetUID()); err != nil {
-		return err
+		return false, err
 	}
 	if !removed && equality.Semantic.DeepEqual(original, object) {
-		return nil
+		return false, nil
 	}
-	return r.client.Patch(ctx, object, client.MergeFrom(original))
+	return true, r.client.Patch(ctx, object, client.MergeFrom(original))
 }

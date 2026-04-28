@@ -68,9 +68,11 @@ type Options struct {
 }
 
 type ManagedCacheOptions struct {
-	Enabled      bool
-	VolumeName   string
-	NodeSelector map[string]string
+	Enabled          bool
+	VolumeName       string
+	CapacityBytes    int64
+	RuntimeNamespace string
+	NodeSelector     map[string]string
 }
 
 func NormalizeOptions(options Options) Options {
@@ -110,6 +112,7 @@ func NormalizeManagedCacheOptions(options ManagedCacheOptions) ManagedCacheOptio
 	if strings.TrimSpace(options.VolumeName) == "" {
 		options.VolumeName = DefaultManagedCacheName
 	}
+	options.RuntimeNamespace = strings.TrimSpace(options.RuntimeNamespace)
 	options.NodeSelector = copyCleanStringMap(options.NodeSelector)
 	return options
 }
@@ -121,6 +124,8 @@ func ValidateManagedCacheOptions(options ManagedCacheOptions) error {
 	switch {
 	case strings.TrimSpace(options.VolumeName) == "":
 		return errors.New("runtime delivery managed cache volume name must not be empty")
+	case options.CapacityBytes < 0:
+		return errors.New("runtime delivery managed cache capacity bytes must not be negative")
 	}
 	return nil
 }
@@ -208,4 +213,11 @@ const (
 	DeliveryReasonStatefulSetClaimTemplate       DeliveryReason = deliverycontract.DeliveryReasonStatefulSetClaimTemplate
 	DeliveryReasonWorkloadSharedPersistentVolume DeliveryReason = deliverycontract.DeliveryReasonWorkloadSharedPersistentVolume
 	DeliveryReasonNodeSharedRuntimePlane         DeliveryReason = deliverycontract.DeliveryReasonNodeSharedRuntimePlane
+)
+
+type DeliveryGateReason string
+
+const (
+	DeliveryGateReasonInsufficientNodeCacheCapacity DeliveryGateReason = "InsufficientNodeCacheCapacity"
+	DeliveryGateReasonNoReadyNodeCacheRuntime       DeliveryGateReason = "NoReadyNodeCacheRuntime"
 )

@@ -18,6 +18,8 @@ package garbagecollection
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -39,10 +41,9 @@ type requestResultRecord struct {
 	OpenDirectUploadMultipartPartCount    int      `json:"openDirectUploadMultipartPartCount"`
 	StaleDirectUploadMultipartUploadCount int      `json:"staleDirectUploadMultipartUploadCount"`
 	DeletedRegistryBlobCount              int      `json:"deletedRegistryBlobCount"`
-	RegistryOutput                        string   `json:"registryOutput,omitempty"`
+	RegistryOutputLineCount               int      `json:"registryOutputLineCount,omitempty"`
+	RegistryOutputSHA256                  string   `json:"registryOutputSHA256,omitempty"`
 }
-
-const maxResultRegistryOutputBytes = 8192
 
 func pruneExpiredCompletedRequests(
 	ctx context.Context,
@@ -112,6 +113,7 @@ func markRequestsCompleted(
 }
 
 func requestResult(result CleanupResult, completedAt time.Time, requestNames []string) requestResultRecord {
+	registryOutputSHA256, registryOutputLineCount := registryOutputFingerprint(result.RegistryOutput)
 	return requestResultRecord{
 		CompletedAt:                           completedAt.UTC().Format(time.RFC3339Nano),
 		RequestNames:                          requestNames,
@@ -122,16 +124,18 @@ func requestResult(result CleanupResult, completedAt time.Time, requestNames []s
 		OpenDirectUploadMultipartPartCount:    result.Report.StoredDirectUploadMultipartPartCount,
 		StaleDirectUploadMultipartUploadCount: len(result.Report.StaleDirectUploadMultipartUploads),
 		DeletedRegistryBlobCount:              result.DeletedRegistryBlobCount,
-		RegistryOutput:                        boundedResultRegistryOutput(result.RegistryOutput),
+		RegistryOutputLineCount:               registryOutputLineCount,
+		RegistryOutputSHA256:                  registryOutputSHA256,
 	}
 }
 
-func boundedResultRegistryOutput(output string) string {
-	trimmed := strings.TrimSpace(output)
-	if len(trimmed) <= maxResultRegistryOutputBytes {
-		return trimmed
+func registryOutputFingerprint(output string) (string, int) {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return "", 0
 	}
-	return trimmed[:maxResultRegistryOutputBytes] + "\n...truncated..."
+	sum := sha256.Sum256([]byte(output))
+	return hex.EncodeToString(sum[:]), len(strings.Split(output, "\n"))
 }
 
 func deleteRequest(ctx context.Context, client kubernetes.Interface, namespace, name string) error {

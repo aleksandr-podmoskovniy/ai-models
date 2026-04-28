@@ -127,3 +127,31 @@ func TestFetchHuggingFaceInfoPrefersSpecificModelIndexTaskOverGenericPipelineTag
 		t.Fatalf("unexpected declared task %q", got)
 	}
 }
+
+func TestFetchHuggingFaceInfoKeepsBroadPipelineTagAsHintOnly(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{
+		  "id": "google/gemma-4",
+		  "sha": "deadbeef",
+		  "pipeline_tag": "any-to-any",
+		  "siblings": [
+		    {"rfilename": "config.json"},
+		    {"rfilename": "model.safetensors"}
+		  ]
+		}`))
+	}))
+	defer server.Close()
+
+	withHuggingFaceBaseURL(t, server.URL)
+	info, err := FetchHuggingFaceInfo(t.Context(), "google/gemma-4", "main", "")
+	if err != nil {
+		t.Fatalf("FetchHuggingFaceInfo() error = %v", err)
+	}
+	if got, want := info.PipelineTag, "any-to-any"; got != want {
+		t.Fatalf("unexpected pipeline tag %q", got)
+	}
+	if got := info.DeclaredTask; got != "" {
+		t.Fatalf("broad pipeline tag must not become declared task, got %q", got)
+	}
+}

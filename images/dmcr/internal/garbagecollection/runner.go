@@ -223,7 +223,8 @@ func runActiveRequestCycle(
 		return true, cleanupErr
 	}
 
-	attrs := []any{
+	slog.Default().Info(
+		"dmcr garbage collection completed",
 		slog.Int("request_count", len(activeSecrets)),
 		slog.Any("request_names", requestNames),
 		slog.Int("stale_repository_prefix_count", len(result.Report.StaleRepositories)),
@@ -233,11 +234,7 @@ func runActiveRequestCycle(
 		slog.Int("open_direct_upload_multipart_part_count", result.Report.StoredDirectUploadMultipartPartCount),
 		slog.Int("stale_direct_upload_multipart_upload_count", len(result.Report.StaleDirectUploadMultipartUploads)),
 		slog.Int("deleted_registry_blob_count", result.DeletedRegistryBlobCount),
-	}
-	if trimmedOutput := strings.TrimSpace(result.RegistryOutput); trimmedOutput != "" {
-		attrs = append(attrs, slog.String("registry_output", trimmedOutput))
-	}
-	slog.Default().Info("dmcr garbage collection completed", attrs...)
+	)
 
 	if err := markRequestsCompleted(ctx, client, options.RequestNamespace, activeSecrets, result, time.Now().UTC()); err != nil {
 		return true, err

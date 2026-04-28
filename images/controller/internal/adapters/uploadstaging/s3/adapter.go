@@ -70,6 +70,8 @@ func New(cfg Config) (*Adapter, error) {
 			"",
 		)),
 		config.WithHTTPClient(awsHTTPClient),
+		config.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired),
+		config.WithResponseChecksumValidation(aws.ResponseChecksumValidationWhenRequired),
 	)
 	if err != nil {
 		return nil, err

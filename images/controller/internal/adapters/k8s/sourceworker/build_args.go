@@ -17,6 +17,7 @@ limitations under the License.
 package sourceworker
 
 import (
+	"strconv"
 	"strings"
 
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
@@ -36,7 +37,29 @@ func buildArgs(
 		"--oci-direct-upload-endpoint", strings.TrimSpace(options.OCIDirectUploadEndpoint),
 		"--source-fetch-mode", string(options.SourceFetch),
 	}
+	args = append(args, storageAccountingArgs(request, options)...)
 	return append(args, sourceArgs(plan, request.Owner.UID, options.ObjectStorage.Bucket, options.SourceFetch)...)
+}
+
+func storageAccountingArgs(request publicationports.Request, options Options) []string {
+	accounting := options.StorageAccounting.Normalize()
+	if !accounting.Enabled() {
+		return nil
+	}
+	reservationID := strings.TrimSpace(string(request.Owner.UID))
+	if reservationID == "" {
+		return nil
+	}
+	return []string{
+		"--storage-accounting-namespace", accounting.Namespace,
+		"--storage-accounting-secret-name", accounting.SecretName,
+		"--storage-capacity-limit", strconv.FormatInt(accounting.LimitBytes, 10),
+		"--storage-reservation-id", reservationID,
+		"--storage-owner-kind", strings.TrimSpace(request.Owner.Kind),
+		"--storage-owner-name", strings.TrimSpace(request.Owner.Name),
+		"--storage-owner-namespace", strings.TrimSpace(request.Owner.Namespace),
+		"--storage-owner-uid", reservationID,
+	}
 }
 
 func sourceArgs(plan SourceWorkerPlan, ownerUID types.UID, rawBucket string, modes ...publicationports.SourceFetchMode) []string {

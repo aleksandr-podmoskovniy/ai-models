@@ -24,6 +24,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	directuploadstate "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/directuploadstate"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageaccounting"
 	modelpackoci "github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/oci"
 	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
@@ -71,6 +72,14 @@ func runPublishWorker(args []string) int {
 	var task string
 	var directUploadStateNamespace string
 	var directUploadStateName string
+	var storageAccountingNamespace string
+	var storageAccountingSecretName string
+	var storageCapacityLimit string
+	var storageReservationID string
+	var storageOwnerKind string
+	var storageOwnerName string
+	var storageOwnerNamespace string
+	var storageOwnerUID string
 
 	flags.StringVar(&sourceType, "source-type", cmdsupport.EnvOr(publishSourceTypeEnv, string(modelsv1alpha1.ModelSourceTypeHuggingFace)), "Source type: HuggingFace or Upload.")
 	flags.StringVar(&artifactURI, "artifact-uri", "", "Controller-owned destination OCI reference.")
@@ -88,6 +97,14 @@ func runPublishWorker(args []string) int {
 	flags.StringVar(&task, "task", cmdsupport.EnvOr(publishTaskEnv, ""), "Runtime task.")
 	flags.StringVar(&directUploadStateNamespace, "direct-upload-state-namespace", cmdsupport.EnvOr(publishDirectUploadStateNS, ""), "Namespace of the direct-upload state Secret.")
 	flags.StringVar(&directUploadStateName, "direct-upload-state-secret-name", cmdsupport.EnvOr(publishDirectUploadStateName, ""), "Name of the direct-upload state Secret.")
+	flags.StringVar(&storageAccountingNamespace, "storage-accounting-namespace", "", "Namespace of the storage accounting Secret.")
+	flags.StringVar(&storageAccountingSecretName, "storage-accounting-secret-name", storageaccounting.DefaultSecretName, "Storage accounting Secret name.")
+	flags.StringVar(&storageCapacityLimit, "storage-capacity-limit", "", "Optional total artifact storage capacity limit.")
+	flags.StringVar(&storageReservationID, "storage-reservation-id", "", "Stable storage reservation ID for this publication.")
+	flags.StringVar(&storageOwnerKind, "storage-owner-kind", "", "Storage reservation owner kind.")
+	flags.StringVar(&storageOwnerName, "storage-owner-name", "", "Storage reservation owner name.")
+	flags.StringVar(&storageOwnerNamespace, "storage-owner-namespace", "", "Storage reservation owner namespace.")
+	flags.StringVar(&storageOwnerUID, "storage-owner-uid", "", "Storage reservation owner UID.")
 
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -121,6 +138,22 @@ func runPublishWorker(args []string) int {
 			cmdsupport.WriteTerminationFailure(err.Error())
 			return cmdsupport.CommandError(commandPublishWorker, err)
 		}
+	}
+	storageReservation, err := newPublishStorageReservation(
+		storageAccountingNamespace,
+		storageAccountingSecretName,
+		storageCapacityLimit,
+		publishStorageOwner{
+			ID:        storageReservationID,
+			Kind:      storageOwnerKind,
+			Name:      storageOwnerName,
+			Namespace: storageOwnerNamespace,
+			UID:       storageOwnerUID,
+		},
+	)
+	if err != nil {
+		cmdsupport.WriteTerminationFailure(err.Error())
+		return cmdsupport.CommandError(commandPublishWorker, err)
 	}
 
 	logger := publishWorkerLogger(
@@ -156,6 +189,7 @@ func runPublishWorker(args []string) int {
 		Task:                    task,
 		HFToken:                 cmdsupport.EnvOr("HF_TOKEN", cmdsupport.EnvOr("HUGGING_FACE_HUB_TOKEN", "")),
 		UploadStaging:           uploadStagingClient,
+		StorageReservation:      storageReservation,
 		ModelPackPublisher:      modelpackoci.New(),
 		RegistryAuth:            cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv),
 		DirectUploadState:       directUploadStateStore,

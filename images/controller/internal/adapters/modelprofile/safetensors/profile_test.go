@@ -175,29 +175,6 @@ func TestResolveProfileProjectsSourceDeclaredTask(t *testing.T) {
 	}
 }
 
-func TestResolveProfileDetectsToolCallingTemplate(t *testing.T) {
-	t.Parallel()
-
-	resolved, err := ResolveSummary(SummaryInput{
-		ConfigPayload: []byte(`{
-  "model_type":"qwen2",
-  "architectures":["Qwen2ForCausalLM"],
-  "torch_dtype":"bfloat16"
-}`),
-		TokenizerConfigPayload: []byte(`{
-  "chat_template":"{%- if tools %}{%- for tool in tools %}{{ tool | tojson }}{%- endfor %}{%- endif %}"
-}`),
-		WeightBytes:     24,
-		WeightFileCount: 1,
-	})
-	if err != nil {
-		t.Fatalf("ResolveSummary() error = %v", err)
-	}
-	if got, want := resolved.SupportedFeatures, []string{"ToolCalling"}; !stringSlicesEqual(got, want) {
-		t.Fatalf("unexpected features %#v", got)
-	}
-}
-
 func TestResolveProfileDoesNotInferFamilyFromSourceRepoID(t *testing.T) {
 	t.Parallel()
 

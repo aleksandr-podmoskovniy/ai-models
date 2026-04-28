@@ -68,7 +68,7 @@ func declaredHuggingFaceTask(payload huggingFaceAPIResponse) string {
 	if task := declaredHuggingFaceModelIndexTask(payload.CardData.ModelIndex); task != "" {
 		return task
 	}
-	return strings.TrimSpace(payload.PipelineTag)
+	return normalizeHuggingFaceTaskType(payload.PipelineTag)
 }
 
 func declaredHuggingFaceModelIndexTask(index []huggingFaceModelIndex) string {
@@ -100,7 +100,17 @@ func normalizeHuggingFaceTaskType(value string) string {
 		return "rerank"
 	case "sentence-similarity", "semantic-textual-similarity", "sts":
 		return "sentence-similarity"
-	case "text-generation", "text2text-generation", "text-to-image", "text-to-video", "image-to-video":
+	case "text-generation", "text2text-generation", "summarization", "conversational",
+		"feature-extraction", "embeddings", "text-embeddings-inference",
+		"automatic-speech-recognition", "speech-to-text", "text-to-speech",
+		"text-to-audio", "text-to-music", "audio-generation", "translation",
+		"image-classification", "zero-shot-image-classification",
+		"object-detection", "zero-shot-object-detection", "image-segmentation",
+		"image-to-text", "image-text-to-text", "visual-question-answering",
+		"document-question-answering", "text-to-image", "image-generation",
+		"unconditional-image-generation", "image-to-image", "image-variation",
+		"inpainting", "image-inpainting", "text-to-video", "video-generation",
+		"image-to-video", "video-to-video":
 		return normalized
 	default:
 		return ""

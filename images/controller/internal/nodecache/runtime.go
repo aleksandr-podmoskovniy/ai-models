@@ -19,6 +19,7 @@ package nodecache
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 )
 
@@ -26,8 +27,14 @@ type DesiredArtifactLoader interface {
 	LoadDesiredArtifacts(context.Context) ([]DesiredArtifact, error)
 }
 
+type RuntimeUsageReporter interface {
+	ReportRuntimeUsage(context.Context, RuntimeUsageSummary) error
+}
+
 type RuntimeOptions struct {
 	Maintenance MaintenanceOptions
+	NodeName    string
+	Reporter    RuntimeUsageReporter
 }
 
 func RunRuntimeLoop(ctx context.Context, options RuntimeOptions, loader DesiredArtifactLoader, prefetch PrefetchFunc) error {
@@ -75,10 +82,30 @@ func runRuntimeCycleWithRetry(ctx context.Context, options RuntimeOptions, loade
 	if err != nil {
 		return err
 	}
-	_, err = maintainSnapshot(snapshot, PlanInput{
+	result, err := maintainSnapshot(snapshot, PlanInput{
 		MaxTotalSizeBytes: options.Maintenance.MaxTotalSizeBytes,
 		MaxUnusedAge:      options.Maintenance.MaxUnusedAge,
 		ProtectedDigests:  ProtectedDigests(artifacts),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if options.Reporter == nil {
+		return nil
+	}
+	summary := NewRuntimeUsageSummary(
+		options.NodeName,
+		options.Maintenance.MaxTotalSizeBytes,
+		result,
+		time.Now().UTC(),
+	)
+	if availableBytes, err := FilesystemAvailableBytes(options.Maintenance.CacheRoot); err == nil {
+		summary.ApplyFilesystemAvailableBytes(availableBytes)
+	} else {
+		slog.Default().Warn("node cache runtime filesystem free-space check failed", slog.Any("error", err))
+	}
+	if err := options.Reporter.ReportRuntimeUsage(ctx, summary); err != nil {
+		slog.Default().Error("node cache runtime usage summary report failed", slog.Any("error", err))
+	}
+	return nil
 }

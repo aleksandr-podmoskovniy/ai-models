@@ -90,6 +90,8 @@ func NewS3PrefixStore(config S3StorageConfig) (prefixStore, error) {
 			"",
 		)),
 		awsconfig.WithHTTPClient(httpClient),
+		awsconfig.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired),
+		awsconfig.WithResponseChecksumValidation(aws.ResponseChecksumValidationWhenRequired),
 	)
 	if err != nil {
 		return nil, err

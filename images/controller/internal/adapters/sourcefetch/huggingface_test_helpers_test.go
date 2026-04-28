@@ -61,11 +61,12 @@ func defaultHuggingFaceInfo(files ...string) HuggingFaceInfo {
 		files = []string{"config.json", "model.safetensors"}
 	}
 	return HuggingFaceInfo{
-		ID:          testHuggingFaceSubject,
-		SHA:         testHuggingFaceRevision,
-		PipelineTag: "text-generation",
-		License:     "apache-2.0",
-		Files:       files,
+		ID:           testHuggingFaceSubject,
+		SHA:          testHuggingFaceRevision,
+		PipelineTag:  "text-generation",
+		DeclaredTask: "text-generation",
+		License:      "apache-2.0",
+		Files:        files,
 	}
 }
 
@@ -88,11 +89,21 @@ func stubUnavailableHuggingFaceProfileSummary(t *testing.T) {
 
 func fetchTestHuggingFaceRemote(t *testing.T, mirror *SourceMirrorOptions) (RemoteResult, error) {
 	t.Helper()
+	return fetchTestHuggingFaceRemoteWithReservation(t, mirror, nil)
+}
+
+func fetchTestHuggingFaceRemoteWithReservation(
+	t *testing.T,
+	mirror *SourceMirrorOptions,
+	reservation RemoteStorageReservation,
+) (RemoteResult, error) {
+	t.Helper()
 	return FetchRemoteModel(t.Context(), RemoteOptions{
 		URL:                      testHuggingFaceRemoteURL,
 		HFToken:                  testHuggingFaceToken,
 		SkipLocalMaterialization: true,
 		SourceMirror:             mirror,
+		StorageReservation:       reservation,
 	})
 }
 
@@ -119,6 +130,16 @@ func requireHuggingFaceAuth(t *testing.T, request *http.Request) {
 	if got, want := request.Header.Get("Authorization"), "Bearer "+testHuggingFaceToken; got != want {
 		t.Fatalf("unexpected authorization header %q", got)
 	}
+}
+
+type fakeRemoteStorageReservation struct {
+	requests []RemoteStorageReservationRequest
+	err      error
+}
+
+func (r *fakeRemoteStorageReservation) ReserveRemoteStorage(_ context.Context, request RemoteStorageReservationRequest) error {
+	r.requests = append(r.requests, request)
+	return r.err
 }
 
 func newTestSourceMirrorSnapshot() *SourceMirrorSnapshot {

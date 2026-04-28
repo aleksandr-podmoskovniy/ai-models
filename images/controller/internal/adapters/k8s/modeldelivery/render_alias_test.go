@@ -81,12 +81,15 @@ func TestRenderBuildsAliasMaterializersForMultipleModels(t *testing.T) {
 	if _, leaksURI := runtimeEntries[0]["uri"]; leaksURI {
 		t.Fatalf("runtime models env must not expose internal artifact URI: %#v", runtimeEntries[0])
 	}
-	var resolvedEntries []map[string]string
+	var resolvedEntries []map[string]any
 	if err := json.Unmarshal([]byte(rendered.ResolvedModels), &resolvedEntries); err != nil {
 		t.Fatalf("decode resolved models annotation: %v", err)
 	}
 	if got := resolvedEntries[0]["uri"]; got == "" {
 		t.Fatalf("resolved models annotation must keep artifact URI for node-cache runtime")
+	}
+	if got := resolvedEntries[0]["sizeBytes"]; got == nil {
+		t.Fatalf("resolved models annotation must keep artifact size for node-cache admission")
 	}
 }
 
@@ -134,5 +137,6 @@ func publishedArtifactWithDigest(digest string) publication.PublishedArtifact {
 		URI:       "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@" + digest,
 		Digest:    digest,
 		MediaType: "application/vnd.cncf.model.manifest.v1+json",
+		SizeBytes: 42,
 	}
 }

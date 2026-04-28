@@ -61,4 +61,54 @@ func TestDeploymentReconcilerKeepsGateWhenSharedDirectReadyNodeDoesNotMatchWorkl
 	if !modeldelivery.HasSchedulingGate(&updated.Spec.Template) {
 		t.Fatalf("expected scheduling gate while no ready node-cache node matches workload selector")
 	}
+	events := drainRecordedEvents(t, reconciler)
+	if got, want := countRecordedEvents(events, "ModelDeliveryPending"), 1; got != want {
+		t.Fatalf("ModelDeliveryPending events = %d, want %d, all=%#v", got, want, events)
+	}
+	if got := countRecordedEvents(events, "ModelDeliveryApplied"); got != 0 {
+		t.Fatalf("ModelDeliveryApplied events = %d, want 0, all=%#v", got, events)
+	}
+}
+
+func TestDeploymentReconcilerReportsSharedDirectCapacityGate(t *testing.T) {
+	t.Parallel()
+
+	model := readyModelWithArtifactSize(42)
+	workload := annotatedDeploymentWithoutCacheMount(map[string]string{ModelAnnotation: model.Name}, 1)
+	reconciler, kubeClient := newDeploymentReconcilerWithOptions(t, modeldelivery.ServiceOptions{
+		Render: modeldelivery.Options{
+			RuntimeImage: "example.com/ai-models/controller-runtime:dev",
+		},
+		ManagedCache: modeldelivery.ManagedCacheOptions{
+			Enabled:       true,
+			CapacityBytes: 10,
+			NodeSelector: map[string]string{
+				"ai.deckhouse.io/node-cache":       "true",
+				nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue,
+			},
+		},
+		RegistrySourceNamespace:      testRegistryNamespace,
+		RegistrySourceAuthSecretName: testRegistryAuthName,
+		RuntimeImagePullSecretName:   testRuntimePullSecret,
+	}, model, workload, readyNodeCacheRuntimeNode(), testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
+
+	result := reconcileDeployment(t, reconciler, workload)
+	if result != (ctrl.Result{}) {
+		t.Fatalf("unexpected reconcile result %#v", result)
+	}
+
+	var updated deployment
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &updated); err != nil {
+		t.Fatalf("Get(deployment) error = %v", err)
+	}
+	if !modeldelivery.HasSchedulingGate(&updated.Spec.Template) {
+		t.Fatalf("expected scheduling gate while node-cache capacity is insufficient")
+	}
+	events := drainRecordedEvents(t, reconciler)
+	if got, want := countRecordedEvents(events, "ModelDeliveryBlocked"), 1; got != want {
+		t.Fatalf("ModelDeliveryBlocked events = %d, want %d, all=%#v", got, want, events)
+	}
+	if got := countRecordedEvents(events, string(modeldelivery.DeliveryGateReasonInsufficientNodeCacheCapacity)); got != 0 {
+		t.Fatalf("gate reason leaked into event reason, got %d events: %#v", got, events)
+	}
 }

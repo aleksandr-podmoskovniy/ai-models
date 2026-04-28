@@ -234,6 +234,18 @@ func podEnv(spec RuntimeSpec) []corev1.EnvVar {
 		{Name: nodecache.RuntimeMaxUnusedAgeEnv, Value: spec.MaxUnusedAge},
 		{Name: nodecache.RuntimeScanIntervalEnv, Value: spec.ScanInterval},
 		{Name: RuntimeNodeNameEnv, Value: spec.NodeName},
+		{
+			Name: RuntimePodNameEnv,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+			},
+		},
+		{
+			Name: RuntimePodNamespaceEnv,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"},
+			},
+		},
 		{Name: "PUBLICATION_OCI_INSECURE", Value: strconv.FormatBool(spec.OCIInsecure)},
 		{
 			Name: "AI_MODELS_OCI_USERNAME",

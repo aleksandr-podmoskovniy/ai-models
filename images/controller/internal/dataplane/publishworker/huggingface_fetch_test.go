@@ -25,6 +25,12 @@ import (
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 )
 
+type fakeRemoteStorageReservation struct{}
+
+func (fakeRemoteStorageReservation) ReserveRemoteStorage(context.Context, sourcefetch.RemoteStorageReservationRequest) error {
+	return nil
+}
+
 func TestFetchRemotePerformsSingleStreamingOnlyAttempt(t *testing.T) {
 	previousFetchRemoteModelFunc := fetchRemoteModelFunc
 	t.Cleanup(func() {
@@ -77,6 +83,34 @@ func TestFetchRemoteDirectModeDoesNotPassSourceMirror(t *testing.T) {
 		HFModelID:       "owner/model",
 		SourceFetchMode: publicationports.SourceFetchModeDirect,
 		Revision:        "main",
+	})
+	if err != nil {
+		t.Fatalf("fetchRemote() error = %v", err)
+	}
+}
+
+func TestFetchRemotePassesStorageReservation(t *testing.T) {
+	t.Parallel()
+
+	previousFetchRemoteModelFunc := fetchRemoteModelFunc
+	t.Cleanup(func() {
+		fetchRemoteModelFunc = previousFetchRemoteModelFunc
+	})
+
+	expectedReservation := fakeRemoteStorageReservation{}
+	fetchRemoteModelFunc = func(_ context.Context, options sourcefetch.RemoteOptions) (sourcefetch.RemoteResult, error) {
+		if options.StorageReservation != expectedReservation {
+			t.Fatal("storage reservation was not passed to remote fetch")
+		}
+		return sourcefetch.RemoteResult{
+			InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
+		}, nil
+	}
+
+	_, err := fetchRemote(context.Background(), Options{
+		SourceType:         modelsv1alpha1.ModelSourceTypeHuggingFace,
+		HFModelID:          "owner/model",
+		StorageReservation: expectedReservation,
 	})
 	if err != nil {
 		t.Fatalf("fetchRemote() error = %v", err)

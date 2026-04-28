@@ -58,6 +58,9 @@ func TestServiceRejectsMissingCacheMount(t *testing.T) {
 	if err == nil || err.Error() != "runtime delivery annotated workload must mount writable model cache at \"/data/modelcache\"" {
 		t.Fatalf("unexpected error %v", err)
 	}
+	if !IsWorkloadContractError(err) {
+		t.Fatalf("expected workload contract error, got %T", err)
+	}
 }
 
 func TestServiceRejectsAmbiguousCacheMountVolume(t *testing.T) {
@@ -108,5 +111,8 @@ func TestServiceRejectsAmbiguousCacheMountVolume(t *testing.T) {
 	}, template)
 	if err == nil || err.Error() != "runtime delivery cache mount \"/data/modelcache\" must reference a single backing volume" {
 		t.Fatalf("unexpected error %v", err)
+	}
+	if !IsWorkloadContractError(err) {
+		t.Fatalf("expected workload contract error, got %T", err)
 	}
 }

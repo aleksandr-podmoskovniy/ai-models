@@ -18,7 +18,6 @@ package modeldelivery
 
 import (
 	"errors"
-	"fmt"
 	"path"
 	"strings"
 
@@ -36,7 +35,7 @@ func detectCacheMount(template *corev1.PodTemplateSpec, mountPath string) (Cache
 		return CacheMount{}, err
 	}
 	if !found {
-		return CacheMount{}, fmt.Errorf("runtime delivery annotated workload must mount writable model cache at %q", normalizeMountPath(mountPath))
+		return CacheMount{}, NewWorkloadContractError("runtime delivery annotated workload must mount writable model cache at %q", normalizeMountPath(mountPath))
 	}
 	return resolved, nil
 }
@@ -61,7 +60,7 @@ func resolveCacheMount(template *corev1.PodTemplateSpec, mountPath string) (Cach
 				continue
 			}
 			if mount.Name != resolved.VolumeName {
-				return CacheMount{}, false, fmt.Errorf("runtime delivery cache mount %q must reference a single backing volume", expectedPath)
+				return CacheMount{}, false, NewWorkloadContractError("runtime delivery cache mount %q must reference a single backing volume", expectedPath)
 			}
 		}
 	}

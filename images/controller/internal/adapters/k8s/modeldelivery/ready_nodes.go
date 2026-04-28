@@ -18,179 +18,203 @@ package modeldelivery
 
 import (
 	"context"
-	"strconv"
+	"fmt"
+	"strings"
 
+	k8snodecacheruntime "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/nodecacheruntime"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
+	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (s *Service) readyNodesForTemplate(
-	ctx context.Context,
-	topologyKind CacheTopologyKind,
-	template *corev1.PodTemplateSpec,
-) (bool, error) {
-	if topologyKind != CacheTopologyDirect {
-		return true, nil
-	}
-	return s.hasManagedCacheReadyNodeForTemplate(ctx, template)
+type deliveryGate struct {
+	Ready   bool
+	Reason  DeliveryGateReason
+	Message string
 }
 
-func (s *Service) hasManagedCacheReadyNodeForTemplate(ctx context.Context, template *corev1.PodTemplateSpec) (bool, error) {
+func (s *Service) deliveryGateForTemplate(
+	ctx context.Context,
+	topologyKind CacheTopologyKind,
+	input Input,
+	template *corev1.PodTemplateSpec,
+) (deliveryGate, error) {
+	if topologyKind != CacheTopologyDirect {
+		return deliveryGate{Ready: true}, nil
+	}
 	managed := NormalizeManagedCacheOptions(s.options.ManagedCache)
+	artifacts := desiredArtifactsFromInput(input)
+	if err := managedCacheCapacityError(managed, artifacts); err != nil {
+		return deliveryGate{
+			Reason:  DeliveryGateReasonInsufficientNodeCacheCapacity,
+			Message: fmt.Sprintf("SharedDirect node cache cannot fit requested model artifacts: %v", err),
+		}, nil
+	}
+	gate, err := s.managedCacheGateForTemplate(ctx, managed, artifacts, template)
+	if err != nil {
+		return deliveryGate{}, err
+	}
+	return gate, nil
+}
+
+func managedCacheCapacityError(managed ManagedCacheOptions, artifacts []nodecache.DesiredArtifact) error {
+	if !managed.Enabled || managed.CapacityBytes <= 0 {
+		return nil
+	}
+	return nodecache.ValidateDesiredArtifactsFit(managed.CapacityBytes, artifacts)
+}
+
+func desiredArtifactsFromInput(input Input) []nodecache.DesiredArtifact {
+	artifacts := []nodecache.DesiredArtifact{desiredArtifactFromBinding(input.Artifact, input.ArtifactFamily)}
+	if len(input.Bindings) > 0 {
+		artifacts = make([]nodecache.DesiredArtifact, 0, len(input.Bindings))
+		for _, binding := range input.Bindings {
+			artifacts = append(artifacts, desiredArtifactFromBinding(binding.Artifact, binding.ArtifactFamily))
+		}
+	}
+	return artifacts
+}
+
+func desiredArtifactFromBinding(artifact publication.PublishedArtifact, family string) nodecache.DesiredArtifact {
+	return nodecache.DesiredArtifact{
+		ArtifactURI: artifact.URI,
+		Digest:      artifact.Digest,
+		Family:      family,
+		SizeBytes:   artifact.SizeBytes,
+	}
+}
+
+func (s *Service) managedCacheGateForTemplate(
+	ctx context.Context,
+	managed ManagedCacheOptions,
+	artifacts []nodecache.DesiredArtifact,
+	template *corev1.PodTemplateSpec,
+) (deliveryGate, error) {
 	if !managed.Enabled || len(managed.NodeSelector) == 0 {
-		return true, nil
+		return deliveryGate{Ready: true}, nil
 	}
 	nodes := &corev1.NodeList{}
 	if err := s.client.List(ctx, nodes, client.MatchingLabels(managed.NodeSelector)); err != nil {
-		return false, err
+		return deliveryGate{}, err
 	}
-	for index := range nodes.Items {
-		if nodeFitsTemplate(nodes.Items[index], template) {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func nodeFitsTemplate(node corev1.Node, template *corev1.PodTemplateSpec) bool {
-	if template == nil {
-		return false
-	}
-	spec := template.Spec
-	if spec.NodeName != "" && spec.NodeName != node.Name {
-		return false
-	}
-	return nodeSelectorMatches(spec.NodeSelector, node.Labels) &&
-		nodeAffinityMatches(spec.Affinity, node) &&
-		nodeTaintsTolerated(node.Spec.Taints, spec.Tolerations)
-}
-
-func nodeSelectorMatches(selector, labels map[string]string) bool {
-	for key, want := range selector {
-		if labels[key] != want {
-			return false
-		}
-	}
-	return true
-}
-
-func nodeAffinityMatches(affinity *corev1.Affinity, node corev1.Node) bool {
-	if affinity == nil || affinity.NodeAffinity == nil ||
-		affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
-		return true
-	}
-	for _, term := range affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms {
-		if nodeSelectorTermMatches(term, node) {
-			return true
-		}
-	}
-	return false
-}
-
-func nodeSelectorTermMatches(term corev1.NodeSelectorTerm, node corev1.Node) bool {
-	if len(term.MatchExpressions) == 0 && len(term.MatchFields) == 0 {
-		return false
-	}
-	for _, requirement := range term.MatchExpressions {
-		value, found := node.Labels[requirement.Key]
-		if !nodeSelectorRequirementMatches(requirement, value, found) {
-			return false
-		}
-	}
-	for _, requirement := range term.MatchFields {
-		value, found := nodeFieldValue(node, requirement.Key)
-		if !found || !nodeSelectorRequirementMatches(requirement, value, true) {
-			return false
-		}
-	}
-	return true
-}
-
-func nodeFieldValue(node corev1.Node, key string) (string, bool) {
-	if key == "metadata.name" {
-		return node.Name, true
-	}
-	return "", false
-}
-
-func nodeSelectorRequirementMatches(requirement corev1.NodeSelectorRequirement, value string, found bool) bool {
-	switch requirement.Operator {
-	case corev1.NodeSelectorOpIn:
-		return found && stringInSet(value, requirement.Values)
-	case corev1.NodeSelectorOpNotIn:
-		return !found || !stringInSet(value, requirement.Values)
-	case corev1.NodeSelectorOpExists:
-		return found
-	case corev1.NodeSelectorOpDoesNotExist:
-		return !found
-	case corev1.NodeSelectorOpGt, corev1.NodeSelectorOpLt:
-		return intRequirementMatches(value, requirement)
-	default:
-		return false
-	}
-}
-
-func intRequirementMatches(value string, requirement corev1.NodeSelectorRequirement) bool {
-	if len(requirement.Values) != 1 {
-		return false
-	}
-	got, err := strconv.Atoi(value)
+	summaries, err := s.managedCacheRuntimeSummariesForGate(ctx, managed)
 	if err != nil {
-		return false
+		return deliveryGate{}, err
 	}
-	want, err := strconv.Atoi(requirement.Values[0])
-	if err != nil {
-		return false
-	}
-	if requirement.Operator == corev1.NodeSelectorOpGt {
-		return got > want
-	}
-	return got < want
+
+	return managedCacheGateForNodes(nodes.Items, template, managed.CapacityBytes, artifacts, summaries)
 }
 
-func stringInSet(value string, values []string) bool {
-	for _, item := range values {
-		if item == value {
-			return true
-		}
+func (s *Service) managedCacheRuntimeSummariesForGate(
+	ctx context.Context,
+	managed ManagedCacheOptions,
+) (map[string]nodecache.RuntimeUsageSummary, error) {
+	if managed.CapacityBytes <= 0 {
+		return nil, nil
 	}
-	return false
+	return s.managedCacheRuntimeSummaries(ctx, managed)
 }
 
-func nodeTaintsTolerated(taints []corev1.Taint, tolerations []corev1.Toleration) bool {
-	for _, taint := range taints {
-		if !hardTaint(taint) || taintTolerated(taint, tolerations) {
+func managedCacheGateForNodes(
+	nodes []corev1.Node,
+	template *corev1.PodTemplateSpec,
+	capacityBytes int64,
+	artifacts []nodecache.DesiredArtifact,
+	summaries map[string]nodecache.RuntimeUsageSummary,
+) (deliveryGate, error) {
+	matchedNodes := 0
+	summarizedNodes := 0
+	var bestMissingBytes, bestAvailableBytes int64
+	for index := range nodes {
+		node := nodes[index]
+		if !nodeFitsTemplate(node, template) {
 			continue
 		}
+		matchedNodes++
+		if capacityBytes <= 0 {
+			return deliveryGate{Ready: true}, nil
+		}
+
+		summary, found := summaries[node.Name]
+		if !found {
+			continue
+		}
+		summarizedNodes++
+		missingBytes, err := nodecache.MissingSizeBytes(summary, artifacts)
+		if err != nil {
+			return deliveryGate{}, err
+		}
+		if missingBytes <= summary.AvailableBytes {
+			return deliveryGate{Ready: true}, nil
+		}
+		if bestMissingBytes == 0 || missingBytes-summary.AvailableBytes < bestMissingBytes-bestAvailableBytes {
+			bestMissingBytes = missingBytes
+			bestAvailableBytes = summary.AvailableBytes
+		}
+	}
+	if matchedNodes == 0 {
+		return deliveryGate{
+			Reason:  DeliveryGateReasonNoReadyNodeCacheRuntime,
+			Message: "SharedDirect node cache has no ready node matching workload scheduling constraints",
+		}, nil
+	}
+	if summarizedNodes < matchedNodes {
+		return deliveryGate{
+			Reason:  DeliveryGateReasonNoReadyNodeCacheRuntime,
+			Message: "SharedDirect node cache is waiting for per-node usage summary on a matching ready node",
+		}, nil
+	}
+	return deliveryGate{
+		Reason: DeliveryGateReasonInsufficientNodeCacheCapacity,
+		Message: fmt.Sprintf(
+			"SharedDirect node cache has no matching ready node with enough free cache space: missingBytes=%d availableBytes=%d",
+			bestMissingBytes,
+			bestAvailableBytes,
+		),
+	}, nil
+}
+
+func (s *Service) managedCacheRuntimeSummaries(ctx context.Context, managed ManagedCacheOptions) (map[string]nodecache.RuntimeUsageSummary, error) {
+	namespace := strings.TrimSpace(managed.RuntimeNamespace)
+	if namespace == "" {
+		namespace = strings.TrimSpace(s.options.RegistrySourceNamespace)
+	}
+	if namespace == "" {
+		return nil, nil
+	}
+	pods := &corev1.PodList{}
+	if err := s.client.List(ctx, pods,
+		client.InNamespace(namespace),
+		client.MatchingLabels{k8snodecacheruntime.ManagedLabelKey: k8snodecacheruntime.ManagedLabelValue},
+	); err != nil {
+		return nil, err
+	}
+	summaries := make(map[string]nodecache.RuntimeUsageSummary, len(pods.Items))
+	for index := range pods.Items {
+		pod := &pods.Items[index]
+		if !runtimePodReady(pod) {
+			continue
+		}
+		summary, found, err := k8snodecacheruntime.UsageSummaryFromPod(pod)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			summaries[summary.NodeName] = summary
+		}
+	}
+	return summaries, nil
+}
+
+func runtimePodReady(pod *corev1.Pod) bool {
+	if pod == nil || pod.DeletionTimestamp != nil {
 		return false
 	}
-	return true
-}
-
-func hardTaint(taint corev1.Taint) bool {
-	return taint.Effect == corev1.TaintEffectNoSchedule ||
-		taint.Effect == corev1.TaintEffectNoExecute
-}
-
-func taintTolerated(taint corev1.Taint, tolerations []corev1.Toleration) bool {
-	for _, toleration := range tolerations {
-		if tolerationMatchesTaint(toleration, taint) {
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
 			return true
 		}
 	}
 	return false
-}
-
-func tolerationMatchesTaint(toleration corev1.Toleration, taint corev1.Taint) bool {
-	if toleration.Effect != "" && toleration.Effect != taint.Effect {
-		return false
-	}
-	switch toleration.Operator {
-	case corev1.TolerationOpExists:
-		return toleration.Key == "" || toleration.Key == taint.Key
-	case corev1.TolerationOpEqual, "":
-		return toleration.Key == taint.Key && toleration.Value == taint.Value
-	default:
-		return false
-	}
 }

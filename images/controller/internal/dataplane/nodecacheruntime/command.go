@@ -88,6 +88,10 @@ func Run(args []string) int {
 	if err != nil {
 		return cmdsupport.CommandError(commandName, err)
 	}
+	usageReporter, err := k8snodecacheruntime.NewInClusterUsageReporter()
+	if err != nil {
+		return cmdsupport.CommandError(commandName, err)
+	}
 	errCh := make(chan error, 2)
 	go func() {
 		errCh <- nodecachecsi.Run(ctx, nodecachecsi.Options{
@@ -106,6 +110,8 @@ func Run(args []string) int {
 				MaxUnusedAge:      config.MaxUnusedAge,
 				ScanInterval:      config.ScanInterval,
 			},
+			NodeName: config.NodeName,
+			Reporter: usageReporter,
 		}, nodeDesiredArtifactLoader{client: desiredArtifactsClient, nodeName: config.NodeName}, nodeCachePrefetcher(cmdsupport.RegistryAuthFromEnv(publicationOCIInsecureEnv)))
 	}()
 

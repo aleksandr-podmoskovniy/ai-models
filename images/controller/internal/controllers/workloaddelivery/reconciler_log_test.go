@@ -94,11 +94,11 @@ func TestDeploymentReconcilerLogsMeaningfulRuntimeDeliveryChange(t *testing.T) {
 	if got, want := logs.count(`"msg":"runtime delivery changed"`), 1; got != want {
 		t.Fatalf("changed log count = %d, want %d, logs=%q", got, want, logs.buffer.String())
 	}
-	if !strings.Contains(logs.buffer.String(), `"previousDigest":"sha256:d3a98df3d0fff2a2249cf61339492f260122b703621d667259e832681f008d55"`) {
-		t.Fatalf("logs do not contain previousDigest, logs=%q", logs.buffer.String())
+	if !strings.Contains(logs.buffer.String(), `"previousArtifactDigest":"sha256:d3a98df3d0fff2a2249cf61339492f260122b703621d667259e832681f008d55"`) {
+		t.Fatalf("logs do not contain previousArtifactDigest, logs=%q", logs.buffer.String())
 	}
-	if !strings.Contains(logs.buffer.String(), `"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"`) {
-		t.Fatalf("logs do not contain new digest, logs=%q", logs.buffer.String())
+	if !strings.Contains(logs.buffer.String(), `"artifactDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"`) {
+		t.Fatalf("logs do not contain new artifactDigest, logs=%q", logs.buffer.String())
 	}
 	if !strings.Contains(logs.buffer.String(), `"deliveryMode":"`+string(modeldelivery.DeliveryModeMaterializeBridge)+`"`) {
 		t.Fatalf("logs do not contain delivery mode, logs=%q", logs.buffer.String())

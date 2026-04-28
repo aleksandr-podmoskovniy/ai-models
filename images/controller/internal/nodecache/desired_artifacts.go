@@ -42,6 +42,7 @@ type DesiredArtifact struct {
 	ArtifactURI string
 	Digest      string
 	Family      string
+	SizeBytes   int64
 }
 
 func DesiredArtifactsFromWorkloadAnnotations(annotations map[string]string) ([]DesiredArtifact, bool, error) {
@@ -64,9 +65,10 @@ func DesiredArtifactsFromWorkloadAnnotations(annotations map[string]string) ([]D
 }
 
 type resolvedModelAnnotation struct {
-	URI    string `json:"uri"`
-	Digest string `json:"digest"`
-	Family string `json:"family,omitempty"`
+	URI       string `json:"uri"`
+	Digest    string `json:"digest"`
+	Family    string `json:"family,omitempty"`
+	SizeBytes int64  `json:"sizeBytes,omitempty"`
 }
 
 func desiredArtifactsFromResolvedModels(value string) ([]DesiredArtifact, error) {
@@ -80,6 +82,7 @@ func desiredArtifactsFromResolvedModels(value string) ([]DesiredArtifact, error)
 			ArtifactURI: entry.URI,
 			Digest:      entry.Digest,
 			Family:      entry.Family,
+			SizeBytes:   entry.SizeBytes,
 		})
 	}
 	return NormalizeDesiredArtifacts(artifacts)
@@ -98,6 +101,7 @@ func NormalizeDesiredArtifacts(artifacts []DesiredArtifact) ([]DesiredArtifact, 
 			ArtifactURI: strings.TrimSpace(artifact.ArtifactURI),
 			Digest:      strings.TrimSpace(artifact.Digest),
 			Family:      strings.TrimSpace(artifact.Family),
+			SizeBytes:   artifact.SizeBytes,
 		}
 		switch {
 		case artifact.ArtifactURI == "":
@@ -112,20 +116,13 @@ func NormalizeDesiredArtifacts(artifacts []DesiredArtifact) ([]DesiredArtifact, 
 			normalized = append(normalized, artifact)
 			continue
 		}
-		if existing.ArtifactURI != artifact.ArtifactURI {
-			return nil, fmt.Errorf("node cache desired digest %q maps to multiple artifact URIs", artifact.Digest)
+		merged, err := mergeDesiredArtifact(existing, artifact)
+		if err != nil {
+			return nil, err
 		}
-		if existing.Family != "" && artifact.Family != "" && existing.Family != artifact.Family {
-			return nil, fmt.Errorf("node cache desired digest %q maps to multiple artifact families", artifact.Digest)
-		}
-		if existing.Family == "" && artifact.Family != "" {
-			seen[artifact.Digest] = artifact
-			for index := range normalized {
-				if normalized[index].Digest == artifact.Digest {
-					normalized[index] = artifact
-					break
-				}
-			}
+		if merged != existing {
+			seen[artifact.Digest] = merged
+			replaceDesiredArtifact(normalized, merged)
 		}
 	}
 
@@ -133,6 +130,36 @@ func NormalizeDesiredArtifacts(artifacts []DesiredArtifact) ([]DesiredArtifact, 
 		return normalized[i].Digest < normalized[j].Digest
 	})
 	return normalized, nil
+}
+
+func mergeDesiredArtifact(existing, artifact DesiredArtifact) (DesiredArtifact, error) {
+	if existing.ArtifactURI != artifact.ArtifactURI {
+		return DesiredArtifact{}, fmt.Errorf("node cache desired digest %q maps to multiple artifact URIs", artifact.Digest)
+	}
+	if existing.Family != "" && artifact.Family != "" && existing.Family != artifact.Family {
+		return DesiredArtifact{}, fmt.Errorf("node cache desired digest %q maps to multiple artifact families", artifact.Digest)
+	}
+	if existing.SizeBytes > 0 && artifact.SizeBytes > 0 && existing.SizeBytes != artifact.SizeBytes {
+		return DesiredArtifact{}, fmt.Errorf("node cache desired digest %q maps to multiple artifact sizes", artifact.Digest)
+	}
+
+	merged := existing
+	if merged.Family == "" && artifact.Family != "" {
+		merged.Family = artifact.Family
+	}
+	if merged.SizeBytes <= 0 && artifact.SizeBytes > 0 {
+		merged.SizeBytes = artifact.SizeBytes
+	}
+	return merged, nil
+}
+
+func replaceDesiredArtifact(artifacts []DesiredArtifact, replacement DesiredArtifact) {
+	for index := range artifacts {
+		if artifacts[index].Digest == replacement.Digest {
+			artifacts[index] = replacement
+			return
+		}
+	}
 }
 
 func ProtectedDigests(artifacts []DesiredArtifact) []string {
