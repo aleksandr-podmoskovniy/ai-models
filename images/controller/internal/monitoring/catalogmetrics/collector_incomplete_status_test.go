@@ -62,4 +62,7 @@ func TestCollectorLeavesCalculatedFieldsEmptyWhenStatusIsIncomplete(t *testing.T
 		"namespace": model.Namespace,
 		"uid":       string(model.UID),
 	}, 0)
+	assertGaugeValue(t, families, "d8_ai_models_collector_up", map[string]string{
+		"collector": collectorName,
+	}, 1)
 }

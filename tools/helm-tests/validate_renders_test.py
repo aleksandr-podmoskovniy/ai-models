@@ -83,6 +83,7 @@ metadata:
   annotations:
     user-authz.deckhouse.io/access-level: PrivilegedUser
   name: d8:user-authz:ai-models:privileged-user
+  {{- include "helm_lib_module_labels" (list .) | nindent 2 }}
 rules: []
 ---
 metadata:
@@ -98,6 +99,7 @@ metadata:
   annotations:
     user-authz.deckhouse.io/access-level: Admin
   name: d8:user-authz:ai-models:admin
+  {{- include "helm_lib_module_labels" (list .) | nindent 2 }}
 rules: []
 ---
 metadata:
@@ -113,19 +115,36 @@ metadata:
   annotations:
     user-authz.deckhouse.io/access-level: ClusterAdmin
   name: d8:user-authz:ai-models:cluster-admin
+  {{- include "helm_lib_module_labels" (list .) | nindent 2 }}
 rules: []
 """,
-            "templates/rbacv2/use/view.yaml": """rules:
+            "templates/rbacv2/use/view.yaml": """metadata:
+  labels:
+    rbac.deckhouse.io/aggregate-to-kubernetes-as: viewer
+    rbac.deckhouse.io/kind: use
+  name: d8:use:capability:module:ai-models:view
+rules:
   - apiGroups: ["ai.deckhouse.io"]
     resources: ["models"]
     verbs: ["get", "list", "watch"]
 """,
-            "templates/rbacv2/use/edit.yaml": """rules:
+            "templates/rbacv2/use/edit.yaml": """metadata:
+  labels:
+    rbac.deckhouse.io/aggregate-to-kubernetes-as: manager
+    rbac.deckhouse.io/kind: use
+  name: d8:use:capability:module:ai-models:edit
+rules:
   - apiGroups: ["ai.deckhouse.io"]
     resources: ["models"]
     verbs: ["create", "update", "patch", "delete", "deletecollection"]
 """,
-            "templates/rbacv2/manage/view.yaml": """rules:
+            "templates/rbacv2/manage/view.yaml": """metadata:
+  labels:
+    rbac.deckhouse.io/aggregate-to-kubernetes-as: viewer
+    rbac.deckhouse.io/kind: manage
+    rbac.deckhouse.io/level: module
+  name: d8:manage:permission:module:ai-models:view
+rules:
   - apiGroups: ["ai.deckhouse.io"]
     resources: ["models", "clustermodels"]
     verbs: ["get", "list", "watch"]
@@ -134,7 +153,13 @@ rules: []
     resourceNames: ["ai-models"]
     verbs: ["get", "list", "watch"]
 """,
-            "templates/rbacv2/manage/edit.yaml": """rules:
+            "templates/rbacv2/manage/edit.yaml": """metadata:
+  labels:
+    rbac.deckhouse.io/aggregate-to-kubernetes-as: manager
+    rbac.deckhouse.io/kind: manage
+    rbac.deckhouse.io/level: module
+  name: d8:manage:permission:module:ai-models:edit
+rules:
   - apiGroups: ["ai.deckhouse.io"]
     resources: ["models", "clustermodels"]
     verbs: ["create", "update", "patch", "delete", "deletecollection"]

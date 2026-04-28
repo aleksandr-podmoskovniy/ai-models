@@ -25,5 +25,4 @@ spec:
         - {{ include "ai-models.uploadPublicHost" . }}
       secretName: {{ include "ai-models.uploadIngressTLSSecretName" . }}
   {{- end }}
-{{ include "helm_lib_module_https_copy_custom_certificate" (list . (include "ai-models.namespace" .) "ingress-tls") }}
 {{- end }}

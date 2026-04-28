@@ -23,6 +23,7 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageaccounting"
 	"github.com/deckhouse/ai-models/controller/internal/domain/storagecapacity"
+	"github.com/deckhouse/ai-models/controller/internal/monitoring/collectorhealth"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -31,6 +32,7 @@ const collectorName = "storage-usage"
 type Collector struct {
 	store  *storageaccounting.Store
 	logger *slog.Logger
+	health *collectorhealth.State
 }
 
 func SetupCollector(store *storageaccounting.Store, registerer prometheus.Registerer, logger *slog.Logger) {
@@ -44,6 +46,7 @@ func NewCollector(store *storageaccounting.Store, logger *slog.Logger) *Collecto
 	return &Collector{
 		store:  store,
 		logger: logger.With(slog.String("collector", collectorName)),
+		health: collectorhealth.New(collectorName),
 	}
 }
 
@@ -57,15 +60,18 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- usedBytesMetric
 	ch <- reservedBytesMetric
 	ch <- availableBytesMetric
+	c.health.Describe(ch)
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
+	startedAt := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	usage, err := c.usage(ctx)
 	if err != nil {
 		c.logger.Error("failed to collect storage usage", slog.Any("error", err))
+		c.health.Report(ch, startedAt, false)
 		return
 	}
 	ch <- prometheus.MustNewConstMetric(capacityKnownMetric, prometheus.GaugeValue, boolFloat64(usage.CapacityKnown))
@@ -73,6 +79,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(usedBytesMetric, prometheus.GaugeValue, float64(usage.UsedBytes))
 	ch <- prometheus.MustNewConstMetric(reservedBytesMetric, prometheus.GaugeValue, float64(usage.ReservedBytes))
 	ch <- prometheus.MustNewConstMetric(availableBytesMetric, prometheus.GaugeValue, float64(usage.AvailableBytes))
+	c.health.Report(ch, startedAt, true)
 }
 
 func (c *Collector) usage(ctx context.Context) (storagecapacity.Usage, error) {

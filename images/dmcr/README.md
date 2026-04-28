@@ -65,8 +65,8 @@ productized DMCR cleanup surface:
   module-private cleanup-state Secrets in the module namespace; it no longer
   needs cluster-wide `Model` / `ClusterModel` reads;
 - `dmcr-cleaner` writes repo-owned structured JSON lifecycle logs under the
-  `dmcr-garbage-collection` logger; the main `dmcr` process stays on upstream
-  logging behavior.
+  `dmcr-garbage-collection` logger with normalized `err` error attributes; the
+  main `dmcr` process stays on upstream logging behavior.
 
 The command package stays intentionally thin. The actual garbage-collection
 lifecycle implementation now lives under `images/dmcr/internal/garbagecollection`.

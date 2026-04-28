@@ -94,6 +94,9 @@ func TestCollectorReportsDMCRGarbageCollectionRequestLifecycleMetrics(t *testing
 	assertMetricAbsent(t, families, "d8_ai_models_node_cache_runtime_nodes_desired", map[string]string{
 		"namespace": "",
 	})
+	assertGaugeValue(t, families, "d8_ai_models_collector_up", map[string]string{
+		"collector": collectorName,
+	}, 1)
 }
 
 func gatherMetricsAt(t *testing.T, options Options, now time.Time, objects ...client.Object) []*dto.MetricFamily {

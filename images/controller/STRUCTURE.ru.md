@@ -58,6 +58,7 @@ images/controller/
       uploadstaging/
       auditsink/
     monitoring/
+      collectorhealth/
       catalogmetrics/
       runtimehealth/
       storageusage/
@@ -139,7 +140,9 @@ images/controller/
 - `bootstrap` владеет scheme assembly, `ctrl.Manager`, controller registration,
   health/ready checks и metrics wiring.
 - `cmdsupport` не должен знать concrete adapters, payload models или
-  source-specific orchestration.
+  source-specific orchestration. Его logging glue нормализует envelope
+  (`ts`, `level`, `msg`, `logger`) и error attribute как `err`, чтобы runtime
+  logs оставались совместимыми с platform-style structured logs.
 
 ### Domain
 
@@ -189,6 +192,10 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
   materialization plus internal current-link и stable workload-model-link
   helper surface, single-writer coordination, per-digest retry/backoff,
   bounded eviction planning и module-owned maintenance loop;
+- `internal/monitoring/collectorhealth/` — общий low-cardinality scrape-health
+  contract для controller collectors: `collector_up`, scrape duration and last
+  successful scrape timestamp. Он не знает public objects и не заменяет
+  domain metrics;
 - `internal/monitoring/catalogmetrics/` — Prometheus collectors over public
   `Model` / `ClusterModel` truth.
 - `internal/monitoring/runtimehealth/` — Prometheus collectors over managed
@@ -397,6 +404,8 @@ extraction; если пакет решает policy, runtime semantics или st
   mixed service shell;
 - `catalogmetrics` tests split на state-metric emission, incomplete-status
   behavior and thin gather/assert helpers вместо одного mixed collector file;
+- `collectorhealth` tests prove reusable scrape-health semantics and duplicate
+  collector registration safety through per-collector const labels;
 - `runtimehealth` tests split на managed runtime resource emission and thin
   gather/assert helpers instead of mixing runtime-plane health with public
   catalog truth;

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deckhouse/ai-models/controller/internal/monitoring/collectorhealth"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,6 +54,7 @@ func NewCollector(reader client.Reader, logger *slog.Logger, options Options) *C
 		cleanupNamespace:   options.CleanupNamespace,
 		nodeCacheEnabled:   options.NodeCacheEnabled,
 		nodeSelectorLabels: options.NodeSelectorLabels,
+		health:             collectorhealth.New(collectorName),
 		now:                time.Now,
 	}
 }
@@ -64,6 +66,7 @@ type Collector struct {
 	cleanupNamespace   string
 	nodeCacheEnabled   bool
 	nodeSelectorLabels map[string]string
+	health             *collectorhealth.State
 	now                func() time.Time
 }
 
@@ -75,12 +78,15 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	for _, desc := range collectorDescs() {
 		ch <- desc
 	}
+	c.health.Describe(ch)
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
+	startedAt := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
+	success := true
 	var pods []corev1.Pod
 	var pvcs []corev1.PersistentVolumeClaim
 	var selectedNodes []corev1.Node
@@ -88,22 +94,27 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		var err error
 		pods, err = c.listNodeCacheRuntimePods(ctx)
 		if err != nil {
+			success = false
 			c.logger.Error("failed to list node-cache runtime Pods for metrics collection", slog.Any("error", err))
 		}
 		pvcs, err = c.listNodeCacheRuntimePVCs(ctx)
 		if err != nil {
+			success = false
 			c.logger.Error("failed to list node-cache runtime PVCs for metrics collection", slog.Any("error", err))
 		}
 		selectedNodes, err = c.listSelectedNodes(ctx)
 		if err != nil {
+			success = false
 			c.logger.Error("failed to list selected nodes for runtime-health metrics collection", slog.Any("error", err))
 		}
 	}
 	if err := c.collectManagedWorkloadDelivery(ctx, ch); err != nil {
+		success = false
 		c.logger.Error("failed to list managed workloads for runtime-health metrics collection", slog.Any("error", err))
 	}
 	gcRequests, err := c.listDMCRGCRequests(ctx)
 	if err != nil {
+		success = false
 		c.logger.Error("failed to list DMCR garbage-collection requests for runtime-health metrics collection", slog.Any("error", err))
 	}
 
@@ -117,6 +128,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 	reportDMCRGCRequests(ch, strings.TrimSpace(c.cleanupNamespace), gcRequests, c.now())
+	c.health.Report(ch, startedAt, success)
 }
 
 func normalizeOptions(options Options) Options {

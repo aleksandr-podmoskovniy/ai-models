@@ -1,5 +1,8 @@
 # Plan: pod placement policy alignment
 
+Archived: placement slice completed and folded into
+`plans/active/live-e2e-ha-validation` as a live rollout/e2e check.
+
 ## 1. Phase
 
 Phase 1/2 operations hardening. Change is limited to module-owned deployment
@@ -18,7 +21,7 @@ template-only with clear local references in DMCR/DVCR-style placement.
   workstream.
 - `artifact-storage-quota-design` — archived to
   `plans/archive/2026/artifact-storage-quota-design`; previous slice is done.
-- `pod-placement-policy` — current executable bundle.
+- `pod-placement-policy` — archived after completion.
 
 ## 4. Slices
 

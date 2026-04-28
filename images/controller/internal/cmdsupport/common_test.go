@@ -126,8 +126,8 @@ func TestCommandErrorUsesDefaultLogger(t *testing.T) {
 	if got, want := record["level"], "error"; got != want {
 		t.Fatalf("level = %#v, want %q", got, want)
 	}
-	if got, ok := record["error"].(string); !ok || !strings.Contains(got, "boom") {
-		t.Fatalf("error field = %#v, want substring %q", record["error"], "boom")
+	if got, ok := record["err"].(string); !ok || !strings.Contains(got, "boom") {
+		t.Fatalf("err field = %#v, want substring %q", record["err"], "boom")
 	}
 }
 

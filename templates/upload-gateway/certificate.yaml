@@ -1,0 +1,20 @@
+{{- if and (include "ai-models.isEnabled" .) (include "ai-models.uploadPublicHost" . | trim) }}
+{{- if eq (include "helm_lib_module_https_mode" .) "CertManager" }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "ai-models.uploadGatewayName" . }}
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "upload-gateway")) | nindent 2 }}
+spec:
+  certificateOwnerRef: false
+  secretName: {{ include "helm_lib_module_https_secret_name" (list . "ingress-tls") }}
+  {{ include "helm_lib_module_generate_common_name" (list . "ai-models") | nindent 2 }}
+  dnsNames:
+    - {{ include "ai-models.uploadPublicHost" . }}
+  issuerRef:
+    name: {{ include "helm_lib_module_https_cert_manager_cluster_issuer_name" . }}
+    kind: ClusterIssuer
+{{- end }}
+{{- end }}

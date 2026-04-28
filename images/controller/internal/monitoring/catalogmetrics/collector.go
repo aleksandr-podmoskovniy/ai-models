@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/deckhouse/ai-models/controller/internal/monitoring/collectorhealth"
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -39,12 +40,14 @@ func NewCollector(reader client.Reader, logger *slog.Logger) *Collector {
 	return &Collector{
 		reader: reader,
 		logger: logger.With(slog.String("collector", collectorName)),
+		health: collectorhealth.New(collectorName),
 	}
 }
 
 type Collector struct {
 	reader client.Reader
 	logger *slog.Logger
+	health *collectorhealth.State
 }
 
 func (c *Collector) Register(registerer prometheus.Registerer) {
@@ -55,16 +58,22 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	for _, desc := range collectorDescs() {
 		ch <- desc
 	}
+	c.health.Describe(ch)
 }
 
 func (c *Collector) Collect(ch chan<- prometheus.Metric) {
+	startedAt := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
+	success := true
 	if err := c.collectModels(ctx, ch); err != nil {
+		success = false
 		c.logger.Error("failed to list Models for metrics collection", slog.Any("error", err))
 	}
 	if err := c.collectClusterModels(ctx, ch); err != nil {
+		success = false
 		c.logger.Error("failed to list ClusterModels for metrics collection", slog.Any("error", err))
 	}
+	c.health.Report(ch, startedAt, success)
 }

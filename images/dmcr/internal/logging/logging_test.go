@@ -19,6 +19,9 @@ package logging
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -52,5 +55,29 @@ func TestNewComponentLoggerUsesNormalizedJSONEnvelope(t *testing.T) {
 	}
 	if got := entry["request_count"]; got != float64(1) {
 		t.Fatalf("request_count = %v, want 1", got)
+	}
+}
+
+func TestCommandErrorUsesNormalizedErrAttr(t *testing.T) {
+	var buffer bytes.Buffer
+	logger, err := newComponentLogger("json", "dmcr-garbage-collection", &buffer)
+	if err != nil {
+		t.Fatalf("newComponentLogger() error = %v", err)
+	}
+
+	previous := slog.Default()
+	SetDefaultLogger(logger)
+	t.Cleanup(func() { SetDefaultLogger(previous) })
+
+	if code := CommandError("dmcr-garbage-collection", errors.New("boom")); code != 1 {
+		t.Fatalf("CommandError() code = %d, want 1", code)
+	}
+
+	var entry map[string]any
+	if err := json.Unmarshal(buffer.Bytes(), &entry); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got, ok := entry["err"].(string); !ok || !strings.Contains(got, "boom") {
+		t.Fatalf("err = %v, want boom substring", got)
 	}
 }

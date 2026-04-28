@@ -115,6 +115,9 @@ func normalizeLogKey(key string) string {
 	if key == "" {
 		return key
 	}
+	if key == "error" {
+		return "err"
+	}
 
 	var builder strings.Builder
 	runes := []rune(key)

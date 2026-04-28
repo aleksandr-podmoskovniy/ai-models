@@ -30,6 +30,7 @@ LEGACY_RENDER_MARKERS = (
     "name: ai-models-backend-crypto",
     "name: ai-models-backend-trust-ca",
     "app.kubernetes.io/component: backend",
+    "D8AIModelsBackend",
 )
 
 DISALLOWED_RENDER_MARKERS = (
@@ -95,6 +96,14 @@ HUMAN_RBAC_TEMPLATE_PATHS = (
     Path("templates/rbacv2/manage/view.yaml"),
     Path("templates/rbacv2/manage/edit.yaml"),
 )
+
+
+def _require_markers(
+    errors: list[str], template: str, content: str, markers: tuple[str, ...]
+) -> None:
+    for marker in markers:
+        if marker not in content:
+            errors.append(f"{template}: missing {marker}")
 HUMAN_RBAC_FORBIDDEN_MARKERS = (
     "models/status",
     "models/finalizers",
@@ -283,6 +292,13 @@ def _find_document(
         if document.get("kind") == kind and metadata.get("name") == name:
             return document
     return None
+
+
+def _find_raw_document(content: str, kind: str, name: str) -> str:
+    for raw_document in _split_yaml_documents(content):
+        if _find_document(_parse_render_documents(raw_document), kind, name):
+            return raw_document
+    return ""
 
 
 def _nested_string(mapping: object, *keys: str) -> str | None:
@@ -756,6 +772,11 @@ def _validate_human_rbac_sources(repo_root: Path) -> list[str]:
         if f"name: d8:user-authz:ai-models:{role_name}" not in user_authz:
             errors.append(f"{user_authz_path}: missing role for access level {level}")
 
+    if "user-authz.deckhouse.io/access-level: SuperAdmin" in user_authz:
+        errors.append(
+            f"{user_authz_path}: must not define module-local SuperAdmin fragment; Deckhouse user-authz does not aggregate custom SuperAdmin ClusterRoles"
+        )
+
     expected_user_rule = 'resources: ["models", "clustermodels"]'
     expected_read_verbs = 'verbs: ["get", "list", "watch"]'
     if expected_user_rule not in user_authz or expected_read_verbs not in user_authz:
@@ -777,6 +798,18 @@ def _validate_human_rbac_sources(repo_root: Path) -> list[str]:
             f"{user_authz_path}: ClusterEditor access level must grant write-only clustermodels delta"
         )
 
+    for level in ("PrivilegedUser", "Admin", "ClusterAdmin"):
+        role_name = re.sub(r"(?<!^)([A-Z])", r"-\1", level).lower()
+        empty_role_marker = (
+            f"name: d8:user-authz:ai-models:{role_name}\n"
+            "  {{- include \"helm_lib_module_labels\" (list .) | nindent 2 }}\n"
+            "rules: []"
+        )
+        if empty_role_marker not in user_authz:
+            errors.append(
+                f"{user_authz_path}: {level} must remain an explicit empty delta role unless ai-models adds a real extra privilege for that level"
+            )
+
     for template in HUMAN_RBAC_TEMPLATE_PATHS:
         content = (repo_root / template).read_text(encoding="utf-8").lower()
         for marker in HUMAN_RBAC_FORBIDDEN_MARKERS:
@@ -792,6 +825,51 @@ def _validate_human_rbac_sources(repo_root: Path) -> list[str]:
     if "clustermodels" in use_templates:
         errors.append(
             "templates/rbacv2/use: use roles must not grant cluster-scoped clustermodels"
+        )
+
+    rbacv2_expected = {
+        "templates/rbacv2/use/view.yaml": (
+            "name: d8:use:capability:module:ai-models:view",
+            "rbac.deckhouse.io/aggregate-to-kubernetes-as: viewer",
+            "rbac.deckhouse.io/kind: use",
+            'resources: ["models"]',
+            'verbs: ["get", "list", "watch"]',
+        ),
+        "templates/rbacv2/use/edit.yaml": (
+            "name: d8:use:capability:module:ai-models:edit",
+            "rbac.deckhouse.io/aggregate-to-kubernetes-as: manager",
+            "rbac.deckhouse.io/kind: use",
+            'resources: ["models"]',
+            expected_write_verbs,
+        ),
+        "templates/rbacv2/manage/view.yaml": (
+            "name: d8:manage:permission:module:ai-models:view",
+            "rbac.deckhouse.io/aggregate-to-kubernetes-as: viewer",
+            "rbac.deckhouse.io/kind: manage",
+            "rbac.deckhouse.io/level: module",
+            'resources: ["models", "clustermodels"]',
+            'resources: ["moduleconfigs"]',
+            'resourceNames: ["ai-models"]',
+            'verbs: ["get", "list", "watch"]',
+        ),
+        "templates/rbacv2/manage/edit.yaml": (
+            "name: d8:manage:permission:module:ai-models:edit",
+            "rbac.deckhouse.io/aggregate-to-kubernetes-as: manager",
+            "rbac.deckhouse.io/kind: manage",
+            "rbac.deckhouse.io/level: module",
+            'resources: ["models", "clustermodels"]',
+            'resources: ["moduleconfigs"]',
+            'resourceNames: ["ai-models"]',
+            expected_write_verbs,
+            'verbs: ["create", "update", "patch", "delete"]',
+        ),
+    }
+    for template, markers in rbacv2_expected.items():
+        _require_markers(
+            errors,
+            template,
+            (repo_root / template).read_text(encoding="utf-8"),
+            markers,
         )
 
     use_edit = (repo_root / "templates/rbacv2/use/edit.yaml").read_text(
@@ -838,6 +916,116 @@ def _validate_values_backed_tls_secrets(path: Path, content: str) -> list[str]:
                     errors.append(
                         f"{path.name}: Secret/{secret_name} must not render {key.rstrip(':')}"
                     )
+    return errors
+
+
+def _validate_ai_models_monitoring_wiring(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    for service_name, component in (
+        ("ai-models-controller", "controller"),
+        ("dmcr", "dmcr"),
+    ):
+        service = _find_raw_document(content, "Service", service_name)
+        service_monitor = _find_raw_document(content, "ServiceMonitor", service_name)
+        if not service and not service_monitor:
+            continue
+        if not service:
+            errors.append(f"{path.name}: Service/{service_name} is missing")
+            continue
+        if not service_monitor:
+            errors.append(f"{path.name}: ServiceMonitor/{service_name} is missing")
+            continue
+
+        service_labels = (
+            "app.kubernetes.io/name: ai-models",
+            "app.kubernetes.io/part-of: ai-models",
+            f"app.kubernetes.io/component: {component}",
+        )
+        for label in service_labels:
+            if label not in service:
+                errors.append(
+                    f"{path.name}: Service/{service_name} must expose label {label}"
+                )
+
+        monitor_markers = (
+            (r"(?m)^\s*prometheus:\s*\"?main\"?\s*$", "prometheus: main"),
+            (r"(?m)^\s*matchLabels:\s*$", "matchLabels:"),
+            (
+                r"(?m)^\s*app\.kubernetes\.io/name:\s*ai-models\s*$",
+                "app.kubernetes.io/name: ai-models",
+            ),
+            (
+                r"(?m)^\s*app\.kubernetes\.io/part-of:\s*ai-models\s*$",
+                "app.kubernetes.io/part-of: ai-models",
+            ),
+            (
+                rf"(?m)^\s*app\.kubernetes\.io/component:\s*{component}\s*$",
+                f"app.kubernetes.io/component: {component}",
+            ),
+        )
+        for pattern, marker in monitor_markers:
+            if not re.search(pattern, service_monitor):
+                errors.append(
+                    f"{path.name}: ServiceMonitor/{service_name} must contain {marker}"
+                )
+
+    return errors
+
+
+def _validate_upload_gateway_ingress_tls(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    upload_ingress = ""
+    upload_certificate = ""
+    upload_custom_secret = ""
+
+    for raw_document in _split_yaml_documents(content):
+        documents = _parse_render_documents(raw_document)
+        if _find_document(documents, "Ingress", "ai-models-upload-gateway"):
+            upload_ingress = raw_document
+        if _find_document(documents, "Certificate", "ai-models-upload-gateway"):
+            upload_certificate = raw_document
+        if _find_document(documents, "Secret", "ingress-tls-customcertificate"):
+            upload_custom_secret = raw_document
+
+    if not upload_ingress:
+        return errors
+
+    host_match = re.search(r"(?m)^\s*-\s*host:\s*([^\s]+)\s*$", upload_ingress)
+    secret_match = re.search(r"(?m)^\s*secretName:\s*([^\s]+)\s*$", upload_ingress)
+    if not secret_match:
+        return errors
+
+    ingress_host = host_match.group(1) if host_match else ""
+    ingress_secret = secret_match.group(1)
+    if ingress_secret == "ingress-tls":
+        if not upload_certificate:
+            errors.append(
+                f"{path.name}: upload-gateway Ingress uses ingress-tls but Certificate/ai-models-upload-gateway is missing"
+            )
+            return errors
+        for marker, message in (
+            ("certificateOwnerRef: false", "must not depend on ownerRef for shared ingress TLS Secret"),
+            ("secretName: ingress-tls", "must write the same ingress-tls Secret used by Ingress"),
+            ("kind: ClusterIssuer", "must use Deckhouse ClusterIssuer wiring"),
+        ):
+            if marker not in upload_certificate:
+                errors.append(
+                    f"{path.name}: Certificate/ai-models-upload-gateway {message}"
+                )
+        if ingress_host and f"- {ingress_host}" not in upload_certificate:
+            errors.append(
+                f"{path.name}: Certificate/ai-models-upload-gateway dnsNames must include Ingress host {ingress_host}"
+            )
+    elif ingress_secret == "ingress-tls-customcertificate":
+        if not upload_custom_secret:
+            errors.append(
+                f"{path.name}: upload-gateway Ingress uses ingress-tls-customcertificate but matching Secret is missing"
+            )
+        elif "type: kubernetes.io/tls" not in upload_custom_secret:
+            errors.append(
+                f"{path.name}: Secret/ingress-tls-customcertificate must be kubernetes.io/tls"
+            )
+
     return errors
 
 
@@ -1000,7 +1188,9 @@ def validate_render(path: Path) -> list[str]:
     errors.extend(_validate_runtime_placement(path, content))
     errors.extend(_validate_system_component_placement(path, content))
     errors.extend(_validate_controller_cleanup_runtime(path, content))
+    errors.extend(_validate_ai_models_monitoring_wiring(path, content))
     errors.extend(_validate_values_backed_tls_secrets(path, content))
+    errors.extend(_validate_upload_gateway_ingress_tls(path, content))
     errors.extend(_validate_workload_delivery_webhook(path, content))
     errors.extend(_validate_root_ca_contract(path, content))
     errors.extend(_validate_dmcr_auth_consistency(path, content))
