@@ -84,6 +84,40 @@ func TestModelReconcilerEnqueuesGarbageCollectionRequestAndRemovesFinalizerAfter
 	}
 }
 
+func TestModelReconcilerSnapshotsInFlightDirectUploadBeforeRuntimeCleanup(t *testing.T) {
+	t.Parallel()
+
+	model := newDeletingModel()
+	const sessionToken = "session-token-in-flight"
+	stateSecret := sourceWorkerStateSecretWithSessionToken(t, "d8-ai-models", model.GetUID(), sessionToken)
+	reconciler, kubeClient := newModelReconciler(t, model, stateSecret)
+
+	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(model)})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if result.RequeueAfter <= 0 {
+		t.Fatalf("expected requeue while runtime resources are being removed, got %#v", result)
+	}
+
+	var requestSecret corev1.Secret
+	key := client.ObjectKey{Namespace: "d8-ai-models", Name: dmcrGCRequestSecretName(model.GetUID())}
+	if err := kubeClient.Get(context.Background(), key, &requestSecret); err != nil {
+		t.Fatalf("Get(secret) error = %v", err)
+	}
+	if got, want := string(requestSecret.Data[dmcrGCDirectUploadTokenKey]), sessionToken; got != want {
+		t.Fatalf("expected in-flight direct-upload token %q, got %q", want, got)
+	}
+	if got, want := requestSecret.Annotations[dmcrGCDirectUploadModeKey], dmcrGCDirectUploadModeFast; got != want {
+		t.Fatalf("expected direct-upload cleanup mode %q, got %q", want, got)
+	}
+
+	stateSecretKey := client.ObjectKey{Namespace: "d8-ai-models", Name: stateSecret.Name}
+	if err := kubeClient.Get(context.Background(), stateSecretKey, &corev1.Secret{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected publication state secret to be deleted after token snapshot, got err=%v", err)
+	}
+}
+
 func TestModelReconcilerRemovesFinalizerWhenQueuedGarbageCollectionRequestAlreadyExists(t *testing.T) {
 	t.Parallel()
 

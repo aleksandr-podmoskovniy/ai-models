@@ -33,7 +33,7 @@ func ObserveUploadSession(
 ) (RuntimeObservationDecision, error) {
 	if handle == nil {
 		return RuntimeObservationDecision{
-			Observation: failedObservation("upload session worker pod is missing"),
+			Observation: failedObservation("upload session state is missing"),
 		}, nil
 	}
 
@@ -56,7 +56,7 @@ func ObserveUploadSession(
 		input.StagedHandle = stageHandle
 	case handle.IsFailed():
 		input.State = publicationdomain.RuntimeStateFailed
-		input.Failure = defaultFailureMessage(handle.TerminationMessage, "upload session worker pod failed")
+		input.Failure = defaultFailureMessage(handle.TerminationMessage, "upload session failed")
 	default:
 		input.State = publicationdomain.RuntimeStateRunning
 		input.UploadStatus = &handle.UploadStatus

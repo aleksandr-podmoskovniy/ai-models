@@ -172,6 +172,60 @@ Validation evidence:
 
 - explicit public API decision, а не accidental schema growth.
 
+### Slice 5. Capability vocabulary and public feature summary
+
+Цель:
+
+- расширить `status.resolved.supportedEndpointTypes` до текущих model tasks:
+  embeddings, rerank, STT, TTS, CV, image generation и multimodal;
+- добавить отдельный `status.resolved.supportedFeatures` для modality/tool
+  признаков, которые не являются endpoint: `VisionInput`, `AudioInput`,
+  `AudioOutput`, `ImageOutput`, `MultiModalInput`, `ToolCalling`;
+- трактовать HuggingFace `pipeline_tag` как source-declared metadata signal,
+  а не weak hint;
+- сохранить правило: public projection допускает только exact/derived/source-
+  declared values, но не filename/bytes hints.
+
+Файлы:
+
+- `api/core/v1alpha1/`
+- `crds/`
+- `images/controller/internal/publishedsnapshot/`
+- `images/controller/internal/adapters/modelprofile/`
+- `images/controller/internal/adapters/sourcefetch/`
+- `images/controller/internal/dataplane/publishworker/`
+- `images/controller/internal/domain/publishstate/`
+- `docs/development/MODEL_METADATA_CONTRACT.ru.md`
+
+Проверки:
+
+- `cd api && go test ./...`
+- targeted `go test` for modelprofile/sourcefetch/publishworker/publishstate
+- `bash api/scripts/update-codegen.sh`
+- `bash api/scripts/verify-crdgen.sh`
+- `git diff --check`
+
+RBAC/exposure:
+
+- поле добавляется только в `status.resolved`; существующие роли уже читают
+  `Model` / `ClusterModel` status целиком. Нового доступа к Secret, runtime
+  objects, logs или subresources нет.
+
+Fixture matrix для последующего live smoke после выката:
+
+- embeddings: `sentence-transformers/all-MiniLM-L6-v2`;
+- rerank: `cross-encoder/ms-marco-MiniLM-L6-v2`;
+- STT: `openai/whisper-tiny`;
+- TTS: `facebook/mms-tts-eng`;
+- CV: `google/vit-base-patch16-224`;
+- image generation: `hf-internal-testing/tiny-stable-diffusion-pipe`
+  expected supported only for Safetensors Diffusers-style layouts with
+  `model_index.json` plus selected `.safetensors` weights;
+- multimodal: `hf-internal-testing/tiny-random-LlavaForConditionalGeneration`;
+- tool-calling: `Qwen/Qwen2.5-0.5B-Instruct` profile must expose
+  text/chat endpoints now; `ToolCalling` requires tokenizer/chat-template
+  evidence in a later slice, not architecture guessing.
+
 ## 5. Rollback point
 
 Slice 1 можно безопасно откатить удалением нового task bundle, repo-local design
@@ -203,8 +257,10 @@ doc и ADR в `internal-docs`. Runtime/code/API не меняются.
 - Slice 3 — done: public projection omits low-confidence metadata and filters
   unknown enum-backed values before CRD status writes.
 - Slice 4 — deferred until `ai-inference` has a concrete consumer proof for a
-  public evidence field. Current next executable slice is internal
-  `profilecalc` implementation, not public schema growth.
+  public evidence field.
+- Slice 5 — done: capability vocabulary, public `supportedFeatures`,
+  source-declared task projection and tokenizer-template `ToolCalling`
+  detection implemented.
 
 ## 8. Validation evidence
 
@@ -234,3 +290,27 @@ doc и ADR в `internal-docs`. Runtime/code/API не меняются.
 - API/repo/integration subagent review — passed. Shared conclusion: do not add
   public `footprint/evidence/launchProfiles` now; first remove planner-like
   public fields and keep confidence internal.
+- Capability vocabulary slice — passed:
+  - `cd api && go test ./...`
+  - targeted `go test` for `publishedsnapshot`, `modelprofile`, `sourcefetch`,
+    `publishworker`, `publishstate`
+  - `bash api/scripts/update-codegen.sh`
+  - `bash api/scripts/verify-crdgen.sh`
+  - `cd images/controller && go test ./...`
+  - `cd images/dmcr && go test ./...`
+  - `git diff --check`
+  - `git -C /Users/myskat_90/flant/aleksandr-podmoskovniy/internal-docs diff --check`
+  - `make deadcode`
+  - `make verify`
+- Diffusers-style Safetensors layout follow-up — passed:
+  `model_index.json` now satisfies the Safetensors profile config contract,
+  HuggingFace direct object-source selection keeps nested Diffusers configs and
+  weights, and source-declared `text-to-image` projects `ImageGeneration` /
+  `ImageOutput` without adding runtime launch compatibility claims.
+  Targeted checks: `go test -count=1 ./internal/adapters/modelformat
+  ./internal/adapters/sourcefetch ./internal/dataplane/publishworker` from
+  `images/controller`, plus `git diff --check` and repo-level `make verify`.
+- Review gate — no critical findings. Residual risks are explicit:
+  non-Safetensors Diffusers exports are still unsupported, and `ToolCalling` is
+  a model/template feature, not proof that an inference runtime can wire MCP
+  tools.

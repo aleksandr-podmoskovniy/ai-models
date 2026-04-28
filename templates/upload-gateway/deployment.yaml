@@ -1,0 +1,119 @@
+{{- if (include "ai-models.isEnabled" .) }}
+{{- $priorityClassName := include "ai-models.priorityClassName" . -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-models.uploadGatewayName" . }}
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "upload-gateway")) | nindent 2 }}
+spec:
+  replicas: {{ include "ai-models.controllerReplicas" . | int }}
+  {{- if (include "helm_lib_ha_enabled" .) }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  {{- end }}
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      {{- include "ai-models.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: upload-gateway
+  template:
+    metadata:
+      labels:
+        {{- include "ai-models.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: upload-gateway
+      annotations:
+        kubectl.kubernetes.io/default-container: upload-gateway
+    spec:
+      {{- if (include "ai-models.hasRegistrySecret" .) }}
+      imagePullSecrets:
+        - name: {{ include "ai-models.registrySecretName" . }}
+      {{- end }}
+      serviceAccountName: {{ include "ai-models.uploadGatewayServiceAccountName" . }}
+      {{- include "helm_lib_module_pod_security_context_run_as_user_deckhouse_with_writable_fs" . | nindent 6 }}
+      {{- include "helm_lib_pod_anti_affinity_for_ha" (list . (dict "app.kubernetes.io/name" (include "ai-models.fullname" .) "app.kubernetes.io/component" "upload-gateway")) | nindent 6 }}
+      {{- include "helm_lib_priority_class" (tuple . $priorityClassName) | nindent 6 }}
+      {{- include "helm_lib_node_selector" (tuple . "master") | nindent 6 }}
+      {{- include "helm_lib_tolerations" (tuple . "any-node") | nindent 6 }}
+      containers:
+        - name: upload-gateway
+          {{- include "helm_lib_module_container_security_context_read_only_root_filesystem_capabilities_drop_all_pss_restricted" . | nindent 10 }}
+          image: {{ include "helm_lib_module_image" (list . "controllerRuntime") }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - upload-gateway
+            - --listen-port={{ include "ai-models.uploadGatewayPort" . }}
+            - --session-secret-namespace=$(POD_NAMESPACE)
+            - --staging-bucket={{ include "ai-models.artifactsBucket" . }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: LOG_FORMAT
+              value: json
+            - name: AI_MODELS_S3_ENDPOINT_URL
+              value: {{ include "ai-models.artifactsEndpoint" . | quote }}
+            - name: AI_MODELS_S3_REGION
+              value: {{ include "ai-models.artifactsRegion" . | quote }}
+            - name: AI_MODELS_S3_USE_PATH_STYLE
+              value: {{ include "ai-models.artifactsUsePathStyleBool" . | quote }}
+            - name: AI_MODELS_S3_IGNORE_TLS
+              value: {{ include "ai-models.artifactsIgnoreTLS" . | quote }}
+            - name: AWS_REGION
+              value: {{ include "ai-models.artifactsRegion" . | quote }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ include "ai-models.artifactsRegion" . | quote }}
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
+                  key: accessKey
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
+                  key: secretKey
+            {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+            - name: AI_MODELS_S3_CA_FILE
+              value: /etc/ai-models/artifacts-ca/ca.crt
+            {{- end }}
+          ports:
+            - name: upload
+              containerPort: {{ include "ai-models.uploadGatewayPort" . | int }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: upload
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: upload
+          {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+          volumeMounts:
+            - name: artifacts-ca
+              mountPath: /etc/ai-models/artifacts-ca
+              readOnly: true
+          {{- end }}
+          resources:
+            requests:
+              {{- include "helm_lib_module_ephemeral_storage_only_logs" . | nindent 14 }}
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
+      volumes:
+        - name: artifacts-ca
+          secret:
+            secretName: {{ include "ai-models.artifactsMountedCASecretName" . }}
+      {{- end }}
+{{- end }}

@@ -141,6 +141,30 @@ func TestObserveSourceWorker(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "interrupted worker stays running and deletes failed pod",
+			handle: publicationports.NewSourceWorkerHandle(
+				"worker-a",
+				corev1.PodFailed,
+				"Get \"https://huggingface.co/google/gemma-4-E2B-it\": context canceled",
+				modelsv1alpha1.ModelConditionReasonPublishing,
+				"15%",
+				"1551882480/10246621918 bytes uploaded into the internal registry",
+				nil,
+			),
+			assert: func(t *testing.T, got RuntimeObservationDecision) {
+				t.Helper()
+				if got.Observation.Phase != publicationdomain.OperationPhaseRunning {
+					t.Fatalf("unexpected phase %q", got.Observation.Phase)
+				}
+				if got.Observation.Message != "1551882480/10246621918 bytes uploaded into the internal registry" {
+					t.Fatalf("unexpected message %q", got.Observation.Message)
+				}
+				if !got.DeleteRuntime {
+					t.Fatal("expected delete for interrupted failed worker")
+				}
+			},
+		},
 	}
 
 	for _, tc := range cases {

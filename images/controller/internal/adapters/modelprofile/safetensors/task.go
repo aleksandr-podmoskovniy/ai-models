@@ -26,10 +26,14 @@ func resolveTask(
 	config map[string]any,
 	architecture string,
 	explicitTask string,
+	sourceDeclaredTask string,
 	sourceHint string,
 ) (string, publicationdata.ProfileConfidence) {
 	if task := strings.TrimSpace(explicitTask); task != "" {
 		return task, publicationdata.ProfileConfidenceExact
+	}
+	if task := strings.TrimSpace(sourceDeclaredTask); task != "" {
+		return task, publicationdata.ProfileConfidenceDeclared
 	}
 	if inferred := inferTaskFromCheckpoint(config, architecture); inferred != "" {
 		return inferred, publicationdata.ProfileConfidenceDerived

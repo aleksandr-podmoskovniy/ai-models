@@ -26,8 +26,9 @@ import (
 )
 
 type CleanupResult struct {
-	Report         Report
-	RegistryOutput string
+	Report                   Report
+	RegistryOutput           string
+	DeletedRegistryBlobCount int
 }
 
 type cleanupPolicy struct {
@@ -98,10 +99,22 @@ func cleanupWithPolicy(
 		return CleanupResult{}, err
 	}
 
+	registryOutput := strings.TrimSpace(string(output))
 	return CleanupResult{
-		Report:         report,
-		RegistryOutput: strings.TrimSpace(string(output)),
+		Report:                   report,
+		RegistryOutput:           registryOutput,
+		DeletedRegistryBlobCount: countDeletedRegistryBlobs(registryOutput),
 	}, nil
+}
+
+func countDeletedRegistryBlobs(output string) int {
+	count := 0
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "Deleting blob:") {
+			count++
+		}
+	}
+	return count
 }
 
 func BuildReport(

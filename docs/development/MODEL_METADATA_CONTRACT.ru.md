@@ -40,6 +40,9 @@ status:
     supportedEndpointTypes:
       - TextGeneration
       - Chat
+    supportedFeatures:
+      - VisionInput
+      - ToolCalling
 ```
 
 Смысл полей:
@@ -53,7 +56,8 @@ status:
 | `parameterCount` | Capacity hint для будущего расчёта. | Только exact/derived. Estimated bytes-based значение наружу не публикуется. |
 | `quantization` | Runtime/parser hint. | Только из metadata/config. Filename-derived GGUF suffix наружу не публикуется как факт. |
 | `contextWindowTokens` | Вход для KV-cache расчёта. | Только из config/tokenizer metadata. |
-| `supportedEndpointTypes` | Предварительная endpoint capability. | Только из надёжного `task`. Не заменяет runtime validation. |
+| `supportedEndpointTypes` | Предварительная endpoint capability: какой API-тип вообще имеет смысл поднимать. | Только из надёжного `task`. Не заменяет runtime validation. |
+| `supportedFeatures` | Сквозные признаки модели, которые не являются отдельным endpoint: modality и tool calling. | Только из надёжного task/source-declared metadata или tokenizer/chat-template evidence. |
 
 Публично не публикуются:
 
@@ -65,11 +69,32 @@ status:
 - `framework`;
 - `footprint`;
 - `evidence`;
+- `mcpTools`;
 - runtime-specific exceptions вроде `KubeRay + vLLM + MIG + MPS`.
 
 Причина простая: эти поля легко принять за готовое scheduler-решение, хотя
 `ai-models` не видит cluster inventory и не владеет runtime compatibility
 matrix.
+
+Минимальная публичная таксономия:
+
+| Source task | `supportedEndpointTypes` | `supportedFeatures` |
+| --- | --- | --- |
+| `text-generation`, `text2text-generation`, `conversational` | `Chat`, `TextGeneration` | empty |
+| `sentence-similarity`, `feature-extraction`, `embeddings` | `Embeddings` | empty |
+| `text-ranking`, `rerank` | `Rerank` | empty |
+| `automatic-speech-recognition` | `SpeechToText` | `AudioInput` |
+| `text-to-speech`, `text-to-audio` | `TextToSpeech` | `AudioOutput` |
+| `image-classification` | `ImageClassification` | `VisionInput` |
+| `object-detection` | `ObjectDetection` | `VisionInput` |
+| `image-segmentation` | `ImageSegmentation` | `VisionInput` |
+| `image-to-text`, `image-text-to-text` | `Chat`, `ImageToText` | `VisionInput`, `MultiModalInput` |
+| `visual-question-answering` | `VisualQuestionAnswering` | `VisionInput`, `MultiModalInput` |
+| `text-to-image` | `ImageGeneration` | `ImageOutput` |
+
+`ToolCalling` добавляется не из task name, а из chat-template evidence
+(`tokenizer_config.chat_template` с явной веткой `tools` / `tool_call`) или
+будущего source-declared факта такого же качества.
 
 ## Confidence model
 
@@ -78,13 +103,14 @@ matrix.
 | Confidence | Значение |
 | --- | --- |
 | `Exact` | Прочитано из artifact/config/source metadata как явный факт. |
+| `Declared` | Явно объявлено source provider'ом, например `pipeline_tag` в HuggingFace metadata. |
 | `Derived` | Выведено из exact values по стабильному правилу. |
 | `Estimated` | Оценено по bytes, dtype или коэффициентам. |
 | `Hint` | Взято из слабого сигнала, например имени GGUF-файла. |
 
-В public `status.resolved` попадают только `Exact` и `Derived` значения.
-`Estimated` и `Hint` остаются внутри snapshot/profile и могут использоваться
-для логов, diagnostics и будущего internal planning contract.
+В public `status.resolved` попадают только `Exact`, `Declared` и `Derived`
+значения. `Estimated` и `Hint` остаются внутри snapshot/profile и могут
+использоваться для логов, diagnostics и будущего internal planning contract.
 
 ## Internal profile
 
@@ -103,6 +129,7 @@ ResolvedProfile
   ContextWindowTokens + ContextWindowTokensConfidence
   SourceRepoID
   SupportedEndpointTypes
+  SupportedFeatures
   Footprint
     WeightsBytes
     LargestWeightFileBytes
@@ -154,6 +181,7 @@ images/controller/internal/
 - `quantization` из quantization config или dtype;
 - `parameterCount` из явного metadata или стабильного derived rule;
 - `supportedEndpointTypes` из надёжного task.
+- `supportedFeatures` из task modality или tokenizer/chat-template evidence.
 
 Если поле можно только оценить по bytes, оно остаётся internal.
 
@@ -193,6 +221,7 @@ launch policy.
 - artifact digest/reference;
 - format/layout facts;
 - endpoint capability summary;
+- feature summary: vision/audio/image-output/multimodal/tool-calling;
 - model identity facts;
 - internal footprint factors.
 
@@ -220,6 +249,12 @@ model metadata + artifact facts
 KubeRay+vLLM" не является свойством модели. Оно должно жить в
 `ai-inference` compatibility registry, а не в `Model.status.resolved`.
 
+Также нельзя писать "модель поддерживает MCP" как catalog fact. MCP - это
+протокол host/runtime уровня. Каталог может показать только `ToolCalling`, если
+есть tokenizer/chat-template evidence или другой надёжный source-declared
+signal. Уже `ai-inference` решает, может ли выбранный runtime подать MCP tools
+в эту модель.
+
 ## Что запрещено добавлять в catalog API
 
 - `spec.task`, `spec.runtime`, `spec.endpointTypes` как пользовательские
@@ -228,6 +263,10 @@ KubeRay+vLLM" не является свойством модели. Оно до
 - Runtime-specific compatibility matrix.
 - Public fields, которые можно заполнить только weak hint'ом.
 - Public estimates, которые downstream легко примет за hard resource request.
+- Endpoint values для unsupported artifact layouts. Diffusers-подобный
+  Safetensors layout допустим только когда выбранный artifact реально включает
+  `model_index.json` и `.safetensors` weights; иначе `text-to-image` не должен
+  появляться только ради badge.
 
 Любое расширение public metadata contract должно проходить отдельным API slice:
 

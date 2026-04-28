@@ -25,18 +25,88 @@ import (
 func TestEndpointTypes(t *testing.T) {
 	t.Parallel()
 
-	if got := EndpointTypes("text-generation"); len(got) != 2 {
-		t.Fatalf("unexpected generative endpoint types %#v", got)
+	cases := []struct {
+		name      string
+		task      string
+		endpoints []string
+		features  []string
+	}{
+		{
+			name:      "chat generation",
+			task:      "text-generation",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeChat), string(modelsv1alpha1.ModelEndpointTypeTextGeneration)},
+		},
+		{
+			name:      "embeddings",
+			task:      "embeddings",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeEmbeddings)},
+		},
+		{
+			name:      "rerank",
+			task:      "text-ranking",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeRerank)},
+		},
+		{
+			name:      "speech to text",
+			task:      "automatic-speech-recognition",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeSpeechToText)},
+			features:  []string{string(modelsv1alpha1.ModelFeatureTypeAudioInput)},
+		},
+		{
+			name:      "text to speech",
+			task:      "text-to-speech",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeTextToSpeech)},
+			features:  []string{string(modelsv1alpha1.ModelFeatureTypeAudioOutput)},
+		},
+		{
+			name:      "cv",
+			task:      "object-detection",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeObjectDetection)},
+			features:  []string{string(modelsv1alpha1.ModelFeatureTypeVisionInput)},
+		},
+		{
+			name:      "image generation",
+			task:      "text-to-image",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeImageGeneration)},
+			features:  []string{string(modelsv1alpha1.ModelFeatureTypeImageOutput)},
+		},
+		{
+			name:      "multimodal",
+			task:      "image-text-to-text",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeChat), string(modelsv1alpha1.ModelEndpointTypeImageToText)},
+			features:  []string{string(modelsv1alpha1.ModelFeatureTypeVisionInput), string(modelsv1alpha1.ModelFeatureTypeMultiModalInput)},
+		},
+		{
+			name:      "translation",
+			task:      "translation",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeTranslation)},
+		},
+		{name: "unknown", task: "unknown"},
 	}
-	if got := EndpointTypes("embeddings"); len(got) != 1 || got[0] != string(modelsv1alpha1.ModelEndpointTypeEmbeddings) {
-		t.Fatalf("unexpected embedding endpoint types %#v", got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			capabilities := ResolveCapabilities(tc.task)
+			if !stringSlicesEqual(capabilities.EndpointTypes, tc.endpoints) {
+				t.Fatalf("unexpected endpoint types %#v", capabilities.EndpointTypes)
+			}
+			if !stringSlicesEqual(capabilities.Features, tc.features) {
+				t.Fatalf("unexpected features %#v", capabilities.Features)
+			}
+		})
 	}
-	if got := EndpointTypes("translation"); len(got) != 1 || got[0] != string(modelsv1alpha1.ModelEndpointTypeTranslation) {
-		t.Fatalf("unexpected translation endpoint types %#v", got)
+}
+
+func stringSlicesEqual(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
 	}
-	if got := EndpointTypes("unknown"); len(got) != 0 {
-		t.Fatalf("unexpected endpoint types %#v", got)
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
 	}
+	return true
 }
 
 func TestEstimatedWorkingSetGiB(t *testing.T) {

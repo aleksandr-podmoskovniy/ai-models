@@ -24,21 +24,22 @@ import (
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
+	deliverycontract "github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
 	corev1 "k8s.io/api/core/v1"
 )
 
 const (
-	DefaultInitContainerName = "ai-models-materializer"
+	DefaultInitContainerName = deliverycontract.DefaultMaterializerInitContainerName
 	DefaultCacheMountPath    = "/data/modelcache"
 	DefaultManagedCacheName  = "ai-models-node-cache"
 	NodeCacheCSIDriverName   = nodecache.CSIDriverName
 
-	ResolvedDigestAnnotation         = "ai.deckhouse.io/resolved-digest"
-	ResolvedArtifactURIAnnotation    = "ai.deckhouse.io/resolved-artifact-uri"
-	ResolvedArtifactFamilyAnnotation = "ai.deckhouse.io/resolved-artifact-family"
-	ResolvedDeliveryModeAnnotation   = "ai.deckhouse.io/resolved-delivery-mode"
-	ResolvedDeliveryReasonAnnotation = "ai.deckhouse.io/resolved-delivery-reason"
-	ResolvedModelsAnnotation         = "ai.deckhouse.io/resolved-models"
+	ResolvedDigestAnnotation         = deliverycontract.ResolvedDigestAnnotation
+	ResolvedArtifactURIAnnotation    = deliverycontract.ResolvedArtifactURIAnnotation
+	ResolvedArtifactFamilyAnnotation = deliverycontract.ResolvedArtifactFamilyAnnotation
+	ResolvedDeliveryModeAnnotation   = deliverycontract.ResolvedDeliveryModeAnnotation
+	ResolvedDeliveryReasonAnnotation = deliverycontract.ResolvedDeliveryReasonAnnotation
+	ResolvedModelsAnnotation         = deliverycontract.ResolvedModelsAnnotation
 
 	ModelPathEnv     = "AI_MODELS_MODEL_PATH"
 	ModelDigestEnv   = "AI_MODELS_MODEL_DIGEST"
@@ -194,17 +195,17 @@ func managedModelVolumeName(baseName, alias string) string {
 type DeliveryMode string
 
 const (
-	DeliveryModeMaterializeBridge DeliveryMode = "MaterializeBridge"
-	DeliveryModeSharedPVCBridge   DeliveryMode = "SharedPVCBridge"
-	DeliveryModeSharedDirect      DeliveryMode = "SharedDirect"
+	DeliveryModeMaterializeBridge DeliveryMode = deliverycontract.DeliveryModeMaterializeBridge
+	DeliveryModeSharedPVCBridge   DeliveryMode = deliverycontract.DeliveryModeSharedPVCBridge
+	DeliveryModeSharedDirect      DeliveryMode = deliverycontract.DeliveryModeSharedDirect
 )
 
 type DeliveryReason string
 
 const (
-	DeliveryReasonWorkloadCacheVolume            DeliveryReason = "WorkloadCacheVolume"
-	DeliveryReasonManagedBridgeVolume            DeliveryReason = "ManagedBridgeVolume"
-	DeliveryReasonStatefulSetClaimTemplate       DeliveryReason = "StatefulSetClaimTemplate"
-	DeliveryReasonWorkloadSharedPersistentVolume DeliveryReason = "WorkloadSharedPersistentVolumeClaim"
-	DeliveryReasonNodeSharedRuntimePlane         DeliveryReason = "NodeSharedRuntimePlane"
+	DeliveryReasonWorkloadCacheVolume            DeliveryReason = deliverycontract.DeliveryReasonWorkloadCacheVolume
+	DeliveryReasonManagedBridgeVolume            DeliveryReason = deliverycontract.DeliveryReasonManagedBridgeVolume
+	DeliveryReasonStatefulSetClaimTemplate       DeliveryReason = deliverycontract.DeliveryReasonStatefulSetClaimTemplate
+	DeliveryReasonWorkloadSharedPersistentVolume DeliveryReason = deliverycontract.DeliveryReasonWorkloadSharedPersistentVolume
+	DeliveryReasonNodeSharedRuntimePlane         DeliveryReason = deliverycontract.DeliveryReasonNodeSharedRuntimePlane
 )

@@ -74,6 +74,7 @@ func TestProjectStatusSucceeded(t *testing.T) {
 					ContextWindowTokens:           8192,
 					ContextWindowTokensConfidence: publicationdata.ProfileConfidenceExact,
 					SupportedEndpointTypes:        []string{"Chat", "TextGeneration"},
+					SupportedFeatures:             []string{"VisionInput"},
 				},
 			},
 			CleanupHandle: &handle,
@@ -102,6 +103,9 @@ func TestProjectStatusSucceeded(t *testing.T) {
 	}
 	if projection.Status.Resolved.Quantization == nil || *projection.Status.Resolved.Quantization != "bnb-nf4" {
 		t.Fatalf("unexpected quantization %#v", projection.Status.Resolved.Quantization)
+	}
+	if got, want := projection.Status.Resolved.SupportedFeatures, []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeVisionInput}; !featureTypesEqual(got, want) {
+		t.Fatalf("unexpected features %#v", got)
 	}
 	ready := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionReady))
 	if ready == nil || ready.Status != metav1.ConditionTrue {

@@ -101,7 +101,7 @@ func (s *Service) ApplyToPodTemplate(
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	readyNodes, err := s.readyNodesForTopology(ctx, topology.Kind)
+	readyNodes, err := s.readyNodesForTemplate(ctx, topology.Kind, template)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -205,29 +205,10 @@ func (s *Service) prepareTopologyAccess(ctx context.Context, owner client.Object
 	return s.cleanupProjectedRuntimeAccess(ctx, owner, targetNamespace)
 }
 
-func (s *Service) readyNodesForTopology(ctx context.Context, topologyKind CacheTopologyKind) (bool, error) {
-	if topologyKind != CacheTopologyDirect {
-		return true, nil
-	}
-	return s.hasManagedCacheReadyNode(ctx)
-}
-
 func applyReadyNodeSchedulingGate(template *corev1.PodTemplateSpec, topologyKind CacheTopologyKind, readyNodes bool) {
 	if topologyKind == CacheTopologyDirect && !readyNodes {
 		EnsureSchedulingGate(template)
 	}
-}
-
-func (s *Service) hasManagedCacheReadyNode(ctx context.Context) (bool, error) {
-	managed := NormalizeManagedCacheOptions(s.options.ManagedCache)
-	if !managed.Enabled || len(managed.NodeSelector) == 0 {
-		return true, nil
-	}
-	nodes := &corev1.NodeList{}
-	if err := s.client.List(ctx, nodes, client.MatchingLabels(managed.NodeSelector)); err != nil {
-		return false, err
-	}
-	return len(nodes.Items) > 0, nil
 }
 
 func validateApplyInputs(s *Service, owner client.Object, template *corev1.PodTemplateSpec, topology TopologyHints) error {

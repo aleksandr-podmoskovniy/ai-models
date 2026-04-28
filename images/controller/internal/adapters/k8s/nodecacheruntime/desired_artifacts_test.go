@@ -20,7 +20,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,11 +33,11 @@ func TestDesiredArtifactFromPodReadsManagedAnnotations(t *testing.T) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Annotations: map[string]string{
-				modeldelivery.ResolvedDeliveryModeAnnotation:   string(modeldelivery.DeliveryModeSharedDirect),
-				modeldelivery.ResolvedDeliveryReasonAnnotation: string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane),
-				modeldelivery.ResolvedDigestAnnotation:         "sha256:a",
-				modeldelivery.ResolvedArtifactURIAnnotation:    "oci://example/model-a",
-				modeldelivery.ResolvedArtifactFamilyAnnotation: "gguf-v1",
+				nodecache.WorkloadResolvedDeliveryModeAnnotation:   nodecache.WorkloadDeliveryModeSharedDirect,
+				nodecache.WorkloadResolvedDeliveryReasonAnnotation: nodecache.WorkloadDeliveryReasonNodeCacheRuntime,
+				nodecache.WorkloadResolvedDigestAnnotation:         "sha256:a",
+				nodecache.WorkloadResolvedArtifactURIAnnotation:    "oci://example/model-a",
+				nodecache.WorkloadResolvedArtifactFamilyAnnotation: "gguf-v1",
 			},
 		},
 	}
@@ -66,9 +66,9 @@ func TestDesiredArtifactsFromPodReadsResolvedModelList(t *testing.T) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Annotations: map[string]string{
-				modeldelivery.ResolvedDeliveryModeAnnotation:   string(modeldelivery.DeliveryModeSharedDirect),
-				modeldelivery.ResolvedDeliveryReasonAnnotation: string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane),
-				modeldelivery.ResolvedModelsAnnotation: `[{"alias":"main","uri":"oci://example/model-a","path":"/data/modelcache/models/main","digest":"sha256:a","family":"gguf-v1"},` +
+				nodecache.WorkloadResolvedDeliveryModeAnnotation:   nodecache.WorkloadDeliveryModeSharedDirect,
+				nodecache.WorkloadResolvedDeliveryReasonAnnotation: nodecache.WorkloadDeliveryReasonNodeCacheRuntime,
+				nodecache.WorkloadResolvedModelsAnnotation: `[{"alias":"main","uri":"oci://example/model-a","path":"/data/modelcache/models/main","digest":"sha256:a","family":"gguf-v1"},` +
 					`{"alias":"draft","uri":"oci://example/model-b","path":"/data/modelcache/models/draft","digest":"sha256:b"}]`,
 			},
 		},
@@ -99,32 +99,32 @@ func TestDesiredArtifactFromPodIgnoresBridgeAndLegacyPods(t *testing.T) {
 		{
 			name: "materialize-bridge",
 			annotations: map[string]string{
-				modeldelivery.ResolvedDeliveryModeAnnotation: string(modeldelivery.DeliveryModeMaterializeBridge),
-				modeldelivery.ResolvedDigestAnnotation:       "sha256:a",
-				modeldelivery.ResolvedArtifactURIAnnotation:  "oci://example/model-a",
+				nodecache.WorkloadResolvedDeliveryModeAnnotation: "MaterializeBridge",
+				nodecache.WorkloadResolvedDigestAnnotation:       "sha256:a",
+				nodecache.WorkloadResolvedArtifactURIAnnotation:  "oci://example/model-a",
 			},
 		},
 		{
 			name: "shared-pvc-bridge",
 			annotations: map[string]string{
-				modeldelivery.ResolvedDeliveryModeAnnotation: string(modeldelivery.DeliveryModeSharedPVCBridge),
-				modeldelivery.ResolvedDigestAnnotation:       "sha256:a",
-				modeldelivery.ResolvedArtifactURIAnnotation:  "oci://example/model-a",
+				nodecache.WorkloadResolvedDeliveryModeAnnotation: "SharedPVCBridge",
+				nodecache.WorkloadResolvedDigestAnnotation:       "sha256:a",
+				nodecache.WorkloadResolvedArtifactURIAnnotation:  "oci://example/model-a",
 			},
 		},
 		{
 			name: "shared-direct-without-node-runtime-reason",
 			annotations: map[string]string{
-				modeldelivery.ResolvedDeliveryModeAnnotation: string(modeldelivery.DeliveryModeSharedDirect),
-				modeldelivery.ResolvedDigestAnnotation:       "sha256:a",
-				modeldelivery.ResolvedArtifactURIAnnotation:  "oci://example/model-a",
+				nodecache.WorkloadResolvedDeliveryModeAnnotation: nodecache.WorkloadDeliveryModeSharedDirect,
+				nodecache.WorkloadResolvedDigestAnnotation:       "sha256:a",
+				nodecache.WorkloadResolvedArtifactURIAnnotation:  "oci://example/model-a",
 			},
 		},
 		{
 			name: "legacy-without-mode",
 			annotations: map[string]string{
-				modeldelivery.ResolvedDigestAnnotation:      "sha256:a",
-				modeldelivery.ResolvedArtifactURIAnnotation: "oci://example/model-a",
+				nodecache.WorkloadResolvedDigestAnnotation:      "sha256:a",
+				nodecache.WorkloadResolvedArtifactURIAnnotation: "oci://example/model-a",
 			},
 		},
 	}
@@ -150,13 +150,13 @@ func TestDesiredArtifactsClientLoadsOnlySharedDirectArtifactsFromActiveScheduled
 	t.Parallel()
 
 	client, err := NewDesiredArtifactsClient(fake.NewSimpleClientset(
-		managedPod("runtime-a", "worker-a", corev1.PodRunning, string(modeldelivery.DeliveryModeSharedDirect), string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane), "oci://example/model-a", "sha256:a"),
-		managedPod("runtime-b", "worker-a", corev1.PodPending, string(modeldelivery.DeliveryModeSharedDirect), string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane), "oci://example/model-b", "sha256:b"),
-		managedPod("runtime-c", "worker-b", corev1.PodRunning, string(modeldelivery.DeliveryModeSharedDirect), string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane), "oci://example/model-c", "sha256:c"),
-		managedPod("runtime-d", "worker-a", corev1.PodFailed, string(modeldelivery.DeliveryModeSharedDirect), string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane), "oci://example/model-d", "sha256:d"),
-		managedPod("runtime-bridge", "worker-a", corev1.PodRunning, string(modeldelivery.DeliveryModeMaterializeBridge), "", "oci://example/model-bridge", "sha256:bridge"),
-		managedPod("runtime-shared-pvc", "worker-a", corev1.PodRunning, string(modeldelivery.DeliveryModeSharedPVCBridge), "", "oci://example/model-shared-pvc", "sha256:shared-pvc"),
-		managedPod("runtime-shared-direct-misconfigured", "worker-a", corev1.PodRunning, string(modeldelivery.DeliveryModeSharedDirect), "", "oci://example/model-shared-direct", "sha256:shared-direct"),
+		managedPod("runtime-a", "worker-a", corev1.PodRunning, nodecache.WorkloadDeliveryModeSharedDirect, nodecache.WorkloadDeliveryReasonNodeCacheRuntime, "oci://example/model-a", "sha256:a"),
+		managedPod("runtime-b", "worker-a", corev1.PodPending, nodecache.WorkloadDeliveryModeSharedDirect, nodecache.WorkloadDeliveryReasonNodeCacheRuntime, "oci://example/model-b", "sha256:b"),
+		managedPod("runtime-c", "worker-b", corev1.PodRunning, nodecache.WorkloadDeliveryModeSharedDirect, nodecache.WorkloadDeliveryReasonNodeCacheRuntime, "oci://example/model-c", "sha256:c"),
+		managedPod("runtime-d", "worker-a", corev1.PodFailed, nodecache.WorkloadDeliveryModeSharedDirect, nodecache.WorkloadDeliveryReasonNodeCacheRuntime, "oci://example/model-d", "sha256:d"),
+		managedPod("runtime-bridge", "worker-a", corev1.PodRunning, "MaterializeBridge", "", "oci://example/model-bridge", "sha256:bridge"),
+		managedPod("runtime-shared-pvc", "worker-a", corev1.PodRunning, "SharedPVCBridge", "", "oci://example/model-shared-pvc", "sha256:shared-pvc"),
+		managedPod("runtime-shared-direct-misconfigured", "worker-a", corev1.PodRunning, nodecache.WorkloadDeliveryModeSharedDirect, "", "oci://example/model-shared-direct", "sha256:shared-direct"),
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{Name: "runtime-e", Namespace: "team-a"},
 			Spec:       corev1.PodSpec{NodeName: "worker-a"},
@@ -190,9 +190,9 @@ func TestDesiredArtifactsClientRejectsIncompleteTrueSharedDirectAnnotationsOnTar
 			Name:      "runtime-a",
 			Namespace: "team-a",
 			Annotations: map[string]string{
-				modeldelivery.ResolvedDeliveryModeAnnotation:   string(modeldelivery.DeliveryModeSharedDirect),
-				modeldelivery.ResolvedDeliveryReasonAnnotation: string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane),
-				modeldelivery.ResolvedDigestAnnotation:         "sha256:a",
+				nodecache.WorkloadResolvedDeliveryModeAnnotation:   nodecache.WorkloadDeliveryModeSharedDirect,
+				nodecache.WorkloadResolvedDeliveryReasonAnnotation: nodecache.WorkloadDeliveryReasonNodeCacheRuntime,
+				nodecache.WorkloadResolvedDigestAnnotation:         "sha256:a",
 			},
 		},
 		Spec:   corev1.PodSpec{NodeName: "worker-a"},
@@ -210,7 +210,7 @@ func TestDesiredArtifactsClientRejectsIncompleteTrueSharedDirectAnnotationsOnTar
 func TestDesiredArtifactsClientAllowsCSIPublishOnlyForRequestingManagedPod(t *testing.T) {
 	t.Parallel()
 
-	pod := managedPod("runtime-a", "worker-a", corev1.PodPending, string(modeldelivery.DeliveryModeSharedDirect), string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane), "oci://example/model-a", "sha256:a")
+	pod := managedPod("runtime-a", "worker-a", corev1.PodPending, nodecache.WorkloadDeliveryModeSharedDirect, nodecache.WorkloadDeliveryReasonNodeCacheRuntime, "oci://example/model-a", "sha256:a")
 	pod.UID = types.UID("pod-a")
 	client, err := NewDesiredArtifactsClient(fake.NewSimpleClientset(pod))
 	if err != nil {
@@ -245,9 +245,9 @@ func TestDesiredArtifactsClientAllowsCSIPublishOnlyForRequestingManagedPod(t *te
 func TestDesiredArtifactsClientAllowsCSIPublishForAnyResolvedModelDigest(t *testing.T) {
 	t.Parallel()
 
-	pod := managedPod("runtime-a", "worker-a", corev1.PodPending, string(modeldelivery.DeliveryModeSharedDirect), string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane), "oci://example/model-a", "sha256:a")
+	pod := managedPod("runtime-a", "worker-a", corev1.PodPending, nodecache.WorkloadDeliveryModeSharedDirect, nodecache.WorkloadDeliveryReasonNodeCacheRuntime, "oci://example/model-a", "sha256:a")
 	pod.UID = types.UID("pod-a")
-	pod.Annotations[modeldelivery.ResolvedModelsAnnotation] = `[{"alias":"main","uri":"oci://example/model-a","digest":"sha256:a"},` +
+	pod.Annotations[nodecache.WorkloadResolvedModelsAnnotation] = `[{"alias":"main","uri":"oci://example/model-a","digest":"sha256:a"},` +
 		`{"alias":"draft","uri":"oci://example/model-b","digest":"sha256:b"}]`
 	client, err := NewDesiredArtifactsClient(fake.NewSimpleClientset(pod))
 	if err != nil {
@@ -270,7 +270,7 @@ func TestDesiredArtifactsClientAllowsCSIPublishForAnyResolvedModelDigest(t *test
 func TestDesiredArtifactsClientDeniesCSIPublishWithoutPodInfoOrManagedAnnotations(t *testing.T) {
 	t.Parallel()
 
-	pod := managedPod("runtime-a", "worker-a", corev1.PodPending, string(modeldelivery.DeliveryModeMaterializeBridge), "", "oci://example/model-a", "sha256:a")
+	pod := managedPod("runtime-a", "worker-a", corev1.PodPending, "MaterializeBridge", "", "oci://example/model-a", "sha256:a")
 	pod.UID = types.UID("pod-a")
 	client, err := NewDesiredArtifactsClient(fake.NewSimpleClientset(pod))
 	if err != nil {
@@ -300,12 +300,12 @@ func TestDesiredArtifactsClientDeniesCSIPublishWithoutPodInfoOrManagedAnnotation
 
 func managedPod(name, nodeName string, phase corev1.PodPhase, deliveryMode, deliveryReason, artifactURI, digest string) *corev1.Pod {
 	annotations := map[string]string{
-		modeldelivery.ResolvedDeliveryModeAnnotation: deliveryMode,
-		modeldelivery.ResolvedDigestAnnotation:       digest,
-		modeldelivery.ResolvedArtifactURIAnnotation:  artifactURI,
+		nodecache.WorkloadResolvedDeliveryModeAnnotation: deliveryMode,
+		nodecache.WorkloadResolvedDigestAnnotation:       digest,
+		nodecache.WorkloadResolvedArtifactURIAnnotation:  artifactURI,
 	}
 	if deliveryReason != "" {
-		annotations[modeldelivery.ResolvedDeliveryReasonAnnotation] = deliveryReason
+		annotations[nodecache.WorkloadResolvedDeliveryReasonAnnotation] = deliveryReason
 	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

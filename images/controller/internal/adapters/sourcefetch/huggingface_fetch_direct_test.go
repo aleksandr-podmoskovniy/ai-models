@@ -73,6 +73,9 @@ func TestFetchRemoteModelHuggingFacePlansDirectSafetensorsObjectSourceWithoutMir
 	if got, want := result.Provenance.ResolvedRevision, "deadbeef"; got != want {
 		t.Fatalf("unexpected resolved revision %q", got)
 	}
+	if got, want := result.Fallbacks.SourceDeclaredTask, "text-generation"; got != want {
+		t.Fatalf("unexpected source-declared task %q", got)
+	}
 	if got, want := len(result.ObjectSource.Files), 2; got != want {
 		t.Fatalf("unexpected direct object source file count %d", got)
 	}
@@ -81,6 +84,82 @@ func TestFetchRemoteModelHuggingFacePlansDirectSafetensorsObjectSourceWithoutMir
 	}
 	if got, want := result.ObjectSource.Files[1].ETag, `"etag-model"`; got != want {
 		t.Fatalf("unexpected second etag %q", got)
+	}
+}
+
+func TestFetchRemoteModelHuggingFacePlansDirectDiffusersObjectSourceWithoutMirror(t *testing.T) {
+	fileSizes := map[string]int{
+		"/owner/model/resolve/deadbeef/model_index.json":                         len(`{"_class_name":"StableDiffusionPipeline"}`),
+		"/owner/model/resolve/deadbeef/scheduler/scheduler_config.json":          len(`{"beta_schedule":"scaled_linear"}`),
+		"/owner/model/resolve/deadbeef/text_encoder/config.json":                 len(`{"model_type":"clip_text_model"}`),
+		"/owner/model/resolve/deadbeef/text_encoder/model.safetensors":           17,
+		"/owner/model/resolve/deadbeef/unet/config.json":                         len(`{"model_type":"unet_2d_condition"}`),
+		"/owner/model/resolve/deadbeef/unet/diffusion_pytorch_model.safetensors": 29,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requireHuggingFaceAuth(t, request)
+		if request.Method == http.MethodGet && request.URL.Path == "/owner/model/resolve/deadbeef/model_index.json" {
+			writer.Header().Set("Content-Type", "application/json")
+			writer.Header().Set("Content-Length", strconv.Itoa(fileSizes[request.URL.Path]))
+			writer.Header().Set("ETag", `"etag-model-index"`)
+			_, _ = writer.Write([]byte(`{"_class_name":"StableDiffusionPipeline"}`))
+			return
+		}
+		if request.Method == http.MethodHead {
+			if size, found := fileSizes[request.URL.Path]; found {
+				writer.Header().Set("Content-Length", strconv.Itoa(size))
+				writer.Header().Set("ETag", `"etag-diffusers"`)
+				writer.WriteHeader(http.StatusOK)
+				return
+			}
+		}
+		http.NotFound(writer, request)
+	}))
+	defer server.Close()
+
+	stubHuggingFaceInfo(t, HuggingFaceInfo{
+		ID:          testHuggingFaceSubject,
+		SHA:         testHuggingFaceRevision,
+		PipelineTag: "text-to-image",
+		License:     "apache-2.0",
+		Files: []string{
+			"README.md",
+			"model_index.json",
+			"scheduler/scheduler_config.json",
+			"text_encoder/config.json",
+			"text_encoder/model.safetensors",
+			"unet/config.json",
+			"unet/diffusion_pytorch_model.safetensors",
+			"onnx/model.onnx",
+		},
+	})
+	withHuggingFaceBaseURL(t, server.URL)
+
+	result, err := fetchTestHuggingFaceRemote(t, nil)
+	if err != nil {
+		t.Fatalf("FetchRemoteModel() error = %v", err)
+	}
+
+	if got := result.ModelDir; got != "" {
+		t.Fatalf("expected no local model dir, got %q", got)
+	}
+	if result.ObjectSource == nil {
+		t.Fatal("expected direct object source")
+	}
+	if result.ProfileSummary == nil {
+		t.Fatal("expected remote profile summary")
+	}
+	if got, want := result.Fallbacks.SourceDeclaredTask, "text-to-image"; got != want {
+		t.Fatalf("unexpected source-declared task %q", got)
+	}
+	if got, want := len(result.ObjectSource.Files), 6; got != want {
+		t.Fatalf("unexpected direct object source file count %d", got)
+	}
+	if got, want := result.ObjectSource.Files[0].TargetPath, "model_index.json"; got != want {
+		t.Fatalf("unexpected first target path %q", got)
+	}
+	if got, want := result.ProfileSummary.WeightBytes, int64(46); got != want {
+		t.Fatalf("unexpected weight bytes %d", got)
 	}
 }
 

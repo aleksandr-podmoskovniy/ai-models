@@ -164,7 +164,13 @@ func (r *baseReconciler) applyCleanupHandleMutation(
 	}
 
 	r.recordAudit(object, auditapp.PlanPreStatusRecords(true, plan.CleanupHandle))
-	return true, deleteFn, nil
+	return shouldRequeueAfterCleanupHandleUpdate(plan), deleteFn, nil
+}
+
+func shouldRequeueAfterCleanupHandleUpdate(plan publicationapp.CatalogStatusMutationPlan) bool {
+	return plan.CleanupHandle != nil &&
+		plan.CleanupHandle.Kind == cleanuphandle.KindUploadStaging &&
+		plan.Status.Phase == modelsv1alpha1.ModelPhasePublishing
 }
 
 func (r *baseReconciler) applyStatusMutation(

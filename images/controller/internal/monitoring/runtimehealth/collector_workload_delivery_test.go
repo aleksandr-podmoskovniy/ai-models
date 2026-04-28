@@ -19,7 +19,7 @@ package runtimehealth
 import (
 	"testing"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
+	"github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -33,26 +33,26 @@ func TestCollectorReportsManagedWorkloadDeliveryCounts(t *testing.T) {
 		newManagedDeliveryDeployment(
 			"team-a",
 			"deployment-a",
-			string(modeldelivery.DeliveryModeMaterializeBridge),
-			string(modeldelivery.DeliveryReasonManagedBridgeVolume),
+			string(workloaddelivery.DeliveryModeMaterializeBridge),
+			string(workloaddelivery.DeliveryReasonManagedBridgeVolume),
 		),
 		newManagedDeliveryDeployment(
 			"team-a",
 			"deployment-b",
-			string(modeldelivery.DeliveryModeMaterializeBridge),
-			string(modeldelivery.DeliveryReasonManagedBridgeVolume),
+			string(workloaddelivery.DeliveryModeMaterializeBridge),
+			string(workloaddelivery.DeliveryReasonManagedBridgeVolume),
 		),
 		newManagedDeliveryStatefulSet(
 			"team-b",
 			"statefulset-a",
-			string(modeldelivery.DeliveryModeSharedPVCBridge),
-			string(modeldelivery.DeliveryReasonWorkloadSharedPersistentVolume),
+			string(workloaddelivery.DeliveryModeSharedPVCBridge),
+			string(workloaddelivery.DeliveryReasonWorkloadSharedPersistentVolume),
 		),
 		newManagedDeliveryCronJob(
 			"team-c",
 			"cronjob-a",
-			string(modeldelivery.DeliveryModeMaterializeBridge),
-			string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+			string(workloaddelivery.DeliveryModeMaterializeBridge),
+			string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 		),
 		&appsv1.DaemonSet{
 			ObjectMeta: metav1.ObjectMeta{
@@ -65,26 +65,26 @@ func TestCollectorReportsManagedWorkloadDeliveryCounts(t *testing.T) {
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_workloads_managed", map[string]string{
 		"namespace":       "team-a",
 		"kind":            "Deployment",
-		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonManagedBridgeVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonManagedBridgeVolume),
 	}, 2)
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_workloads_managed", map[string]string{
 		"namespace":       "team-b",
 		"kind":            "StatefulSet",
-		"delivery_mode":   string(modeldelivery.DeliveryModeSharedPVCBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadSharedPersistentVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeSharedPVCBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonWorkloadSharedPersistentVolume),
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_workloads_managed", map[string]string{
 		"namespace":       "team-c",
 		"kind":            "CronJob",
-		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 	}, 1)
 	assertMetricAbsent(t, families, "d8_ai_models_workload_delivery_workloads_managed", map[string]string{
 		"namespace":       "team-a",
 		"kind":            "DaemonSet",
-		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonManagedBridgeVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonManagedBridgeVolume),
 	})
 }
 
@@ -92,14 +92,14 @@ func TestCollectorGroupsIncompleteManagedWorkloadStateUnderUnknown(t *testing.T)
 	t.Parallel()
 
 	families := gatherMetrics(t, Options{},
-		newManagedDeliveryDaemonSet("team-a", "daemonset-a", string(modeldelivery.DeliveryModeSharedDirect), ""),
+		newManagedDeliveryDaemonSet("team-a", "daemonset-a", string(workloaddelivery.DeliveryModeSharedDirect), ""),
 		newManagedDeliveryCronJob("team-b", "cronjob-a", "", ""),
 	)
 
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_workloads_managed", map[string]string{
 		"namespace":       "team-a",
 		"kind":            "DaemonSet",
-		"delivery_mode":   string(modeldelivery.DeliveryModeSharedDirect),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeSharedDirect),
 		"delivery_reason": unknownDeliveryReason,
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_workloads_managed", map[string]string{
@@ -117,8 +117,8 @@ func TestCollectorReportsManagedWorkloadPodState(t *testing.T) {
 		newManagedDeliveryPod(
 			"team-a",
 			"runtime-ready",
-			string(modeldelivery.DeliveryModeMaterializeBridge),
-			string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+			string(workloaddelivery.DeliveryModeMaterializeBridge),
+			string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 			true,
 			corev1.ContainerState{
 				Terminated: &corev1.ContainerStateTerminated{
@@ -130,8 +130,8 @@ func TestCollectorReportsManagedWorkloadPodState(t *testing.T) {
 		newManagedDeliveryPod(
 			"team-a",
 			"runtime-pulling",
-			string(modeldelivery.DeliveryModeMaterializeBridge),
-			string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+			string(workloaddelivery.DeliveryModeMaterializeBridge),
+			string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 			false,
 			corev1.ContainerState{
 				Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff"},
@@ -140,8 +140,8 @@ func TestCollectorReportsManagedWorkloadPodState(t *testing.T) {
 		newManagedDeliveryPod(
 			"team-a",
 			"runtime-copying",
-			string(modeldelivery.DeliveryModeMaterializeBridge),
-			string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+			string(workloaddelivery.DeliveryModeMaterializeBridge),
+			string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 			false,
 			corev1.ContainerState{
 				Running: &corev1.ContainerStateRunning{},
@@ -150,8 +150,8 @@ func TestCollectorReportsManagedWorkloadPodState(t *testing.T) {
 		newManagedDeliveryPod(
 			"team-a",
 			"runtime-failed",
-			string(modeldelivery.DeliveryModeMaterializeBridge),
-			string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+			string(workloaddelivery.DeliveryModeMaterializeBridge),
+			string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 			false,
 			corev1.ContainerState{
 				Terminated: &corev1.ContainerStateTerminated{
@@ -163,8 +163,8 @@ func TestCollectorReportsManagedWorkloadPodState(t *testing.T) {
 		newManagedDeliveryPod(
 			"team-b",
 			"runtime-shared-pvc",
-			string(modeldelivery.DeliveryModeSharedPVCBridge),
-			string(modeldelivery.DeliveryReasonWorkloadSharedPersistentVolume),
+			string(workloaddelivery.DeliveryModeSharedPVCBridge),
+			string(workloaddelivery.DeliveryReasonWorkloadSharedPersistentVolume),
 			false,
 			corev1.ContainerState{},
 		),
@@ -172,51 +172,51 @@ func TestCollectorReportsManagedWorkloadPodState(t *testing.T) {
 
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_pods_managed", map[string]string{
 		"namespace":       "team-a",
-		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 	}, 4)
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_pods_ready", map[string]string{
 		"namespace":       "team-a",
-		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_init_state", map[string]string{
 		"namespace":       "team-a",
-		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 		"state":           "Succeeded",
 		"reason":          "Completed",
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_init_state", map[string]string{
 		"namespace":       "team-a",
-		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 		"state":           "Waiting",
 		"reason":          "ImagePullBackOff",
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_init_state", map[string]string{
 		"namespace":       "team-a",
-		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 		"state":           "Running",
 		"reason":          "",
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_init_state", map[string]string{
 		"namespace":       "team-a",
-		"delivery_mode":   string(modeldelivery.DeliveryModeMaterializeBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadCacheVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeMaterializeBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonWorkloadCacheVolume),
 		"state":           "Failed",
 		"reason":          "Error",
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_workload_delivery_pods_managed", map[string]string{
 		"namespace":       "team-b",
-		"delivery_mode":   string(modeldelivery.DeliveryModeSharedPVCBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadSharedPersistentVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeSharedPVCBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonWorkloadSharedPersistentVolume),
 	}, 1)
 	assertMetricAbsent(t, families, "d8_ai_models_workload_delivery_init_state", map[string]string{
 		"namespace":       "team-b",
-		"delivery_mode":   string(modeldelivery.DeliveryModeSharedPVCBridge),
-		"delivery_reason": string(modeldelivery.DeliveryReasonWorkloadSharedPersistentVolume),
+		"delivery_mode":   string(workloaddelivery.DeliveryModeSharedPVCBridge),
+		"delivery_reason": string(workloaddelivery.DeliveryReasonWorkloadSharedPersistentVolume),
 		"state":           "Waiting",
 		"reason":          "ImagePullBackOff",
 	})
@@ -276,13 +276,13 @@ func newManagedDeliveryCronJob(namespace, name, mode, reason string) *batchv1.Cr
 
 func managedDeliveryPodTemplate(mode, reason string) corev1.PodTemplateSpec {
 	annotations := map[string]string{
-		modeldelivery.ResolvedDigestAnnotation: "sha256:1234",
+		workloaddelivery.ResolvedDigestAnnotation: "sha256:1234",
 	}
 	if mode != "" {
-		annotations[modeldelivery.ResolvedDeliveryModeAnnotation] = mode
+		annotations[workloaddelivery.ResolvedDeliveryModeAnnotation] = mode
 	}
 	if reason != "" {
-		annotations[modeldelivery.ResolvedDeliveryReasonAnnotation] = reason
+		annotations[workloaddelivery.ResolvedDeliveryReasonAnnotation] = reason
 	}
 
 	return corev1.PodTemplateSpec{
@@ -318,7 +318,7 @@ func newManagedDeliveryPod(
 	}
 	if initState.Waiting != nil || initState.Running != nil || initState.Terminated != nil {
 		pod.Status.InitContainerStatuses = append(pod.Status.InitContainerStatuses, corev1.ContainerStatus{
-			Name:  modeldelivery.DefaultInitContainerName,
+			Name:  workloaddelivery.DefaultMaterializerInitContainerName,
 			State: initState,
 		})
 	}

@@ -227,7 +227,26 @@ spec:
                       - Embeddings
                       - Rerank
                       - SpeechToText
+                      - TextToSpeech
                       - Translation
+                      - ImageClassification
+                      - ObjectDetection
+                      - ImageSegmentation
+                      - ImageToText
+                      - VisualQuestionAnswering
+                      - ImageGeneration
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  supportedFeatures:
+                    items:
+                      enum:
+                      - VisionInput
+                      - AudioInput
+                      - AudioOutput
+                      - ImageOutput
+                      - MultiModalInput
+                      - ToolCalling
                       type: string
                     type: array
                     x-kubernetes-list-type: set

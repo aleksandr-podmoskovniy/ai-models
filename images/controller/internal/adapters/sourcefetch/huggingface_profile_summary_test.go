@@ -31,6 +31,9 @@ func TestFetchHuggingFaceProfileSummarySafetensors(t *testing.T) {
 		case request.Method == http.MethodGet && request.URL.Path == "/owner/model/resolve/deadbeef/config.json":
 			writer.Header().Set("Content-Type", "application/json")
 			_, _ = writer.Write([]byte(`{"architectures":["LlamaForCausalLM"],"torch_dtype":"bfloat16"}`))
+		case request.Method == http.MethodGet && request.URL.Path == "/owner/model/resolve/deadbeef/tokenizer_config.json":
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"chat_template":"{%- if tools %}{{ tools }}{%- endif %}"}`))
 		case request.Method == http.MethodHead && request.URL.Path == "/owner/model/resolve/deadbeef/model-00001-of-00002.safetensors":
 			writer.Header().Set("Content-Length", "11")
 			writer.WriteHeader(http.StatusOK)
@@ -48,6 +51,7 @@ func TestFetchHuggingFaceProfileSummarySafetensors(t *testing.T) {
 		HFToken: testHuggingFaceToken,
 	}, "owner/model", "deadbeef", modelsv1alpha1.ModelInputFormatSafetensors, []string{
 		"config.json",
+		"tokenizer_config.json",
 		"model-00001-of-00002.safetensors",
 		"model-00002-of-00002.safetensors",
 	})
@@ -68,6 +72,56 @@ func TestFetchHuggingFaceProfileSummarySafetensors(t *testing.T) {
 	}
 	if got, want := string(summary.ConfigPayload), `{"architectures":["LlamaForCausalLM"],"torch_dtype":"bfloat16"}`; got != want {
 		t.Fatalf("unexpected config payload %q", got)
+	}
+	if got, want := string(summary.TokenizerConfigPayload), `{"chat_template":"{%- if tools %}{{ tools }}{%- endif %}"}`; got != want {
+		t.Fatalf("unexpected tokenizer config payload %q", got)
+	}
+}
+
+func TestFetchHuggingFaceProfileSummarySafetensorsDiffusersLayout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requireHuggingFaceAuth(t, request)
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/owner/model/resolve/deadbeef/model_index.json":
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"_class_name":"StableDiffusionPipeline"}`))
+		case request.Method == http.MethodHead && request.URL.Path == "/owner/model/resolve/deadbeef/text_encoder/model.safetensors":
+			writer.Header().Set("Content-Length", "17")
+			writer.WriteHeader(http.StatusOK)
+		case request.Method == http.MethodHead && request.URL.Path == "/owner/model/resolve/deadbeef/unet/diffusion_pytorch_model.safetensors":
+			writer.Header().Set("Content-Length", "29")
+			writer.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	withHuggingFaceBaseURL(t, server.URL)
+	summary, err := fetchHuggingFaceProfileSummary(t.Context(), RemoteOptions{
+		HFToken: testHuggingFaceToken,
+	}, "owner/model", "deadbeef", modelsv1alpha1.ModelInputFormatSafetensors, []string{
+		"model_index.json",
+		"scheduler/scheduler_config.json",
+		"text_encoder/config.json",
+		"text_encoder/model.safetensors",
+		"unet/config.json",
+		"unet/diffusion_pytorch_model.safetensors",
+	})
+	if err != nil {
+		t.Fatalf("fetchHuggingFaceProfileSummary() error = %v", err)
+	}
+	if summary == nil {
+		t.Fatal("expected remote profile summary")
+	}
+	if got, want := string(summary.ConfigPayload), `{"_class_name":"StableDiffusionPipeline"}`; got != want {
+		t.Fatalf("unexpected config payload %q", got)
+	}
+	if got, want := summary.WeightBytes, int64(46); got != want {
+		t.Fatalf("unexpected weight bytes %d", got)
+	}
+	if got, want := summary.LargestWeightFileBytes, int64(29); got != want {
+		t.Fatalf("unexpected largest weight bytes %d", got)
 	}
 }
 

@@ -18,6 +18,7 @@ package catalogstatus
 
 import (
 	"context"
+	"errors"
 
 	"github.com/deckhouse/ai-models/controller/internal/ports/auditsink"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
@@ -30,10 +31,15 @@ type fakeSourceWorkerRuntime struct {
 	handles []*publicationports.SourceWorkerHandle
 	err     error
 	calls   int
+
+	requireUploadStage bool
 }
 
 func (f *fakeSourceWorkerRuntime) GetOrCreate(ctx context.Context, owner client.Object, request publicationports.Request) (*publicationports.SourceWorkerHandle, bool, error) {
 	f.calls++
+	if f.requireUploadStage && request.UploadStage == nil {
+		return nil, false, errors.New("missing upload stage")
+	}
 	if len(f.handles) == 0 {
 		return f.handle, false, f.err
 	}

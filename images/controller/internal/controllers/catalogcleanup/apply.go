@@ -45,13 +45,13 @@ func (r *baseReconciler) applyEnsureFinalizerDecision(
 }
 
 func (r *baseReconciler) applyFinalizeDeleteFlow(ctx context.Context, flow finalizeDeleteFlow) (ctrl.Result, error) {
+	if result, handled, err := r.maybeEnsureGarbageCollectionRequest(ctx, flow.runtime, flow.decision.EnsureGarbageCollectionRequest); handled || err != nil {
+		return result, err
+	}
 	if result, handled, err := r.maybeDeletePublicationRuntimeResources(ctx, flow.runtime.object, flow.decision.DeleteRuntimeResources); handled || err != nil {
 		return result, err
 	}
 	if result, handled, err := r.maybeRunCleanup(ctx, flow.runtime, flow.decision.RunCleanup); handled || err != nil {
-		return result, err
-	}
-	if result, handled, err := r.maybeEnsureGarbageCollectionRequest(ctx, flow.runtime, flow.decision.EnsureGarbageCollectionRequest); handled || err != nil {
 		return result, err
 	}
 	if err := r.maybeUpdateDeleteStatus(ctx, flow.runtime.object, flow.decision); err != nil {

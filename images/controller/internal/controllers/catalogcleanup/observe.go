@@ -60,6 +60,13 @@ func (r *baseReconciler) observeDelete(
 			return cleanuphandle.Handle{}, deletionapp.FinalizeDeleteInput{}, err
 		}
 		observation.RuntimeResourcePresent = runtimeResources.Present()
+		if observation.RuntimeResourcePresent {
+			sessionToken, err := r.directUploadSessionTokenSnapshot(ctx, object.GetUID())
+			if err != nil {
+				return cleanuphandle.Handle{}, deletionapp.FinalizeDeleteInput{}, err
+			}
+			observation.DirectUploadSession = sessionToken != ""
+		}
 		return cleanuphandle.Handle{}, observation, nil
 	}
 	observation.HandleFound = true

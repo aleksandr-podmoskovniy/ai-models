@@ -53,6 +53,9 @@ status/conditions и при необходимости публичную schema
 - Синхронизировать ai-models repo docs с ADR/materials в `internal-docs`.
 - Сжать публичный `status.resolved` до стабильных model-derived facts и
   endpoint capabilities.
+- Расширить публичную capability summary так, чтобы профиль мог честно
+  подсвечивать embedding, rerank, STT, TTS, CV, image generation, multimodal и
+  tool-calling модели без runtime launch hints.
 - Перенести confidence/provenance в internal snapshot/profile boundary, а не в
   публичную CRD.
 - Убрать из live projection `minimumLaunch`, `compatibleRuntimes`,
@@ -70,6 +73,9 @@ status/conditions и при необходимости публичную schema
   отдельного consumer-proof API slice.
 - Не проектировать full compatibility matrix для `ai-inference`.
 - Не считать filename-derived GGUF значения фактами.
+- Не называть модель "MCP-compatible": MCP остаётся capability будущего
+  inference host/runtime. Каталог может показать только model/tool-calling
+  feature, если есть надёжный сигнал.
 
 ## 6. Затрагиваемые области
 
@@ -103,6 +109,12 @@ status/conditions и при необходимости публичную schema
 - Публичная CRD больше не содержит scheduler/request-like поля под
   `status.resolved`.
 - Публичный status не выдаёт low-confidence GGUF filename hints за facts.
+- Публичный status показывает endpoint types и cross-cutting features отдельно:
+  API-тип вызова не смешивается с input/output modality или tool-calling.
+- HuggingFace `pipeline_tag` используется как source-declared metadata signal,
+  а не как weak filename-style hint.
+- Есть fixture matrix для маленьких моделей: embeddings, rerank, STT, TTS, CV,
+  image generation, multimodal, tool-calling.
 - Conditions различают полный и частичный metadata profile без runtime-specific
   или high-cardinality reasons.
 - `git diff --check` проходит.

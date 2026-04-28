@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	directuploadstate "github.com/deckhouse/ai-models/controller/internal/adapters/k8s/directuploadstate"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
@@ -191,5 +192,69 @@ func TestServiceGetOrCreateRecreatesInterruptedFailedPodBeforeDirectUploadStarts
 	}
 	if recreated.Status.Phase == corev1.PodFailed {
 		t.Fatal("expected recreated pod to replace interrupted failed instance")
+	}
+}
+
+func TestServiceGetOrCreateObservesRetainedUploadWorkerWithoutStage(t *testing.T) {
+	t.Parallel()
+
+	scheme := testkit.NewScheme(t)
+	request := testOperationRequest()
+	request.Spec.Source = modelsv1alpha1.ModelSourceSpec{Upload: &modelsv1alpha1.UploadModelSource{}}
+	owner := testkit.NewModel()
+	owner.UID = request.Owner.UID
+	owner.Name = request.Owner.Name
+
+	podName, err := resourcenames.SourceWorkerPodName(request.Owner.UID)
+	if err != nil {
+		t.Fatalf("SourceWorkerPodName() error = %v", err)
+	}
+	stateSecretName, err := resourcenames.SourceWorkerStateSecretName(request.Owner.UID)
+	if err != nil {
+		t.Fatalf("SourceWorkerStateSecretName() error = %v", err)
+	}
+	stateSecret, err := directuploadstate.NewSecret(directuploadstate.SecretSpec{
+		Name:            stateSecretName,
+		Namespace:       "d8-ai-models",
+		OwnerGeneration: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewSecret() error = %v", err)
+	}
+
+	retainedPod := &corev1.Pod{
+		ObjectMeta: testkit.NewModel().ObjectMeta,
+	}
+	retainedPod.Name = podName
+	retainedPod.Namespace = "d8-ai-models"
+	retainedPod.Labels = buildLabels(request.Owner)
+	retainedPod.Annotations = map[string]string{sourceWorkerOwnerGenerationAnnotationKey: "1"}
+	retainedPod.Status.Phase = corev1.PodSucceeded
+	retainedPod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: "publish",
+		State: corev1.ContainerState{
+			Terminated: &corev1.ContainerStateTerminated{Message: "ready-result"},
+		},
+	}}
+
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(owner, retainedPod, stateSecret).
+		Build()
+
+	service, err := NewService(kubeClient, scheme, testOptions())
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	handle, created, err := service.GetOrCreate(context.Background(), owner, request)
+	if err != nil {
+		t.Fatalf("GetOrCreate() error = %v", err)
+	}
+	if created {
+		t.Fatal("retained upload worker must be observed, not recreated")
+	}
+	if handle == nil || handle.Name != podName || handle.TerminationMessage != "ready-result" {
+		t.Fatalf("unexpected source worker handle %#v", handle)
 	}
 }

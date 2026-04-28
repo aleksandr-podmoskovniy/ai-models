@@ -71,6 +71,7 @@ type ResolvedProfile struct {
 	ContextWindowTokensConfidence ProfileConfidence
 	SourceRepoID                  string
 	SupportedEndpointTypes        []string
+	SupportedFeatures             []string
 	Footprint                     ProfileFootprint
 }
 

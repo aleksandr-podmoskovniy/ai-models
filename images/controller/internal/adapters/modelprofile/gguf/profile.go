@@ -82,12 +82,12 @@ func resolveFromSummary(stem string, modelSizeBytes int64, task string) publicat
 		parameterCount = profilecommon.EstimateParameterCountFromBytes(modelSizeBytes, precision, quantization)
 		parameterConfidence = publicationdata.ProfileConfidenceEstimated
 	}
-	endpoints := []string(nil)
+	capabilities := profilecommon.Capabilities{}
 	task = strings.TrimSpace(task)
 	taskConfidence := publicationdata.ProfileConfidence("")
 	if task != "" {
 		taskConfidence = publicationdata.ProfileConfidenceExact
-		endpoints = profilecommon.EndpointTypes(task)
+		capabilities = profilecommon.ResolveCapabilities(task)
 	}
 
 	return publicationdata.ResolvedProfile{
@@ -100,7 +100,8 @@ func resolveFromSummary(stem string, modelSizeBytes int64, task string) publicat
 		ParameterCountConfidence: parameterConfidence,
 		Quantization:             quantization,
 		QuantizationConfidence:   confidenceIfSet(quantization, publicationdata.ProfileConfidenceHint),
-		SupportedEndpointTypes:   endpoints,
+		SupportedEndpointTypes:   capabilities.EndpointTypes,
+		SupportedFeatures:        capabilities.Features,
 		Footprint: publicationdata.ProfileFootprint{
 			WeightsBytes:           modelSizeBytes,
 			LargestWeightFileBytes: modelSizeBytes,

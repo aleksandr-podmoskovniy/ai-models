@@ -43,6 +43,7 @@ func readyStatus(
 		},
 		Resolved: &modelsv1alpha1.ModelResolvedStatus{
 			SupportedEndpointTypes: publicEndpointTypes(snapshot.Resolved),
+			SupportedFeatures:      publicFeatureTypes(snapshot.Resolved),
 		},
 		Conditions: keepNonPublishConditions(current.Conditions),
 	}
@@ -117,6 +118,21 @@ func publicEndpointTypes(resolved publicationdata.ResolvedProfile) []modelsv1alp
 	return result
 }
 
+func publicFeatureTypes(resolved publicationdata.ResolvedProfile) []modelsv1alpha1.ModelFeatureType {
+	if !resolved.TaskConfidence.ReliablePublicFact() {
+		return nil
+	}
+	result := make([]modelsv1alpha1.ModelFeatureType, 0, len(resolved.SupportedFeatures))
+	for _, feature := range resolved.SupportedFeatures {
+		featureType, ok := knownPublicFeatureType(modelsv1alpha1.ModelFeatureType(feature))
+		if !ok {
+			continue
+		}
+		result = append(result, featureType)
+	}
+	return result
+}
+
 func knownPublicFormat(format modelsv1alpha1.ModelInputFormat) (modelsv1alpha1.ModelInputFormat, bool) {
 	switch format {
 	case modelsv1alpha1.ModelInputFormatSafetensors,
@@ -134,8 +150,29 @@ func knownPublicEndpointType(endpoint modelsv1alpha1.ModelEndpointType) (modelsv
 		modelsv1alpha1.ModelEndpointTypeEmbeddings,
 		modelsv1alpha1.ModelEndpointTypeRerank,
 		modelsv1alpha1.ModelEndpointTypeSpeechToText,
-		modelsv1alpha1.ModelEndpointTypeTranslation:
+		modelsv1alpha1.ModelEndpointTypeTextToSpeech,
+		modelsv1alpha1.ModelEndpointTypeTranslation,
+		modelsv1alpha1.ModelEndpointTypeImageClassification,
+		modelsv1alpha1.ModelEndpointTypeObjectDetection,
+		modelsv1alpha1.ModelEndpointTypeImageSegmentation,
+		modelsv1alpha1.ModelEndpointTypeImageToText,
+		modelsv1alpha1.ModelEndpointTypeVisualQuestionAnswering,
+		modelsv1alpha1.ModelEndpointTypeImageGeneration:
 		return endpoint, true
+	default:
+		return "", false
+	}
+}
+
+func knownPublicFeatureType(feature modelsv1alpha1.ModelFeatureType) (modelsv1alpha1.ModelFeatureType, bool) {
+	switch feature {
+	case modelsv1alpha1.ModelFeatureTypeVisionInput,
+		modelsv1alpha1.ModelFeatureTypeAudioInput,
+		modelsv1alpha1.ModelFeatureTypeAudioOutput,
+		modelsv1alpha1.ModelFeatureTypeImageOutput,
+		modelsv1alpha1.ModelFeatureTypeMultiModalInput,
+		modelsv1alpha1.ModelFeatureTypeToolCalling:
+		return feature, true
 	default:
 		return "", false
 	}

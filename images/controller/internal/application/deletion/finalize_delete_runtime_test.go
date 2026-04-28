@@ -33,8 +33,28 @@ func TestFinalizeDeleteWaitsForRuntimeCleanupBeforeRemovingFinalizer(t *testing.
 	if !got.DeleteRuntimeResources || !got.UpdateStatus || !got.Requeue {
 		t.Fatalf("unexpected decision %#v", got)
 	}
+	if got.EnsureGarbageCollectionRequest {
+		t.Fatalf("did not expect garbage collection request without direct-upload session: %#v", got)
+	}
 	if got.StatusReason != modelsv1alpha1.ModelConditionReasonPending {
 		t.Fatalf("unexpected status reason %q", got.StatusReason)
+	}
+	if got.RemoveFinalizer {
+		t.Fatalf("did not expect finalizer removal while runtime cleanup is still needed: %#v", got)
+	}
+}
+
+func TestFinalizeDeleteSnapshotsDirectUploadSessionBeforeRuntimeCleanup(t *testing.T) {
+	t.Parallel()
+
+	got := FinalizeDelete(FinalizeDeleteInput{
+		HasFinalizer:           true,
+		RuntimeResourcePresent: true,
+		DirectUploadSession:    true,
+	})
+
+	if !got.EnsureGarbageCollectionRequest || !got.DeleteRuntimeResources || !got.Requeue {
+		t.Fatalf("unexpected decision %#v", got)
 	}
 	if got.RemoveFinalizer {
 		t.Fatalf("did not expect finalizer removal while runtime cleanup is still needed: %#v", got)

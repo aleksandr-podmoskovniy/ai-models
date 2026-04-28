@@ -1,0 +1,18 @@
+{{- if (include "ai-models.isEnabled" .) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ai-models.uploadGatewayServiceName" . }}
+  namespace: {{ include "ai-models.namespace" . }}
+  {{- include "helm_lib_module_labels" (list . (dict "app" "ai-models" "component" "upload-gateway")) | nindent 2 }}
+spec:
+  selector:
+    {{- include "ai-models.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: upload-gateway
+  ports:
+    - name: upload
+      port: {{ include "ai-models.uploadGatewayPort" . | int }}
+      targetPort: upload
+      protocol: TCP
+{{- end }}

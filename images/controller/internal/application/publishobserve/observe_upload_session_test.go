@@ -57,7 +57,7 @@ func TestObserveUploadSession(t *testing.T) {
 				if got.Observation.Phase != publicationdomain.OperationPhaseFailed {
 					t.Fatalf("unexpected phase %q", got.Observation.Phase)
 				}
-				if got.Observation.Message != "upload session worker pod is missing" {
+				if got.Observation.Message != "upload session state is missing" {
 					t.Fatalf("unexpected failure message %q", got.Observation.Message)
 				}
 				if got.DeleteRuntime {
@@ -111,7 +111,7 @@ func TestObserveUploadSession(t *testing.T) {
 				if got.Observation.Phase != publicationdomain.OperationPhaseFailed {
 					t.Fatalf("unexpected phase %q", got.Observation.Phase)
 				}
-				if got.Observation.Message != "upload session worker pod failed" {
+				if got.Observation.Message != "upload session failed" {
 					t.Fatalf("unexpected failure message %q", got.Observation.Message)
 				}
 				if !got.DeleteRuntime {

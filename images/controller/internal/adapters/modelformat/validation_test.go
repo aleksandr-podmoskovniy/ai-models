@@ -176,6 +176,39 @@ func TestSelectRemoteFiles(t *testing.T) {
 	}
 }
 
+func TestSelectRemoteFilesSafetensorsDiffusersLayout(t *testing.T) {
+	t.Parallel()
+
+	selected, err := SelectRemoteFiles(modelsv1alpha1.ModelInputFormatSafetensors, []string{
+		"README.md",
+		"model_index.json",
+		"scheduler/scheduler_config.json",
+		"text_encoder/config.json",
+		"text_encoder/model.safetensors",
+		"unet/config.json",
+		"unet/diffusion_pytorch_model.safetensors",
+		"vae/config.json",
+		"vae/diffusion_pytorch_model.safetensors",
+		"onnx/model.onnx",
+		"examples/prompt.png",
+	})
+	if err != nil {
+		t.Fatalf("SelectRemoteFiles() error = %v", err)
+	}
+	if !slices.Equal(selected, []string{
+		"model_index.json",
+		"scheduler/scheduler_config.json",
+		"text_encoder/config.json",
+		"text_encoder/model.safetensors",
+		"unet/config.json",
+		"unet/diffusion_pytorch_model.safetensors",
+		"vae/config.json",
+		"vae/diffusion_pytorch_model.safetensors",
+	}) {
+		t.Fatalf("unexpected selected files %#v", selected)
+	}
+}
+
 func TestSelectRemoteFilesDropsHelperScripts(t *testing.T) {
 	t.Parallel()
 

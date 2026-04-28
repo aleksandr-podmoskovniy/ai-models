@@ -86,7 +86,7 @@ spec:
             - --node-cache-thin-pool-name={{ include "ai-models.nodeCacheThinPoolName" . }}
             - {{ printf "--node-cache-node-selector-json=%s" (include "ai-models.nodeCacheNodeSelectorJSON" .) | quote }}
             - {{ printf "--node-cache-block-device-selector-json=%s" (include "ai-models.nodeCacheBlockDeviceSelectorJSON" .) | quote }}
-            - --upload-service-name={{ include "ai-models.controllerServiceName" . }}
+            - --upload-service-name={{ include "ai-models.uploadGatewayServiceName" . }}
             - --upload-public-host={{ include "ai-models.uploadPublicHost" . }}
           env:
             - name: POD_NAMESPACE
@@ -180,76 +180,6 @@ spec:
               cpu: 200m
               memory: 256Mi
             {{- end }}
-        - name: upload-gateway
-          {{- include "helm_lib_module_container_security_context_read_only_root_filesystem_capabilities_drop_all_pss_restricted" . | nindent 10 }}
-          image: {{ include "helm_lib_module_image" (list . "controllerRuntime") }}
-          imagePullPolicy: IfNotPresent
-          args:
-            - upload-gateway
-            - --listen-port={{ include "ai-models.controllerUploadPort" . }}
-            - --session-secret-namespace=$(POD_NAMESPACE)
-            - --staging-bucket={{ include "ai-models.artifactsBucket" . }}
-          env:
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-            - name: LOG_FORMAT
-              value: json
-            - name: AI_MODELS_S3_ENDPOINT_URL
-              value: {{ include "ai-models.artifactsEndpoint" . | quote }}
-            - name: AI_MODELS_S3_REGION
-              value: {{ include "ai-models.artifactsRegion" . | quote }}
-            - name: AI_MODELS_S3_USE_PATH_STYLE
-              value: {{ include "ai-models.artifactsUsePathStyleBool" . | quote }}
-            - name: AI_MODELS_S3_IGNORE_TLS
-              value: {{ include "ai-models.artifactsIgnoreTLS" . | quote }}
-            - name: AWS_REGION
-              value: {{ include "ai-models.artifactsRegion" . | quote }}
-            - name: AWS_DEFAULT_REGION
-              value: {{ include "ai-models.artifactsRegion" . | quote }}
-            - name: AWS_EC2_METADATA_DISABLED
-              value: "true"
-            - name: AWS_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
-                  key: accessKey
-            - name: AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "ai-models.artifactsResolvedSecretName" . }}
-                  key: secretKey
-            {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
-            - name: AI_MODELS_S3_CA_FILE
-              value: /etc/ai-models/artifacts-ca/ca.crt
-            {{- end }}
-          ports:
-            - name: upload
-              containerPort: {{ include "ai-models.controllerUploadPort" . | int }}
-              protocol: TCP
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: upload
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: upload
-          {{- if (include "ai-models.artifactsMountedCASecretName" . | trim) }}
-          volumeMounts:
-            - name: artifacts-ca
-              mountPath: /etc/ai-models/artifacts-ca
-              readOnly: true
-          {{- end }}
-          resources:
-            requests:
-              {{- include "helm_lib_module_ephemeral_storage_only_logs" . | nindent 14 }}
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 128Mi
         {{- $kubeRbacProxySettings := dict }}
         {{- $_ := set $kubeRbacProxySettings "portName" "https-metrics" }}
         {{- $_ := set $kubeRbacProxySettings "listenPort" "8443" }}

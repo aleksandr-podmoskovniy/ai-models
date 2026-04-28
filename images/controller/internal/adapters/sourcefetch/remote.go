@@ -65,6 +65,7 @@ type RemoteResult struct {
 
 type RemoteProfileSummary struct {
 	ConfigPayload          []byte
+	TokenizerConfigPayload []byte
 	WeightBytes            int64
 	LargestWeightFileBytes int64
 	WeightFileCount        int64
@@ -111,7 +112,8 @@ type RemoteProvenance struct {
 }
 
 type RemoteProfileFallbacks struct {
-	TaskHint string
+	SourceDeclaredTask string
+	TaskHint           string
 }
 
 type RemoteMetadata struct {

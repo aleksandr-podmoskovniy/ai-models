@@ -20,7 +20,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
+	deliverycontract "github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -190,9 +190,9 @@ func incrementManagedWorkloadDeliveryCount(
 }
 
 func managedDeliveryLabels(annotations map[string]string) (string, string, bool) {
-	digest := strings.TrimSpace(annotations[modeldelivery.ResolvedDigestAnnotation])
-	mode := strings.TrimSpace(annotations[modeldelivery.ResolvedDeliveryModeAnnotation])
-	reason := strings.TrimSpace(annotations[modeldelivery.ResolvedDeliveryReasonAnnotation])
+	digest := strings.TrimSpace(annotations[deliverycontract.ResolvedDigestAnnotation])
+	mode := strings.TrimSpace(annotations[deliverycontract.ResolvedDeliveryModeAnnotation])
+	reason := strings.TrimSpace(annotations[deliverycontract.ResolvedDeliveryReasonAnnotation])
 	if digest == "" && mode == "" && reason == "" {
 		return "", "", false
 	}
@@ -210,7 +210,7 @@ func managedInitState(pod *corev1.Pod) (string, string, bool) {
 		return "", "", false
 	}
 	for _, status := range pod.Status.InitContainerStatuses {
-		if status.Name != modeldelivery.DefaultInitContainerName {
+		if status.Name != deliverycontract.DefaultMaterializerInitContainerName {
 			continue
 		}
 		switch {

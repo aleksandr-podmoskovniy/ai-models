@@ -38,6 +38,7 @@ type requestResultRecord struct {
 	OpenDirectUploadMultipartUploadCount  int      `json:"openDirectUploadMultipartUploadCount"`
 	OpenDirectUploadMultipartPartCount    int      `json:"openDirectUploadMultipartPartCount"`
 	StaleDirectUploadMultipartUploadCount int      `json:"staleDirectUploadMultipartUploadCount"`
+	DeletedRegistryBlobCount              int      `json:"deletedRegistryBlobCount"`
 	RegistryOutput                        string   `json:"registryOutput,omitempty"`
 }
 
@@ -120,6 +121,7 @@ func requestResult(result CleanupResult, completedAt time.Time, requestNames []s
 		OpenDirectUploadMultipartUploadCount:  result.Report.StoredDirectUploadMultipartUploadCount,
 		OpenDirectUploadMultipartPartCount:    result.Report.StoredDirectUploadMultipartPartCount,
 		StaleDirectUploadMultipartUploadCount: len(result.Report.StaleDirectUploadMultipartUploads),
+		DeletedRegistryBlobCount:              result.DeletedRegistryBlobCount,
 		RegistryOutput:                        boundedResultRegistryOutput(result.RegistryOutput),
 	}
 }

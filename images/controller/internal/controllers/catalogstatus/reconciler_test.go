@@ -81,6 +81,39 @@ func TestClusterModelReconcilerProjectsClusterScopedRunningStatus(t *testing.T) 
 	}
 }
 
+func TestClusterModelReconcilerRetriesInterruptedSourceWorker(t *testing.T) {
+	t.Parallel()
+
+	clusterModel := testClusterModel()
+	deleted := false
+	sourceWorkers := &fakeSourceWorkerRuntime{handle: interruptedSourceWorkerHandle(&deleted)}
+	reconciler, kubeClient := newClusterModelReconciler(t, sourceWorkers, &fakeUploadSessionRuntime{}, clusterModel)
+
+	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: client.ObjectKeyFromObject(clusterModel),
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if result.RequeueAfter <= 0 {
+		t.Fatalf("expected requeue after interrupted worker, got %#v", result)
+	}
+	if !deleted {
+		t.Fatal("expected interrupted worker delete callback")
+	}
+
+	var updated modelsv1alpha1.ClusterModel
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(clusterModel), &updated); err != nil {
+		t.Fatalf("Get(clusterModel) error = %v", err)
+	}
+	if got, want := updated.Status.Phase, modelsv1alpha1.ModelPhasePublishing; got != want {
+		t.Fatalf("unexpected phase %q", got)
+	}
+	if got, want := updated.Status.Progress, "15%"; got != want {
+		t.Fatalf("unexpected progress %q", got)
+	}
+}
+
 func TestModelReconcilerPublishesReadyStatusFromSucceededWorker(t *testing.T) {
 	t.Parallel()
 
@@ -95,21 +128,11 @@ func TestModelReconcilerPublishesReadyStatusFromSucceededWorker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Reconcile() error = %v", err)
 	}
-	if !result.Requeue {
-		t.Fatalf("expected requeue after writing cleanup handle, got %#v", result)
+	if result.Requeue || result.RequeueAfter != 0 {
+		t.Fatalf("unexpected requeue after successful ready projection: %#v", result)
 	}
-	if deleted {
-		t.Fatal("worker must not be deleted before ready status is persisted")
-	}
-
 	if _, found, err := reconciler.cleanupState.Get(context.Background(), model); err != nil || !found {
 		t.Fatalf("expected internal cleanup state after first reconcile, found=%v err=%v", found, err)
-	}
-
-	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
-		NamespacedName: client.ObjectKeyFromObject(model),
-	}); err != nil {
-		t.Fatalf("second Reconcile() error = %v", err)
 	}
 
 	var ready modelsv1alpha1.Model

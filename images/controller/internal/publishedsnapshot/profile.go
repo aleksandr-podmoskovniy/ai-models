@@ -21,6 +21,7 @@ type ProfileConfidence string
 const (
 	ProfileConfidenceExact     ProfileConfidence = "Exact"
 	ProfileConfidenceDerived   ProfileConfidence = "Derived"
+	ProfileConfidenceDeclared  ProfileConfidence = "Declared"
 	ProfileConfidenceEstimated ProfileConfidence = "Estimated"
 	ProfileConfidenceHint      ProfileConfidence = "Hint"
 )
@@ -33,7 +34,7 @@ type ProfileFootprint struct {
 }
 
 func (c ProfileConfidence) ReliablePublicFact() bool {
-	return c == ProfileConfidenceExact || c == ProfileConfidenceDerived
+	return c == ProfileConfidenceExact || c == ProfileConfidenceDerived || c == ProfileConfidenceDeclared
 }
 
 func (p ResolvedProfile) HasPartialConfidence() bool {

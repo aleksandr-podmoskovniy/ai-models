@@ -15,10 +15,6 @@ spec:
       port: {{ include "ai-models.controllerMetricsPort" . | int }}
       targetPort: https-metrics
       protocol: TCP
-    - name: upload
-      port: {{ include "ai-models.controllerUploadPort" . | int }}
-      targetPort: upload
-      protocol: TCP
     - name: webhook
       port: {{ include "ai-models.controllerWebhookPort" . | int }}
       targetPort: webhook

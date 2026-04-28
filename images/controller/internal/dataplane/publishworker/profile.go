@@ -31,9 +31,10 @@ import (
 )
 
 type sourceProfileInput struct {
-	Task       string
-	TaskHint   string
-	Provenance sourceProfileProvenance
+	Task               string
+	SourceDeclaredTask string
+	TaskHint           string
+	Provenance         sourceProfileProvenance
 }
 
 type sourceProfileProvenance struct {
@@ -114,9 +115,10 @@ func resolveProfile(
 	switch inputFormat {
 	case modelsv1alpha1.ModelInputFormatSafetensors:
 		return safetensorsprofile.Resolve(safetensorsprofile.Input{
-			CheckpointDir: checkpointDir,
-			Task:          input.Task,
-			TaskHint:      input.TaskHint,
+			CheckpointDir:      checkpointDir,
+			Task:               input.Task,
+			SourceDeclaredTask: input.SourceDeclaredTask,
+			TaskHint:           input.TaskHint,
 		})
 	case modelsv1alpha1.ModelInputFormatGGUF:
 		return ggufprofile.Resolve(ggufprofile.Input{

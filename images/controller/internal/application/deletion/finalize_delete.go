@@ -45,6 +45,7 @@ type FinalizeDeleteInput struct {
 	HandleErr              error
 	HandleKind             cleanuphandle.Kind
 	RuntimeResourcePresent bool
+	DirectUploadSession    bool
 	CleanupState           CleanupOperationState
 	GarbageCollectionState GarbageCollectionState
 }
@@ -73,7 +74,7 @@ func FinalizeDelete(input FinalizeDeleteInput) FinalizeDeleteDecision {
 	}
 	if !input.HandleFound {
 		if input.RuntimeResourcePresent {
-			return pendingRuntimeCleanupDecision()
+			return pendingRuntimeCleanupDecision(input.DirectUploadSession)
 		}
 		return FinalizeDeleteDecision{RemoveFinalizer: true}
 	}
@@ -153,13 +154,14 @@ func runCleanupDecision(message string) FinalizeDeleteDecision {
 	}
 }
 
-func pendingRuntimeCleanupDecision() FinalizeDeleteDecision {
+func pendingRuntimeCleanupDecision(directUploadSession bool) FinalizeDeleteDecision {
 	return FinalizeDeleteDecision{
-		DeleteRuntimeResources: true,
-		UpdateStatus:           true,
-		StatusReason:           modelsv1alpha1.ModelConditionReasonPending,
-		StatusMessage:          "publication runtime resources are still being cleaned up",
-		Requeue:                true,
+		DeleteRuntimeResources:         true,
+		EnsureGarbageCollectionRequest: directUploadSession,
+		UpdateStatus:                   true,
+		StatusReason:                   modelsv1alpha1.ModelConditionReasonPending,
+		StatusMessage:                  "publication runtime resources are still being cleaned up",
+		Requeue:                        true,
 	}
 }
 

@@ -61,6 +61,9 @@ func ObserveSourceWorker(
 		input.State = publicationdomain.RuntimeStateSucceeded
 		input.Success = success
 	case handle.IsFailed():
+		if sourceWorkerInterrupted(handle.TerminationMessage) {
+			return interruptedSourceWorkerDecision(handle), nil
+		}
 		input.State = publicationdomain.RuntimeStateFailed
 		input.Failure = defaultFailureMessage(handle.TerminationMessage, "source worker pod failed")
 	default:
@@ -111,4 +114,31 @@ func mapSourceWorkerDecision(
 	default:
 		return RuntimeObservationDecision{}, errors.New("source worker decision produced no observable state")
 	}
+}
+
+func interruptedSourceWorkerDecision(handle *publicationports.SourceWorkerHandle) RuntimeObservationDecision {
+	reason := handle.ProgressReason
+	if reason == "" {
+		reason = modelsv1alpha1.ModelConditionReasonPublishing
+	}
+	message := strings.TrimSpace(handle.ProgressMessage)
+	if message == "" {
+		message = "source worker was interrupted; retrying publication from saved state"
+	}
+	return RuntimeObservationDecision{
+		Observation: publicationdomain.Observation{
+			Phase:           publicationdomain.OperationPhaseRunning,
+			RuntimeKind:     publicationdomain.RuntimeKindSourceWorker,
+			ConditionReason: reason,
+			Progress:        strings.TrimSpace(handle.Progress),
+			Message:         message,
+		},
+		DeleteRuntime: true,
+	}
+}
+
+func sourceWorkerInterrupted(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	return strings.Contains(normalized, "context canceled") ||
+		strings.Contains(normalized, "signal: terminated")
 }

@@ -30,6 +30,7 @@ func TestDefaultManagerConfigPublicationRuntimeDefaults(t *testing.T) {
 	t.Setenv(publicationMaxConcurrentWorkersEnv, "")
 	t.Setenv(publicationWorkerMemoryRequestEnv, "")
 	t.Setenv(publicationWorkerMemoryLimitEnv, "")
+	t.Setenv(uploadServiceNameEnv, "")
 
 	config := defaultManagerConfig()
 	if got, want := config.PublicationMaxConcurrentWorkers, 4; got != want {
@@ -40,6 +41,9 @@ func TestDefaultManagerConfigPublicationRuntimeDefaults(t *testing.T) {
 	}
 	if got, want := config.PublicationWorkerMemoryLimit, "2Gi"; got != want {
 		t.Fatalf("PublicationWorkerMemoryLimit = %q, want %q", got, want)
+	}
+	if got, want := config.UploadServiceName, defaultUploadGatewayServiceName; got != want {
+		t.Fatalf("UploadServiceName = %q, want %q", got, want)
 	}
 
 	resources, resourceErr := runtimeResources(config)

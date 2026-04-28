@@ -211,6 +211,7 @@ func runActiveRequestCycle(
 		slog.Int("open_direct_upload_multipart_upload_count", result.Report.StoredDirectUploadMultipartUploadCount),
 		slog.Int("open_direct_upload_multipart_part_count", result.Report.StoredDirectUploadMultipartPartCount),
 		slog.Int("stale_direct_upload_multipart_upload_count", len(result.Report.StaleDirectUploadMultipartUploads)),
+		slog.Int("deleted_registry_blob_count", result.DeletedRegistryBlobCount),
 	}
 	if trimmedOutput := strings.TrimSpace(result.RegistryOutput); trimmedOutput != "" {
 		attrs = append(attrs, slog.String("registry_output", trimmedOutput))

@@ -37,7 +37,7 @@ func TestResolvedProfileHasPartialConfidence(t *testing.T) {
 			name: "reliable public facts are not partial",
 			profile: ResolvedProfile{
 				Task:                          "text-generation",
-				TaskConfidence:                ProfileConfidenceDerived,
+				TaskConfidence:                ProfileConfidenceDeclared,
 				Architecture:                  "LlamaForCausalLM",
 				ArchitectureConfidence:        ProfileConfidenceExact,
 				ContextWindowTokens:           8192,

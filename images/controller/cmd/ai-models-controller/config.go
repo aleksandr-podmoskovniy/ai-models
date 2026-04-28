@@ -26,7 +26,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-const defaultDMCRReadAuthSecretName = "ai-models-dmcr-auth-read"
+const (
+	defaultDMCRReadAuthSecretName   = "ai-models-dmcr-auth-read"
+	defaultUploadGatewayServiceName = "ai-models-upload-gateway"
+)
 
 type managerConfig struct {
 	LogFormat string
@@ -127,7 +130,7 @@ func defaultManagerConfig() managerConfig {
 		NodeCacheThinPoolName:              cmdsupport.EnvOr(nodeCacheThinPoolNameEnv, "model-cache"),
 		NodeCacheNodeSelectorJSON:          cmdsupport.EnvOr(nodeCacheNodeSelectorEnv, "{}"),
 		NodeCacheBlockDeviceJSON:           cmdsupport.EnvOr(nodeCacheBlockDeviceSelectorEnv, "{}"),
-		UploadServiceName:                  cmdsupport.EnvOr(uploadServiceNameEnv, "ai-models-controller"),
+		UploadServiceName:                  cmdsupport.EnvOr(uploadServiceNameEnv, defaultUploadGatewayServiceName),
 		UploadPublicHost:                   cmdsupport.EnvOr(uploadPublicHostEnv, ""),
 		MetricsBindAddress:                 cmdsupport.EnvOr(metricsBindAddressEnv, ":8080"),
 		HealthProbeBindAddress:             cmdsupport.EnvOr(healthProbeBindAddressEnv, ":8081"),
@@ -180,7 +183,7 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.StringVar(&config.NodeCacheThinPoolName, "node-cache-thin-pool-name", config.NodeCacheThinPoolName, "Thin-pool name used for managed node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheNodeSelectorJSON, "node-cache-node-selector-json", config.NodeCacheNodeSelectorJSON, "JSON object with matchLabels for node-local cache substrate node selection.")
 	flags.StringVar(&config.NodeCacheBlockDeviceJSON, "node-cache-block-device-selector-json", config.NodeCacheBlockDeviceJSON, "JSON object with matchLabels for BlockDevice selection in managed node-local cache substrate.")
-	flags.StringVar(&config.UploadServiceName, "upload-service-name", config.UploadServiceName, "Shared Service name used for upload gateway URLs.")
+	flags.StringVar(&config.UploadServiceName, "upload-service-name", config.UploadServiceName, "Upload gateway Service name used for upload session URLs.")
 	flags.StringVar(&config.UploadPublicHost, "upload-public-host", config.UploadPublicHost, "Public host used for upload session ingress URLs.")
 	flags.StringVar(&config.MetricsBindAddress, "metrics-bind-address", config.MetricsBindAddress, "The address the metric endpoint binds to.")
 	flags.StringVar(&config.HealthProbeBindAddress, "health-probe-bind-address", config.HealthProbeBindAddress, "The address the health probe endpoint binds to.")

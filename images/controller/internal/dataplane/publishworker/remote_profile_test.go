@@ -94,3 +94,86 @@ func TestResolveRemoteProfileGGUFSummary(t *testing.T) {
 		t.Fatalf("unexpected task %q", got)
 	}
 }
+
+func TestResolveRemoteProfileUsesSourceDeclaredTask(t *testing.T) {
+	t.Parallel()
+
+	resolved, err := resolveRemoteProfile(Options{}, sourcefetch.RemoteResult{
+		InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
+		Fallbacks: sourcefetch.RemoteProfileFallbacks{
+			SourceDeclaredTask: "automatic-speech-recognition",
+		},
+		ProfileSummary: &sourcefetch.RemoteProfileSummary{
+			ConfigPayload: []byte(`{
+  "model_type":"whisper",
+  "architectures":["CustomWhisperModel"],
+  "torch_dtype":"float16"
+}`),
+			WeightBytes:     24,
+			WeightFileCount: 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolveRemoteProfile() error = %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("expected resolved remote profile")
+	}
+	if got, want := resolved.TaskConfidence, "Declared"; string(got) != want {
+		t.Fatalf("unexpected task confidence %q", got)
+	}
+	if got, want := resolved.SupportedEndpointTypes, []string{"SpeechToText"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("unexpected endpoint types %#v", got)
+	}
+	if got, want := resolved.SupportedFeatures, []string{"AudioInput"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("unexpected features %#v", got)
+	}
+}
+
+func TestResolveRemoteProfileUsesDiffusersModelIndexForImageGeneration(t *testing.T) {
+	t.Parallel()
+
+	resolved, err := resolveRemoteProfile(Options{}, sourcefetch.RemoteResult{
+		InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
+		Fallbacks: sourcefetch.RemoteProfileFallbacks{
+			SourceDeclaredTask: "text-to-image",
+		},
+		ProfileSummary: &sourcefetch.RemoteProfileSummary{
+			ConfigPayload:          []byte(`{"_class_name":"StableDiffusionPipeline"}`),
+			WeightBytes:            46,
+			LargestWeightFileBytes: 29,
+			WeightFileCount:        2,
+			TokenizerConfigPayload: nil,
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolveRemoteProfile() error = %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("expected resolved remote profile")
+	}
+	if got, want := resolved.TaskConfidence, "Declared"; string(got) != want {
+		t.Fatalf("unexpected task confidence %q", got)
+	}
+	if got, want := resolved.SupportedEndpointTypes, []string{"ImageGeneration"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("unexpected endpoint types %#v", got)
+	}
+	if got, want := resolved.SupportedFeatures, []string{"ImageOutput"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("unexpected features %#v", got)
+	}
+	if got, want := resolved.Footprint.ShardCount, int64(2); got != want {
+		t.Fatalf("unexpected shard count %d", got)
+	}
+}
+
+func stringSlicesEqual(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}

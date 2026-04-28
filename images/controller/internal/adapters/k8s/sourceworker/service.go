@@ -72,11 +72,23 @@ func (s *Service) GetOrCreate(ctx context.Context, owner client.Object, request 
 		return nil, false, errors.New("source worker owner must not be nil")
 	}
 
-	plan, err := sourcePlan(request)
-	if err != nil {
+	if err := validateOwner(request.Owner); err != nil {
 		return nil, false, err
 	}
-	directUploadStateSecret, directUploadState, err := s.prepareRequestState(ctx, owner, request, plan)
+	if err := request.Identity.Validate(); err != nil {
+		return nil, false, err
+	}
+	plan, err := planSourceWorker(request.Spec, request.Owner.Namespace, request.UploadStage)
+	if err != nil {
+		if handle, ok, handleErr := s.retainedSucceededHandle(ctx, request.Owner.UID, owner.GetGeneration()); handleErr != nil || ok {
+			return handle, false, handleErr
+		}
+		return nil, false, err
+	}
+	if err := s.preflight(request, plan); err != nil {
+		return nil, false, err
+	}
+	directUploadStateSecret, directUploadState, err := s.prepareDirectUploadState(ctx, owner, request.Owner)
 	if err != nil {
 		return nil, false, err
 	}

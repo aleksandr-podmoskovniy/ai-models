@@ -18,29 +18,102 @@ package common
 
 import (
 	"math"
+	"slices"
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 )
 
-func EndpointTypes(task string) []string {
+type Capabilities struct {
+	EndpointTypes []string
+	Features      []string
+}
+
+func ResolveCapabilities(task string) Capabilities {
 	switch normalize(strings.TrimSpace(task)) {
 	case "text-generation", "text2text-generation", "summarization", "conversational":
-		return []string{
-			string(modelsv1alpha1.ModelEndpointTypeChat),
-			string(modelsv1alpha1.ModelEndpointTypeTextGeneration),
-		}
+		return capability(
+			modelsv1alpha1.ModelEndpointTypeChat,
+			modelsv1alpha1.ModelEndpointTypeTextGeneration,
+		)
 	case "feature-extraction", "embeddings", "text-embeddings-inference", "sentence-similarity":
-		return []string{string(modelsv1alpha1.ModelEndpointTypeEmbeddings)}
+		return capability(modelsv1alpha1.ModelEndpointTypeEmbeddings)
 	case "rerank", "reranker", "text-ranking":
-		return []string{string(modelsv1alpha1.ModelEndpointTypeRerank)}
+		return capability(modelsv1alpha1.ModelEndpointTypeRerank)
 	case "automatic-speech-recognition", "speech-to-text":
-		return []string{string(modelsv1alpha1.ModelEndpointTypeSpeechToText)}
-	case "translation":
-		return []string{string(modelsv1alpha1.ModelEndpointTypeTranslation)}
+		return capabilityWithFeatures(
+			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeSpeechToText},
+			modelsv1alpha1.ModelFeatureTypeAudioInput,
+		)
+	case "text-to-speech", "text-to-audio":
+		return capabilityWithFeatures(
+			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeTextToSpeech},
+			modelsv1alpha1.ModelFeatureTypeAudioOutput,
+		)
+	case "translation", "translation_xx_to_yy":
+		return capability(modelsv1alpha1.ModelEndpointTypeTranslation)
+	case "image-classification", "zero-shot-image-classification":
+		return capabilityWithFeatures(
+			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeImageClassification},
+			modelsv1alpha1.ModelFeatureTypeVisionInput,
+		)
+	case "object-detection", "zero-shot-object-detection":
+		return capabilityWithFeatures(
+			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeObjectDetection},
+			modelsv1alpha1.ModelFeatureTypeVisionInput,
+		)
+	case "image-segmentation":
+		return capabilityWithFeatures(
+			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeImageSegmentation},
+			modelsv1alpha1.ModelFeatureTypeVisionInput,
+		)
+	case "image-to-text", "image-text-to-text":
+		return capabilityWithFeatures(
+			[]modelsv1alpha1.ModelEndpointType{
+				modelsv1alpha1.ModelEndpointTypeChat,
+				modelsv1alpha1.ModelEndpointTypeImageToText,
+			},
+			modelsv1alpha1.ModelFeatureTypeVisionInput,
+			modelsv1alpha1.ModelFeatureTypeMultiModalInput,
+		)
+	case "visual-question-answering", "document-question-answering":
+		return capabilityWithFeatures(
+			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeVisualQuestionAnswering},
+			modelsv1alpha1.ModelFeatureTypeVisionInput,
+			modelsv1alpha1.ModelFeatureTypeMultiModalInput,
+		)
+	case "text-to-image", "image-generation":
+		return capabilityWithFeatures(
+			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeImageGeneration},
+			modelsv1alpha1.ModelFeatureTypeImageOutput,
+		)
 	default:
-		return nil
+		return Capabilities{}
 	}
+}
+
+func capability(endpoints ...modelsv1alpha1.ModelEndpointType) Capabilities {
+	return capabilityWithFeatures(endpoints)
+}
+
+func capabilityWithFeatures(endpoints []modelsv1alpha1.ModelEndpointType, features ...modelsv1alpha1.ModelFeatureType) Capabilities {
+	resolved := Capabilities{
+		EndpointTypes: make([]string, 0, len(endpoints)),
+		Features:      make([]string, 0, len(features)),
+	}
+	for _, endpoint := range endpoints {
+		value := string(endpoint)
+		if value != "" && !slices.Contains(resolved.EndpointTypes, value) {
+			resolved.EndpointTypes = append(resolved.EndpointTypes, value)
+		}
+	}
+	for _, feature := range features {
+		value := string(feature)
+		if value != "" && !slices.Contains(resolved.Features, value) {
+			resolved.Features = append(resolved.Features, value)
+		}
+	}
+	return resolved
 }
 
 func EstimateParameterCountFromBytes(modelBytes int64, precision, quantization string) int64 {

@@ -104,7 +104,7 @@ func TestModelReconcilerMarksCompletedUploadSessionAfterReadyProjection(t *testi
 		runningSourceWorkerHandle(),
 		succeededSourceWorkerHandle(t, nil),
 		succeededSourceWorkerHandle(t, nil),
-	}}
+	}, requireUploadStage: true}
 	reconciler, kubeClient := newModelReconciler(t, sourceWorkers, uploadSessions, model)
 
 	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
@@ -125,7 +125,7 @@ func TestModelReconcilerMarksCompletedUploadSessionAfterReadyProjection(t *testi
 	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: client.ObjectKeyFromObject(model),
 	}); err != nil {
-		t.Fatalf("fourth Reconcile() error = %v", err)
+		t.Fatalf("fourth Reconcile() after Ready error = %v", err)
 	}
 
 	if uploadSessions.markCompletedCalls != 1 {

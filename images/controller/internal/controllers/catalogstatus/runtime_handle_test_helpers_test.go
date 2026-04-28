@@ -95,6 +95,23 @@ func failedSourceWorkerHandle(message string) *publicationports.SourceWorkerHand
 	return publicationports.NewSourceWorkerHandle("publish-worker", corev1.PodFailed, message, "", "", "", nil)
 }
 
+func interruptedSourceWorkerHandle(deleted *bool) *publicationports.SourceWorkerHandle {
+	return publicationports.NewSourceWorkerHandle(
+		"publish-worker",
+		corev1.PodFailed,
+		"context canceled",
+		modelsv1alpha1.ModelConditionReasonPublishing,
+		"15%",
+		"1551882480/10246621918 bytes uploaded into the internal registry",
+		func(context.Context) error {
+			if deleted != nil {
+				*deleted = true
+			}
+			return nil
+		},
+	)
+}
+
 func succeededSourceWorkerHandle(t *testing.T, deleted *bool) *publicationports.SourceWorkerHandle {
 	t.Helper()
 	return publicationports.NewSourceWorkerHandle("publish-worker", corev1.PodSucceeded, succeededTerminationMessage(t), "", "", "", func(context.Context) error {

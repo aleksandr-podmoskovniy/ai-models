@@ -120,7 +120,7 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 			ResolvedRevision:  resolvedRevision,
 		},
 		Fallbacks: RemoteProfileFallbacks{
-			TaskHint: info.PipelineTag,
+			SourceDeclaredTask: info.PipelineTag,
 		},
 		Metadata: RemoteMetadata{
 			License:      info.License,

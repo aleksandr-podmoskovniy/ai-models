@@ -17,18 +17,23 @@ limitations under the License.
 package safetensors
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	profilecommon "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/common"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
 type Input struct {
-	CheckpointDir string
-	Task          string
-	TaskHint      string
+	CheckpointDir      string
+	Task               string
+	SourceDeclaredTask string
+	TaskHint           string
 }
 
 type SummaryInput struct {
@@ -36,7 +41,9 @@ type SummaryInput struct {
 	WeightBytes            int64
 	LargestWeightFileBytes int64
 	WeightFileCount        int64
+	TokenizerConfigPayload []byte
 	Task                   string
+	SourceDeclaredTask     string
 	TaskHint               string
 }
 
@@ -55,7 +62,12 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 		return publicationdata.ResolvedProfile{}, err
 	}
 
-	return resolveSummary(config, weights, input.Task, input.TaskHint)
+	tokenizerConfigPayload, err := loadOptionalFile(filepath.Join(input.CheckpointDir, "tokenizer_config.json"))
+	if err != nil {
+		return publicationdata.ResolvedProfile{}, err
+	}
+
+	return resolveSummary(config, weights, tokenizerConfigPayload, input.Task, input.SourceDeclaredTask, input.TaskHint)
 }
 
 func ResolveSummary(input SummaryInput) (publicationdata.ResolvedProfile, error) {
@@ -76,25 +88,33 @@ func ResolveSummary(input SummaryInput) (publicationdata.ResolvedProfile, error)
 		largestFileBytes: input.LargestWeightFileBytes,
 		fileCount:        input.WeightFileCount,
 	}
-	return resolveSummary(config, weights, input.Task, input.TaskHint)
+	return resolveSummary(config, weights, input.TokenizerConfigPayload, input.Task, input.SourceDeclaredTask, input.TaskHint)
 }
 
 func resolveSummary(
 	config map[string]any,
 	weights weightStats,
+	tokenizerConfigPayload []byte,
 	task string,
+	sourceDeclaredTask string,
 	taskHint string,
 ) (publicationdata.ResolvedProfile, error) {
 	architecture := resolveArchitecture(config)
 	family, familyConfidence := resolveFamily(config, architecture)
-	task, taskConfidence := resolveTask(config, architecture, task, taskHint)
+	task, taskConfidence := resolveTask(config, architecture, task, sourceDeclaredTask, taskHint)
 	contextWindow := detectContextWindow(config)
 	quantization := detectQuantization(config)
 	precision := detectPrecision(config, quantization)
 	parameterCount, parameterConfidence := resolveParameterCount(config, weights.totalBytes, precision, quantization)
-	endpoints := []string(nil)
+	capabilities := profilecommon.Capabilities{}
 	if taskConfidence.ReliablePublicFact() {
-		endpoints = profilecommon.EndpointTypes(task)
+		capabilities = profilecommon.ResolveCapabilities(task)
+	}
+	if hasToolCallingTemplate(tokenizerConfigPayload) {
+		capabilities.Features = appendUniqueFeature(
+			capabilities.Features,
+			string(modelsv1alpha1.ModelFeatureTypeToolCalling),
+		)
 	}
 	footprint := publicationdata.ProfileFootprint{
 		WeightsBytes:           weights.totalBytes,
@@ -122,11 +142,50 @@ func resolveSummary(
 		QuantizationConfidence:        confidenceIfSet(quantization, publicationdata.ProfileConfidenceExact),
 		ContextWindowTokens:           contextWindow,
 		ContextWindowTokensConfidence: confidenceIfPositive(contextWindow, publicationdata.ProfileConfidenceExact),
-		SupportedEndpointTypes:        endpoints,
+		SupportedEndpointTypes:        capabilities.EndpointTypes,
+		SupportedFeatures:             capabilities.Features,
 		Footprint:                     footprint,
 	}
 
 	return resolved, nil
+}
+
+func loadOptionalFile(path string) ([]byte, error) {
+	payload, err := os.ReadFile(path)
+	if err == nil {
+		return payload, nil
+	}
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	return nil, err
+}
+
+func hasToolCallingTemplate(payload []byte) bool {
+	if len(payload) == 0 {
+		return false
+	}
+	var tokenizerConfig map[string]any
+	if err := json.Unmarshal(payload, &tokenizerConfig); err != nil {
+		return false
+	}
+	template := strings.ToLower(stringValue(tokenizerConfig["chat_template"]))
+	if template == "" {
+		return false
+	}
+	for _, marker := range []string{"{% if tools", "for tool in tools", "<tools>", "tool_call"} {
+		if strings.Contains(template, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func appendUniqueFeature(features []string, feature string) []string {
+	if strings.TrimSpace(feature) == "" || slices.Contains(features, feature) {
+		return features
+	}
+	return append(features, feature)
 }
 
 func confidenceIfSet(value string, confidence publicationdata.ProfileConfidence) publicationdata.ProfileConfidence {

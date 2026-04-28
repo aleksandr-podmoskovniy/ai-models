@@ -140,6 +140,64 @@ func TestResolveProfileUsesTaskHintAsFallback(t *testing.T) {
 	}
 }
 
+func TestResolveProfileProjectsSourceDeclaredTask(t *testing.T) {
+	t.Parallel()
+
+	checkpointDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(checkpointDir, "model.safetensors"), []byte("weights"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(checkpointDir, "config.json"), []byte(`{
+  "architectures":["WhisperForConditionalGeneration"],
+  "torch_dtype":"bfloat16"
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	resolved, err := Resolve(Input{
+		CheckpointDir:      checkpointDir,
+		SourceDeclaredTask: "automatic-speech-recognition",
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got, want := resolved.Task, "automatic-speech-recognition"; got != want {
+		t.Fatalf("unexpected task %q", got)
+	}
+	if got, want := resolved.TaskConfidence, "Declared"; string(got) != want {
+		t.Fatalf("unexpected task confidence %q", got)
+	}
+	if got, want := resolved.SupportedEndpointTypes, []string{"SpeechToText"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("unexpected endpoint types %#v", got)
+	}
+	if got, want := resolved.SupportedFeatures, []string{"AudioInput"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("unexpected features %#v", got)
+	}
+}
+
+func TestResolveProfileDetectsToolCallingTemplate(t *testing.T) {
+	t.Parallel()
+
+	resolved, err := ResolveSummary(SummaryInput{
+		ConfigPayload: []byte(`{
+  "model_type":"qwen2",
+  "architectures":["Qwen2ForCausalLM"],
+  "torch_dtype":"bfloat16"
+}`),
+		TokenizerConfigPayload: []byte(`{
+  "chat_template":"{%- if tools %}{%- for tool in tools %}{{ tool | tojson }}{%- endfor %}{%- endif %}"
+}`),
+		WeightBytes:     24,
+		WeightFileCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("ResolveSummary() error = %v", err)
+	}
+	if got, want := resolved.SupportedFeatures, []string{"ToolCalling"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("unexpected features %#v", got)
+	}
+}
+
 func TestResolveProfileDoesNotInferFamilyFromSourceRepoID(t *testing.T) {
 	t.Parallel()
 
@@ -201,4 +259,16 @@ func TestResolveSummary(t *testing.T) {
 	if got, want := resolved.TaskConfidence, "Derived"; string(got) != want {
 		t.Fatalf("unexpected task confidence %q", got)
 	}
+}
+
+func stringSlicesEqual(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }

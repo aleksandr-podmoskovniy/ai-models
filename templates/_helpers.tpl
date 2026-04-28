@@ -263,6 +263,18 @@ ai-models-controller
 {{- include "ai-models.controllerServiceName" . -}}
 {{- end -}}
 
+{{- define "ai-models.uploadGatewayName" -}}
+ai-models-upload-gateway
+{{- end -}}
+
+{{- define "ai-models.uploadGatewayServiceAccountName" -}}
+{{- include "ai-models.uploadGatewayName" . -}}
+{{- end -}}
+
+{{- define "ai-models.uploadGatewayServiceName" -}}
+{{- include "ai-models.uploadGatewayName" . -}}
+{{- end -}}
+
 {{- define "ai-models.configMapName" -}}
 ai-models-runtime
 {{- end -}}
@@ -424,7 +436,7 @@ true
 8081
 {{- end -}}
 
-{{- define "ai-models.controllerUploadPort" -}}
+{{- define "ai-models.uploadGatewayPort" -}}
 8444
 {{- end -}}
 

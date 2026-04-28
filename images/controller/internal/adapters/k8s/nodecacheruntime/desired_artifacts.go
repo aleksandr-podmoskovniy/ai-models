@@ -18,11 +18,9 @@ package nodecacheruntime
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -207,54 +205,17 @@ func DesiredArtifactsFromPod(pod *corev1.Pod) ([]nodecache.DesiredArtifact, bool
 	if pod == nil {
 		return nil, false, errors.New("node cache runtime pod must not be nil")
 	}
-	annotations := pod.GetAnnotations()
-	deliveryMode := strings.TrimSpace(annotations[modeldelivery.ResolvedDeliveryModeAnnotation])
-	deliveryReason := strings.TrimSpace(annotations[modeldelivery.ResolvedDeliveryReasonAnnotation])
-	if deliveryMode != string(modeldelivery.DeliveryModeSharedDirect) ||
-		deliveryReason != string(modeldelivery.DeliveryReasonNodeSharedRuntimePlane) {
-		return nil, false, nil
-	}
-	if models := strings.TrimSpace(annotations[modeldelivery.ResolvedModelsAnnotation]); models != "" {
-		artifacts, err := desiredArtifactsFromResolvedModels(models)
-		if err != nil {
-			return nil, false, err
-		}
-		return artifacts, len(artifacts) > 0, nil
-	}
-	digest := strings.TrimSpace(annotations[modeldelivery.ResolvedDigestAnnotation])
-	artifactURI := strings.TrimSpace(annotations[modeldelivery.ResolvedArtifactURIAnnotation])
-	if digest == "" || artifactURI == "" {
-		return nil, false, errors.New("managed pod shared-direct artifact annotations are incomplete")
-	}
-	artifacts, err := nodecache.NormalizeDesiredArtifacts([]nodecache.DesiredArtifact{{
-		ArtifactURI: artifactURI,
-		Digest:      digest,
-		Family:      strings.TrimSpace(annotations[modeldelivery.ResolvedArtifactFamilyAnnotation]),
-	}})
+	artifacts, found, err := nodecache.DesiredArtifactsFromWorkloadAnnotations(pod.GetAnnotations())
 	if err != nil {
 		return nil, false, err
 	}
-	return artifacts, true, nil
-}
-
-type resolvedModelAnnotation struct {
-	URI    string `json:"uri"`
-	Digest string `json:"digest"`
-	Family string `json:"family,omitempty"`
-}
-
-func desiredArtifactsFromResolvedModels(value string) ([]nodecache.DesiredArtifact, error) {
-	var entries []resolvedModelAnnotation
-	if err := json.Unmarshal([]byte(value), &entries); err != nil {
-		return nil, err
+	if found {
+		return artifacts, true, nil
 	}
-	artifacts := make([]nodecache.DesiredArtifact, 0, len(entries))
-	for _, entry := range entries {
-		artifacts = append(artifacts, nodecache.DesiredArtifact{
-			ArtifactURI: entry.URI,
-			Digest:      entry.Digest,
-			Family:      entry.Family,
-		})
+	annotations := pod.GetAnnotations()
+	if strings.TrimSpace(annotations[nodecache.WorkloadResolvedDeliveryModeAnnotation]) == nodecache.WorkloadDeliveryModeSharedDirect &&
+		strings.TrimSpace(annotations[nodecache.WorkloadResolvedDeliveryReasonAnnotation]) == nodecache.WorkloadDeliveryReasonNodeCacheRuntime {
+		return nil, false, errors.New("managed pod shared-direct artifact annotations are incomplete")
 	}
-	return nodecache.NormalizeDesiredArtifacts(artifacts)
+	return nil, false, nil
 }

@@ -30,16 +30,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (s *Service) prepareRequestState(
+func (s *Service) prepareDirectUploadState(
 	ctx context.Context,
 	owner client.Object,
-	request publicationports.Request,
-	plan SourceWorkerPlan,
+	requestOwner publicationports.Owner,
 ) (*corev1.Secret, modelpackports.DirectUploadState, error) {
-	if err := s.preflight(request, plan); err != nil {
-		return nil, modelpackports.DirectUploadState{}, err
-	}
-	directUploadStateSecret, err := s.ensureDirectUploadStateSecret(ctx, owner, request.Owner)
+	directUploadStateSecret, err := s.ensureDirectUploadStateSecret(ctx, owner, requestOwner)
 	if err != nil {
 		return nil, modelpackports.DirectUploadState{}, err
 	}
@@ -50,23 +46,51 @@ func (s *Service) prepareRequestState(
 	return directUploadStateSecret, directUploadState, nil
 }
 
-func (s *Service) existingOrQueuedHandle(
+func (s *Service) existingHandle(
 	ctx context.Context,
 	ownerUID types.UID,
 	ownerGeneration int64,
 	directUploadState modelpackports.DirectUploadState,
 ) (*publicationports.SourceWorkerHandle, bool, error) {
 	existingPod, found, err := s.lookupPod(ctx, ownerUID)
-	if err != nil {
-		return nil, false, err
+	if err != nil || !found {
+		return nil, found, err
 	}
-	if found {
-		if shouldRecreateStalePod(existingPod, ownerGeneration) || shouldRecreateFailedPod(existingPod, directUploadState) {
-			if err := ownedresource.DeleteAll(ctx, s.client, existingPod); err != nil {
-				return nil, false, err
-			}
-		} else {
-			return s.handleFromPod(existingPod, directUploadState), true, nil
+	if shouldRecreateStalePod(existingPod, ownerGeneration) || shouldRecreateFailedPod(existingPod, directUploadState) {
+		return nil, false, nil
+	}
+	return s.handleFromPod(existingPod, directUploadState), true, nil
+}
+
+func (s *Service) retainedSucceededHandle(
+	ctx context.Context,
+	ownerUID types.UID,
+	ownerGeneration int64,
+) (*publicationports.SourceWorkerHandle, bool, error) {
+	existingPod, found, err := s.lookupPod(ctx, ownerUID)
+	if err != nil || !found {
+		return nil, found, err
+	}
+	if shouldRecreateStalePod(existingPod, ownerGeneration) || existingPod.Status.Phase != corev1.PodSucceeded {
+		return nil, false, nil
+	}
+	return s.handleFromPod(existingPod, modelpackports.DirectUploadState{}), true, nil
+}
+
+func (s *Service) existingOrQueuedHandle(
+	ctx context.Context,
+	ownerUID types.UID,
+	ownerGeneration int64,
+	directUploadState modelpackports.DirectUploadState,
+) (*publicationports.SourceWorkerHandle, bool, error) {
+	if handle, found, err := s.existingHandle(ctx, ownerUID, ownerGeneration, directUploadState); err != nil || handle != nil {
+		return handle, found, err
+	}
+	if existingPod, found, err := s.lookupPod(ctx, ownerUID); err != nil {
+		return nil, false, err
+	} else if found {
+		if err := ownedresource.DeleteAll(ctx, s.client, existingPod); err != nil {
+			return nil, false, err
 		}
 	}
 

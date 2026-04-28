@@ -95,6 +95,33 @@ func TestBoundedResultRegistryOutputTruncatesLargeOutput(t *testing.T) {
 	}
 }
 
+func TestRequestResultIncludesDeletedRegistryBlobCount(t *testing.T) {
+	t.Parallel()
+
+	result := requestResult(CleanupResult{
+		DeletedRegistryBlobCount: 2,
+	}, time.Date(2026, 4, 26, 14, 0, 0, 0, time.UTC), []string{"dmcr-gc-a"})
+
+	if result.DeletedRegistryBlobCount != 2 {
+		t.Fatalf("deleted registry blob count = %d, want 2", result.DeletedRegistryBlobCount)
+	}
+}
+
+func TestCountDeletedRegistryBlobs(t *testing.T) {
+	t.Parallel()
+
+	output := strings.Join([]string{
+		"blob eligible for deletion: sha256:a",
+		`time="2026-04-27T20:21:55Z" level=info msg="Deleting blob: /docker/registry/v2/blobs/sha256/aa"`,
+		"manifest eligible for deletion: sha256:b",
+		`time="2026-04-27T20:21:56Z" level=info msg="Deleting blob: /docker/registry/v2/blobs/sha256/bb"`,
+	}, "\n")
+
+	if got := countDeletedRegistryBlobs(output); got != 2 {
+		t.Fatalf("deleted registry blob count = %d, want 2", got)
+	}
+}
+
 func TestMarkRequestsCompletedLeavesFailedUpdatesReplayable(t *testing.T) {
 	now := time.Date(2026, 4, 26, 14, 0, 0, 0, time.UTC)
 	first := activeRequestForResultTest("dmcr-gc-a", now.Add(-time.Minute))

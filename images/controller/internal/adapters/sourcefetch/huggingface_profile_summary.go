@@ -51,18 +51,16 @@ func fetchHuggingFaceSafetensorsProfileSummary(
 	resolvedRevision string,
 	selectedFiles []string,
 ) (*RemoteProfileSummary, error) {
-	configPath := ""
-	for _, file := range selectedFiles {
-		if cleanPath, err := cleanRemoteRelativePath(file); err == nil && cleanPath == "config.json" {
-			configPath = cleanPath
-			break
-		}
-	}
+	configPath := huggingFaceSafetensorsProfileConfigPath(selectedFiles)
 	if configPath == "" {
-		return nil, errors.New("huggingface safetensors summary requires config.json in selected files")
+		return nil, errors.New("huggingface safetensors summary requires config.json or model_index.json in selected files")
 	}
 
 	configPayload, err := fetchHuggingFaceFile(ctx, repoID, resolvedRevision, options.HFToken, configPath)
+	if err != nil {
+		return nil, err
+	}
+	tokenizerConfigPayload, err := fetchOptionalHuggingFaceProfileFile(ctx, options, repoID, resolvedRevision, selectedFiles, "tokenizer_config.json")
 	if err != nil {
 		return nil, err
 	}
@@ -77,10 +75,44 @@ func fetchHuggingFaceSafetensorsProfileSummary(
 
 	return &RemoteProfileSummary{
 		ConfigPayload:          configPayload,
+		TokenizerConfigPayload: tokenizerConfigPayload,
 		WeightBytes:            weightStats.TotalBytes,
 		LargestWeightFileBytes: weightStats.LargestFileBytes,
 		WeightFileCount:        weightStats.FileCount,
 	}, nil
+}
+
+func huggingFaceSafetensorsProfileConfigPath(selectedFiles []string) string {
+	fallbackPath := ""
+	for _, file := range selectedFiles {
+		cleanPath, err := cleanRemoteRelativePath(file)
+		if err != nil {
+			continue
+		}
+		switch cleanPath {
+		case "config.json":
+			return cleanPath
+		case "model_index.json":
+			fallbackPath = cleanPath
+		}
+	}
+	return fallbackPath
+}
+
+func fetchOptionalHuggingFaceProfileFile(
+	ctx context.Context,
+	options RemoteOptions,
+	repoID string,
+	resolvedRevision string,
+	selectedFiles []string,
+	relativePath string,
+) ([]byte, error) {
+	for _, file := range selectedFiles {
+		if cleanPath, err := cleanRemoteRelativePath(file); err == nil && cleanPath == relativePath {
+			return fetchHuggingFaceFile(ctx, repoID, resolvedRevision, options.HFToken, cleanPath)
+		}
+	}
+	return nil, nil
 }
 
 func fetchHuggingFaceGGUFProfileSummary(

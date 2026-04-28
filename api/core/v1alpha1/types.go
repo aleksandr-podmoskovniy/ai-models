@@ -116,6 +116,8 @@ type ModelResolvedStatus struct {
 	ContextWindowTokens *int64 `json:"contextWindowTokens,omitempty"`
 	// +listType=set
 	SupportedEndpointTypes []ModelEndpointType `json:"supportedEndpointTypes,omitempty"`
+	// +listType=set
+	SupportedFeatures []ModelFeatureType `json:"supportedFeatures,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=HuggingFace;Upload
@@ -153,14 +155,33 @@ const (
 	ModelPhaseDeleting      ModelPhase = "Deleting"
 )
 
-// +kubebuilder:validation:Enum=Chat;TextGeneration;Embeddings;Rerank;SpeechToText;Translation
+// +kubebuilder:validation:Enum=Chat;TextGeneration;Embeddings;Rerank;SpeechToText;TextToSpeech;Translation;ImageClassification;ObjectDetection;ImageSegmentation;ImageToText;VisualQuestionAnswering;ImageGeneration
 type ModelEndpointType string
 
 const (
-	ModelEndpointTypeChat           ModelEndpointType = "Chat"
-	ModelEndpointTypeTextGeneration ModelEndpointType = "TextGeneration"
-	ModelEndpointTypeEmbeddings     ModelEndpointType = "Embeddings"
-	ModelEndpointTypeRerank         ModelEndpointType = "Rerank"
-	ModelEndpointTypeSpeechToText   ModelEndpointType = "SpeechToText"
-	ModelEndpointTypeTranslation    ModelEndpointType = "Translation"
+	ModelEndpointTypeChat                    ModelEndpointType = "Chat"
+	ModelEndpointTypeTextGeneration          ModelEndpointType = "TextGeneration"
+	ModelEndpointTypeEmbeddings              ModelEndpointType = "Embeddings"
+	ModelEndpointTypeRerank                  ModelEndpointType = "Rerank"
+	ModelEndpointTypeSpeechToText            ModelEndpointType = "SpeechToText"
+	ModelEndpointTypeTextToSpeech            ModelEndpointType = "TextToSpeech"
+	ModelEndpointTypeTranslation             ModelEndpointType = "Translation"
+	ModelEndpointTypeImageClassification     ModelEndpointType = "ImageClassification"
+	ModelEndpointTypeObjectDetection         ModelEndpointType = "ObjectDetection"
+	ModelEndpointTypeImageSegmentation       ModelEndpointType = "ImageSegmentation"
+	ModelEndpointTypeImageToText             ModelEndpointType = "ImageToText"
+	ModelEndpointTypeVisualQuestionAnswering ModelEndpointType = "VisualQuestionAnswering"
+	ModelEndpointTypeImageGeneration         ModelEndpointType = "ImageGeneration"
+)
+
+// +kubebuilder:validation:Enum=VisionInput;AudioInput;AudioOutput;ImageOutput;MultiModalInput;ToolCalling
+type ModelFeatureType string
+
+const (
+	ModelFeatureTypeVisionInput     ModelFeatureType = "VisionInput"
+	ModelFeatureTypeAudioInput      ModelFeatureType = "AudioInput"
+	ModelFeatureTypeAudioOutput     ModelFeatureType = "AudioOutput"
+	ModelFeatureTypeImageOutput     ModelFeatureType = "ImageOutput"
+	ModelFeatureTypeMultiModalInput ModelFeatureType = "MultiModalInput"
+	ModelFeatureTypeToolCalling     ModelFeatureType = "ToolCalling"
 )
