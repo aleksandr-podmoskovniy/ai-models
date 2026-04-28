@@ -85,10 +85,10 @@ func TestFetchHuggingFaceProfileSummaryDiffusers(t *testing.T) {
 		case request.Method == http.MethodGet && request.URL.Path == "/owner/model/resolve/deadbeef/model_index.json":
 			writer.Header().Set("Content-Type", "application/json")
 			_, _ = writer.Write([]byte(`{"_class_name":"StableDiffusionPipeline"}`))
-		case request.Method == http.MethodHead && request.URL.Path == "/owner/model/resolve/deadbeef/text_encoder/model.safetensors":
+		case request.Method == http.MethodHead && request.URL.Path == "/owner/model/resolve/deadbeef/text_encoder/pytorch_model.bin":
 			writer.Header().Set("Content-Length", "17")
 			writer.WriteHeader(http.StatusOK)
-		case request.Method == http.MethodHead && request.URL.Path == "/owner/model/resolve/deadbeef/unet/diffusion_pytorch_model.safetensors":
+		case request.Method == http.MethodHead && request.URL.Path == "/owner/model/resolve/deadbeef/unet/diffusion_pytorch_model.bin":
 			writer.Header().Set("Content-Length", "29")
 			writer.WriteHeader(http.StatusOK)
 		default:
@@ -104,9 +104,9 @@ func TestFetchHuggingFaceProfileSummaryDiffusers(t *testing.T) {
 		"model_index.json",
 		"scheduler/scheduler_config.json",
 		"text_encoder/config.json",
-		"text_encoder/model.safetensors",
+		"text_encoder/pytorch_model.bin",
 		"unet/config.json",
-		"unet/diffusion_pytorch_model.safetensors",
+		"unet/diffusion_pytorch_model.bin",
 	})
 	if err != nil {
 		t.Fatalf("fetchHuggingFaceProfileSummary() error = %v", err)

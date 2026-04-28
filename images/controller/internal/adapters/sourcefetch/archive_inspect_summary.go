@@ -22,18 +22,28 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
 	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
 
 func summarizeTarSafetensorsArchiveFromReader(path string, stream io.Reader, rootPrefix string, selectedFiles []string) ([]byte, WeightStats, error) {
-	return summarizeTarSafetensorsLikeArchiveFromReader(path, stream, rootPrefix, selectedFiles, "config.json", "safetensors")
+	return summarizeTarSafetensorsLikeArchiveFromReader(path, stream, rootPrefix, selectedFiles, "config.json", "safetensors", isSafetensorsWeightFile, "safetensors")
 }
 
 func summarizeTarDiffusersArchiveFromReader(path string, stream io.Reader, rootPrefix string, selectedFiles []string) ([]byte, WeightStats, error) {
-	return summarizeTarSafetensorsLikeArchiveFromReader(path, stream, rootPrefix, selectedFiles, "model_index.json", "diffusers")
+	return summarizeTarSafetensorsLikeArchiveFromReader(path, stream, rootPrefix, selectedFiles, "model_index.json", "diffusers", modelformat.IsDiffusersWeightFile, "diffusers weight")
 }
 
-func summarizeTarSafetensorsLikeArchiveFromReader(path string, stream io.Reader, rootPrefix string, selectedFiles []string, configPath, label string) ([]byte, WeightStats, error) {
+func summarizeTarSafetensorsLikeArchiveFromReader(
+	path string,
+	stream io.Reader,
+	rootPrefix string,
+	selectedFiles []string,
+	configPath string,
+	label string,
+	isWeightFile func(string) bool,
+	weightLabel string,
+) ([]byte, WeightStats, error) {
 	reader, closeArchive, err := archiveio.NewClosableTarReader(path, stream)
 	if err != nil {
 		return nil, WeightStats{}, err
@@ -75,7 +85,7 @@ func summarizeTarSafetensorsLikeArchiveFromReader(path string, stream io.Reader,
 			if err != nil {
 				return nil, WeightStats{}, err
 			}
-		case strings.HasSuffix(strings.ToLower(normalized), ".safetensors"):
+		case isWeightFile(normalized):
 			weightStats.add(header.Size)
 		}
 	}
@@ -84,9 +94,13 @@ func summarizeTarSafetensorsLikeArchiveFromReader(path string, stream io.Reader,
 		return nil, WeightStats{}, errors.New("tar " + label + " summary requires " + configPath + " in selected files")
 	}
 	if weightStats.TotalBytes <= 0 {
-		return nil, WeightStats{}, errors.New("tar " + label + " summary requires positive safetensors weight bytes")
+		return nil, WeightStats{}, errors.New("tar " + label + " summary requires positive " + weightLabel + " bytes")
 	}
 	return configPayload, weightStats, nil
+}
+
+func isSafetensorsWeightFile(path string) bool {
+	return strings.HasSuffix(strings.ToLower(path), ".safetensors")
 }
 
 func archiveFileSet(files []string) map[string]struct{} {

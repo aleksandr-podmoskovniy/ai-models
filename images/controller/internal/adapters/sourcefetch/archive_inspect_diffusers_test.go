@@ -38,7 +38,7 @@ func TestInspectModelArchiveBuildsDiffusersSummary(t *testing.T) {
 				return createTarArchive(path,
 					tarEntry{name: "bundle/model_index.json", content: []byte(`{"_class_name":"TextToVideoSDPipeline"}`)},
 					tarEntry{name: "bundle/scheduler/scheduler_config.json", content: []byte(`{}`)},
-					tarEntry{name: "bundle/transformer/diffusion_pytorch_model.safetensors", content: []byte("video-weights")},
+					tarEntry{name: "bundle/transformer/diffusion_pytorch_model.bin", content: []byte("video-weights")},
 					tarEntry{name: "bundle/examples/prompt.png", content: []byte("preview")},
 				)
 			},
@@ -50,7 +50,7 @@ func TestInspectModelArchiveBuildsDiffusersSummary(t *testing.T) {
 				return createZipArchive(path,
 					tarEntry{name: "bundle/model_index.json", content: []byte(`{"_class_name":"TextToVideoSDPipeline"}`)},
 					tarEntry{name: "bundle/scheduler/scheduler_config.json", content: []byte(`{}`)},
-					tarEntry{name: "bundle/transformer/diffusion_pytorch_model.safetensors", content: []byte("video-weights")},
+					tarEntry{name: "bundle/transformer/diffusion_pytorch_model.bin", content: []byte("video-weights")},
 					tarEntry{name: "bundle/examples/prompt.png", content: []byte("preview")},
 				)
 			},

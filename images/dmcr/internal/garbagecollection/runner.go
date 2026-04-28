@@ -145,6 +145,15 @@ func runRequestCycle(
 		return false, nil
 	}
 
+	deferral, err := garbageCollectionDeferral(ctx, client, options.RequestNamespace)
+	if err != nil {
+		return false, err
+	}
+	if deferral.ActivePublicationPodCount > 0 {
+		logGarbageCollectionDeferred("active publication pods", queuedSecrets, deferral)
+		return false, nil
+	}
+
 	if err := armQueuedRequests(ctx, client, options.RequestNamespace, queuedSecrets, now()); err != nil {
 		return true, err
 	}
@@ -171,6 +180,18 @@ func runActiveRequestCycle(
 		return true, err
 	}
 	policy.cleanupStateNamespace = options.RequestNamespace
+	deferral, err := garbageCollectionDeferral(ctx, client, options.RequestNamespace)
+	if err != nil {
+		return true, err
+	}
+	if deferral.ActivePublicationPodCount > 0 {
+		if err := requeueActiveRequests(ctx, client, options.RequestNamespace, activeSecrets, time.Now().UTC()); err != nil {
+			return true, err
+		}
+		logGarbageCollectionDeferred("active publication pods", activeSecrets, deferral)
+		return false, nil
+	}
+
 	releaseGate, err := activateMaintenanceGate(cycleCtx, client, options, requestNames)
 	if err != nil {
 		if errors.Is(err, errMaintenanceGateAckQuorumNotReady) {
@@ -279,6 +300,32 @@ func armQueuedRequests(
 				continue
 			}
 			return fmt.Errorf("arm dmcr garbage-collection request %s: %w", secretCopy.Name, err)
+		}
+	}
+	return nil
+}
+
+func requeueActiveRequests(
+	ctx context.Context,
+	client kubernetes.Interface,
+	namespace string,
+	secrets []corev1.Secret,
+	queuedAt time.Time,
+) error {
+	for _, secret := range secrets {
+		secretCopy := secret.DeepCopy()
+		if secretCopy.Annotations == nil {
+			secretCopy.Annotations = make(map[string]string, 3)
+		}
+		delete(secretCopy.Annotations, switchAnnotationKey)
+		secretCopy.Annotations[RequestQueuedAtAnnotationKey] = queuedAt.Format(time.RFC3339Nano)
+		secretCopy.Annotations[phaseAnnotationKey] = phaseQueued
+
+		if _, err := client.CoreV1().Secrets(namespace).Update(ctx, secretCopy, metav1.UpdateOptions{}); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return fmt.Errorf("requeue dmcr garbage-collection request %s: %w", secretCopy.Name, err)
 		}
 	}
 	return nil

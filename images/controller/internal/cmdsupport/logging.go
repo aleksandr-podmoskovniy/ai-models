@@ -17,6 +17,7 @@ limitations under the License.
 package cmdsupport
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -50,9 +51,9 @@ func newLogger(format, level string, writer io.Writer) (*slog.Logger, error) {
 
 	switch format {
 	case "text":
-		return slog.New(slog.NewTextHandler(writer, options)), nil
+		return slog.New(newDedupeHandler(slog.NewTextHandler(writer, options))), nil
 	case "json":
-		return slog.New(slog.NewJSONHandler(writer, options)), nil
+		return slog.New(newDedupeHandler(slog.NewJSONHandler(writer, options))), nil
 	default:
 		return nil, fmt.Errorf("unsupported log format %q", format)
 	}
@@ -68,7 +69,7 @@ func NewComponentLogger(format, level, component string) (*slog.Logger, error) {
 	if component == "" {
 		return logger, nil
 	}
-	return logger.With(slog.String("logger", component)), nil
+	return logger.With(slog.String("component", component)), nil
 }
 
 func newComponentLogger(format, level, component string, writer io.Writer) (*slog.Logger, error) {
@@ -81,7 +82,7 @@ func newComponentLogger(format, level, component string, writer io.Writer) (*slo
 	if component == "" {
 		return logger, nil
 	}
-	return logger.With(slog.String("logger", component)), nil
+	return logger.With(slog.String("component", component)), nil
 }
 
 func SetDefaultLogger(logger *slog.Logger) {
@@ -152,4 +153,82 @@ func parseLogLevel(level string) (slog.Level, error) {
 	default:
 		return 0, fmt.Errorf("unsupported log level %q", level)
 	}
+}
+
+type dedupeHandler struct {
+	next        slog.Handler
+	contextKeys map[string]struct{}
+	groups      []string
+}
+
+func newDedupeHandler(next slog.Handler) slog.Handler {
+	return &dedupeHandler{
+		next:        next,
+		contextKeys: make(map[string]struct{}),
+	}
+}
+
+func (h *dedupeHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.next.Enabled(ctx, level)
+}
+
+func (h *dedupeHandler) Handle(ctx context.Context, record slog.Record) error {
+	seen := copyStringSet(h.contextKeys)
+	filtered := slog.NewRecord(record.Time, record.Level, record.Message, record.PC)
+	record.Attrs(func(attr slog.Attr) bool {
+		key := h.attrKey(attr)
+		if _, exists := seen[key]; exists {
+			return true
+		}
+		seen[key] = struct{}{}
+		filtered.AddAttrs(attr)
+		return true
+	})
+	return h.next.Handle(ctx, filtered)
+}
+
+func (h *dedupeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	keys := copyStringSet(h.contextKeys)
+	filtered := make([]slog.Attr, 0, len(attrs))
+	for _, attr := range attrs {
+		key := h.attrKey(attr)
+		if _, exists := keys[key]; exists {
+			continue
+		}
+		keys[key] = struct{}{}
+		filtered = append(filtered, attr)
+	}
+	return &dedupeHandler{
+		next:        h.next.WithAttrs(filtered),
+		contextKeys: keys,
+		groups:      append([]string(nil), h.groups...),
+	}
+}
+
+func (h *dedupeHandler) WithGroup(name string) slog.Handler {
+	groups := append([]string(nil), h.groups...)
+	if trimmed := strings.TrimSpace(name); trimmed != "" {
+		groups = append(groups, trimmed)
+	}
+	return &dedupeHandler{
+		next:        h.next.WithGroup(name),
+		contextKeys: copyStringSet(h.contextKeys),
+		groups:      groups,
+	}
+}
+
+func (h *dedupeHandler) attrKey(attr slog.Attr) string {
+	key := normalizeLogKey(attr.Key)
+	if len(h.groups) == 0 {
+		return key
+	}
+	return strings.Join(append(append([]string(nil), h.groups...), key), ".")
+}
+
+func copyStringSet(input map[string]struct{}) map[string]struct{} {
+	output := make(map[string]struct{}, len(input))
+	for key := range input {
+		output[key] = struct{}{}
+	}
+	return output
 }

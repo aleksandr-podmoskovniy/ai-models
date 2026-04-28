@@ -212,3 +212,58 @@ func TestStateFromSecretRejectsUploadedBytesAbovePlannedTotal(t *testing.T) {
 		t.Fatal("expected StateFromSecret() to reject uploaded bytes above planned total")
 	}
 }
+
+func TestStateFromSecretDropsStaleCurrentLayerAfterCompletedPlan(t *testing.T) {
+	t.Parallel()
+
+	secret, err := NewSecret(SecretSpec{
+		Name:            "state-a",
+		Namespace:       "d8-ai-models",
+		OwnerGeneration: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewSecret() error = %v", err)
+	}
+
+	payload, err := json.Marshal(modelpackports.DirectUploadState{
+		PlannedLayerCount: 1,
+		PlannedSizeBytes:  100,
+		Phase:             modelpackports.DirectUploadStatePhaseRunning,
+		Stage:             modelpackports.DirectUploadStateStageUploading,
+		CompletedLayers: []modelpackports.DirectUploadLayerDescriptor{
+			{
+				Key:         "model|application/test",
+				Digest:      "sha256:111",
+				DiffID:      "sha256:111",
+				SizeBytes:   100,
+				MediaType:   "application/test",
+				TargetPath:  "model",
+				Base:        modelpackports.LayerBaseModel,
+				Format:      modelpackports.LayerFormatRaw,
+				Compression: modelpackports.LayerCompressionNone,
+			},
+		},
+		CurrentLayer: &modelpackports.DirectUploadCurrentLayer{
+			Key:               "model|application/test",
+			SessionToken:      "session-1",
+			PartSizeBytes:     64,
+			TotalSizeBytes:    100,
+			UploadedSizeBytes: 8,
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	secret.Data[stateKey] = payload
+
+	got, err := StateFromSecret(secret)
+	if err != nil {
+		t.Fatalf("StateFromSecret() error = %v", err)
+	}
+	if got.CurrentLayer != nil {
+		t.Fatalf("expected stale current layer to be dropped, got %#v", got.CurrentLayer)
+	}
+	if got.Stage != modelpackports.DirectUploadStateStageCommitted {
+		t.Fatalf("stage = %q, want %q", got.Stage, modelpackports.DirectUploadStateStageCommitted)
+	}
+}

@@ -76,7 +76,7 @@ func newComponentLogger(format, component string, writer io.Writer) (*slog.Logge
 		return logger, nil
 	}
 
-	return logger.With(slog.String("logger", component)), nil
+	return logger.With(slog.String("component", component)), nil
 }
 
 func normalizeLogAttr(_ []string, attr slog.Attr) slog.Attr {

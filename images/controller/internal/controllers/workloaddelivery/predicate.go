@@ -17,6 +17,8 @@ limitations under the License.
 package workloaddelivery
 
 import (
+	"strings"
+
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -44,6 +46,9 @@ func workloadDeliveryInterest(object client.Object, options modeldelivery.Servic
 	if object == nil {
 		return false
 	}
+	if moduleNamespaceWorkload(object, options) {
+		return false
+	}
 	if _, found, err := parseReferences(object.GetAnnotations()); err != nil || found {
 		return true
 	}
@@ -52,4 +57,9 @@ func workloadDeliveryInterest(object client.Object, options modeldelivery.Servic
 		return false
 	}
 	return hasManagedTemplateState(template, options)
+}
+
+func moduleNamespaceWorkload(object client.Object, options modeldelivery.ServiceOptions) bool {
+	namespace := strings.TrimSpace(options.RegistrySourceNamespace)
+	return namespace != "" && strings.TrimSpace(object.GetNamespace()) == namespace
 }

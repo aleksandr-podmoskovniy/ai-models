@@ -36,11 +36,12 @@ var (
 )
 
 type HuggingFaceInfo struct {
-	ID          string
-	SHA         string
-	PipelineTag string
-	License     string
-	Files       []string
+	ID           string
+	SHA          string
+	PipelineTag  string
+	DeclaredTask string
+	License      string
+	Files        []string
 }
 
 type huggingFaceAPIResponse struct {
@@ -56,7 +57,20 @@ type huggingFaceSiblingInfo struct {
 }
 
 type huggingFaceCardData struct {
-	License string `json:"license"`
+	License    string                  `json:"license"`
+	ModelIndex []huggingFaceModelIndex `json:"model-index"`
+}
+
+type huggingFaceModelIndex struct {
+	Results []huggingFaceModelResult `json:"results"`
+}
+
+type huggingFaceModelResult struct {
+	Task huggingFaceModelTask `json:"task"`
+}
+
+type huggingFaceModelTask struct {
+	Type string `json:"type"`
 }
 
 func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteResult, error) {
@@ -120,7 +134,7 @@ func fetchHuggingFaceModel(ctx context.Context, options RemoteOptions) (RemoteRe
 			ResolvedRevision:  resolvedRevision,
 		},
 		Fallbacks: RemoteProfileFallbacks{
-			SourceDeclaredTask: info.PipelineTag,
+			SourceDeclaredTask: firstNonEmpty(info.DeclaredTask, info.PipelineTag),
 		},
 		Metadata: RemoteMetadata{
 			License:      info.License,

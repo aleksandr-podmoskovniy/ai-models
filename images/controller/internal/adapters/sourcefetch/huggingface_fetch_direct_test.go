@@ -89,12 +89,12 @@ func TestFetchRemoteModelHuggingFacePlansDirectSafetensorsObjectSourceWithoutMir
 
 func TestFetchRemoteModelHuggingFacePlansDirectDiffusersObjectSourceWithoutMirror(t *testing.T) {
 	fileSizes := map[string]int{
-		"/owner/model/resolve/deadbeef/model_index.json":                         len(`{"_class_name":"StableDiffusionPipeline"}`),
-		"/owner/model/resolve/deadbeef/scheduler/scheduler_config.json":          len(`{"beta_schedule":"scaled_linear"}`),
-		"/owner/model/resolve/deadbeef/text_encoder/config.json":                 len(`{"model_type":"clip_text_model"}`),
-		"/owner/model/resolve/deadbeef/text_encoder/model.safetensors":           17,
-		"/owner/model/resolve/deadbeef/unet/config.json":                         len(`{"model_type":"unet_2d_condition"}`),
-		"/owner/model/resolve/deadbeef/unet/diffusion_pytorch_model.safetensors": 29,
+		"/owner/model/resolve/deadbeef/model_index.json":                 len(`{"_class_name":"StableDiffusionPipeline"}`),
+		"/owner/model/resolve/deadbeef/scheduler/scheduler_config.json":  len(`{"beta_schedule":"scaled_linear"}`),
+		"/owner/model/resolve/deadbeef/text_encoder/config.json":         len(`{"model_type":"clip_text_model"}`),
+		"/owner/model/resolve/deadbeef/text_encoder/pytorch_model.bin":   17,
+		"/owner/model/resolve/deadbeef/unet/config.json":                 len(`{"model_type":"unet_2d_condition"}`),
+		"/owner/model/resolve/deadbeef/unet/diffusion_pytorch_model.bin": 29,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requireHuggingFaceAuth(t, request)
@@ -127,9 +127,9 @@ func TestFetchRemoteModelHuggingFacePlansDirectDiffusersObjectSourceWithoutMirro
 			"model_index.json",
 			"scheduler/scheduler_config.json",
 			"text_encoder/config.json",
-			"text_encoder/model.safetensors",
+			"text_encoder/pytorch_model.bin",
 			"unet/config.json",
-			"unet/diffusion_pytorch_model.safetensors",
+			"unet/diffusion_pytorch_model.bin",
 			"onnx/model.onnx",
 		},
 	})

@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
 	profilecommon "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/common"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
@@ -203,7 +204,14 @@ func totalWeightStats(root string) (weightStats, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".safetensors") {
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if !modelformat.IsDiffusersWeightFile(relative) {
 			return nil
 		}
 		info, err := entry.Info()

@@ -133,6 +133,18 @@ func isModelCompanionFile(lowerRelative, lowerBase string) bool {
 	return false
 }
 
+func IsDiffusersWeightFile(relative string) bool {
+	lowerRelative := strings.ToLower(filepath.ToSlash(strings.TrimSpace(relative)))
+	lowerBase := filepath.Base(lowerRelative)
+	if strings.HasSuffix(lowerBase, ".safetensors") {
+		return true
+	}
+	if !strings.HasSuffix(lowerBase, ".bin") || !strings.Contains(lowerRelative, "/") {
+		return false
+	}
+	return strings.Contains(lowerBase, "pytorch_model") || lowerBase == "model.bin"
+}
+
 func isAlternativeExportArtifact(lowerRelative, lowerBase string) bool {
 	for _, prefix := range []string{
 		"onnx/",

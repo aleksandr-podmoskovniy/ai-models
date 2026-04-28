@@ -46,6 +46,10 @@ type deliveryPatchResult struct {
 }
 
 func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Object) (ctrl.Result, error) {
+	if moduleNamespaceWorkload(object, r.options.Service) {
+		return ctrl.Result{}, nil
+	}
+
 	original := object.DeepCopyObject().(client.Object)
 
 	template, hints, err := podTemplateAndHints(object)

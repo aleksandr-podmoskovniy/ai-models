@@ -28,7 +28,7 @@ func diffusersRules() formatRules {
 		format:               modelsv1alpha1.ModelInputFormatDiffusers,
 		classify:             classifyDiffusersFile,
 		requiredConfigErrMsg: "requires root model_index.json",
-		requiredAssetErrMsg:  "requires at least one .safetensors file",
+		requiredAssetErrMsg:  "requires at least one .safetensors or .bin weight file",
 	}
 }
 
@@ -46,14 +46,14 @@ func classifyDiffusersFile(relative string) (fileAction, bool, bool) {
 	if isModelCompanionFile(lowerRelative, lowerBase) {
 		return fileActionKeep, false, false
 	}
-	if hasDroppedScriptExtension(lowerBase) || isAlternativeExportArtifact(lowerRelative, lowerBase) || isBenignExtraFile(lowerBase) {
-		return fileActionDrop, false, false
-	}
 	if hasHardRejectExtension(lowerBase) {
 		return fileActionReject, false, false
 	}
-	if strings.HasSuffix(lowerBase, ".safetensors") {
+	if IsDiffusersWeightFile(relative) {
 		return fileActionKeep, false, true
+	}
+	if hasDroppedScriptExtension(lowerBase) || isAlternativeExportArtifact(lowerRelative, lowerBase) || isBenignExtraFile(lowerBase) {
+		return fileActionDrop, false, false
 	}
 	return fileActionDrop, false, false
 }

@@ -46,7 +46,7 @@ func TestDetectDirFormatDiffusers(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "model_index.json"), `{"_class_name":"StableDiffusionPipeline"}`)
 	writeTestFile(t, filepath.Join(root, "unet", "config.json"), `{"sample_size":128}`)
-	writeTestFile(t, filepath.Join(root, "unet", "diffusion_pytorch_model.safetensors"), "weights")
+	writeTestFile(t, filepath.Join(root, "unet", "diffusion_pytorch_model.bin"), "weights")
 	writeTestFile(t, filepath.Join(root, "README.md"), "# docs")
 
 	format, err := DetectDirFormat(root)
@@ -96,7 +96,7 @@ func TestDetectRemoteFormatDiffusers(t *testing.T) {
 		"README.md",
 		"model_index.json",
 		"scheduler/scheduler_config.json",
-		"transformer/diffusion_pytorch_model.safetensors",
+		"transformer/diffusion_pytorch_model.bin",
 	})
 	if err != nil {
 		t.Fatalf("DetectRemoteFormat() error = %v", err)

@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/modelformat"
 )
 
 func fetchHuggingFaceProfileSummary(
@@ -57,7 +58,7 @@ func fetchHuggingFaceDiffusersProfileSummary(
 	if err != nil {
 		return nil, err
 	}
-	weightStats, err := sumHuggingFaceWeightStats(ctx, repoID, resolvedRevision, options.HFToken, selectedFiles)
+	weightStats, err := sumHuggingFaceWeightStats(ctx, repoID, resolvedRevision, options.HFToken, selectedFiles, modelsv1alpha1.ModelInputFormatDiffusers)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +94,7 @@ func fetchHuggingFaceSafetensorsProfileSummary(
 		return nil, err
 	}
 
-	weightStats, err := sumHuggingFaceWeightStats(ctx, repoID, resolvedRevision, options.HFToken, selectedFiles)
+	weightStats, err := sumHuggingFaceWeightStats(ctx, repoID, resolvedRevision, options.HFToken, selectedFiles, modelsv1alpha1.ModelInputFormatSafetensors)
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +215,7 @@ func sumHuggingFaceWeightStats(
 	revision string,
 	token string,
 	selectedFiles []string,
+	inputFormat modelsv1alpha1.ModelInputFormat,
 ) (WeightStats, error) {
 	var stats WeightStats
 	for _, file := range selectedFiles {
@@ -221,7 +223,7 @@ func sumHuggingFaceWeightStats(
 		if err != nil {
 			return WeightStats{}, err
 		}
-		if !strings.HasSuffix(strings.ToLower(cleanPath), ".safetensors") {
+		if !isRemoteWeightFile(inputFormat, cleanPath) {
 			continue
 		}
 		metadata, err := describeHuggingFaceRemoteFile(
@@ -238,4 +240,13 @@ func sumHuggingFaceWeightStats(
 		stats.add(metadata.SizeBytes)
 	}
 	return stats, nil
+}
+
+func isRemoteWeightFile(inputFormat modelsv1alpha1.ModelInputFormat, path string) bool {
+	switch inputFormat {
+	case modelsv1alpha1.ModelInputFormatDiffusers:
+		return modelformat.IsDiffusersWeightFile(path)
+	default:
+		return strings.HasSuffix(strings.ToLower(path), ".safetensors")
+	}
 }

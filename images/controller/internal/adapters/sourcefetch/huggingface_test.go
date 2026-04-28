@@ -80,10 +80,50 @@ func TestFetchHuggingFaceInfo(t *testing.T) {
 	if got, want := info.PipelineTag, "text-generation"; got != want {
 		t.Fatalf("unexpected pipeline tag %q", got)
 	}
+	if got, want := info.DeclaredTask, "text-generation"; got != want {
+		t.Fatalf("unexpected declared task %q", got)
+	}
 	if got, want := info.License, "mit"; got != want {
 		t.Fatalf("unexpected license %q", got)
 	}
 	if got, want := len(info.Files), 2; got != want {
 		t.Fatalf("unexpected file count %d", got)
+	}
+}
+
+func TestFetchHuggingFaceInfoPrefersSpecificModelIndexTaskOverGenericPipelineTag(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{
+		  "id": "BAAI/bge-reranker-large",
+		  "sha": "deadbeef",
+		  "pipeline_tag": "feature-extraction",
+		  "cardData": {
+		    "license": "mit",
+		    "model-index": [{
+		      "results": [
+		        {"task": {"type": "Reranking"}},
+		        {"task": {"type": "Reranking"}}
+		      ]
+		    }]
+		  },
+		  "siblings": [
+		    {"rfilename": "config.json"},
+		    {"rfilename": "model.safetensors"}
+		  ]
+		}`))
+	}))
+	defer server.Close()
+
+	withHuggingFaceBaseURL(t, server.URL)
+	info, err := FetchHuggingFaceInfo(t.Context(), "BAAI/bge-reranker-large", "main", "")
+	if err != nil {
+		t.Fatalf("FetchHuggingFaceInfo() error = %v", err)
+	}
+	if got, want := info.PipelineTag, "feature-extraction"; got != want {
+		t.Fatalf("unexpected pipeline tag %q", got)
+	}
+	if got, want := info.DeclaredTask, "rerank"; got != want {
+		t.Fatalf("unexpected declared task %q", got)
 	}
 }

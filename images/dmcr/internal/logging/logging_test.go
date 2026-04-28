@@ -50,8 +50,8 @@ func TestNewComponentLoggerUsesNormalizedJSONEnvelope(t *testing.T) {
 	if got := entry["msg"]; got != "gc started" {
 		t.Fatalf("msg = %v, want gc started", got)
 	}
-	if got := entry["logger"]; got != "dmcr-garbage-collection" {
-		t.Fatalf("logger = %v, want dmcr-garbage-collection", got)
+	if got := entry["component"]; got != "dmcr-garbage-collection" {
+		t.Fatalf("component = %v, want dmcr-garbage-collection", got)
 	}
 	if got := entry["request_count"]; got != float64(1) {
 		t.Fatalf("request_count = %v, want 1", got)

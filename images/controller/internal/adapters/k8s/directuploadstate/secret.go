@@ -169,6 +169,7 @@ func normalizeState(state modelpackports.DirectUploadState) (modelpackports.Dire
 		}
 		state.CurrentLayer = &current
 	}
+	dropStaleCurrentLayerAfterCompletedPlan(&state)
 	if state.Phase != modelpackports.DirectUploadStatePhaseRunning {
 		state.Stage = modelpackports.DirectUploadStateStageIdle
 		state.CurrentLayer = nil
@@ -262,6 +263,29 @@ func normalizeProgressPlan(state *modelpackports.DirectUploadState) error {
 		return errors.New("direct upload planned layer count and size must be both set or both empty")
 	}
 	return nil
+}
+
+func dropStaleCurrentLayerAfterCompletedPlan(state *modelpackports.DirectUploadState) {
+	if state == nil || state.CurrentLayer == nil {
+		return
+	}
+	if state.PlannedLayerCount == 0 || state.PlannedSizeBytes == 0 {
+		return
+	}
+	if len(state.CompletedLayers) != state.PlannedLayerCount {
+		return
+	}
+
+	var completedSizeBytes int64
+	for _, layer := range state.CompletedLayers {
+		completedSizeBytes += layer.SizeBytes
+	}
+	if completedSizeBytes != state.PlannedSizeBytes {
+		return
+	}
+
+	state.CurrentLayer = nil
+	state.Stage = modelpackports.DirectUploadStateStageCommitted
 }
 
 func validateProgressPlan(state modelpackports.DirectUploadState) error {

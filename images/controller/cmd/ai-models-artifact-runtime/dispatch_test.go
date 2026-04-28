@@ -64,8 +64,8 @@ func TestConfigureRuntimeLoggerDefaultsToJSON(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(buffer.Bytes()), &record); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if got, want := record["logger"], "publish-worker"; got != want {
-		t.Fatalf("logger = %#v, want %q", got, want)
+	if got, want := record["component"], "publish-worker"; got != want {
+		t.Fatalf("component = %#v, want %q", got, want)
 	}
 	if got, want := record["level"], "info"; got != want {
 		t.Fatalf("level = %#v, want %q", got, want)

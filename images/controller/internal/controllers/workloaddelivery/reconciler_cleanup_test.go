@@ -116,6 +116,30 @@ func TestDeploymentReconcilerIgnoresUnmanagedWorkloadWithoutAnnotations(t *testi
 	assertProjectedRuntimeImagePullSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
 }
 
+func TestDeploymentReconcilerIgnoresModuleNamespaceWorkload(t *testing.T) {
+	t.Parallel()
+
+	workload := annotatedDeployment(nil, 1, corev1.VolumeSource{
+		EmptyDir: &corev1.EmptyDirVolumeSource{},
+	})
+	workload.Namespace = testRegistryNamespace
+	workload.Spec.Template.Annotations = map[string]string{modeldelivery.ResolvedDigestAnnotation: testDigest}
+	reconciler, kubeClient := newDeploymentReconciler(t, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
+
+	result := reconcileDeployment(t, reconciler, workload)
+	if result != (ctrl.Result{}) {
+		t.Fatalf("unexpected reconcile result %#v", result)
+	}
+
+	var unchanged deployment
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &unchanged); err != nil {
+		t.Fatalf("Get(deployment) error = %v", err)
+	}
+	if got := unchanged.Spec.Template.Annotations[modeldelivery.ResolvedDigestAnnotation]; got != testDigest {
+		t.Fatalf("expected module namespace delivery annotation to remain untouched, got %q", got)
+	}
+}
+
 func TestDeploymentReconcilerRemovesInjectedManagedCacheStateWhenAnnotationDisappears(t *testing.T) {
 	t.Parallel()
 

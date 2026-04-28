@@ -37,7 +37,7 @@ import (
 func TestRunRequestCycleArmsQueuedRequestsAndLogs(t *testing.T) {
 	var buffer bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buffer, &slog.HandlerOptions{ReplaceAttr: replaceAttrForTest}))
-	logger = logger.With(slog.String("logger", "dmcr-garbage-collection"))
+	logger = logger.With(slog.String("component", "dmcr-garbage-collection"))
 
 	previousLogger := slog.Default()
 	slog.SetDefault(logger)
@@ -90,6 +90,98 @@ func TestRunRequestCycleArmsQueuedRequestsAndLogs(t *testing.T) {
 	assertLogMessage(t, entries, "dmcr garbage collection maintenance cycle armed")
 }
 
+func TestRunRequestCycleDefersQueuedRequestsWhilePublicationRuns(t *testing.T) {
+	queuedAt := time.Date(2026, 4, 13, 13, 40, 0, 0, time.UTC)
+	secret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dmcr-gc-request-1",
+			Namespace: "d8-ai-models",
+			Labels:    map[string]string{RequestLabelKey: RequestLabelValue},
+			Annotations: map[string]string{
+				RequestQueuedAtAnnotationKey: queuedAt.Format(time.RFC3339Nano),
+				phaseAnnotationKey:           phaseQueued,
+			},
+		},
+	}
+	client := fake.NewSimpleClientset(secret.DeepCopy(), runningPublicationPod("publish-a").DeepCopy())
+	options := Options{
+		RequestNamespace:     "d8-ai-models",
+		RequestLabelSelector: DefaultRequestLabelSelector(),
+		ActivationDelay:      10 * time.Minute,
+	}
+
+	handled, err := runRequestCycle(context.Background(), client, options, func() time.Time {
+		return queuedAt.Add(20 * time.Minute)
+	})
+	if err != nil {
+		t.Fatalf("runRequestCycle() error = %v", err)
+	}
+	if handled {
+		t.Fatal("runRequestCycle() = true, want false while publication pod is active")
+	}
+
+	updated, err := client.CoreV1().Secrets("d8-ai-models").Get(context.Background(), "dmcr-gc-request-1", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get secret error = %v", err)
+	}
+	if got := updated.Annotations[switchAnnotationKey]; got != "" {
+		t.Fatalf("switch annotation = %q, want empty while deferred", got)
+	}
+	if got, want := updated.Annotations[phaseAnnotationKey], phaseQueued; got != want {
+		t.Fatalf("phase annotation = %q, want %q", got, want)
+	}
+}
+
+func TestRunRequestCycleRequeuesActiveRequestsWhilePublicationRuns(t *testing.T) {
+	queuedAt := time.Date(2026, 4, 13, 13, 40, 0, 0, time.UTC)
+	secret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dmcr-gc-request-1",
+			Namespace: "d8-ai-models",
+			Labels:    map[string]string{RequestLabelKey: RequestLabelValue},
+			Annotations: map[string]string{
+				RequestQueuedAtAnnotationKey: queuedAt.Format(time.RFC3339Nano),
+				switchAnnotationKey:          queuedAt.Add(time.Minute).Format(time.RFC3339Nano),
+				phaseAnnotationKey:           phaseArmed,
+			},
+		},
+	}
+	client := fake.NewSimpleClientset(secret.DeepCopy(), runningPublicationPod("publish-a").DeepCopy())
+	options := Options{
+		RequestNamespace:     "d8-ai-models",
+		RequestLabelSelector: DefaultRequestLabelSelector(),
+	}
+	previousCleanupRunner := cleanupRunner
+	cleanupRunner = func(context.Context, string, string, time.Duration, cleanupPolicy) (CleanupResult, error) {
+		t.Fatal("cleanupRunner must not run while publication pod is active")
+		return CleanupResult{}, nil
+	}
+	t.Cleanup(func() {
+		cleanupRunner = previousCleanupRunner
+	})
+
+	handled, err := runRequestCycle(context.Background(), client, options, func() time.Time {
+		return queuedAt.Add(20 * time.Minute)
+	})
+	if err != nil {
+		t.Fatalf("runRequestCycle() error = %v", err)
+	}
+	if handled {
+		t.Fatal("runRequestCycle() = true, want false after active request was deferred")
+	}
+
+	updated, err := client.CoreV1().Secrets("d8-ai-models").Get(context.Background(), "dmcr-gc-request-1", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get secret error = %v", err)
+	}
+	if got := updated.Annotations[switchAnnotationKey]; got != "" {
+		t.Fatalf("switch annotation = %q, want empty after requeue", got)
+	}
+	if got, want := updated.Annotations[phaseAnnotationKey], phaseQueued; got != want {
+		t.Fatalf("phase annotation = %q, want %q", got, want)
+	}
+}
+
 func TestRunLoopStepQueuesStartupBackfillRequest(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	planner, err := newSchedulePlanner("0 2 * * *", time.Date(2026, 4, 23, 18, 25, 53, 0, time.UTC))
@@ -139,10 +231,21 @@ func TestRunLoopStepQueuesStartupBackfillRequest(t *testing.T) {
 	}
 }
 
+func runningPublicationPod(name string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "d8-ai-models",
+			Labels:    map[string]string{appNameLabelKey: publicationAppName},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+}
+
 func TestRunRequestCycleMarksActiveRequestsDoneAndLogs(t *testing.T) {
 	var buffer bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buffer, &slog.HandlerOptions{ReplaceAttr: replaceAttrForTest}))
-	logger = logger.With(slog.String("logger", "dmcr-garbage-collection"))
+	logger = logger.With(slog.String("component", "dmcr-garbage-collection"))
 
 	previousLogger := slog.Default()
 	slog.SetDefault(logger)

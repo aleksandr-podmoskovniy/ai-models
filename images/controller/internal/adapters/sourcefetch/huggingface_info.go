@@ -55,12 +55,56 @@ func FetchHuggingFaceInfo(ctx context.Context, repoID, revision, token string) (
 	}
 
 	return HuggingFaceInfo{
-		ID:          firstNonEmpty(payload.ID, repoID),
-		SHA:         strings.TrimSpace(payload.SHA),
-		PipelineTag: strings.TrimSpace(payload.PipelineTag),
-		License:     strings.TrimSpace(payload.CardData.License),
-		Files:       files,
+		ID:           firstNonEmpty(payload.ID, repoID),
+		SHA:          strings.TrimSpace(payload.SHA),
+		PipelineTag:  strings.TrimSpace(payload.PipelineTag),
+		DeclaredTask: declaredHuggingFaceTask(payload),
+		License:      strings.TrimSpace(payload.CardData.License),
+		Files:        files,
 	}, nil
+}
+
+func declaredHuggingFaceTask(payload huggingFaceAPIResponse) string {
+	if task := declaredHuggingFaceModelIndexTask(payload.CardData.ModelIndex); task != "" {
+		return task
+	}
+	return strings.TrimSpace(payload.PipelineTag)
+}
+
+func declaredHuggingFaceModelIndexTask(index []huggingFaceModelIndex) string {
+	declared := ""
+	for _, model := range index {
+		for _, result := range model.Results {
+			task := normalizeHuggingFaceTaskType(result.Task.Type)
+			if task == "" {
+				continue
+			}
+			if declared == "" {
+				declared = task
+				continue
+			}
+			if declared != task {
+				return ""
+			}
+		}
+	}
+	return declared
+}
+
+func normalizeHuggingFaceTaskType(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, "_", "-")
+	normalized = strings.ReplaceAll(normalized, " ", "-")
+	switch normalized {
+	case "reranking", "rerank", "text-ranking":
+		return "rerank"
+	case "sentence-similarity", "semantic-textual-similarity", "sts":
+		return "sentence-similarity"
+	case "text-generation", "text2text-generation", "text-to-image", "text-to-video", "image-to-video":
+		return normalized
+	default:
+		return ""
+	}
 }
 
 func huggingFaceInfoURL(repoID, revision string) (string, error) {

@@ -76,7 +76,7 @@ func TestSetDefaultLoggerBridgesControllerRuntimeAndKlog(t *testing.T) {
 	}
 }
 
-func TestNewComponentLoggerAddsLoggerAttr(t *testing.T) {
+func TestNewComponentLoggerAddsComponentAttr(t *testing.T) {
 	var buffer bytes.Buffer
 
 	logger, err := newComponentLogger("json", "info", "publish-worker", &buffer)
@@ -86,14 +86,56 @@ func TestNewComponentLoggerAddsLoggerAttr(t *testing.T) {
 	logger.Info("component test message", slog.String("runtimeKind", "publish-worker"))
 
 	record := findRecordByMessage(t, decodeLogRecords(t, buffer.Bytes()), "component test message")
-	if got, want := record["logger"], "publish-worker"; got != want {
-		t.Fatalf("logger attr = %#v, want %q", got, want)
+	if got, want := record["component"], "publish-worker"; got != want {
+		t.Fatalf("component attr = %#v, want %q", got, want)
 	}
 	if got, ok := record["level"].(string); !ok || got != "info" {
 		t.Fatalf("level = %#v, want info", record["level"])
 	}
 	if got, want := record["runtime_kind"], "publish-worker"; got != want {
 		t.Fatalf("runtime_kind attr = %#v, want %q", got, want)
+	}
+}
+
+func TestNewLoggerDeduplicatesContextAndRecordAttrs(t *testing.T) {
+	var buffer bytes.Buffer
+
+	logger, err := newLogger("json", "info", &buffer)
+	if err != nil {
+		t.Fatalf("newLogger() error = %v", err)
+	}
+	logger = logger.With(
+		slog.String("component", "publish-worker"),
+		slog.String("sourceType", "HuggingFace"),
+		slog.String("artifactURI", "oci://model"),
+	)
+
+	logger.Info(
+		"dedupe test message",
+		slog.String("sourceType", "HuggingFace"),
+		slog.String("artifactURI", "oci://model"),
+		slog.String("artifactDigest", "sha256:test"),
+		slog.String("artifactDigest", "sha256:test"),
+	)
+
+	line := bytes.TrimSpace(buffer.Bytes())
+	for _, key := range []string{`"component"`, `"source_type"`, `"artifact_uri"`, `"artifact_digest"`} {
+		if got := bytes.Count(line, []byte(key)); got != 1 {
+			t.Fatalf("expected one %s field, got %d in %q", key, got, string(line))
+		}
+	}
+	record := findRecordByMessage(t, decodeLogRecords(t, buffer.Bytes()), "dedupe test message")
+	if got, want := record["component"], "publish-worker"; got != want {
+		t.Fatalf("component attr = %#v, want %q", got, want)
+	}
+	if got, want := record["source_type"], "HuggingFace"; got != want {
+		t.Fatalf("source_type attr = %#v, want %q", got, want)
+	}
+	if got, want := record["artifact_uri"], "oci://model"; got != want {
+		t.Fatalf("artifact_uri attr = %#v, want %q", got, want)
+	}
+	if got, want := record["artifact_digest"], "sha256:test"; got != want {
+		t.Fatalf("artifact_digest attr = %#v, want %q", got, want)
 	}
 }
 
@@ -120,8 +162,8 @@ func TestCommandErrorUsesDefaultLogger(t *testing.T) {
 	}
 
 	record := findRecordByMessage(t, decodeLogRecords(t, buffer.Bytes()), "artifact-cleanup exited with error")
-	if got, want := record["logger"], "artifact-cleanup"; got != want {
-		t.Fatalf("logger attr = %#v, want %q", got, want)
+	if got, want := record["component"], "artifact-cleanup"; got != want {
+		t.Fatalf("component attr = %#v, want %q", got, want)
 	}
 	if got, want := record["level"], "error"; got != want {
 		t.Fatalf("level = %#v, want %q", got, want)

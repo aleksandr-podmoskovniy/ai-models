@@ -51,6 +51,20 @@ func TestWorkloadDeliveryInterest(t *testing.T) {
 		}
 	})
 
+	t.Run("module namespace workload is ignored", func(t *testing.T) {
+		t.Parallel()
+
+		workload := annotatedDeployment(map[string]string{ModelAnnotation: "gemma"}, 1, corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		})
+		workload.Namespace = testRegistryNamespace
+		workload.Spec.Template.Annotations = map[string]string{modeldelivery.ResolvedDigestAnnotation: testDigest}
+		options := defaultServiceOptions()
+		if workloadDeliveryInterest(workload, options) {
+			t.Fatal("did not expect module namespace workload to pass event filter")
+		}
+	})
+
 	t.Run("unmanaged workload without annotations is ignored", func(t *testing.T) {
 		t.Parallel()
 

@@ -16,7 +16,11 @@ limitations under the License.
 
 package diffusers
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestResolveSummaryProjectsTextToVideo(t *testing.T) {
 	t.Parallel()
@@ -90,6 +94,26 @@ func TestResolveSummaryDoesNotProjectUnknownPipelineWithoutReliableTask(t *testi
 	}
 }
 
+func TestResolveCountsDiffusersBinWeights(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeProfileTestFile(t, filepath.Join(root, "model_index.json"), `{"_class_name":"TextToVideoSDPipeline"}`)
+	writeProfileTestFile(t, filepath.Join(root, "transformer", "diffusion_pytorch_model.bin"), "video-weights")
+	writeProfileTestFile(t, filepath.Join(root, "text_encoder", "pytorch_model.bin"), "text-weights")
+
+	resolved, err := Resolve(Input{ModelDir: root})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got, want := resolved.Footprint.WeightsBytes, int64(len("video-weights")+len("text-weights")); got != want {
+		t.Fatalf("unexpected weight bytes %d", got)
+	}
+	if got, want := resolved.Footprint.ShardCount, int64(2); got != want {
+		t.Fatalf("unexpected shard count %d", got)
+	}
+}
+
 func stringSlicesEqual(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
@@ -100,4 +124,14 @@ func stringSlicesEqual(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func writeProfileTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
 }
