@@ -254,6 +254,17 @@ paths и test surfaces.
 - Primary evidence:
   - `source_test.go`
 
+### `internal/domain/storagecapacity`
+
+- Decision surface:
+  - module-wide capacity usage math
+  - active upload reservation admission
+  - idempotent reservation replay
+  - committed published artifact accounting
+  - release semantics for reservation and published bytes
+- Primary evidence:
+  - `model_test.go`
+
 ### `internal/application/publishobserve`
 
 - Decision surface:
@@ -369,6 +380,7 @@ paths и test surfaces.
   - format-specific profile extraction
 - Primary evidence:
   - `common/profile_test.go`
+  - `diffusers/profile_test.go`
   - `safetensors/profile_test.go`
   - `gguf/profile_test.go`
 
@@ -594,6 +606,7 @@ paths и test surfaces.
   - `run_multipart_completion_test.go`
   - `run_multipart_handoff_test.go`
   - `run_session_expiry_test.go`
+  - `storage_test_helpers_test.go`
 
 ### `internal/dataplane/artifactcleanup`
 
@@ -641,6 +654,8 @@ paths и test surfaces.
 
 - `internal/bootstrap`: `bootstrap_test.go`
 - `internal/cmdsupport`: `common_test.go`
+- `internal/domain/storagecapacity`: `model_test.go`
+- `internal/adapters/k8s/storageaccounting`: `store_test.go`
 - `internal/monitoring/catalogmetrics`:
   - `collector_state_metrics_test.go`
   - `collector_incomplete_status_test.go`
@@ -649,6 +664,7 @@ paths и test surfaces.
   - `collector_nodecache_runtime_test.go`
   - `collector_workload_delivery_test.go`
   - `collector_test_helpers_test.go`
+- `internal/monitoring/storageusage`: `collector_test.go`
 - `internal/publicationartifact`: `contract_test.go`, `location_test.go`
 - `internal/publishedsnapshot`: `snapshot_test.go`, `profile_test.go`
 - `internal/support/cleanuphandle`: `handle_test.go`

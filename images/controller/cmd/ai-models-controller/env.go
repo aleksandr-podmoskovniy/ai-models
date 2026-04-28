@@ -45,6 +45,7 @@ const (
 	artifactsS3IgnoreTLSEnv                   = "ARTIFACTS_S3_IGNORE_TLS"
 	artifactsCredentialsSecretEnv             = "ARTIFACTS_CREDENTIALS_SECRET_NAME"
 	artifactsCASecretEnv                      = "ARTIFACTS_CA_SECRET_NAME"
+	artifactsCapacityLimitEnv                 = "ARTIFACTS_CAPACITY_LIMIT"
 	nodeCacheEnabledEnv                       = "NODE_CACHE_ENABLED"
 	nodeCacheRuntimeImageEnv                  = "NODE_CACHE_RUNTIME_IMAGE"
 	nodeCacheCSIRegistrarImageEnv             = "NODE_CACHE_CSI_REGISTRAR_IMAGE"

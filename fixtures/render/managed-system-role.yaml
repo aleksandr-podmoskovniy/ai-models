@@ -1,0 +1,4 @@
+global:
+  discovery:
+    d8SpecificNodeCountByRole:
+      system: 3

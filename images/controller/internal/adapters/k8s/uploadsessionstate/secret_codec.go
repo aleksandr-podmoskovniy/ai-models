@@ -65,7 +65,7 @@ func parseExpectedSizeBytes(raw []byte) (int64, error) {
 func parseInputFormat(raw []byte) (modelsv1alpha1.ModelInputFormat, error) {
 	value := modelsv1alpha1.ModelInputFormat(strings.TrimSpace(string(raw)))
 	switch value {
-	case "", modelsv1alpha1.ModelInputFormatSafetensors, modelsv1alpha1.ModelInputFormatGGUF:
+	case "", modelsv1alpha1.ModelInputFormatSafetensors, modelsv1alpha1.ModelInputFormatGGUF, modelsv1alpha1.ModelInputFormatDiffusers:
 		return value, nil
 	default:
 		return "", fmt.Errorf("unsupported upload session input format %q", value)

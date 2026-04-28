@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/deckhouse/ai-models/controller/internal/domain/ingestadmission"
+	"github.com/deckhouse/ai-models/controller/internal/domain/storagecapacity"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
@@ -112,10 +113,14 @@ func (api *sessionAPI) handleProbe(writer http.ResponseWriter, request *http.Req
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if ok := api.reserveUploadStorage(writer, request, session, expectedSizeBytes); !ok {
+		return
+	}
 	if err := api.options.Sessions.SaveProbe(request.Context(), session.SessionID, expectedSizeBytes, ProbeState{
 		FileName:            result.FileName,
 		ResolvedInputFormat: result.ResolvedInputFormat,
 	}); err != nil {
+		_ = api.releaseUploadStorage(request.Context(), session)
 		http.Error(writer, "persist upload session probe state failed", http.StatusInternalServerError)
 		return
 	}
@@ -130,6 +135,39 @@ func (api *sessionAPI) handleProbe(writer http.ResponseWriter, request *http.Req
 		FileName:            result.FileName,
 		ResolvedInputFormat: strings.TrimSpace(string(result.ResolvedInputFormat)),
 	})
+}
+
+func (api *sessionAPI) releaseUploadStorage(ctx context.Context, session SessionRecord) error {
+	if api.options.StorageReservations == nil {
+		return nil
+	}
+	return api.options.StorageReservations.ReleaseUpload(ctx, session)
+}
+
+func (api *sessionAPI) reserveUploadStorage(
+	writer http.ResponseWriter,
+	request *http.Request,
+	session SessionRecord,
+	expectedSizeBytes int64,
+) bool {
+	if api.options.StorageReservations == nil {
+		return true
+	}
+	if expectedSizeBytes <= 0 {
+		http.Error(writer, "upload probe sizeBytes is required when artifact storage capacity limit is enabled", http.StatusBadRequest)
+		return false
+	}
+	err := api.options.StorageReservations.ReserveUpload(request.Context(), session, expectedSizeBytes)
+	switch {
+	case err == nil:
+		return true
+	case storagecapacity.IsInsufficientStorage(err):
+		http.Error(writer, err.Error(), http.StatusInsufficientStorage)
+		return false
+	default:
+		http.Error(writer, "reserve artifact storage capacity failed", http.StatusInternalServerError)
+		return false
+	}
 }
 
 func publicationIdentity(session SessionRecord) publicationdata.Identity {

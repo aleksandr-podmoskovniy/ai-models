@@ -124,6 +124,10 @@ func (api *sessionAPI) handleAbort(writer http.ResponseWriter, request *http.Req
 			http.Error(writer, "persist upload abort failed", http.StatusInternalServerError)
 			return
 		}
+		if err := api.releaseUploadStorage(request.Context(), session); err != nil {
+			http.Error(writer, "release upload storage reservation failed", http.StatusInternalServerError)
+			return
+		}
 		logger.Info("upload session aborted before multipart initialization")
 		writer.WriteHeader(http.StatusNoContent)
 		return
@@ -139,6 +143,10 @@ func (api *sessionAPI) handleAbort(writer http.ResponseWriter, request *http.Req
 	}
 	if err := api.options.Sessions.MarkAborted(request.Context(), session.SessionID, "upload session aborted"); err != nil {
 		http.Error(writer, "persist upload abort failed", http.StatusInternalServerError)
+		return
+	}
+	if err := api.releaseUploadStorage(request.Context(), session); err != nil {
+		http.Error(writer, "release upload storage reservation failed", http.StatusInternalServerError)
 		return
 	}
 	logger.Info(

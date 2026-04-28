@@ -25,6 +25,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/auditevent"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/cleanupstate"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/sourceworker"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageaccounting"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsession"
 	"github.com/deckhouse/ai-models/controller/internal/ports/auditsink"
@@ -45,6 +46,7 @@ type Options struct {
 	UploadStagingBucket   string
 	UploadStagingClient   uploadstagingports.MultipartStager
 	CleanupStateNamespace string
+	StorageAccounting     storageaccounting.Options
 }
 
 type PublicationRuntimeOptions = sourceworker.RuntimeOptions
@@ -61,6 +63,7 @@ type baseReconciler struct {
 	sourceWorkers  publicationports.SourceWorkerRuntime
 	uploadSessions publicationports.UploadSessionRuntime
 	cleanupState   *cleanupstate.Store
+	storageUsage   *storageaccounting.Store
 	auditSink      auditsink.Sink
 }
 
@@ -98,6 +101,10 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	if err != nil {
 		return err
 	}
+	storageUsage, err := storageaccounting.New(mgr.GetClient(), options.StorageAccounting)
+	if err != nil {
+		return err
+	}
 	auditRecorder, err := auditevent.New(
 		mgr.GetEventRecorderFor(modelControllerName),
 		slog.Default().With(
@@ -115,6 +122,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 		sourceWorkers:  sourceWorkers,
 		uploadSessions: uploadSessions,
 		cleanupState:   cleanupState,
+		storageUsage:   storageUsage,
 		auditSink:      auditRecorder,
 	}
 
@@ -153,6 +161,9 @@ func (o Options) Validate() error {
 	}
 	if o.UploadStagingClient == nil {
 		return errors.New("publication runtime upload staging client must not be nil")
+	}
+	if err := o.StorageAccounting.Validate(); err != nil {
+		return err
 	}
 	return storageprojection.ValidateOptions("publication runtime", o.Runtime.ObjectStorage)
 }

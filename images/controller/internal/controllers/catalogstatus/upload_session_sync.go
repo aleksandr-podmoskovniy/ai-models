@@ -22,6 +22,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publicationdomain "github.com/deckhouse/ai-models/controller/internal/domain/publishstate"
+	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -66,14 +67,20 @@ func (r *baseReconciler) planUploadSessionPhaseSync(
 		case modelsv1alpha1.ModelPhaseReady:
 			return uploadSessionPhaseSync{
 				Apply: func(ctx context.Context) error {
-					return r.uploadSessions.MarkCompleted(ctx, ownerUID)
+					if err := r.uploadSessions.MarkCompleted(ctx, ownerUID); err != nil {
+						return err
+					}
+					return r.releaseUploadReservation(ctx, ownerUID)
 				},
 			}
 		case modelsv1alpha1.ModelPhaseFailed:
 			message := uploadSessionFailureMessage(observation, desired)
 			return uploadSessionPhaseSync{
 				Apply: func(ctx context.Context) error {
-					return r.uploadSessions.MarkFailed(ctx, ownerUID, message)
+					if err := r.uploadSessions.MarkFailed(ctx, ownerUID, message); err != nil {
+						return err
+					}
+					return r.releaseUploadReservation(ctx, ownerUID)
 				},
 			}
 		}
@@ -130,4 +137,15 @@ func planFailedUploadSessionPhaseSync(
 		Phase:   publicationdomain.OperationPhaseFailed,
 		Message: message,
 	}, desired)
+}
+
+func (r *baseReconciler) releaseUploadReservation(ctx context.Context, ownerUID types.UID) error {
+	if r == nil || r.storageUsage == nil || !r.storageUsage.Enabled() {
+		return nil
+	}
+	name, err := resourcenames.UploadSessionSecretName(ownerUID)
+	if err != nil {
+		return err
+	}
+	return r.storageUsage.ReleaseReservation(ctx, name)
 }

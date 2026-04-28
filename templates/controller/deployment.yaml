@@ -38,8 +38,8 @@ spec:
       {{- include "helm_lib_module_pod_security_context_run_as_user_deckhouse_with_writable_fs" . | nindent 6 }}
       {{- include "helm_lib_pod_anti_affinity_for_ha" (list . (dict "app.kubernetes.io/name" (include "ai-models.fullname" .) "app.kubernetes.io/component" "controller")) | nindent 6 }}
       {{- include "helm_lib_priority_class" (tuple . $priorityClassName) | nindent 6 }}
-      {{- include "helm_lib_node_selector" (tuple . "master") | nindent 6 }}
-      {{- include "helm_lib_tolerations" (tuple . "any-node") | nindent 6 }}
+      {{- include "helm_lib_node_selector" (tuple . "system") | nindent 6 }}
+      {{- include "helm_lib_tolerations" (tuple . "system") | nindent 6 }}
       containers:
         - name: controller
           {{- include "helm_lib_module_container_security_context_read_only_root_filesystem_capabilities_drop_all_pss_restricted" . | nindent 10 }}
@@ -75,6 +75,7 @@ spec:
             - --artifacts-s3-ignore-tls={{ include "ai-models.artifactsIgnoreTLS" . }}
             - --artifacts-credentials-secret-name={{ include "ai-models.artifactsResolvedSecretName" . }}
             - --artifacts-ca-secret-name={{ include "ai-models.artifactsMountedCASecretName" . }}
+            - --artifacts-capacity-limit={{ include "ai-models.artifactsCapacityLimit" . }}
             - --node-cache-enabled={{ include "ai-models.nodeCacheEnabled" . }}
             - --node-cache-runtime-image={{ include "helm_lib_module_image" (list . "nodeCacheRuntime") }}
             - --node-cache-csi-registrar-image={{ include "ai-models.nodeCacheCSIRegistrarImage" . }}

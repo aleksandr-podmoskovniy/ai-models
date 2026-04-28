@@ -18,6 +18,7 @@ package publishworker
 
 import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	diffusersprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/diffusers"
 	ggufprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/gguf"
 	safetensorsprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/safetensors"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
@@ -33,6 +34,20 @@ func resolveRemoteProfile(
 	}
 
 	switch remote.InputFormat {
+	case modelsv1alpha1.ModelInputFormatDiffusers:
+		resolved, err := diffusersprofile.ResolveSummary(diffusersprofile.SummaryInput{
+			ModelIndexPayload:      remote.ProfileSummary.ModelIndexPayload,
+			WeightBytes:            remote.ProfileSummary.WeightBytes,
+			LargestWeightFileBytes: remote.ProfileSummary.LargestWeightFileBytes,
+			WeightFileCount:        remote.ProfileSummary.WeightFileCount,
+			Task:                   options.Task,
+			SourceDeclaredTask:     remote.Fallbacks.SourceDeclaredTask,
+			TaskHint:               remote.Fallbacks.TaskHint,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &resolved, nil
 	case modelsv1alpha1.ModelInputFormatSafetensors:
 		resolved, err := safetensorsprofile.ResolveSummary(safetensorsprofile.SummaryInput{
 			ConfigPayload:          remote.ProfileSummary.ConfigPayload,

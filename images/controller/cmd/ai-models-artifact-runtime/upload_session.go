@@ -22,11 +22,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageaccounting"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/uploadsessionstate"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	uploadsessionruntime "github.com/deckhouse/ai-models/controller/internal/dataplane/uploadsession"
+	"github.com/deckhouse/ai-models/controller/internal/domain/storagecapacity"
 	"github.com/deckhouse/ai-models/controller/internal/support/cleanuphandle"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func runUploadSession(args []string) int {
@@ -36,11 +42,17 @@ func runUploadSession(args []string) int {
 	var partURLTTL time.Duration
 	var sessionSecretNamespace string
 	var stagingBucket string
+	var storageAccountingNamespace string
+	var storageAccountingSecretName string
+	var storageCapacityLimit string
 
 	flags.IntVar(&listenPort, "listen-port", 8444, "Listen port.")
 	flags.DurationVar(&partURLTTL, "part-url-ttl", 15*time.Minute, "Presigned multipart upload part URL TTL.")
 	flags.StringVar(&sessionSecretNamespace, "session-secret-namespace", "", "Namespace of upload session secrets.")
 	flags.StringVar(&stagingBucket, "staging-bucket", "", "Bucket used for staged uploads.")
+	flags.StringVar(&storageAccountingNamespace, "storage-accounting-namespace", "", "Namespace of storage accounting secret.")
+	flags.StringVar(&storageAccountingSecretName, "storage-accounting-secret-name", storageaccounting.DefaultSecretName, "Storage accounting Secret name.")
+	flags.StringVar(&storageCapacityLimit, "storage-capacity-limit", "", "Optional total artifact storage capacity limit.")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -62,14 +74,23 @@ func runUploadSession(args []string) int {
 	if err != nil {
 		return cmdsupport.CommandError(commandUploadGateway, err)
 	}
+	reservations, err := newUploadStorageReservations(
+		cmdsupport.FallbackString(storageAccountingNamespace, sessionSecretNamespace),
+		storageAccountingSecretName,
+		storageCapacityLimit,
+	)
+	if err != nil {
+		return cmdsupport.CommandError(commandUploadGateway, err)
+	}
 
 	logger.Info("upload gateway starting")
 	if err := uploadsessionruntime.Serve(ctx, uploadsessionruntime.Options{
-		ListenPort:    listenPort,
-		PartURLTTL:    partURLTTL,
-		StagingBucket: stagingBucket,
-		StagingClient: stagingClient,
-		Sessions:      sessionStoreAdapter{client: sessions},
+		ListenPort:          listenPort,
+		PartURLTTL:          partURLTTL,
+		StagingBucket:       stagingBucket,
+		StagingClient:       stagingClient,
+		Sessions:            sessionStoreAdapter{client: sessions},
+		StorageReservations: reservations,
 	}); err != nil && err != ctx.Err() {
 		logger.Error("upload gateway failed", slog.Any("error", err))
 		return 1
@@ -79,8 +100,58 @@ func runUploadSession(args []string) int {
 	return 0
 }
 
+func newUploadStorageReservations(namespace, secretName, limit string) (uploadsessionruntime.StorageReservations, error) {
+	limitBytes, err := cmdsupport.ParseOptionalPositiveBytesQuantity(limit, "storage capacity limit")
+	if err != nil || limitBytes == 0 {
+		return nil, err
+	}
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+	client, err := crclient.New(cfg, crclient.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
+	store, err := storageaccounting.New(client, storageaccounting.Options{
+		Namespace:  namespace,
+		SecretName: secretName,
+		LimitBytes: limitBytes,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return uploadStorageReservations{store: store}, nil
+}
+
 type sessionStoreAdapter struct {
 	client *uploadsessionstate.Client
+}
+
+type uploadStorageReservations struct {
+	store *storageaccounting.Store
+}
+
+func (r uploadStorageReservations) ReserveUpload(ctx context.Context, session uploadsessionruntime.SessionRecord, sizeBytes int64) error {
+	return r.store.Reserve(ctx, storagecapacity.Reservation{
+		ID: session.SessionID,
+		Owner: storagecapacity.Owner{
+			Kind:      session.OwnerKind,
+			Name:      session.OwnerName,
+			Namespace: session.OwnerNamespace,
+			UID:       session.OwnerUID,
+		},
+		SizeBytes: sizeBytes,
+		CreatedAt: time.Now().UTC(),
+	})
+}
+
+func (r uploadStorageReservations) ReleaseUpload(ctx context.Context, session uploadsessionruntime.SessionRecord) error {
+	return r.store.ReleaseReservation(ctx, session.SessionID)
 }
 
 func (s sessionStoreAdapter) Load(ctx context.Context, sessionID string) (uploadsessionruntime.SessionRecord, bool, error) {

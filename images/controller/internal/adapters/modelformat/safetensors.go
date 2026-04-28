@@ -40,7 +40,10 @@ func classifySafetensorsFile(relative string) (fileAction, bool, bool) {
 	if hasDroppedPathComponent(relative) {
 		return fileActionDrop, false, false
 	}
-	if relative == "config.json" || relative == "model_index.json" {
+	if relative == "model_index.json" {
+		return fileActionReject, false, false
+	}
+	if relative == "config.json" {
 		return fileActionKeep, true, false
 	}
 	if isModelCompanionFile(lowerRelative, lowerBase) {

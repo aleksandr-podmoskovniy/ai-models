@@ -26,6 +26,14 @@ import (
 )
 
 func summarizeTarSafetensorsArchiveFromReader(path string, stream io.Reader, rootPrefix string, selectedFiles []string) ([]byte, WeightStats, error) {
+	return summarizeTarSafetensorsLikeArchiveFromReader(path, stream, rootPrefix, selectedFiles, "config.json", "safetensors")
+}
+
+func summarizeTarDiffusersArchiveFromReader(path string, stream io.Reader, rootPrefix string, selectedFiles []string) ([]byte, WeightStats, error) {
+	return summarizeTarSafetensorsLikeArchiveFromReader(path, stream, rootPrefix, selectedFiles, "model_index.json", "diffusers")
+}
+
+func summarizeTarSafetensorsLikeArchiveFromReader(path string, stream io.Reader, rootPrefix string, selectedFiles []string, configPath, label string) ([]byte, WeightStats, error) {
 	reader, closeArchive, err := archiveio.NewClosableTarReader(path, stream)
 	if err != nil {
 		return nil, WeightStats{}, err
@@ -62,7 +70,7 @@ func summarizeTarSafetensorsArchiveFromReader(path string, stream io.Reader, roo
 			continue
 		}
 		switch {
-		case normalized == "config.json":
+		case normalized == configPath:
 			configPayload, err = io.ReadAll(reader)
 			if err != nil {
 				return nil, WeightStats{}, err
@@ -73,10 +81,10 @@ func summarizeTarSafetensorsArchiveFromReader(path string, stream io.Reader, roo
 	}
 
 	if len(configPayload) == 0 {
-		return nil, WeightStats{}, errors.New("tar safetensors summary requires config.json in selected files")
+		return nil, WeightStats{}, errors.New("tar " + label + " summary requires " + configPath + " in selected files")
 	}
 	if weightStats.TotalBytes <= 0 {
-		return nil, WeightStats{}, errors.New("tar safetensors summary requires positive safetensors weight bytes")
+		return nil, WeightStats{}, errors.New("tar " + label + " summary requires positive safetensors weight bytes")
 	}
 	return configPayload, weightStats, nil
 }

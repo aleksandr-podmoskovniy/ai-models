@@ -30,70 +30,124 @@ type Capabilities struct {
 }
 
 func ResolveCapabilities(task string) Capabilities {
-	switch normalize(strings.TrimSpace(task)) {
-	case "text-generation", "text2text-generation", "summarization", "conversational":
-		return capability(
-			modelsv1alpha1.ModelEndpointTypeChat,
-			modelsv1alpha1.ModelEndpointTypeTextGeneration,
-		)
-	case "feature-extraction", "embeddings", "text-embeddings-inference", "sentence-similarity":
-		return capability(modelsv1alpha1.ModelEndpointTypeEmbeddings)
-	case "rerank", "reranker", "text-ranking":
-		return capability(modelsv1alpha1.ModelEndpointTypeRerank)
-	case "automatic-speech-recognition", "speech-to-text":
-		return capabilityWithFeatures(
-			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeSpeechToText},
-			modelsv1alpha1.ModelFeatureTypeAudioInput,
-		)
-	case "text-to-speech", "text-to-audio":
-		return capabilityWithFeatures(
-			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeTextToSpeech},
-			modelsv1alpha1.ModelFeatureTypeAudioOutput,
-		)
-	case "translation", "translation_xx_to_yy":
-		return capability(modelsv1alpha1.ModelEndpointTypeTranslation)
-	case "image-classification", "zero-shot-image-classification":
-		return capabilityWithFeatures(
-			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeImageClassification},
-			modelsv1alpha1.ModelFeatureTypeVisionInput,
-		)
-	case "object-detection", "zero-shot-object-detection":
-		return capabilityWithFeatures(
-			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeObjectDetection},
-			modelsv1alpha1.ModelFeatureTypeVisionInput,
-		)
-	case "image-segmentation":
-		return capabilityWithFeatures(
-			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeImageSegmentation},
-			modelsv1alpha1.ModelFeatureTypeVisionInput,
-		)
-	case "image-to-text", "image-text-to-text":
-		return capabilityWithFeatures(
-			[]modelsv1alpha1.ModelEndpointType{
-				modelsv1alpha1.ModelEndpointTypeChat,
-				modelsv1alpha1.ModelEndpointTypeImageToText,
-			},
-			modelsv1alpha1.ModelFeatureTypeVisionInput,
-			modelsv1alpha1.ModelFeatureTypeMultiModalInput,
-		)
-	case "visual-question-answering", "document-question-answering":
-		return capabilityWithFeatures(
-			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeVisualQuestionAnswering},
-			modelsv1alpha1.ModelFeatureTypeVisionInput,
-			modelsv1alpha1.ModelFeatureTypeMultiModalInput,
-		)
-	case "text-to-image", "image-generation":
-		return capabilityWithFeatures(
-			[]modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeImageGeneration},
-			modelsv1alpha1.ModelFeatureTypeImageOutput,
-		)
-	default:
-		return Capabilities{}
+	normalized := normalize(strings.TrimSpace(task))
+	for _, rule := range capabilityRules {
+		if slices.Contains(rule.tasks, normalized) {
+			return capabilityWithFeatures(rule.endpoints, rule.features...)
+		}
 	}
+	return Capabilities{}
 }
 
-func capability(endpoints ...modelsv1alpha1.ModelEndpointType) Capabilities {
-	return capabilityWithFeatures(endpoints)
+type capabilityRule struct {
+	tasks     []string
+	endpoints []modelsv1alpha1.ModelEndpointType
+	features  []modelsv1alpha1.ModelFeatureType
+}
+
+var capabilityRules = []capabilityRule{
+	{
+		tasks: []string{"text-generation", "text2text-generation", "summarization", "conversational"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{
+			modelsv1alpha1.ModelEndpointTypeChat,
+			modelsv1alpha1.ModelEndpointTypeTextGeneration,
+		},
+	},
+	{
+		tasks:     []string{"feature-extraction", "embeddings", "text-embeddings-inference", "sentence-similarity"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeEmbeddings},
+	},
+	{
+		tasks:     []string{"rerank", "reranker", "text-ranking"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeRerank},
+	},
+	{
+		tasks:     []string{"automatic-speech-recognition", "speech-to-text"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeSpeechToText},
+		features:  []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeAudioInput},
+	},
+	{
+		tasks:     []string{"text-to-speech"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeTextToSpeech},
+		features:  []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeAudioOutput},
+	},
+	{
+		tasks:     []string{"text-to-audio", "text-to-music", "audio-generation"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeAudioGeneration},
+		features:  []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeAudioOutput},
+	},
+	{
+		tasks:     []string{"translation", "translation_xx_to_yy"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeTranslation},
+	},
+	{
+		tasks:     []string{"image-classification", "zero-shot-image-classification"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeImageClassification},
+		features:  []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeVisionInput},
+	},
+	{
+		tasks:     []string{"object-detection", "zero-shot-object-detection"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeObjectDetection},
+		features:  []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeVisionInput},
+	},
+	{
+		tasks:     []string{"image-segmentation"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeImageSegmentation},
+		features:  []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeVisionInput},
+	},
+	{
+		tasks: []string{"image-to-text", "image-text-to-text"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{
+			modelsv1alpha1.ModelEndpointTypeChat,
+			modelsv1alpha1.ModelEndpointTypeImageToText,
+		},
+		features: []modelsv1alpha1.ModelFeatureType{
+			modelsv1alpha1.ModelFeatureTypeVisionInput,
+			modelsv1alpha1.ModelFeatureTypeMultiModalInput,
+		},
+	},
+	{
+		tasks:     []string{"visual-question-answering", "document-question-answering"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeVisualQuestionAnswering},
+		features: []modelsv1alpha1.ModelFeatureType{
+			modelsv1alpha1.ModelFeatureTypeVisionInput,
+			modelsv1alpha1.ModelFeatureTypeMultiModalInput,
+		},
+	},
+	{
+		tasks:     []string{"text-to-image", "image-generation", "unconditional-image-generation"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeImageGeneration},
+		features:  []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeImageOutput},
+	},
+	{
+		tasks:     []string{"image-to-image", "image-variation", "inpainting", "image-inpainting"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeImageGeneration},
+		features: []modelsv1alpha1.ModelFeatureType{
+			modelsv1alpha1.ModelFeatureTypeVisionInput,
+			modelsv1alpha1.ModelFeatureTypeImageOutput,
+		},
+	},
+	{
+		tasks:     []string{"text-to-video", "video-generation"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeVideoGeneration},
+		features:  []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeVideoOutput},
+	},
+	{
+		tasks:     []string{"image-to-video"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeVideoGeneration},
+		features: []modelsv1alpha1.ModelFeatureType{
+			modelsv1alpha1.ModelFeatureTypeVisionInput,
+			modelsv1alpha1.ModelFeatureTypeVideoOutput,
+		},
+	},
+	{
+		tasks:     []string{"video-to-video"},
+		endpoints: []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeVideoGeneration},
+		features: []modelsv1alpha1.ModelFeatureType{
+			modelsv1alpha1.ModelFeatureTypeVideoInput,
+			modelsv1alpha1.ModelFeatureTypeVideoOutput,
+		},
+	},
 }
 
 func capabilityWithFeatures(endpoints []modelsv1alpha1.ModelEndpointType, features ...modelsv1alpha1.ModelFeatureType) Capabilities {

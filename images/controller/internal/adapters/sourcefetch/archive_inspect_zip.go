@@ -65,6 +65,14 @@ func inspectZipArchiveFiles(files []*zip.File, requested modelsv1alpha1.ModelInp
 	}
 
 	switch inspection.InputFormat {
+	case modelsv1alpha1.ModelInputFormatDiffusers:
+		modelIndexPayload, weightStats, err := summarizeZipDiffusersArchive(files, rootPrefix, inspection.SelectedFiles)
+		if err != nil {
+			return ArchiveInspection{}, err
+		}
+		inspection.ModelIndexPayload = modelIndexPayload
+		inspection.WeightStats = weightStats
+		return inspection, nil
 	case modelsv1alpha1.ModelInputFormatSafetensors:
 		configPayload, weightStats, err := summarizeZipSafetensorsArchive(files, rootPrefix, inspection.SelectedFiles)
 		if err != nil {
@@ -101,6 +109,14 @@ func classifyZipArchiveEntry(file *zip.File) (string, bool, error) {
 }
 
 func summarizeZipSafetensorsArchive(files []*zip.File, rootPrefix string, selectedFiles []string) ([]byte, WeightStats, error) {
+	return summarizeZipSafetensorsLikeArchive(files, rootPrefix, selectedFiles, "config.json", "safetensors")
+}
+
+func summarizeZipDiffusersArchive(files []*zip.File, rootPrefix string, selectedFiles []string) ([]byte, WeightStats, error) {
+	return summarizeZipSafetensorsLikeArchive(files, rootPrefix, selectedFiles, "model_index.json", "diffusers")
+}
+
+func summarizeZipSafetensorsLikeArchive(files []*zip.File, rootPrefix string, selectedFiles []string, configPath, label string) ([]byte, WeightStats, error) {
 	selected := archiveFileSet(selectedFiles)
 
 	var (
@@ -123,7 +139,7 @@ func summarizeZipSafetensorsArchive(files []*zip.File, rootPrefix string, select
 			continue
 		}
 		switch {
-		case normalized == "config.json":
+		case normalized == configPath:
 			stream, err := file.Open()
 			if err != nil {
 				return nil, WeightStats{}, err
@@ -139,10 +155,10 @@ func summarizeZipSafetensorsArchive(files []*zip.File, rootPrefix string, select
 	}
 
 	if len(configPayload) == 0 {
-		return nil, WeightStats{}, errors.New("zip safetensors summary requires config.json in selected files")
+		return nil, WeightStats{}, errors.New("zip " + label + " summary requires " + configPath + " in selected files")
 	}
 	if weightStats.TotalBytes <= 0 {
-		return nil, WeightStats{}, errors.New("zip safetensors summary requires positive safetensors weight bytes")
+		return nil, WeightStats{}, errors.New("zip " + label + " summary requires positive safetensors weight bytes")
 	}
 	return configPayload, weightStats, nil
 }

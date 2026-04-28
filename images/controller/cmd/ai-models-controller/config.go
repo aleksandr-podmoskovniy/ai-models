@@ -63,6 +63,7 @@ type managerConfig struct {
 	ArtifactsS3IgnoreTLS           bool
 	ArtifactsCredentialsSecretName string
 	ArtifactsCASecretName          string
+	ArtifactsCapacityLimit         string
 
 	NodeCacheEnabled               bool
 	NodeCacheRuntimeImage          string
@@ -119,6 +120,7 @@ func defaultManagerConfig() managerConfig {
 		ArtifactsS3IgnoreTLS:               cmdsupport.EnvOrBool(artifactsS3IgnoreTLSEnv, false),
 		ArtifactsCredentialsSecretName:     cmdsupport.EnvOr(artifactsCredentialsSecretEnv, ""),
 		ArtifactsCASecretName:              cmdsupport.EnvOr(artifactsCASecretEnv, ""),
+		ArtifactsCapacityLimit:             cmdsupport.EnvOr(artifactsCapacityLimitEnv, ""),
 		NodeCacheEnabled:                   cmdsupport.EnvOrBool(nodeCacheEnabledEnv, false),
 		NodeCacheRuntimeImage:              cmdsupport.EnvOr(nodeCacheRuntimeImageEnv, ""),
 		NodeCacheCSIRegistrarImage:         cmdsupport.EnvOr(nodeCacheCSIRegistrarImageEnv, ""),
@@ -172,6 +174,7 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.BoolVar(&config.ArtifactsS3IgnoreTLS, "artifacts-s3-ignore-tls", config.ArtifactsS3IgnoreTLS, "Disable TLS verification for upload staging object storage.")
 	flags.StringVar(&config.ArtifactsCredentialsSecretName, "artifacts-credentials-secret-name", config.ArtifactsCredentialsSecretName, "Secret with object storage accessKey/secretKey for upload staging.")
 	flags.StringVar(&config.ArtifactsCASecretName, "artifacts-ca-secret-name", config.ArtifactsCASecretName, "Optional Secret with ca.crt for upload staging object storage.")
+	flags.StringVar(&config.ArtifactsCapacityLimit, "artifacts-capacity-limit", config.ArtifactsCapacityLimit, "Optional total artifact storage capacity limit.")
 	flags.BoolVar(&config.NodeCacheEnabled, "node-cache-enabled", config.NodeCacheEnabled, "Enable ai-models-managed node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheRuntimeImage, "node-cache-runtime-image", config.NodeCacheRuntimeImage, "Internal node-cache runtime image used by the managed CSI runtime pod.")
 	flags.StringVar(&config.NodeCacheCSIRegistrarImage, "node-cache-csi-registrar-image", config.NodeCacheCSIRegistrarImage, "node-driver-registrar image used by the managed node-cache CSI runtime pod.")
@@ -217,6 +220,9 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 		if err := validateNodeCacheStorageSizes(config.NodeCacheMaxSize, config.NodeCacheSharedVolumeSize); err != nil {
 			return managerConfig{}, 2, err
 		}
+	}
+	if _, err := cmdsupport.ParseOptionalPositiveBytesQuantity(config.ArtifactsCapacityLimit, "artifacts-capacity-limit"); err != nil {
+		return managerConfig{}, 2, err
 	}
 
 	return config, 0, nil

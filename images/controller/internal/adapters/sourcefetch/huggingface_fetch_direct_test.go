@@ -149,6 +149,9 @@ func TestFetchRemoteModelHuggingFacePlansDirectDiffusersObjectSourceWithoutMirro
 	if result.ProfileSummary == nil {
 		t.Fatal("expected remote profile summary")
 	}
+	if got, want := result.InputFormat, modelsv1alpha1.ModelInputFormatDiffusers; got != want {
+		t.Fatalf("unexpected input format %q", got)
+	}
 	if got, want := result.Fallbacks.SourceDeclaredTask, "text-to-image"; got != want {
 		t.Fatalf("unexpected source-declared task %q", got)
 	}

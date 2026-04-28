@@ -35,6 +35,8 @@ type formatRules struct {
 
 func rulesForFormat(format modelsv1alpha1.ModelInputFormat) (formatRules, error) {
 	switch format {
+	case modelsv1alpha1.ModelInputFormatDiffusers:
+		return diffusersRules(), nil
 	case modelsv1alpha1.ModelInputFormatSafetensors:
 		return safetensorsRules(), nil
 	case modelsv1alpha1.ModelInputFormatGGUF:

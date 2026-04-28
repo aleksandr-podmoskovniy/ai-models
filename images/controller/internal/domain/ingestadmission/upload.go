@@ -94,7 +94,7 @@ func ValidateUploadProbeShape(
 		result.ResolvedInputFormat = declaredInputFormat
 		return result, nil
 	case uploadedInputGGUF:
-		if declaredInputFormat == modelsv1alpha1.ModelInputFormatSafetensors {
+		if declaredInputFormat != "" && declaredInputFormat != modelsv1alpha1.ModelInputFormatGGUF {
 			return UploadProbeResult{}, fmt.Errorf("upload file %q does not match declared input format %q", fileName, declaredInputFormat)
 		}
 		if declaredInputFormat != "" {
@@ -111,6 +111,8 @@ func ValidateUploadProbeShape(
 			return UploadProbeResult{}, fmt.Errorf("upload file %q does not match declared input format %q", fileName, declaredInputFormat)
 		case modelsv1alpha1.ModelInputFormatSafetensors:
 			return UploadProbeResult{}, errors.New("safetensors upload requires an archive bundle with config.json and weights")
+		case modelsv1alpha1.ModelInputFormatDiffusers:
+			return UploadProbeResult{}, errors.New("diffusers upload requires an archive bundle with model_index.json and weights")
 		default:
 			return UploadProbeResult{}, errors.New("upload probe could not determine a supported model input from file name and probe chunk")
 		}

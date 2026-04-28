@@ -76,6 +76,15 @@ properties:
           into its own service namespace. When empty, ai-models first reuses
           `credentialsSecretName` if that Secret also contains `ca.crt`.
         default: ""
+      capacityLimit:
+        type: string
+        description: |
+          Optional total module-owned artifact storage capacity budget, for
+          example `500Gi`. When set, upload sessions must declare `sizeBytes`
+          and the upload gateway reserves capacity before multipart staging.
+          Empty value disables admission enforcement and reports capacity as
+          unknown.
+        default: ""
       insecure:
         type: boolean
         description: Disable TLS verification for S3-compatible endpoint access.

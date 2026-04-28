@@ -74,6 +74,23 @@ func TestValidateUploadProbe(t *testing.T) {
 		}
 	})
 
+	t.Run("archive is accepted for declared diffusers", func(t *testing.T) {
+		t.Parallel()
+		session := session
+
+		session.DeclaredInputFormat = modelsv1alpha1.ModelInputFormatDiffusers
+		got, err := ValidateUploadProbe(session, UploadProbeInput{
+			FileName: "model.zip",
+			Chunk:    []byte("PK\x03\x04payload"),
+		})
+		if err != nil {
+			t.Fatalf("ValidateUploadProbe() error = %v", err)
+		}
+		if got.ResolvedInputFormat != modelsv1alpha1.ModelInputFormatDiffusers {
+			t.Fatalf("unexpected resolved format %q", got.ResolvedInputFormat)
+		}
+	})
+
 	t.Run("zstd archive is accepted for declared safetensors", func(t *testing.T) {
 		t.Parallel()
 		session := session
@@ -199,6 +216,20 @@ func TestValidateUploadProbe(t *testing.T) {
 		})
 		if err == nil {
 			t.Fatal("expected declared safetensors mismatch to fail")
+		}
+	})
+
+	t.Run("declared diffusers rejects direct gguf payload", func(t *testing.T) {
+		t.Parallel()
+		session := session
+
+		session.DeclaredInputFormat = modelsv1alpha1.ModelInputFormatDiffusers
+		_, err := ValidateUploadProbe(session, UploadProbeInput{
+			FileName: "model.gguf",
+			Chunk:    []byte("GGUFpayload"),
+		})
+		if err == nil {
+			t.Fatal("expected declared diffusers mismatch to fail")
 		}
 	})
 

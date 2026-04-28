@@ -134,16 +134,15 @@ func TestResolveRemoteProfileUsesDiffusersModelIndexForImageGeneration(t *testin
 	t.Parallel()
 
 	resolved, err := resolveRemoteProfile(Options{}, sourcefetch.RemoteResult{
-		InputFormat: modelsv1alpha1.ModelInputFormatSafetensors,
+		InputFormat: modelsv1alpha1.ModelInputFormatDiffusers,
 		Fallbacks: sourcefetch.RemoteProfileFallbacks{
 			SourceDeclaredTask: "text-to-image",
 		},
 		ProfileSummary: &sourcefetch.RemoteProfileSummary{
-			ConfigPayload:          []byte(`{"_class_name":"StableDiffusionPipeline"}`),
+			ModelIndexPayload:      []byte(`{"_class_name":"StableDiffusionPipeline"}`),
 			WeightBytes:            46,
 			LargestWeightFileBytes: 29,
 			WeightFileCount:        2,
-			TokenizerConfigPayload: nil,
 		},
 	})
 	if err != nil {
@@ -163,6 +162,31 @@ func TestResolveRemoteProfileUsesDiffusersModelIndexForImageGeneration(t *testin
 	}
 	if got, want := resolved.Footprint.ShardCount, int64(2); got != want {
 		t.Fatalf("unexpected shard count %d", got)
+	}
+}
+
+func TestResolveRemoteProfileUsesDiffusersModelIndexForVideoGeneration(t *testing.T) {
+	t.Parallel()
+
+	resolved, err := resolveRemoteProfile(Options{}, sourcefetch.RemoteResult{
+		InputFormat: modelsv1alpha1.ModelInputFormatDiffusers,
+		ProfileSummary: &sourcefetch.RemoteProfileSummary{
+			ModelIndexPayload: []byte(`{"_class_name":"TextToVideoSDPipeline"}`),
+			WeightBytes:       46,
+			WeightFileCount:   1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolveRemoteProfile() error = %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("expected resolved remote profile")
+	}
+	if got, want := resolved.SupportedEndpointTypes, []string{"VideoGeneration"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("unexpected endpoint types %#v", got)
+	}
+	if got, want := resolved.SupportedFeatures, []string{"VideoOutput"}; !stringSlicesEqual(got, want) {
+		t.Fatalf("unexpected features %#v", got)
 	}
 }
 

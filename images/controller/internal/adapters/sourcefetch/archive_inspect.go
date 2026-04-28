@@ -30,13 +30,14 @@ import (
 type openArchiveReaderFunc func() (io.ReadCloser, error)
 
 type ArchiveInspection struct {
-	RootPrefix    string
-	InputFormat   modelsv1alpha1.ModelInputFormat
-	SelectedFiles []string
-	ConfigPayload []byte
-	WeightStats   WeightStats
-	ModelFile     string
-	ModelFileSize int64
+	RootPrefix        string
+	InputFormat       modelsv1alpha1.ModelInputFormat
+	SelectedFiles     []string
+	ConfigPayload     []byte
+	ModelIndexPayload []byte
+	WeightStats       WeightStats
+	ModelFile         string
+	ModelFileSize     int64
 }
 
 type WeightStats struct {
@@ -94,6 +95,19 @@ func inspectTarModelArchiveReader(path string, openReader openArchiveReaderFunc,
 	}
 
 	switch inspection.InputFormat {
+	case modelsv1alpha1.ModelInputFormatDiffusers:
+		stream, err := openReader()
+		if err != nil {
+			return ArchiveInspection{}, err
+		}
+		modelIndexPayload, weightStats, err := summarizeTarDiffusersArchiveFromReader(path, stream, rootPrefix, inspection.SelectedFiles)
+		_ = stream.Close()
+		if err != nil {
+			return ArchiveInspection{}, err
+		}
+		inspection.ModelIndexPayload = modelIndexPayload
+		inspection.WeightStats = weightStats
+		return inspection, nil
 	case modelsv1alpha1.ModelInputFormatSafetensors:
 		stream, err := openReader()
 		if err != nil {

@@ -65,6 +65,7 @@ type RemoteResult struct {
 
 type RemoteProfileSummary struct {
 	ConfigPayload          []byte
+	ModelIndexPayload      []byte
 	TokenizerConfigPayload []byte
 	WeightBytes            int64
 	LargestWeightFileBytes int64

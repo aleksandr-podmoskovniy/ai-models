@@ -136,7 +136,8 @@ func publicFeatureTypes(resolved publicationdata.ResolvedProfile) []modelsv1alph
 func knownPublicFormat(format modelsv1alpha1.ModelInputFormat) (modelsv1alpha1.ModelInputFormat, bool) {
 	switch format {
 	case modelsv1alpha1.ModelInputFormatSafetensors,
-		modelsv1alpha1.ModelInputFormatGGUF:
+		modelsv1alpha1.ModelInputFormatGGUF,
+		modelsv1alpha1.ModelInputFormatDiffusers:
 		return format, true
 	default:
 		return "", false
@@ -157,7 +158,9 @@ func knownPublicEndpointType(endpoint modelsv1alpha1.ModelEndpointType) (modelsv
 		modelsv1alpha1.ModelEndpointTypeImageSegmentation,
 		modelsv1alpha1.ModelEndpointTypeImageToText,
 		modelsv1alpha1.ModelEndpointTypeVisualQuestionAnswering,
-		modelsv1alpha1.ModelEndpointTypeImageGeneration:
+		modelsv1alpha1.ModelEndpointTypeImageGeneration,
+		modelsv1alpha1.ModelEndpointTypeVideoGeneration,
+		modelsv1alpha1.ModelEndpointTypeAudioGeneration:
 		return endpoint, true
 	default:
 		return "", false
@@ -170,6 +173,8 @@ func knownPublicFeatureType(feature modelsv1alpha1.ModelFeatureType) (modelsv1al
 		modelsv1alpha1.ModelFeatureTypeAudioInput,
 		modelsv1alpha1.ModelFeatureTypeAudioOutput,
 		modelsv1alpha1.ModelFeatureTypeImageOutput,
+		modelsv1alpha1.ModelFeatureTypeVideoInput,
+		modelsv1alpha1.ModelFeatureTypeVideoOutput,
 		modelsv1alpha1.ModelFeatureTypeMultiModalInput,
 		modelsv1alpha1.ModelFeatureTypeToolCalling:
 		return feature, true

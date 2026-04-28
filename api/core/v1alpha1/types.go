@@ -128,12 +128,13 @@ const (
 	ModelSourceTypeUpload      ModelSourceType = "Upload"
 )
 
-// +kubebuilder:validation:Enum=Safetensors;GGUF
+// +kubebuilder:validation:Enum=Safetensors;GGUF;Diffusers
 type ModelInputFormat string
 
 const (
 	ModelInputFormatSafetensors ModelInputFormat = "Safetensors"
 	ModelInputFormatGGUF        ModelInputFormat = "GGUF"
+	ModelInputFormatDiffusers   ModelInputFormat = "Diffusers"
 )
 
 // +kubebuilder:validation:Enum=OCI
@@ -155,7 +156,7 @@ const (
 	ModelPhaseDeleting      ModelPhase = "Deleting"
 )
 
-// +kubebuilder:validation:Enum=Chat;TextGeneration;Embeddings;Rerank;SpeechToText;TextToSpeech;Translation;ImageClassification;ObjectDetection;ImageSegmentation;ImageToText;VisualQuestionAnswering;ImageGeneration
+// +kubebuilder:validation:Enum=Chat;TextGeneration;Embeddings;Rerank;SpeechToText;TextToSpeech;Translation;ImageClassification;ObjectDetection;ImageSegmentation;ImageToText;VisualQuestionAnswering;ImageGeneration;VideoGeneration;AudioGeneration
 type ModelEndpointType string
 
 const (
@@ -172,9 +173,11 @@ const (
 	ModelEndpointTypeImageToText             ModelEndpointType = "ImageToText"
 	ModelEndpointTypeVisualQuestionAnswering ModelEndpointType = "VisualQuestionAnswering"
 	ModelEndpointTypeImageGeneration         ModelEndpointType = "ImageGeneration"
+	ModelEndpointTypeVideoGeneration         ModelEndpointType = "VideoGeneration"
+	ModelEndpointTypeAudioGeneration         ModelEndpointType = "AudioGeneration"
 )
 
-// +kubebuilder:validation:Enum=VisionInput;AudioInput;AudioOutput;ImageOutput;MultiModalInput;ToolCalling
+// +kubebuilder:validation:Enum=VisionInput;AudioInput;AudioOutput;ImageOutput;VideoInput;VideoOutput;MultiModalInput;ToolCalling
 type ModelFeatureType string
 
 const (
@@ -182,6 +185,8 @@ const (
 	ModelFeatureTypeAudioInput      ModelFeatureType = "AudioInput"
 	ModelFeatureTypeAudioOutput     ModelFeatureType = "AudioOutput"
 	ModelFeatureTypeImageOutput     ModelFeatureType = "ImageOutput"
+	ModelFeatureTypeVideoInput      ModelFeatureType = "VideoInput"
+	ModelFeatureTypeVideoOutput     ModelFeatureType = "VideoOutput"
 	ModelFeatureTypeMultiModalInput ModelFeatureType = "MultiModalInput"
 	ModelFeatureTypeToolCalling     ModelFeatureType = "ToolCalling"
 )

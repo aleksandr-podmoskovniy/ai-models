@@ -24,6 +24,7 @@ import (
 	"time"
 
 	apiinstall "github.com/deckhouse/ai-models/api/core/install"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageaccounting"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogcleanup"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/catalogstatus"
 	"github.com/deckhouse/ai-models/controller/internal/controllers/nodecacheruntime"
@@ -31,6 +32,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/controllers/workloaddelivery"
 	"github.com/deckhouse/ai-models/controller/internal/monitoring/catalogmetrics"
 	"github.com/deckhouse/ai-models/controller/internal/monitoring/runtimehealth"
+	"github.com/deckhouse/ai-models/controller/internal/monitoring/storageusage"
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -173,6 +175,10 @@ func (a *App) setupManager(mgr ctrl.Manager) error {
 	if err := workloaddelivery.SetupWithManager(mgr, a.workloadDelivery); err != nil {
 		return err
 	}
+	storageUsage, err := storageaccounting.New(mgr.GetClient(), a.cleanup.StorageAccounting)
+	if err != nil {
+		return err
+	}
 
 	catalogmetrics.SetupCollector(
 		mgr.GetCache(),
@@ -189,6 +195,11 @@ func (a *App) setupManager(mgr ctrl.Manager) error {
 			NodeCacheEnabled:   a.nodeCacheRuntime.Enabled,
 			NodeSelectorLabels: a.nodeCacheRuntime.NodeSelectorLabels,
 		},
+	)
+	storageusage.SetupCollector(
+		storageUsage,
+		metrics.Registry,
+		a.logger.With(slog.String("runtimeKind", "metrics")),
 	)
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

@@ -35,6 +35,8 @@ func fetchHuggingFaceProfileSummary(
 	selectedFiles []string,
 ) (*RemoteProfileSummary, error) {
 	switch inputFormat {
+	case modelsv1alpha1.ModelInputFormatDiffusers:
+		return fetchHuggingFaceDiffusersProfileSummary(ctx, options, repoID, resolvedRevision, selectedFiles)
 	case modelsv1alpha1.ModelInputFormatSafetensors:
 		return fetchHuggingFaceSafetensorsProfileSummary(ctx, options, repoID, resolvedRevision, selectedFiles)
 	case modelsv1alpha1.ModelInputFormatGGUF:
@@ -42,6 +44,32 @@ func fetchHuggingFaceProfileSummary(
 	default:
 		return nil, nil
 	}
+}
+
+func fetchHuggingFaceDiffusersProfileSummary(
+	ctx context.Context,
+	options RemoteOptions,
+	repoID string,
+	resolvedRevision string,
+	selectedFiles []string,
+) (*RemoteProfileSummary, error) {
+	modelIndexPayload, err := fetchHuggingFaceFile(ctx, repoID, resolvedRevision, options.HFToken, "model_index.json")
+	if err != nil {
+		return nil, err
+	}
+	weightStats, err := sumHuggingFaceWeightStats(ctx, repoID, resolvedRevision, options.HFToken, selectedFiles)
+	if err != nil {
+		return nil, err
+	}
+	if weightStats.TotalBytes <= 0 {
+		return nil, errors.New("huggingface diffusers summary requires positive remote weight bytes")
+	}
+	return &RemoteProfileSummary{
+		ModelIndexPayload:      modelIndexPayload,
+		WeightBytes:            weightStats.TotalBytes,
+		LargestWeightFileBytes: weightStats.LargestFileBytes,
+		WeightFileCount:        weightStats.FileCount,
+	}, nil
 }
 
 func fetchHuggingFaceSafetensorsProfileSummary(

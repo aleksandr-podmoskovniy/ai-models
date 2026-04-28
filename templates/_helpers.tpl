@@ -510,6 +510,12 @@ true
 {{- default "" (index $artifacts "caSecretName") -}}
 {{- end -}}
 
+{{- define "ai-models.artifactsCapacityLimit" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
+{{- default "" (index $artifacts "capacityLimit") -}}
+{{- end -}}
+
 {{- define "ai-models.artifactsSyncedCredentialsSecretName" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $internal := (index $moduleValues "internal") | default dict -}}

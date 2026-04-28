@@ -78,7 +78,7 @@ func TestFetchHuggingFaceProfileSummarySafetensors(t *testing.T) {
 	}
 }
 
-func TestFetchHuggingFaceProfileSummarySafetensorsDiffusersLayout(t *testing.T) {
+func TestFetchHuggingFaceProfileSummaryDiffusers(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requireHuggingFaceAuth(t, request)
 		switch {
@@ -100,7 +100,7 @@ func TestFetchHuggingFaceProfileSummarySafetensorsDiffusersLayout(t *testing.T) 
 	withHuggingFaceBaseURL(t, server.URL)
 	summary, err := fetchHuggingFaceProfileSummary(t.Context(), RemoteOptions{
 		HFToken: testHuggingFaceToken,
-	}, "owner/model", "deadbeef", modelsv1alpha1.ModelInputFormatSafetensors, []string{
+	}, "owner/model", "deadbeef", modelsv1alpha1.ModelInputFormatDiffusers, []string{
 		"model_index.json",
 		"scheduler/scheduler_config.json",
 		"text_encoder/config.json",
@@ -114,8 +114,8 @@ func TestFetchHuggingFaceProfileSummarySafetensorsDiffusersLayout(t *testing.T) 
 	if summary == nil {
 		t.Fatal("expected remote profile summary")
 	}
-	if got, want := string(summary.ConfigPayload), `{"_class_name":"StableDiffusionPipeline"}`; got != want {
-		t.Fatalf("unexpected config payload %q", got)
+	if got, want := string(summary.ModelIndexPayload), `{"_class_name":"StableDiffusionPipeline"}`; got != want {
+		t.Fatalf("unexpected model index payload %q", got)
 	}
 	if got, want := summary.WeightBytes, int64(46); got != want {
 		t.Fatalf("unexpected weight bytes %d", got)

@@ -100,11 +100,12 @@ type SessionStore interface {
 }
 
 type Options struct {
-	ListenPort    int
-	PartURLTTL    time.Duration
-	StagingBucket string
-	StagingClient uploadstagingports.Client
-	Sessions      SessionStore
+	ListenPort          int
+	PartURLTTL          time.Duration
+	StagingBucket       string
+	StagingClient       uploadstagingports.Client
+	Sessions            SessionStore
+	StorageReservations StorageReservations
 }
 
 type sessionAPI struct {

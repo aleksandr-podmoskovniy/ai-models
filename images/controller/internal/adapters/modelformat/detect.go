@@ -74,6 +74,7 @@ func DetectRemoteFormat(files []string) (modelsv1alpha1.ModelInputFormat, error)
 
 func detectFormat(match func(modelsv1alpha1.ModelInputFormat) error) (modelsv1alpha1.ModelInputFormat, error) {
 	formats := []modelsv1alpha1.ModelInputFormat{
+		modelsv1alpha1.ModelInputFormatDiffusers,
 		modelsv1alpha1.ModelInputFormatSafetensors,
 		modelsv1alpha1.ModelInputFormatGGUF,
 	}

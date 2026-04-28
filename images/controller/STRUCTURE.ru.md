@@ -46,6 +46,7 @@ images/controller/
     domain/
       publishstate/
       ingestadmission/
+      storagecapacity/
     application/
       deletion/
       publishobserve/
@@ -59,6 +60,7 @@ images/controller/
     monitoring/
       catalogmetrics/
       runtimehealth/
+      storageusage/
     publishedsnapshot/
     publicationartifact/
     nodecache/
@@ -79,6 +81,7 @@ images/controller/
         ociregistry/
         ownedresource/
         sourceworker/
+        storageaccounting/
         storageprojection/
         uploadsession/
         uploadsessionstate/
@@ -88,6 +91,7 @@ images/controller/
       modelformat/
       modelprofile/
         common/
+        diffusers/
         gguf/
         safetensors/
       modelpack/
@@ -143,6 +147,9 @@ images/controller/
   conditions and status projection.
 - `internal/domain/ingestadmission/` — cheap source-agnostic fail-fast
   invariants before heavy byte path.
+- `internal/domain/storagecapacity/` — pure artifact storage ledger math:
+  capacity limit, committed bytes, active reservations, available bytes and
+  `InsufficientStorage` decision.
 
 Domain не должен знать concrete Kubernetes objects, pod shaping, secret CRUD
 или transport details.
@@ -190,6 +197,9 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
   aggregated workload-delivery mode/reason counts over managed top-level
   workloads plus module-private `DMCR` garbage-collection request lifecycle
   counts/age.
+- `internal/monitoring/storageusage/` — Prometheus collectors over the
+  module-private artifact storage ledger: configured limit, committed bytes,
+  active reservations and available bytes.
 - `cmd/ai-models-node-cache-runtime/` — dedicated thin executable shell for
   the privileged node-cache CSI/runtime image; it must stay separate from the
   shared publication/materialize runtime image.
@@ -222,6 +232,7 @@ package без нового owner — patchwork.
 - `uploadsession/`
 - `uploadsessionstate/`
 - `ociregistry/`
+- `storageaccounting/`
 - `storageprojection/`
 - `ownedresource/`
 - `auditevent/`
@@ -265,6 +276,9 @@ Non-K8s adapters:
 - `k8s/cleanupstate/` держит только module-private Secret-backed cleanup state:
   cleanup handle, completed marker and upload-stage handoff. Public status и
   delete policy остаются в `application/deletion` и controller owner;
+- `k8s/storageaccounting/` держит только module-private Secret-backed
+  capacity ledger: committed published bytes and active upload reservations.
+  Quota policy, public usage API and object-storage scans сюда не входят;
 - `k8s/directuploadstate/` держит только secret-backed checkpoint для
   direct-upload: owner-generation reset, persisted current-layer session state,
   committed-layer journal и terminal phase handoff; public progress/status

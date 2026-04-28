@@ -30,7 +30,7 @@ runtime/topology. Поэтому `ai-models` считает metadata и resource
 ```yaml
 status:
   resolved:
-    format: Safetensors | GGUF
+    format: Safetensors | GGUF | Diffusers
     architecture: LlamaForCausalLM
     family: llama
     task: text-generation
@@ -84,13 +84,18 @@ matrix.
 | `sentence-similarity`, `feature-extraction`, `embeddings` | `Embeddings` | empty |
 | `text-ranking`, `rerank` | `Rerank` | empty |
 | `automatic-speech-recognition` | `SpeechToText` | `AudioInput` |
-| `text-to-speech`, `text-to-audio` | `TextToSpeech` | `AudioOutput` |
+| `text-to-speech` | `TextToSpeech` | `AudioOutput` |
+| `text-to-audio`, `text-to-music` | `AudioGeneration` | `AudioOutput` |
 | `image-classification` | `ImageClassification` | `VisionInput` |
 | `object-detection` | `ObjectDetection` | `VisionInput` |
 | `image-segmentation` | `ImageSegmentation` | `VisionInput` |
 | `image-to-text`, `image-text-to-text` | `Chat`, `ImageToText` | `VisionInput`, `MultiModalInput` |
 | `visual-question-answering` | `VisualQuestionAnswering` | `VisionInput`, `MultiModalInput` |
 | `text-to-image` | `ImageGeneration` | `ImageOutput` |
+| `image-to-image`, `inpainting` | `ImageGeneration` | `VisionInput`, `ImageOutput` |
+| `text-to-video` | `VideoGeneration` | `VideoOutput` |
+| `image-to-video` | `VideoGeneration` | `VisionInput`, `VideoOutput` |
+| `video-to-video` | `VideoGeneration` | `VideoInput`, `VideoOutput` |
 
 `ToolCalling` добавляется не из task name, а из chat-template evidence
 (`tokenizer_config.chat_template` с явной веткой `tools` / `tool_call`) или
@@ -155,6 +160,7 @@ ResolvedProfile
 images/controller/internal/
   adapters/modelprofile/
     safetensors/      # извлекает факты из config/tokenizer/weights metadata
+    diffusers/        # извлекает layout/pipeline facts из model_index.json
     gguf/             # пока даёт только слабые filename/size hints
     common/           # format-neutral helpers and estimation primitives
   publishedsnapshot/  # immutable internal profile and confidence contract
@@ -198,6 +204,38 @@ images/controller/internal/
 Такой объект может быть опубликован и быть `Ready`, но `MetadataResolved`
 получает partial reason/message.
 
+## Diffusers
+
+`Diffusers` - это отдельный layout, а не просто набор `.safetensors` файлов.
+Публичный `format=Diffusers` допустим только если artifact содержит:
+
+- root `model_index.json`;
+- хотя бы один `.safetensors` weight file;
+- component configs/tokenizer/scheduler files, нужные для pipeline.
+
+Что публикуется:
+
+- `architecture` = `_class_name` из `model_index.json`, например
+  `StableDiffusionPipeline` или `TextToVideoSDPipeline`;
+- `family` только из стабильного pipeline-class mapping;
+- `task` из explicit user/runtime option, Hugging Face `pipeline_tag` или
+  надёжного pipeline-class mapping;
+- endpoint/features только если task имеет `Exact`, `Declared` или `Derived`
+  confidence.
+
+Что намеренно не поддерживается в этом slice:
+
+- `.bin` / PyTorch pickle weights;
+- custom Python pipeline code;
+- runtime-specific launch profiles;
+- утверждение, что любой Diffusers artifact уже можно сервить любым выбранным
+  runtime.
+
+Поэтому `Diffusers + VideoGeneration` означает: artifact layout и metadata
+достаточны для catalog publication и будущего `ai-inference` planner input. Это
+не означает, что текущий module уже поднимает production video generation
+endpoint.
+
 ## Conditions
 
 `MetadataResolved=True` означает: каталог смог построить поддержанный metadata
@@ -221,7 +259,7 @@ launch policy.
 - artifact digest/reference;
 - format/layout facts;
 - endpoint capability summary;
-- feature summary: vision/audio/image-output/multimodal/tool-calling;
+- feature summary: vision/audio/image-output/video-output/multimodal/tool-calling;
 - model identity facts;
 - internal footprint factors.
 
@@ -264,9 +302,9 @@ signal. Уже `ai-inference` решает, может ли выбранный r
 - Public fields, которые можно заполнить только weak hint'ом.
 - Public estimates, которые downstream легко примет за hard resource request.
 - Endpoint values для unsupported artifact layouts. Diffusers-подобный
-  Safetensors layout допустим только когда выбранный artifact реально включает
-  `model_index.json` и `.safetensors` weights; иначе `text-to-image` не должен
-  появляться только ради badge.
+  layout допустим только как `format=Diffusers`, когда artifact реально
+  включает `model_index.json` и `.safetensors` weights; иначе
+  `text-to-image`/`text-to-video` не должны появляться только ради badge.
 
 Любое расширение public metadata contract должно проходить отдельным API slice:
 

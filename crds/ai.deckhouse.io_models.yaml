@@ -212,6 +212,7 @@ spec:
                     enum:
                     - Safetensors
                     - GGUF
+                    - Diffusers
                     type: string
                   parameterCount:
                     format: int64
@@ -235,6 +236,8 @@ spec:
                       - ImageToText
                       - VisualQuestionAnswering
                       - ImageGeneration
+                      - VideoGeneration
+                      - AudioGeneration
                       type: string
                     type: array
                     x-kubernetes-list-type: set
@@ -245,6 +248,8 @@ spec:
                       - AudioInput
                       - AudioOutput
                       - ImageOutput
+                      - VideoInput
+                      - VideoOutput
                       - MultiModalInput
                       - ToolCalling
                       type: string

@@ -176,10 +176,10 @@ func TestSelectRemoteFiles(t *testing.T) {
 	}
 }
 
-func TestSelectRemoteFilesSafetensorsDiffusersLayout(t *testing.T) {
+func TestSelectRemoteFilesDiffusersLayout(t *testing.T) {
 	t.Parallel()
 
-	selected, err := SelectRemoteFiles(modelsv1alpha1.ModelInputFormatSafetensors, []string{
+	selected, err := SelectRemoteFiles(modelsv1alpha1.ModelInputFormatDiffusers, []string{
 		"README.md",
 		"model_index.json",
 		"scheduler/scheduler_config.json",
@@ -206,6 +206,18 @@ func TestSelectRemoteFilesSafetensorsDiffusersLayout(t *testing.T) {
 		"vae/diffusion_pytorch_model.safetensors",
 	}) {
 		t.Fatalf("unexpected selected files %#v", selected)
+	}
+}
+
+func TestSelectRemoteFilesSafetensorsRejectsDiffusersLayout(t *testing.T) {
+	t.Parallel()
+
+	_, err := SelectRemoteFiles(modelsv1alpha1.ModelInputFormatSafetensors, []string{
+		"model_index.json",
+		"unet/diffusion_pytorch_model.safetensors",
+	})
+	if err == nil {
+		t.Fatal("expected safetensors validation error for diffusers layout")
 	}
 }
 

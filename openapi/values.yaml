@@ -22,6 +22,7 @@ properties:
       credentialsSecretName: ""
       sourceFetchMode: Direct
       caSecretName: ""
+      capacityLimit: ""
       insecure: false
       usePathStyle: true
     properties:
@@ -47,6 +48,10 @@ properties:
       caSecretName:
         type: string
         default: ""
+      capacityLimit:
+        type: string
+        default: ""
+        description: Optional total module-owned artifact storage capacity budget.
       insecure:
         type: boolean
         default: false

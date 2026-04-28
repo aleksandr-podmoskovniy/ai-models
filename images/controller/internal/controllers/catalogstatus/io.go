@@ -186,6 +186,9 @@ func (r *baseReconciler) applyStatusMutation(
 	if err := r.updateStatus(ctx, object, current, desired); err != nil {
 		return err
 	}
+	if err := r.syncPublishedStorageUsage(ctx, object, desired); err != nil {
+		return err
+	}
 	if statusChanged {
 		r.recordAudit(object, auditapp.PlanPostStatusRecords(previous, desired, sourceType, observation))
 	}

@@ -76,7 +76,7 @@ func ValidateOwnerBinding(owner OwnerBinding, identity publicationdata.Identity)
 
 func ValidateDeclaredInputFormat(format modelsv1alpha1.ModelInputFormat) error {
 	switch format {
-	case "", modelsv1alpha1.ModelInputFormatSafetensors, modelsv1alpha1.ModelInputFormatGGUF:
+	case "", modelsv1alpha1.ModelInputFormatSafetensors, modelsv1alpha1.ModelInputFormatGGUF, modelsv1alpha1.ModelInputFormatDiffusers:
 		return nil
 	default:
 		return fmt.Errorf("unsupported model input format %q", format)
@@ -97,7 +97,7 @@ func ValidateRemoteFileName(fileName string, declaredFormat modelsv1alpha1.Model
 
 	switch classifyDirectFileKind(normalized) {
 	case directInputGGUF:
-		if declaredFormat == modelsv1alpha1.ModelInputFormatSafetensors {
+		if declaredFormat != "" && declaredFormat != modelsv1alpha1.ModelInputFormatGGUF {
 			return fmt.Errorf("source file %q does not match declared input format %q", normalized, declaredFormat)
 		}
 	case directInputSafetensors:

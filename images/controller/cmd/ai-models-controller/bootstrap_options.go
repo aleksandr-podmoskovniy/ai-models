@@ -21,6 +21,7 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/sourceworker"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageaccounting"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	modelpackoci "github.com/deckhouse/ai-models/controller/internal/adapters/modelpack/oci"
 	uploadstagings3 "github.com/deckhouse/ai-models/controller/internal/adapters/uploadstaging/s3"
@@ -90,8 +91,9 @@ func (c managerConfig) cleanupOptions() catalogcleanup.Options {
 			Namespace: c.CleanupNamespace,
 			Cleaner:   c.artifactCleaner(),
 		},
-		RuntimeNamespace: c.PublicationWorkerNamespace,
-		RequeueAfter:     5 * time.Second,
+		RuntimeNamespace:  c.PublicationWorkerNamespace,
+		RequeueAfter:      5 * time.Second,
+		StorageAccounting: c.storageAccountingOptions(),
 	}
 }
 
@@ -118,10 +120,20 @@ func (c managerConfig) publicationRuntimeOptions(
 		},
 		MaxConcurrentWorkers:  c.PublicationMaxConcurrentWorkers,
 		CleanupStateNamespace: c.CleanupNamespace,
+		StorageAccounting:     c.storageAccountingOptions(),
 		UploadGateway: catalogstatus.UploadGatewayOptions{
 			ServiceName: c.UploadServiceName,
 			PublicHost:  c.UploadPublicHost,
 		},
+	}
+}
+
+func (c managerConfig) storageAccountingOptions() storageaccounting.Options {
+	limitBytes, _ := cmdsupport.ParseOptionalPositiveBytesQuantity(c.ArtifactsCapacityLimit, "artifacts-capacity-limit")
+	return storageaccounting.Options{
+		Namespace:  c.CleanupNamespace,
+		SecretName: storageaccounting.DefaultSecretName,
+		LimitBytes: limitBytes,
 	}
 }
 

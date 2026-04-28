@@ -24,6 +24,7 @@ import (
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	diffusersprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/diffusers"
 	ggufprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/gguf"
 	safetensorsprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/safetensors"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
@@ -113,6 +114,13 @@ func resolveProfile(
 	input sourceProfileInput,
 ) (publicationdata.ResolvedProfile, error) {
 	switch inputFormat {
+	case modelsv1alpha1.ModelInputFormatDiffusers:
+		return diffusersprofile.Resolve(diffusersprofile.Input{
+			ModelDir:           checkpointDir,
+			Task:               input.Task,
+			SourceDeclaredTask: input.SourceDeclaredTask,
+			TaskHint:           input.TaskHint,
+		})
 	case modelsv1alpha1.ModelInputFormatSafetensors:
 		return safetensorsprofile.Resolve(safetensorsprofile.Input{
 			CheckpointDir:      checkpointDir,

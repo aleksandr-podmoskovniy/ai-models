@@ -22,6 +22,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/cleanupstate"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageaccounting"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,9 +36,10 @@ const (
 )
 
 type Options struct {
-	Cleanup          CleanupOptions
-	RuntimeNamespace string
-	RequeueAfter     time.Duration
+	Cleanup           CleanupOptions
+	RuntimeNamespace  string
+	RequeueAfter      time.Duration
+	StorageAccounting storageaccounting.Options
 }
 
 type baseReconciler struct {
@@ -45,6 +47,7 @@ type baseReconciler struct {
 	scheme       *runtime.Scheme
 	options      Options
 	cleanupState *cleanupstate.Store
+	storageUsage *storageaccounting.Store
 }
 
 type ModelReconciler struct{ baseReconciler }
@@ -57,10 +60,17 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	if err := options.Cleanup.Validate(); err != nil {
 		return err
 	}
+	if err := options.StorageAccounting.Validate(); err != nil {
+		return err
+	}
 	if options.RequeueAfter <= 0 {
 		options.RequeueAfter = 5 * time.Second
 	}
 	cleanupState, err := cleanupstate.New(mgr.GetClient(), options.Cleanup.Namespace)
+	if err != nil {
+		return err
+	}
+	storageUsage, err := storageaccounting.New(mgr.GetClient(), options.StorageAccounting)
 	if err != nil {
 		return err
 	}
@@ -70,6 +80,7 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 		scheme:       mgr.GetScheme(),
 		options:      options,
 		cleanupState: cleanupState,
+		storageUsage: storageUsage,
 	}
 
 	if err := ctrl.NewControllerManagedBy(mgr).

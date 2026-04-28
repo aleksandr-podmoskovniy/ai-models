@@ -73,9 +73,21 @@ func (api *sessionAPI) failExpiredSession(writer http.ResponseWriter, request *h
 	if session.ExpiresAt.IsZero() || session.ExpiresAt.After(time.Now().UTC()) {
 		return nil
 	}
+	if session.Phase == SessionPhaseExpired {
+		if err := api.releaseUploadStorage(request.Context(), session); err != nil {
+			http.Error(writer, "release upload storage reservation failed", http.StatusInternalServerError)
+			return err
+		}
+		http.Error(writer, "upload session expired", http.StatusGone)
+		return http.ErrAbortHandler
+	}
 	if !isSessionTerminal(session.Phase) {
 		if err := api.options.Sessions.MarkExpired(request.Context(), session.SessionID, "upload session expired"); err != nil {
 			http.Error(writer, "persist upload session expiry failed", http.StatusInternalServerError)
+			return err
+		}
+		if err := api.releaseUploadStorage(request.Context(), session); err != nil {
+			http.Error(writer, "release upload storage reservation failed", http.StatusInternalServerError)
 			return err
 		}
 	}

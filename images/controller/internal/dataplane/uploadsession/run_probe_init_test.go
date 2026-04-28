@@ -60,6 +60,91 @@ func TestHandlerProbeValidatesAndPersistsState(t *testing.T) {
 	}
 }
 
+func TestHandlerProbeReservesStorageCapacity(t *testing.T) {
+	t.Parallel()
+
+	reservations := &fakeStorageReservations{}
+	store := &fakeSessionStore{
+		sessions: map[string]SessionRecord{"session-a": issuedSession("session-a")},
+	}
+	handler := newTestHandler(Options{
+		StagingBucket:       "ai-models",
+		StagingClient:       &fakeStagingClient{},
+		Sessions:            store,
+		StorageReservations: reservations,
+	})
+
+	request := authorizedRequest(http.MethodPost, "/v1/upload/session-a/probe", "token-a", jsonBody(t, probeUploadRequest{
+		FileName:  "model.gguf",
+		SizeBytes: 128,
+		Chunk:     []byte("GGUFpayload"),
+	}))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if got, want := response.Code, http.StatusOK; got != want {
+		t.Fatalf("unexpected status %d: %s", got, response.Body.String())
+	}
+	if len(reservations.reserved) != 1 || reservations.reserved[0] != 128 {
+		t.Fatalf("unexpected reservations %#v", reservations.reserved)
+	}
+}
+
+func TestHandlerProbeRejectsInsufficientStorage(t *testing.T) {
+	t.Parallel()
+
+	store := &fakeSessionStore{
+		sessions: map[string]SessionRecord{"session-a": issuedSession("session-a")},
+	}
+	handler := newTestHandler(Options{
+		StagingBucket: "ai-models",
+		StagingClient: &fakeStagingClient{},
+		Sessions:      store,
+		StorageReservations: &fakeStorageReservations{
+			reserveErr: insufficientStorageError(),
+		},
+	})
+
+	request := authorizedRequest(http.MethodPost, "/v1/upload/session-a/probe", "token-a", jsonBody(t, probeUploadRequest{
+		FileName:  "model.gguf",
+		SizeBytes: 128,
+		Chunk:     []byte("GGUFpayload"),
+	}))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if got, want := response.Code, http.StatusInsufficientStorage; got != want {
+		t.Fatalf("unexpected status %d: %s", got, response.Body.String())
+	}
+}
+
+func TestHandlerProbeRequiresSizeWhenStorageReservationEnabled(t *testing.T) {
+	t.Parallel()
+
+	session := issuedSession("session-a")
+	session.ExpectedSizeBytes = 0
+	store := &fakeSessionStore{
+		sessions: map[string]SessionRecord{"session-a": session},
+	}
+	handler := newTestHandler(Options{
+		StagingBucket:       "ai-models",
+		StagingClient:       &fakeStagingClient{},
+		Sessions:            store,
+		StorageReservations: &fakeStorageReservations{},
+	})
+
+	request := authorizedRequest(http.MethodPost, "/v1/upload/session-a/probe", "token-a", jsonBody(t, probeUploadRequest{
+		FileName: "model.gguf",
+		Chunk:    []byte("GGUFpayload"),
+	}))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if got, want := response.Code, http.StatusBadRequest; got != want {
+		t.Fatalf("unexpected status %d: %s", got, response.Body.String())
+	}
+}
+
 func TestHandlerInitRequiresSuccessfulProbe(t *testing.T) {
 	t.Parallel()
 

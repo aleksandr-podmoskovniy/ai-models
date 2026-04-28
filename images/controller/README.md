@@ -365,12 +365,13 @@ Naming rule:
 Current controller scope excludes:
 - publication paths beyond the current live input matrix:
   - `HuggingFace URL -> supported Hugging Face checkpoint layouts`
-  - `Upload -> Safetensors archive or GGUF file/archive`
+  - `Upload -> Safetensors/Diffusers archive or GGUF file/archive`
   into internal `ModelPack/OCI` served by the module-local DMCR-style backend
   through the current Go dataplane and
   implementation adapter;
-- richer input formats beyond the current fail-closed `Safetensors` and `GGUF`
-  rules shared across `HuggingFace` and `Upload` sources;
+- richer input formats beyond the current fail-closed `Safetensors`,
+  `Diffusers` and `GGUF` rules shared across `HuggingFace` and `Upload`
+  sources;
 - richer source auth flows beyond the current minimal projection contract:
   `HuggingFace` supports a projected token secret, but broader source
   integrations and richer auth/session handoff stay out of scope;

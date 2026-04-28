@@ -642,6 +642,38 @@ def _validate_runtime_placement(path: Path, content: str) -> list[str]:
     return errors
 
 
+def _validate_system_component_placement(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+
+    for raw_document in _split_yaml_documents(content):
+        documents = _parse_render_documents(raw_document)
+        deployment_name = ""
+        for name in ("ai-models-controller", "ai-models-upload-gateway"):
+            if _find_document(documents, "Deployment", name):
+                deployment_name = name
+                break
+        if not deployment_name:
+            continue
+
+        if "node-role.kubernetes.io/control-plane" in raw_document:
+            errors.append(
+                f"{path.name}: Deployment/{deployment_name} must not target or tolerate control-plane nodes"
+            )
+        if "node-role.kubernetes.io/master" in raw_document:
+            errors.append(
+                f"{path.name}: Deployment/{deployment_name} must not target or tolerate master nodes"
+            )
+        if (
+            path.name == "helm-template-managed-system-role.yaml"
+            and "node-role.deckhouse.io/system" not in raw_document
+        ):
+            errors.append(
+                f"{path.name}: Deployment/{deployment_name} must select system nodes when system role exists"
+            )
+
+    return errors
+
+
 def _validate_controller_cleanup_runtime(path: Path, content: str) -> list[str]:
     errors: list[str] = []
     if "--cleanup-job-" in content:
@@ -966,6 +998,7 @@ def validate_render(path: Path) -> list[str]:
     errors.extend(_validate_dmcr_secret_delete_rbac(path, content))
     errors.extend(_validate_node_cache_runtime_plane(path, content))
     errors.extend(_validate_runtime_placement(path, content))
+    errors.extend(_validate_system_component_placement(path, content))
     errors.extend(_validate_controller_cleanup_runtime(path, content))
     errors.extend(_validate_values_backed_tls_secrets(path, content))
     errors.extend(_validate_workload_delivery_webhook(path, content))

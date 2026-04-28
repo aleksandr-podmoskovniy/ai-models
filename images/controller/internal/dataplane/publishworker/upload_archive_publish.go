@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
+	diffusersprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/diffusers"
 	ggufprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/gguf"
 	safetensorsprofile "github.com/deckhouse/ai-models/controller/internal/adapters/modelprofile/safetensors"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/sourcefetch"
@@ -96,7 +97,8 @@ func publishUploadArchive(
 }
 
 func supportsArchiveUpload(inspection sourcefetch.ArchiveInspection) bool {
-	return inspection.InputFormat == modelsv1alpha1.ModelInputFormatSafetensors ||
+	return inspection.InputFormat == modelsv1alpha1.ModelInputFormatDiffusers ||
+		inspection.InputFormat == modelsv1alpha1.ModelInputFormatSafetensors ||
 		inspection.InputFormat == modelsv1alpha1.ModelInputFormatGGUF
 }
 
@@ -105,6 +107,14 @@ func resolveArchiveInspectionSummary(
 	inspection sourcefetch.ArchiveInspection,
 ) (publicationdata.ResolvedProfile, error) {
 	switch inspection.InputFormat {
+	case modelsv1alpha1.ModelInputFormatDiffusers:
+		return diffusersprofile.ResolveSummary(diffusersprofile.SummaryInput{
+			ModelIndexPayload:      inspection.ModelIndexPayload,
+			WeightBytes:            inspection.WeightStats.TotalBytes,
+			LargestWeightFileBytes: inspection.WeightStats.LargestFileBytes,
+			WeightFileCount:        inspection.WeightStats.FileCount,
+			Task:                   options.Task,
+		})
 	case modelsv1alpha1.ModelInputFormatSafetensors:
 		return safetensorsprofile.ResolveSummary(safetensorsprofile.SummaryInput{
 			ConfigPayload:          inspection.ConfigPayload,

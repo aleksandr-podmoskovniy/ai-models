@@ -40,6 +40,10 @@ func (api *sessionAPI) handleMismatchedSize(writer http.ResponseWriter, request 
 	case failErr != nil:
 		http.Error(writer, "uploaded payload size mismatch and state update failed", http.StatusInternalServerError)
 	default:
+		if err := api.releaseUploadStorage(request.Context(), session); err != nil {
+			http.Error(writer, "release upload storage reservation failed", http.StatusInternalServerError)
+			return
+		}
 		logger.Warn(
 			"upload session uploaded payload size mismatch",
 			slog.Int64("expectedSizeBytes", session.ExpectedSizeBytes),

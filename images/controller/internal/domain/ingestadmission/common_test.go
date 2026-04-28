@@ -88,8 +88,14 @@ func TestValidateOwnerBinding(t *testing.T) {
 func TestValidateDeclaredInputFormat(t *testing.T) {
 	t.Parallel()
 
-	if err := ValidateDeclaredInputFormat(modelsv1alpha1.ModelInputFormatGGUF); err != nil {
-		t.Fatalf("ValidateDeclaredInputFormat() error = %v", err)
+	for _, format := range []modelsv1alpha1.ModelInputFormat{
+		modelsv1alpha1.ModelInputFormatSafetensors,
+		modelsv1alpha1.ModelInputFormatGGUF,
+		modelsv1alpha1.ModelInputFormatDiffusers,
+	} {
+		if err := ValidateDeclaredInputFormat(format); err != nil {
+			t.Fatalf("ValidateDeclaredInputFormat(%q) error = %v", format, err)
+		}
 	}
 	if err := ValidateDeclaredInputFormat(modelsv1alpha1.ModelInputFormat("Broken")); err == nil {
 		t.Fatal("expected invalid format to fail")
@@ -106,11 +112,13 @@ func TestValidateRemoteFileName(t *testing.T) {
 		wantErr        bool
 	}{
 		{name: "archive accepted", fileName: "model.tar.gz"},
+		{name: "diffusers archive accepted", fileName: "model.zip", declaredFormat: modelsv1alpha1.ModelInputFormatDiffusers},
 		{name: "zstd tar archive accepted", fileName: "model.tar.zst"},
 		{name: "path is normalized", fileName: "/tmp/model.gguf"},
 		{name: "gguf accepted", fileName: "model.gguf"},
 		{name: "empty rejected", fileName: "", wantErr: true},
 		{name: "gguf rejects safetensors declaration", fileName: "model.gguf", declaredFormat: modelsv1alpha1.ModelInputFormatSafetensors, wantErr: true},
+		{name: "gguf rejects diffusers declaration", fileName: "model.gguf", declaredFormat: modelsv1alpha1.ModelInputFormatDiffusers, wantErr: true},
 		{name: "direct safetensors rejected", fileName: "model.safetensors", wantErr: true},
 		{name: "hidden file rejected", fileName: ".env", wantErr: true},
 	}

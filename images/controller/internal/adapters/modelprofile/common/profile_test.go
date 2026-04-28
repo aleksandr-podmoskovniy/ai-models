@@ -59,6 +59,12 @@ func TestEndpointTypes(t *testing.T) {
 			features:  []string{string(modelsv1alpha1.ModelFeatureTypeAudioOutput)},
 		},
 		{
+			name:      "audio generation",
+			task:      "text-to-audio",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeAudioGeneration)},
+			features:  []string{string(modelsv1alpha1.ModelFeatureTypeAudioOutput)},
+		},
+		{
 			name:      "cv",
 			task:      "object-detection",
 			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeObjectDetection)},
@@ -69,6 +75,24 @@ func TestEndpointTypes(t *testing.T) {
 			task:      "text-to-image",
 			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeImageGeneration)},
 			features:  []string{string(modelsv1alpha1.ModelFeatureTypeImageOutput)},
+		},
+		{
+			name:      "image to image",
+			task:      "image-to-image",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeImageGeneration)},
+			features:  []string{string(modelsv1alpha1.ModelFeatureTypeVisionInput), string(modelsv1alpha1.ModelFeatureTypeImageOutput)},
+		},
+		{
+			name:      "text to video",
+			task:      "text-to-video",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeVideoGeneration)},
+			features:  []string{string(modelsv1alpha1.ModelFeatureTypeVideoOutput)},
+		},
+		{
+			name:      "image to video",
+			task:      "image-to-video",
+			endpoints: []string{string(modelsv1alpha1.ModelEndpointTypeVideoGeneration)},
+			features:  []string{string(modelsv1alpha1.ModelFeatureTypeVisionInput), string(modelsv1alpha1.ModelFeatureTypeVideoOutput)},
 		},
 		{
 			name:      "multimodal",

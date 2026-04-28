@@ -40,6 +40,24 @@ func TestDetectDirFormatSafetensors(t *testing.T) {
 	}
 }
 
+func TestDetectDirFormatDiffusers(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "model_index.json"), `{"_class_name":"StableDiffusionPipeline"}`)
+	writeTestFile(t, filepath.Join(root, "unet", "config.json"), `{"sample_size":128}`)
+	writeTestFile(t, filepath.Join(root, "unet", "diffusion_pytorch_model.safetensors"), "weights")
+	writeTestFile(t, filepath.Join(root, "README.md"), "# docs")
+
+	format, err := DetectDirFormat(root)
+	if err != nil {
+		t.Fatalf("DetectDirFormat() error = %v", err)
+	}
+	if got, want := format, modelsv1alpha1.ModelInputFormatDiffusers; got != want {
+		t.Fatalf("unexpected format %q", got)
+	}
+}
+
 func TestDetectDirFormatDropsHiddenDirectory(t *testing.T) {
 	t.Parallel()
 
@@ -67,6 +85,23 @@ func TestDetectRemoteFormatGGUF(t *testing.T) {
 		t.Fatalf("DetectRemoteFormat() error = %v", err)
 	}
 	if got, want := format, modelsv1alpha1.ModelInputFormatGGUF; got != want {
+		t.Fatalf("unexpected format %q", got)
+	}
+}
+
+func TestDetectRemoteFormatDiffusers(t *testing.T) {
+	t.Parallel()
+
+	format, err := DetectRemoteFormat([]string{
+		"README.md",
+		"model_index.json",
+		"scheduler/scheduler_config.json",
+		"transformer/diffusion_pytorch_model.safetensors",
+	})
+	if err != nil {
+		t.Fatalf("DetectRemoteFormat() error = %v", err)
+	}
+	if got, want := format, modelsv1alpha1.ModelInputFormatDiffusers; got != want {
 		t.Fatalf("unexpected format %q", got)
 	}
 }

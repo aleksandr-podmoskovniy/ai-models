@@ -217,3 +217,57 @@ func TestPublishFromUploadStreamsArchiveWrappedGGUFIntoPublisher(t *testing.T) {
 		})
 	}
 }
+
+func TestPublishFromUploadStreamsDiffusersArchiveIntoPublisher(t *testing.T) {
+	t.Parallel()
+
+	archivePath := filepath.Join(t.TempDir(), "diffusers.tar")
+	if err := createTestTar(archivePath,
+		tarEntry{name: "bundle/model_index.json", content: []byte(`{"_class_name":"TextToVideoSDPipeline"}`)},
+		tarEntry{name: "bundle/scheduler/scheduler_config.json", content: []byte(`{}`)},
+		tarEntry{name: "bundle/transformer/diffusion_pytorch_model.safetensors", content: []byte("video-weights")},
+		tarEntry{name: "bundle/scripts/convert.py", content: []byte("print('drop')")},
+	); err != nil {
+		t.Fatalf("create archive error = %v", err)
+	}
+
+	publisher := fakePublisher{
+		onPublish: func(input modelpackports.PublishInput) error {
+			if got, want := len(input.Layers), 1; got != want {
+				t.Fatalf("unexpected layer count %d", got)
+			}
+			layer := input.Layers[0]
+			if layer.Archive == nil {
+				t.Fatal("expected archive streaming layer")
+			}
+			if got, want := layer.Archive.StripPathPrefix, "bundle"; got != want {
+				t.Fatalf("unexpected strip prefix %q", got)
+			}
+			if got, want := layer.Archive.SelectedFiles, []string{
+				"model_index.json",
+				"scheduler/scheduler_config.json",
+				"transformer/diffusion_pytorch_model.safetensors",
+			}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+				t.Fatalf("unexpected selected files %#v", got)
+			}
+			return nil
+		},
+	}
+
+	result, err := run(context.Background(), Options{
+		SourceType:         modelsv1alpha1.ModelSourceTypeUpload,
+		ArtifactURI:        "registry.example.com/ai-models/catalog/model:published",
+		UploadPath:         archivePath,
+		InputFormat:        modelsv1alpha1.ModelInputFormatDiffusers,
+		ModelPackPublisher: publisher,
+	})
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if got, want := result.Resolved.Format, "Diffusers"; got != want {
+		t.Fatalf("unexpected resolved format %q", got)
+	}
+	if got, want := result.Resolved.SupportedEndpointTypes, []string{"VideoGeneration"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("unexpected endpoints %#v", got)
+	}
+}
