@@ -68,9 +68,7 @@ func TestWorkloadDeliveryInterest(t *testing.T) {
 	t.Run("unmanaged workload without annotations is ignored", func(t *testing.T) {
 		t.Parallel()
 
-		workload := annotatedDeployment(nil, 1, corev1.VolumeSource{
-			EmptyDir: &corev1.EmptyDirVolumeSource{},
-		})
+		workload := annotatedDeploymentWithoutCacheMount(nil, 1)
 		if workloadDeliveryInterest(workload, options) {
 			t.Fatal("did not expect unannotated unmanaged workload to pass event filter")
 		}

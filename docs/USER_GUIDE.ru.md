@@ -159,8 +159,8 @@ facts. Будущий `ai-inference` сам решает, можно ли зап
 
 ## Подключение модели в workload
 
-Указывайте только аннотацию на Pod template. Контроллер сам добавит mount,
-env и delivery wiring.
+Указывайте только аннотацию на metadata workload'а. Контроллер сам добавит
+node-cache CSI volume, mount, runtime env и internal artifact attributes.
 
 ```yaml
 apiVersion: apps/v1
@@ -168,6 +168,8 @@ kind: Deployment
 metadata:
   name: embedder
   namespace: ai-demo
+  annotations:
+    ai.deckhouse.io/model: bge-m3
 spec:
   selector:
     matchLabels:
@@ -176,8 +178,6 @@ spec:
     metadata:
       labels:
         app: embedder
-      annotations:
-        ai.deckhouse.io/model: bge-m3
     spec:
       containers:
         - name: app

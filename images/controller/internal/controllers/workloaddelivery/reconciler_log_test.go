@@ -61,7 +61,9 @@ func TestDeploymentReconcilerSuppressesRepeatedBlockedLog(t *testing.T) {
 	t.Parallel()
 
 	model := readyModel()
-	workload := annotatedDeploymentWithoutCacheMount(map[string]string{ModelAnnotation: model.Name}, 1)
+	workload := annotatedDeployment(map[string]string{ModelAnnotation: model.Name}, 1, corev1.VolumeSource{
+		PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "legacy-model-cache"},
+	})
 	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, testRegistryReadAuthSecret())
 
 	logs := newTestLoggerBuffer()
@@ -125,7 +127,7 @@ func TestDeploymentReconcilerLogsMeaningfulRuntimeDeliveryChange(t *testing.T) {
 	if !strings.Contains(logs.buffer.String(), `"artifactDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"`) {
 		t.Fatalf("logs do not contain new artifactDigest, logs=%q", logs.buffer.String())
 	}
-	if !strings.Contains(logs.buffer.String(), `"deliveryMode":"`+string(modeldelivery.DeliveryModeMaterializeBridge)+`"`) {
+	if !strings.Contains(logs.buffer.String(), `"deliveryMode":"`+string(modeldelivery.DeliveryModeSharedDirect)+`"`) {
 		t.Fatalf("logs do not contain delivery mode, logs=%q", logs.buffer.String())
 	}
 }

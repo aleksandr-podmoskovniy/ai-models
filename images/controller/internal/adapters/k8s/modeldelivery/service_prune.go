@@ -40,10 +40,20 @@ func managedCacheKeepNames(topology CacheTopology, rendered Rendered, aliasContr
 		return nil
 	}
 	if aliasContract {
-		return volumeNames(rendered.Volumes)
+		return volumeMountNames(rendered.RuntimeVolumeMounts)
 	}
 	if strings.TrimSpace(topology.CacheMount.VolumeName) == "" {
 		return nil
 	}
 	return []string{strings.TrimSpace(topology.CacheMount.VolumeName)}
+}
+
+func volumeMountNames(mounts []corev1.VolumeMount) []string {
+	names := make([]string, 0, len(mounts))
+	for _, mount := range mounts {
+		if strings.TrimSpace(mount.Name) != "" {
+			names = append(names, mount.Name)
+		}
+	}
+	return names
 }

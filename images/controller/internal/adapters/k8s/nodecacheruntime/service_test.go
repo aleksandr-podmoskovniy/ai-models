@@ -170,16 +170,17 @@ func newTestService(t *testing.T) (*Service, client.Client) {
 
 func testRuntimeSpec() RuntimeSpec {
 	return RuntimeSpec{
-		Namespace:          "d8-ai-models",
-		NodeName:           "worker-a",
-		RuntimeImage:       "runtime:latest",
-		CSIRegistrarImage:  "registrar:latest",
-		ServiceAccountName: "ai-models-node-cache-runtime",
-		StorageClassName:   "ai-models-node-cache",
-		SharedVolumeSize:   "64Gi",
-		MaxTotalSize:       "200Gi",
-		MaxUnusedAge:       "24h",
-		ScanInterval:       "5m",
-		OCIAuthSecretName:  "ai-models-dmcr-auth-read",
+		Namespace:              "d8-ai-models",
+		NodeName:               "worker-a",
+		RuntimeImage:           "runtime:latest",
+		CSIRegistrarImage:      "registrar:latest",
+		ServiceAccountName:     "ai-models-node-cache-runtime",
+		StorageClassName:       "ai-models-node-cache",
+		SharedVolumeSize:       "64Gi",
+		MaxTotalSize:           "200Gi",
+		MaxUnusedAge:           "24h",
+		ScanInterval:           "5m",
+		OCIAuthSecretName:      "ai-models-dmcr-auth-read",
+		DeliveryAuthSecretName: "ai-models-dmcr-auth",
 	}
 }

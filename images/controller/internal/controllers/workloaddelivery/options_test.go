@@ -27,11 +27,7 @@ func TestOptionsValidateAppliesModelDeliveryDefaults(t *testing.T) {
 
 	options := Options{
 		Service: modeldelivery.ServiceOptions{
-			Render: modeldelivery.Options{
-				RuntimeImage: "example.com/ai-models/controller-runtime:dev",
-			},
-			RegistrySourceNamespace:      "d8-ai-models",
-			RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+			RegistrySourceNamespace: "d8-ai-models",
 		},
 	}
 

@@ -22,7 +22,6 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
-	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -44,6 +43,8 @@ func TestDeploymentReconcilerAppliesMultipleModelRefs(t *testing.T) {
 	}, 1, corev1.VolumeSource{
 		EmptyDir: &corev1.EmptyDirVolumeSource{},
 	})
+	workload.Spec.Template.Spec.Volumes = nil
+	addNodeCacheAliasVolumes(&workload.Spec.Template, "main", "embed")
 	reconciler, kubeClient := newDeploymentReconciler(t, primary, secondary, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
 
 	result := reconcileDeployment(t, reconciler, workload)
@@ -55,24 +56,17 @@ func TestDeploymentReconcilerAppliesMultipleModelRefs(t *testing.T) {
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &updated); err != nil {
 		t.Fatalf("Get(deployment) error = %v", err)
 	}
-	if got, want := len(updated.Spec.Template.Spec.InitContainers), 2; got != want {
+	if got, want := len(updated.Spec.Template.Spec.InitContainers), 0; got != want {
 		t.Fatalf("init container count = %d, want %d", got, want)
 	}
-	if !hasInitContainer(updated.Spec.Template.Spec.InitContainers, "ai-models-materializer-main") {
-		t.Fatalf("expected main model materializer")
-	}
-	if !hasInitContainer(updated.Spec.Template.Spec.InitContainers, "ai-models-materializer-embed") {
-		t.Fatalf("expected embed model materializer")
-	}
-	if got, want := len(updated.Spec.Template.Spec.ImagePullSecrets), 1; got != want {
+	if got, want := len(updated.Spec.Template.Spec.ImagePullSecrets), 0; got != want {
 		t.Fatalf("image pull secret count = %d, want %d", got, want)
 	}
-	runtimeImagePullSecretName, err := resourcenames.RuntimeImagePullSecretName(workload.UID)
-	if err != nil {
-		t.Fatalf("RuntimeImagePullSecretName() error = %v", err)
+	if got := countVolumeByName(updated.Spec.Template.Spec.Volumes, modeldelivery.DefaultManagedCacheName+"-main"); got != 1 {
+		t.Fatalf("main CSI volume count = %d, want 1", got)
 	}
-	if got, want := updated.Spec.Template.Spec.ImagePullSecrets[0].Name, runtimeImagePullSecretName; got != want {
-		t.Fatalf("image pull secret name = %q, want %q", got, want)
+	if got := countVolumeByName(updated.Spec.Template.Spec.Volumes, modeldelivery.DefaultManagedCacheName+"-embed"); got != 1 {
+		t.Fatalf("embed CSI volume count = %d, want 1", got)
 	}
 	if got, want := runtimeEnvValue(updated.Spec.Template.Spec.Containers, modeldelivery.ModelPathEnv), nodecache.WorkloadModelAliasPath(modeldelivery.DefaultCacheMountPath, "main"); got != want {
 		t.Fatalf("primary model path env = %q, want %q", got, want)

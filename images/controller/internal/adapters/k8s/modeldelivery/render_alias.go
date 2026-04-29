@@ -21,7 +21,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -59,24 +58,15 @@ func renderAliasBindings(input Input, options Options, bindings []BindingInput) 
 	}
 
 	rendered := Rendered{
-		InitContainerName: options.InitContainerName,
-		RuntimeEnv:        buildAliasRuntimeEnv(options, runtimeEntries),
-		ModelPath:         runtimeEntries[0].Path,
-		ArtifactURI:       strings.TrimSpace(bindings[0].Artifact.URI),
-		ArtifactFamily:    strings.TrimSpace(bindings[0].ArtifactFamily),
-		ResolvedModels:    string(modelsJSON),
+		RuntimeEnv:              buildAliasRuntimeEnv(options, runtimeEntries),
+		LegacyInitContainerName: options.LegacyInitContainerName,
+		ModelPath:               runtimeEntries[0].Path,
+		ArtifactURI:             strings.TrimSpace(bindings[0].Artifact.URI),
+		ArtifactFamily:          strings.TrimSpace(bindings[0].ArtifactFamily),
+		ResolvedModels:          string(modelsJSON),
 	}
-	if input.TopologyKind == CacheTopologyDirect {
-		rendered.Volumes = buildAliasCSIVolumes(input.CacheMount.VolumeName, bindings)
-		rendered.RuntimeVolumeMounts = buildAliasVolumeMounts(input.CacheMount.VolumeName, options, bindings)
-		rendered.ImagePullSecretNamesPrune = buildImagePullSecretNamesPrune(input.RuntimeImagePullSecretName)
-		return rendered, nil
-	}
-
-	rendered.InitContainers = buildAliasInitContainers(input, options, bindings)
-	rendered.InitContainerNames = initContainerNames(rendered.InitContainers)
-	rendered.Volumes = ociregistry.Volumes(input.RegistryAccess.CASecretName)
-	rendered.ImagePullSecrets = buildImagePullSecrets(input.RuntimeImagePullSecretName)
+	rendered.RuntimeVolumeMounts = buildAliasVolumeMounts(input.CacheMount.VolumeName, options, bindings)
+	rendered.ImagePullSecretNamesPrune = buildImagePullSecretNamesPrune(input.LegacyImagePullSecretName)
 	return rendered, nil
 }
 
@@ -145,36 +135,6 @@ func buildAliasRuntimeEnv(options Options, entries []runtimeModelEntry) []corev1
 	return env
 }
 
-func buildAliasInitContainers(input Input, options Options, bindings []BindingInput) []corev1.Container {
-	containers := make([]corev1.Container, 0, len(bindings))
-	for _, binding := range bindings {
-		containers = append(containers, buildMaterializerContainer(
-			managedInitContainerName(options.InitContainerName, binding.Alias),
-			input,
-			options,
-			binding,
-			true,
-			binding.Alias,
-		))
-	}
-	return containers
-}
-
-func buildAliasCSIVolumes(volumeNamePrefix string, bindings []BindingInput) []corev1.Volume {
-	if strings.TrimSpace(volumeNamePrefix) == "" {
-		volumeNamePrefix = DefaultManagedCacheName
-	}
-	volumes := make([]corev1.Volume, 0, len(bindings))
-	for _, binding := range bindings {
-		volume, _ := managedCacheVolume(ManagedCacheOptions{
-			Enabled:    true,
-			VolumeName: managedModelVolumeName(volumeNamePrefix, binding.Alias),
-		}, binding.Artifact, binding.ArtifactFamily)
-		volumes = append(volumes, volume)
-	}
-	return volumes
-}
-
 func buildAliasVolumeMounts(volumeNamePrefix string, options Options, bindings []BindingInput) []corev1.VolumeMount {
 	if strings.TrimSpace(volumeNamePrefix) == "" {
 		volumeNamePrefix = DefaultManagedCacheName
@@ -188,12 +148,4 @@ func buildAliasVolumeMounts(volumeNamePrefix string, options Options, bindings [
 		})
 	}
 	return mounts
-}
-
-func initContainerNames(containers []corev1.Container) []string {
-	names := make([]string, 0, len(containers))
-	for _, container := range containers {
-		names = append(names, container.Name)
-	}
-	return names
 }

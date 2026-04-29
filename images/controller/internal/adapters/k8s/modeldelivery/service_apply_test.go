@@ -23,138 +23,75 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestServiceAppliesRuntimeDeliveryAcrossNamespaces(t *testing.T) {
+func TestServiceAppliesSharedDirectWithoutWorkloadNamespaceSecrets(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
 	owner := testkit.NewModel()
-	kubeClient := testkit.NewFakeClient(t, scheme, nil,
-		owner,
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-runtime-pull"),
-		testkit.NewOCIRegistryCASecret("d8-ai-models", "ai-models-dmcr-ca"),
-	)
+	kubeClient := testkit.NewFakeClient(t, scheme, nil, owner, readyNode())
+	service := newSharedDirectApplyService(t, kubeClient, scheme)
 
-	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
-		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
-		RegistrySourceCASecretName:   "ai-models-dmcr-ca",
-		RuntimeImagePullSecretName:   "ai-models-runtime-pull",
-	})
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-
-	template := podTemplateWithCacheMount("runtime", "model-cache", DefaultCacheMountPath)
-
+	template := podTemplateWithoutCacheMount("runtime")
 	result, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
-		Artifact:        publishedArtifact(),
-		ArtifactFamily:  "hf-safetensors-v1",
-		TargetNamespace: "team-a",
-		Topology:        TopologyHints{ReplicaCount: 1},
+		Artifact:       publishedArtifact(),
+		ArtifactFamily: "hf-safetensors-v1",
+		Topology:       TopologyHints{ReplicaCount: 1},
 	}, template)
 	if err != nil {
 		t.Fatalf("ApplyToPodTemplate() error = %v", err)
 	}
 
-	if got, want := result.CacheMountPath, DefaultCacheMountPath; got != want {
-		t.Fatalf("cache mount path = %q, want %q", got, want)
+	if got, want := result.TopologyKind, CacheTopologyDirect; got != want {
+		t.Fatalf("topology kind = %q, want %q", got, want)
+	}
+	if got, want := result.DeliveryMode, DeliveryModeSharedDirect; got != want {
+		t.Fatalf("delivery mode = %q, want %q", got, want)
+	}
+	if got, want := result.DeliveryReason, DeliveryReasonNodeSharedRuntimePlane; got != want {
+		t.Fatalf("delivery reason = %q, want %q", got, want)
 	}
 	if got, want := result.ModelPath, nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
 		t.Fatalf("model path = %q, want %q", got, want)
 	}
-	if got, want := result.TopologyKind, CacheTopologyPerPod; got != want {
-		t.Fatalf("topology kind = %q, want %q", got, want)
+	if len(template.Spec.InitContainers) != 0 {
+		t.Fatalf("did not expect init containers, got %#v", template.Spec.InitContainers)
 	}
-	if len(template.Spec.InitContainers) != 1 {
-		t.Fatalf("unexpected init containers %#v", template.Spec.InitContainers)
+	if len(template.Spec.ImagePullSecrets) != 0 {
+		t.Fatalf("did not expect imagePullSecrets, got %#v", template.Spec.ImagePullSecrets)
 	}
 	if got, want := envByName(template.Spec.Containers[0].Env, ModelPathEnv), nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
 		t.Fatalf("%s = %q, want %q", ModelPathEnv, got, want)
 	}
-	if got, want := envByName(template.Spec.Containers[0].Env, ModelDigestEnv), publishedArtifact().Digest; got != want {
-		t.Fatalf("%s = %q, want %q", ModelDigestEnv, got, want)
-	}
-	if got, want := envByName(template.Spec.Containers[0].Env, ModelFamilyEnv), "hf-safetensors-v1"; got != want {
-		t.Fatalf("%s = %q, want %q", ModelFamilyEnv, got, want)
-	}
-	if got, want := template.Annotations[ResolvedDigestAnnotation], publishedArtifact().Digest; got != want {
-		t.Fatalf("resolved digest annotation = %q, want %q", got, want)
-	}
-	if got, want := template.Annotations[ResolvedArtifactURIAnnotation], publishedArtifact().URI; got != want {
-		t.Fatalf("resolved artifact URI annotation = %q, want %q", got, want)
-	}
-	if got, want := template.Annotations[ResolvedDeliveryModeAnnotation], string(DeliveryModeMaterializeBridge); got != want {
+	if got, want := template.Annotations[ResolvedDeliveryModeAnnotation], string(DeliveryModeSharedDirect); got != want {
 		t.Fatalf("resolved delivery mode annotation = %q, want %q", got, want)
 	}
-	if got, want := template.Annotations[ResolvedDeliveryReasonAnnotation], string(DeliveryReasonWorkloadCacheVolume); got != want {
-		t.Fatalf("resolved delivery reason annotation = %q, want %q", got, want)
-	}
-	if got, want := len(template.Spec.ImagePullSecrets), 1; got != want {
-		t.Fatalf("image pull secrets count = %d, want %d", got, want)
-	}
-	if got, want := template.Spec.ImagePullSecrets[0].Name, projectedRuntimeImagePullSecretName(t, owner.GetUID()); got != want {
-		t.Fatalf("image pull secret name = %q, want %q", got, want)
-	}
 
-	authSecretName := projectedAuthSecretName(t, owner.GetUID())
-	projectedAuth := &corev1.Secret{}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: authSecretName, Namespace: "team-a"}, projectedAuth); err != nil {
-		t.Fatalf("Get(projected auth secret) error = %v", err)
+	secrets := &corev1.SecretList{}
+	if err := kubeClient.List(context.Background(), secrets, client.InNamespace("team-a")); err != nil {
+		t.Fatalf("List(workload namespace secrets) error = %v", err)
 	}
-	if got, want := string(projectedAuth.Data["username"]), "ai-models"; got != want {
-		t.Fatalf("unexpected projected username %q", got)
-	}
-
-	runtimePullSecretName := projectedRuntimeImagePullSecretName(t, owner.GetUID())
-	projectedRuntimePull := &corev1.Secret{}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: runtimePullSecretName, Namespace: "team-a"}, projectedRuntimePull); err != nil {
-		t.Fatalf("Get(projected runtime pull secret) error = %v", err)
-	}
-	if got := string(projectedRuntimePull.Data[corev1.DockerConfigJsonKey]); got == "" {
-		t.Fatal("expected projected runtime pull secret to contain .dockerconfigjson")
+	if len(secrets.Items) != 0 {
+		t.Fatalf("shared-direct must not create workload namespace secrets, got %#v", secrets.Items)
 	}
 }
 
-func TestServiceApplyIsIdempotent(t *testing.T) {
+func TestServiceApplyIsIdempotentForSharedDirect(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
 	owner := testkit.NewModel()
-	kubeClient := testkit.NewFakeClient(t, scheme, nil,
-		owner,
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-runtime-pull"),
-		testkit.NewOCIRegistryCASecret("d8-ai-models", "ai-models-dmcr-ca"),
-	)
-
-	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
-		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
-		RegistrySourceCASecretName:   "ai-models-dmcr-ca",
-		RuntimeImagePullSecretName:   "ai-models-runtime-pull",
-	})
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-
-	template := podTemplateWithCacheMount("runtime", "model-cache", DefaultCacheMountPath)
-
+	kubeClient := testkit.NewFakeClient(t, scheme, nil, owner, readyNode())
+	service := newSharedDirectApplyService(t, kubeClient, scheme)
+	template := podTemplateWithoutCacheMount("runtime")
 	request := ApplyRequest{
-		Artifact:        publishedArtifact(),
-		ArtifactFamily:  "hf-safetensors-v1",
-		TargetNamespace: "team-a",
-		Topology:        TopologyHints{ReplicaCount: 1},
+		Artifact: publishedArtifact(),
+		Topology: TopologyHints{ReplicaCount: 1},
 	}
+
 	if _, err := service.ApplyToPodTemplate(context.Background(), owner, request, template); err != nil {
 		t.Fatalf("first ApplyToPodTemplate() error = %v", err)
 	}
@@ -162,52 +99,32 @@ func TestServiceApplyIsIdempotent(t *testing.T) {
 		t.Fatalf("second ApplyToPodTemplate() error = %v", err)
 	}
 
-	if got := len(template.Spec.InitContainers); got != 1 {
-		t.Fatalf("expected single init container, got %d", got)
+	if got := len(template.Spec.InitContainers); got != 0 {
+		t.Fatalf("expected no init containers, got %d", got)
 	}
-	if got := countVolumeByName(template.Spec.Volumes, "registry-ca"); got != 1 {
-		t.Fatalf("expected single CA volume, got %d", got)
+	if got := countVolumeByName(template.Spec.Volumes, DefaultManagedCacheName); got != 1 {
+		t.Fatalf("expected single managed CSI volume, got %d", got)
 	}
-	if got := len(template.Spec.ImagePullSecrets); got != 1 {
-		t.Fatalf("expected single imagePullSecret, got %d", got)
+	if got := len(template.Spec.Containers[0].VolumeMounts); got != 1 {
+		t.Fatalf("expected single managed CSI mount, got %d", got)
+	}
+	if got := len(template.Spec.ImagePullSecrets); got != 0 {
+		t.Fatalf("expected no imagePullSecrets, got %d", got)
 	}
 }
 
-func TestServiceUsesOwnerNamespaceWhenTargetNamespaceIsEmpty(t *testing.T) {
-	t.Parallel()
-
-	scheme := testkit.NewScheme(t)
-	owner := testkit.NewModel()
-	kubeClient := testkit.NewFakeClient(t, scheme, nil,
-		owner,
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
-	)
+func newSharedDirectApplyService(t *testing.T, kubeClient client.Client, scheme *runtime.Scheme) *Service {
+	t.Helper()
 
 	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
+		ManagedCache: ManagedCacheOptions{
+			Enabled: true,
 		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+		DeliveryAuthKey:         testDeliveryAuthKey,
+		RegistrySourceNamespace: "d8-ai-models",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
-
-	template := podTemplateWithCacheMount("runtime", "model-cache", DefaultCacheMountPath)
-
-	result, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
-		Artifact: publishedArtifact(),
-		Topology: TopologyHints{ReplicaCount: 1},
-	}, template)
-	if err != nil {
-		t.Fatalf("ApplyToPodTemplate() error = %v", err)
-	}
-	if got, want := result.RegistryAccess.AuthSecretName, projectedAuthSecretName(t, owner.GetUID()); got != want {
-		t.Fatalf("auth secret name = %q, want %q", got, want)
-	}
-	projectedAuth := &corev1.Secret{}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: result.RegistryAccess.AuthSecretName, Namespace: owner.GetNamespace()}, projectedAuth); err != nil {
-		t.Fatalf("Get(projected auth secret) error = %v", err)
-	}
+	return service
 }

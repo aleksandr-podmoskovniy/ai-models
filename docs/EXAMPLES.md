@@ -7,7 +7,9 @@ description: "Ready-to-use YAML examples for enabling ai-models, publishing mode
 
 All examples use the public module contract. Do not manually add
 `materialize-artifact` init containers, registry credentials, or DMCR paths to
-application manifests: workload delivery injects them from annotations.
+application manifests. Declare model annotations only; workload delivery
+injects the node-cache CSI volume, artifact attributes, and workload-facing
+env/mount contract.
 
 ## Minimal ModuleConfig
 
@@ -164,6 +166,8 @@ kind: Deployment
 metadata:
   name: embedder
   namespace: ai-demo
+  annotations:
+    ai.deckhouse.io/model: bge-m3
 spec:
   replicas: 2
   selector:
@@ -173,8 +177,6 @@ spec:
     metadata:
       labels:
         app: embedder
-      annotations:
-        ai.deckhouse.io/model: bge-m3
     spec:
       containers:
         - name: embedder
@@ -189,6 +191,8 @@ kind: Deployment
 metadata:
   name: generator
   namespace: ai-demo
+  annotations:
+    ai.deckhouse.io/clustermodel: gemma-small
 spec:
   selector:
     matchLabels:
@@ -197,8 +201,6 @@ spec:
     metadata:
       labels:
         app: generator
-      annotations:
-        ai.deckhouse.io/clustermodel: gemma-small
     spec:
       containers:
         - name: generator
@@ -213,6 +215,8 @@ kind: Deployment
 metadata:
   name: rag-service
   namespace: ai-demo
+  annotations:
+    ai.deckhouse.io/model-refs: main=ClusterModel/gemma-small,embed=Model/bge-m3
 spec:
   selector:
     matchLabels:
@@ -221,8 +225,6 @@ spec:
     metadata:
       labels:
         app: rag-service
-      annotations:
-        ai.deckhouse.io/model-refs: main=ClusterModel/gemma-small,embed=Model/bge-m3
     spec:
       containers:
         - name: rag-service
@@ -235,32 +237,34 @@ Inside the container:
 - `AI_MODELS_MODEL_EMBED_PATH`;
 - `AI_MODELS_MODELS_DIR=/data/modelcache/models`.
 
-## KubeRay / RayService
+## External Controllers
 
-For KubeRay, do not wire a materialize init container manually. The annotation
-must live on the Pod template that KubeRay uses to create head/worker Pods.
+ai-models does not mutate third-party CRDs by name. For operators such as
+KubeRay, do not expect ai-models to understand the higher-level CRD. Render a
+supported Kubernetes workload (`Deployment`, `StatefulSet`, `DaemonSet` or
+`CronJob`) with the ai-models annotation on workload metadata, or let
+ai-inference own that rendering later.
+
+For plain Kubernetes workloads the same contract looks like this:
 
 ```yaml
-apiVersion: ray.io/v1
-kind: RayService
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: embed-rayservice
-  namespace: kuberay-projects
+  name: embedder
+  namespace: ai-demo
+  annotations:
+    ai.deckhouse.io/model: bge-m3
 spec:
-  rayClusterConfig:
-    headGroupSpec:
-      template:
-        metadata:
-          annotations:
-            ai.deckhouse.io/model: bge-m3
-    workerGroupSpecs:
-      - groupName: a30-workers
-        template:
-          metadata:
-            annotations:
-              ai.deckhouse.io/model: bge-m3
+  selector:
+    matchLabels:
+      app: embedder
+  template:
+    metadata:
+      labels:
+        app: embedder
+    spec:
+      containers:
+        - name: embedder
+          image: registry.example.com/embedder:latest
 ```
-
-If a GitOps system tracks only `RayService`, do not commit module-injected
-volumes/env on generated `RayCluster` or `Pod` objects. They are live mutation
-results owned by the controller.

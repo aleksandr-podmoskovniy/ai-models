@@ -18,38 +18,22 @@ package modeldelivery
 
 import (
 	"context"
+	"strings"
 	"testing"
 
-	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestServiceSupportsStatefulSetClaimTemplateTopology(t *testing.T) {
+func TestServiceRejectsStatefulSetClaimTemplateBridgeTopology(t *testing.T) {
 	t.Parallel()
 
-	scheme := testkit.NewScheme(t)
-	owner := testkit.NewModel()
-	kubeClient := testkit.NewFakeClient(t, scheme, nil,
-		owner,
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
-	)
-
-	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
-		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
-	})
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-
+	service, owner := newTopologyService(t)
 	template := podTemplateWithCacheMount("runtime", "model-cache", DefaultCacheMountPath)
 
-	result, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
+	_, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
 		Topology: TopologyHints{
 			ReplicaCount: 3,
@@ -58,216 +42,67 @@ func TestServiceSupportsStatefulSetClaimTemplateTopology(t *testing.T) {
 			}},
 		},
 	}, template)
-	if err != nil {
-		t.Fatalf("ApplyToPodTemplate() error = %v", err)
-	}
-	if got, want := result.TopologyKind, CacheTopologyPerPod; got != want {
-		t.Fatalf("topology kind = %q, want %q", got, want)
-	}
-	if got, want := result.DeliveryMode, DeliveryModeMaterializeBridge; got != want {
-		t.Fatalf("delivery mode = %q, want %q", got, want)
-	}
-	if got, want := result.DeliveryReason, DeliveryReasonStatefulSetClaimTemplate; got != want {
-		t.Fatalf("delivery reason = %q, want %q", got, want)
+	if err == nil || !strings.Contains(err.Error(), "does not support explicit cache claim template") {
+		t.Fatalf("expected claim template bridge rejection, got %v", err)
 	}
 }
 
-func TestServiceEnablesSharedCacheCoordinationForSharedWorkloadPVC(t *testing.T) {
+func TestServiceRejectsSharedWorkloadPVCBridgeTopology(t *testing.T) {
 	t.Parallel()
 
-	scheme := testkit.NewScheme(t)
-	owner := testkit.NewModel()
-	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "shared-model-cache",
-			Namespace: owner.GetNamespace(),
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
-		},
-	}
-	kubeClient := testkit.NewFakeClient(t, scheme, nil,
-		owner,
-		pvc,
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
-	)
-
-	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
-		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
-	})
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-
+	service, owner := newTopologyService(t)
 	template := podTemplateWithPVCMount("runtime", "model-cache", "shared-model-cache", DefaultCacheMountPath)
 
-	result, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
+	_, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
 		Topology: TopologyHints{ReplicaCount: 3},
 	}, template)
-	if err != nil {
-		t.Fatalf("unexpected error %v", err)
-	}
-	if got, want := result.TopologyKind, CacheTopologySharedPVC; got != want {
-		t.Fatalf("topology kind = %q, want %q", got, want)
-	}
-	if got, want := result.DeliveryMode, DeliveryModeSharedPVCBridge; got != want {
-		t.Fatalf("delivery mode = %q, want %q", got, want)
-	}
-	if got, want := result.DeliveryReason, DeliveryReasonWorkloadSharedPersistentVolume; got != want {
-		t.Fatalf("delivery reason = %q, want %q", got, want)
-	}
-	if got, want := result.ModelPath, nodecache.SharedArtifactModelPath(DefaultCacheMountPath, publishedArtifact().Digest); got != want {
-		t.Fatalf("model path = %q, want %q", got, want)
-	}
-	if got, want := envByName(template.Spec.Containers[0].Env, ModelPathEnv), nodecache.SharedArtifactModelPath(DefaultCacheMountPath, publishedArtifact().Digest); got != want {
-		t.Fatalf("runtime model path env = %q, want %q", got, want)
-	}
-	if got := envByName(template.Spec.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_COORDINATION_MODE"); got != CoordinationModeShared {
-		t.Fatalf("coordination mode env = %q", got)
-	}
-	if got := envByName(template.Spec.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_COORDINATION_NAMESPACE"); got != "" {
-		t.Fatalf("did not expect coordination namespace env, got %q", got)
+	if err == nil || !strings.Contains(err.Error(), "does not support explicit cache persistentVolumeClaim") {
+		t.Fatalf("expected PVC bridge rejection, got %v", err)
 	}
 }
 
-func TestServiceProjectsDigestScopedPathForSingleReplicaSharedWorkloadPVC(t *testing.T) {
+func TestServiceRejectsEphemeralBridgeTopology(t *testing.T) {
 	t.Parallel()
 
-	scheme := testkit.NewScheme(t)
-	owner := testkit.NewModel()
-	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "shared-model-cache",
-			Namespace: owner.GetNamespace(),
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-		},
-	}
-	kubeClient := testkit.NewFakeClient(t, scheme, nil,
-		owner,
-		pvc,
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
-	)
+	service, owner := newTopologyService(t)
+	template := podTemplateWithCacheMount("runtime", "model-cache", DefaultCacheMountPath)
 
-	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
-		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
-	})
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-
-	template := podTemplateWithPVCMount("runtime", "model-cache", "shared-model-cache", DefaultCacheMountPath)
-
-	result, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
+	_, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
 		Topology: TopologyHints{ReplicaCount: 1},
 	}, template)
-	if err != nil {
-		t.Fatalf("unexpected error %v", err)
-	}
-	if got, want := result.TopologyKind, CacheTopologySharedPVC; got != want {
-		t.Fatalf("topology kind = %q, want %q", got, want)
-	}
-	if got, want := result.DeliveryMode, DeliveryModeSharedPVCBridge; got != want {
-		t.Fatalf("delivery mode = %q, want %q", got, want)
-	}
-	if got, want := result.DeliveryReason, DeliveryReasonWorkloadSharedPersistentVolume; got != want {
-		t.Fatalf("delivery reason = %q, want %q", got, want)
-	}
-	if got, want := result.ModelPath, nodecache.SharedArtifactModelPath(DefaultCacheMountPath, publishedArtifact().Digest); got != want {
-		t.Fatalf("model path = %q, want %q", got, want)
-	}
-	if got, want := envByName(template.Spec.Containers[0].Env, ModelPathEnv), nodecache.SharedArtifactModelPath(DefaultCacheMountPath, publishedArtifact().Digest); got != want {
-		t.Fatalf("runtime model path env = %q, want %q", got, want)
-	}
-	if got := envByName(template.Spec.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_SHARED_STORE"); got != "true" {
-		t.Fatalf("shared store env = %q, want true", got)
-	}
-	if got := envByName(template.Spec.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_COORDINATION_MODE"); got != "" {
-		t.Fatalf("did not expect coordination mode env, got %q", got)
-	}
-}
-
-func TestServiceRejectsSharedWorkloadPVCWithoutRWX(t *testing.T) {
-	t.Parallel()
-
-	scheme := testkit.NewScheme(t)
-	owner := testkit.NewModel()
-	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "shared-model-cache",
-			Namespace: owner.GetNamespace(),
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-		},
-	}
-	kubeClient := testkit.NewFakeClient(t, scheme, nil,
-		owner,
-		pvc,
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
-	)
-
-	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
-		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
-	})
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-
-	template := podTemplateWithPVCMount("runtime", "model-cache", "shared-model-cache", DefaultCacheMountPath)
-
-	_, err = service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
-		Artifact: publishedArtifact(),
-		Topology: TopologyHints{ReplicaCount: 3},
-	}, template)
-	if err == nil || err.Error() != "runtime delivery shared persistentVolumeClaim \"shared-model-cache\" for replicas > 1 must support ReadWriteMany" {
-		t.Fatalf("unexpected error %v", err)
+	if err == nil || !strings.Contains(err.Error(), "does not support explicit cache volume") {
+		t.Fatalf("expected ephemeral bridge rejection, got %v", err)
 	}
 }
 
 func TestServiceRejectsNegativeReplicaCount(t *testing.T) {
 	t.Parallel()
 
-	scheme := testkit.NewScheme(t)
-	owner := testkit.NewModel()
-	kubeClient := testkit.NewFakeClient(t, scheme, nil,
-		owner,
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
-	)
-
-	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
-		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
-	})
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-
+	service, owner := newTopologyService(t)
 	template := podTemplateWithCacheMount("runtime", "model-cache", DefaultCacheMountPath)
 
-	_, err = service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
+	_, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
 		Topology: TopologyHints{ReplicaCount: -1},
 	}, template)
 	if err == nil || err.Error() != "runtime delivery replica count must not be negative" {
 		t.Fatalf("unexpected error %v", err)
 	}
+}
+
+func newTopologyService(t *testing.T) (*Service, client.Object) {
+	t.Helper()
+
+	scheme := testkit.NewScheme(t)
+	owner := testkit.NewModel()
+	kubeClient := testkit.NewFakeClient(t, scheme, nil, owner)
+	service, err := NewService(kubeClient, scheme, ServiceOptions{
+		RegistrySourceNamespace: "d8-ai-models",
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	return service, owner
 }

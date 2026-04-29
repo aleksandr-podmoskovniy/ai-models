@@ -1,19 +1,22 @@
 # Manual A30 vLLM SharedDirect drill
 
 Цель — после выката новой версии модуля проверить самый важный path без
-RayService и без GitOps: обычный `Deployment` с одной annotation должен
-получить всю ai-models delivery wiring сам.
+RayService и без GitOps: обычный `Deployment` с одной ai-models annotation
+должен получить node-cache CSI volume, resolved artifact attributes, mounts и
+env от ai-models.
 
 Запрещено добавлять в workload:
 
 - `materialize-artifact` init container;
 - PVC `model-cache-pvc`;
 - DMCR credentials/CA env;
-- ручной `/data/modelcache` volume или `mkdir`;
+- ручной `/data/modelcache` `mkdir`;
 - digest/artifact URI руками.
 
-Если это понадобится, тест считается проваленным: фиксить надо mutation /
-node-cache contract, а не workload manifest.
+Если нужны digest/artifact URI, Secret или materialize runtime в workload
+manifest, тест считается проваленным: фиксить надо mutation / node-cache
+contract. CSI volume с driver `node-cache.ai-models.deckhouse.io` должен
+появиться только после mutation контроллера.
 
 ## 0. No-action gate
 
@@ -116,7 +119,8 @@ kubectl --context "$CTX" get clustermodel a30-user-bge-m3 -o yaml
 ## 4. Apply ручного vLLM Deployment
 
 В этом манифесте ai-models-specific часть — только annotation
-`ai.deckhouse.io/model-refs`.
+`ai.deckhouse.io/model-refs` на metadata Deployment. Artifact URI/digest, CSI
+volume, mounts и env руками не задаются: их заполнит controller.
 
 ```bash
 kubectl --context "$CTX" create namespace "$NS" --dry-run=client -o yaml | kubectl --context "$CTX" apply -f -
@@ -245,8 +249,9 @@ Pass в Deployment/PodTemplate:
   `ai.deckhouse.io/resolved-digest`,
   `ai.deckhouse.io/resolved-delivery-mode=SharedDirect`,
   `ai.deckhouse.io/resolved-delivery-reason=NodeCacheRuntime`;
-- есть inline CSI volume с driver
-  `node-cache.ai-models.deckhouse.io`;
+- controller-created inline CSI volume с driver
+  `node-cache.ai-models.deckhouse.io` содержит resolved artifact
+  URI/digest/family attributes;
 - есть mount `/data/modelcache`;
 - есть env:
   `AI_MODELS_MODELS_DIR`, `AI_MODELS_MODELS`,

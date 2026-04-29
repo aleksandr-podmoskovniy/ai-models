@@ -192,19 +192,20 @@ SharedDirect delivery contract:
 - `LocalStorageClass`, `LVMVolumeGroupSet`, VG и thin-pool names — внутренние
   constants ai-models, а не public ModuleConfig knobs.
 
-При `nodeCache.enabled=true` workload'ы, которые не принесли явный cache
-volume, переводятся на node-cache SharedDirect path:
+При `nodeCache.enabled=true` SharedDirect является annotation-only контрактом
+workload:
 
-- контроллер inject'ит inline CSI volume
-  `node-cache.ai-models.deckhouse.io` в `/data/modelcache`;
-- injected CSI volume несёт только immutable artifact attributes
-  (URI, digest, optional family), без storage-specific полей в публичном API;
-- контроллер переносит effective node-cache node selector в managed workload
-  pod template и fail'ится при конфликте, вместо запуска на неподходящей ноде;
-- контроллер дополнительно требует динамический node label
-  `ai.deckhouse.io/node-cache-runtime-ready=true` и держит managed scheduling
-  gate, пока ни одна выбранная нода не имеет ready runtime Pod и bound shared
-  cache PVC;
+- metadata workload'а задаёт только `ai.deckhouse.io/model`,
+  `ai.deckhouse.io/clustermodel` или `ai.deckhouse.io/model-refs`;
+- controller сам добавляет inline CSI volume с driver
+  `node-cache.ai-models.deckhouse.io`, stable mount, runtime env и internal
+  artifact attributes;
+- для одной модели managed volume name — `ai-models-node-cache`; для
+  `ai.deckhouse.io/model-refs` каждый alias получает
+  `ai-models-node-cache-<alias>`;
+- controller не добавляет node selectors, labels, affinity или scheduling
+  policy workload'а. Placement остаётся ответственностью workload'а,
+  ai-inference или внешнего scheduler'а;
 - namespace workload'а больше не получает projected DMCR read Secret/CA и
   bridge runtime imagePullSecret для managed SharedDirect path;
 - workload получает стабильный runtime-facing contract. Legacy annotations
@@ -217,18 +218,17 @@ volume, переводятся на node-cache SharedDirect path:
   `AI_MODELS_MODELS_DIR`, `AI_MODELS_MODELS` со списком
   alias/path/digest/family и per-alias env
   `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}`;
-- для KubeRay `RayService` эти же аннотации остаются на GitOps-owned
-  `RayService`, но controller не патчит `RayService.spec`: runtime wiring
-  применяется к generated `RayCluster` pod templates, чтобы ArgoCD не
-  откатывал управляемую мутацию обратно в Git-состояние;
+- ai-models не держит CRD-specific adapters для внешних контроллеров вроде
+  KubeRay. Надо рендерить поддержанный Kubernetes workload с model annotation
+  на metadata workload'а либо отдавать рендеринг workload'а ai-inference;
 - контроллер теперь дополнительно пишет в `PodTemplateSpec` управляемые
   аннотации с выбранным режимом доставки и причиной этого выбора, поэтому
   node-cache runtime может находить desired artifacts по live Pod'ам на своей
   ноде;
 - метрики `runtimehealth` теперь также агрегируют управляемые прикладные
   объекты по namespace, виду, режиму доставки и причине выбора, поэтому
-  оператор видит, где workload ещё живёт на явном legacy bridge storage, а где
-  уже используется SharedDirect, без ручного обхода объектов;
+  оператор видит, какие workload управляются через SharedDirect и какая
+  причина доставки активна, без ручного обхода объектов;
 - ai-models теперь держит отдельный per-node shared cache plane как
   controller-owned stable runtime Pod плюс stable PVC поверх managed
   `LocalStorageClass`; размер этого shared volume задаётся через
@@ -247,9 +247,10 @@ volume, переводятся на node-cache SharedDirect path:
   per-node shared cache PVC в kubelet target path; если digest ещё не
   materialized, CSI возвращает transient `Unavailable`, а kubelet повторяет
   mount после prefetch;
-- CSI NodePublish fail-closed проверяет `podInfoOnMount`: mount разрешён только
-  для того live Pod на той же ноде, который controller уже пометил как
-  managed SharedDirect Pod с тем же digest;
+- CSI NodePublish fail-closed проверяет `podInfoOnMount` и controller-only
+  HMAC signature поверх resolved delivery annotations: mount разрешён только
+  для того live Pod на той же ноде, который controller пометил как managed
+  SharedDirect Pod с тем же digest;
 - `node-cache-runtime` сам получает набор опубликованных артефактов, реально
   нужных live SharedDirect managed Pod'ам на текущей ноде, и prefetch'ит их в
   shared node-local digest store;
@@ -264,17 +265,20 @@ volume, переводятся на node-cache SharedDirect path:
 - если SDS CRD фактически отсутствуют в кластере, substrate controller не
   сможет создать `LVMVolumeGroupSet` / `LocalStorageClass`, и node-cache слой
   не станет готовым;
-- если на выбранной ноде нет подходящего local block device по effective
-  node-cache block-device selector, managed `LVMVolumeGroup` для этой ноды не
-  станет ready, `LocalStorageClass` не получит эту ноду, а runtime PVC/Pod для
-  кэша останутся unscheduled или pending;
-- пока ни одна выбранная нода не имеет ready runtime Pod и bound shared cache
-  PVC, managed SharedDirect workload templates сохраняют ai-models scheduling
-  gate вместо rollout Pod'ов, которые зависнут на CSI mount.
+- если workload попал на ноду без ready node-cache runtime и подходящего local
+  storage, CSI mount будет fail/wait через kubelet events. ai-models не
+  выводит и не inject'ит placement workload'а; placement должен задать сам
+  workload, ai-inference или внешний scheduler;
+- если managed node-cache delivery выключен или набор моделей не помещается в
+  configured per-node cache size, ai-models сохраняет свой scheduling gate и
+  пишет понятный condition/event.
 
-Явно заданные workload cache volumes пока остаются legacy bridge path: они
-по-прежнему используют `materialize-artifact` и digest-scoped shared-PVC
-bridge logic там, где применимо. После cutover это не managed default path.
+Явно заданные workload cache volumes больше не являются delivery fallback:
+controller отклоняет такие шаблоны понятным condition/event и ждёт managed
+SharedDirect CSI contract. Пользовательские манифесты должны задавать только
+аннотацию модели. Уже существующий mount на `/data/modelcache` допустим только
+если он использует node-cache CSI driver; иначе он отклоняется, а не
+конвертируется молча.
 
 При этом публичного cleanup/TTL knob пока нет: workload-facing shared mount уже
 есть, но eviction policy остаётся internal runtime behavior, а не обещанным

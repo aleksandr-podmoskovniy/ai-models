@@ -27,18 +27,19 @@ func TestDesiredPod(t *testing.T) {
 	t.Parallel()
 
 	pod, err := DesiredPod(RuntimeSpec{
-		Namespace:           "d8-ai-models",
-		NodeName:            "worker-a",
-		RuntimeImage:        "runtime:latest",
-		CSIRegistrarImage:   "registrar:latest",
-		ImagePullSecretName: "registry-creds",
-		ServiceAccountName:  "ai-models-node-cache-runtime",
-		MaxTotalSize:        "200Gi",
-		MaxUnusedAge:        "24h",
-		ScanInterval:        "5m",
-		OCIInsecure:         true,
-		OCIAuthSecretName:   "ai-models-dmcr-auth-read",
-		OCIRegistryCASecret: "ai-models-dmcr-ca",
+		Namespace:              "d8-ai-models",
+		NodeName:               "worker-a",
+		RuntimeImage:           "runtime:latest",
+		CSIRegistrarImage:      "registrar:latest",
+		ImagePullSecretName:    "registry-creds",
+		ServiceAccountName:     "ai-models-node-cache-runtime",
+		MaxTotalSize:           "200Gi",
+		MaxUnusedAge:           "24h",
+		ScanInterval:           "5m",
+		OCIInsecure:            true,
+		OCIAuthSecretName:      "ai-models-dmcr-auth-read",
+		DeliveryAuthSecretName: "ai-models-dmcr-auth",
+		OCIRegistryCASecret:    "ai-models-dmcr-ca",
 	})
 	if err != nil {
 		t.Fatalf("DesiredPod() error = %v", err)
@@ -55,6 +56,9 @@ func TestDesiredPod(t *testing.T) {
 	}
 	if pod.Spec.ServiceAccountName != "ai-models-node-cache-runtime" {
 		t.Fatalf("unexpected service account %q", pod.Spec.ServiceAccountName)
+	}
+	if pod.Spec.AutomountServiceAccountToken == nil || !*pod.Spec.AutomountServiceAccountToken {
+		t.Fatalf("expected explicit service account token mount for node-cache runtime, got %#v", pod.Spec.AutomountServiceAccountToken)
 	}
 	if len(pod.Spec.ImagePullSecrets) != 1 || pod.Spec.ImagePullSecrets[0].Name != "registry-creds" {
 		t.Fatalf("unexpected imagePullSecrets %#v", pod.Spec.ImagePullSecrets)
@@ -110,10 +114,19 @@ func TestDesiredPod(t *testing.T) {
 	if env["AI_MODELS_OCI_CA_FILE"] != registryCAFilePath {
 		t.Fatalf("unexpected registry CA env %#v", env)
 	}
+	if got, want := envSecretKeyByName(runtime.Env, "AI_MODELS_DELIVERY_AUTH_KEY"), "ai-models-dmcr-auth/salt"; got != want {
+		t.Fatalf("delivery auth env secret = %q, want %q", got, want)
+	}
 
 	registrar := pod.Spec.Containers[1]
 	if registrar.Name != RegistrarContainerName || registrar.Image != "registrar:latest" {
 		t.Fatalf("unexpected registrar container %#v", registrar)
+	}
+	if registrar.SecurityContext == nil ||
+		registrar.SecurityContext.Capabilities == nil ||
+		len(registrar.SecurityContext.Capabilities.Drop) != 1 ||
+		registrar.SecurityContext.Capabilities.Drop[0] != "ALL" {
+		t.Fatalf("expected registrar to drop all capabilities, got %#v", registrar.SecurityContext)
 	}
 	if got, want := registrar.Env[0].Value, nodecache.CSIContainerSocketPath; got != want {
 		t.Fatalf("registrar CSI endpoint = %q, want %q", got, want)
@@ -127,15 +140,16 @@ func TestDesiredPodOmitsOptionalRegistryCAAndPullSecret(t *testing.T) {
 	t.Parallel()
 
 	pod, err := DesiredPod(RuntimeSpec{
-		Namespace:          "d8-ai-models",
-		NodeName:           "worker-a",
-		RuntimeImage:       "runtime:latest",
-		CSIRegistrarImage:  "registrar:latest",
-		ServiceAccountName: "ai-models-node-cache-runtime",
-		MaxTotalSize:       "200Gi",
-		MaxUnusedAge:       "24h",
-		ScanInterval:       "5m",
-		OCIAuthSecretName:  "ai-models-dmcr-auth-read",
+		Namespace:              "d8-ai-models",
+		NodeName:               "worker-a",
+		RuntimeImage:           "runtime:latest",
+		CSIRegistrarImage:      "registrar:latest",
+		ServiceAccountName:     "ai-models-node-cache-runtime",
+		MaxTotalSize:           "200Gi",
+		MaxUnusedAge:           "24h",
+		ScanInterval:           "5m",
+		OCIAuthSecretName:      "ai-models-dmcr-auth-read",
+		DeliveryAuthSecretName: "ai-models-dmcr-auth",
 	})
 	if err != nil {
 		t.Fatalf("DesiredPod() error = %v", err)
@@ -158,16 +172,17 @@ func TestDesiredPodUsesNodeHostnameLabelForScheduling(t *testing.T) {
 	t.Parallel()
 
 	pod, err := DesiredPod(RuntimeSpec{
-		Namespace:          "d8-ai-models",
-		NodeName:           "node-object-a",
-		NodeHostname:       "worker-a.example.test",
-		RuntimeImage:       "runtime:latest",
-		CSIRegistrarImage:  "registrar:latest",
-		ServiceAccountName: "ai-models-node-cache-runtime",
-		MaxTotalSize:       "200Gi",
-		MaxUnusedAge:       "24h",
-		ScanInterval:       "5m",
-		OCIAuthSecretName:  "ai-models-dmcr-auth-read",
+		Namespace:              "d8-ai-models",
+		NodeName:               "node-object-a",
+		NodeHostname:           "worker-a.example.test",
+		RuntimeImage:           "runtime:latest",
+		CSIRegistrarImage:      "registrar:latest",
+		ServiceAccountName:     "ai-models-node-cache-runtime",
+		MaxTotalSize:           "200Gi",
+		MaxUnusedAge:           "24h",
+		ScanInterval:           "5m",
+		OCIAuthSecretName:      "ai-models-dmcr-auth-read",
+		DeliveryAuthSecretName: "ai-models-dmcr-auth",
 	})
 	if err != nil {
 		t.Fatalf("DesiredPod() error = %v", err)
@@ -228,6 +243,15 @@ func envFieldPathByName(env []corev1.EnvVar, name string) string {
 	for _, item := range env {
 		if item.Name == name && item.ValueFrom != nil && item.ValueFrom.FieldRef != nil {
 			return item.ValueFrom.FieldRef.FieldPath
+		}
+	}
+	return ""
+}
+
+func envSecretKeyByName(env []corev1.EnvVar, name string) string {
+	for _, item := range env {
+		if item.Name == name && item.ValueFrom != nil && item.ValueFrom.SecretKeyRef != nil {
+			return item.ValueFrom.SecretKeyRef.Name + "/" + item.ValueFrom.SecretKeyRef.Key
 		}
 	}
 	return ""

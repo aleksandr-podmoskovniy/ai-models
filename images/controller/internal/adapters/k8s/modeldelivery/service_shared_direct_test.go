@@ -22,55 +22,35 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
+	deliverycontract "github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestServiceInjectsManagedSharedDirectVolumeWhenWorkloadDoesNotProvideMount(t *testing.T) {
+func TestServiceInjectsManagedSharedDirectVolume(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
 	owner := testkit.NewModel()
-	projectedAuthSecret := projectedAuthSecretName(t, owner.GetUID())
-	projectedRuntimePullSecret := projectedRuntimeImagePullSecretName(t, owner.GetUID())
+	legacyRuntimePullSecret := legacyRuntimeImagePullSecretNameForTest(t, owner.GetUID())
 	kubeClient := testkit.NewFakeClient(t, scheme, nil,
 		owner,
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
 		readyNode(),
-		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: projectedAuthSecret, Namespace: "team-a"},
-			Data:       map[string][]byte{"username": []byte("stale")},
-		},
-		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: projectedRuntimePullSecret, Namespace: "team-a"},
-			Type:       corev1.SecretTypeDockerConfigJson,
-			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte("{}")},
-		},
 	)
 
 	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
-		},
 		ManagedCache: ManagedCacheOptions{
 			Enabled: true,
-			NodeSelector: map[string]string{
-				"ai.deckhouse.io/node-cache":       "true",
-				nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue,
-			},
 		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
-		RuntimeImagePullSecretName:   "ai-models-runtime-pull",
+		DeliveryAuthKey:         testDeliveryAuthKey,
+		RegistrySourceNamespace: "d8-ai-models",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
 	template := podTemplateWithoutCacheMount("runtime")
-	template.Spec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: projectedRuntimePullSecret}}
+	template.Spec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: legacyRuntimePullSecret}}
 
 	result, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
@@ -89,8 +69,8 @@ func TestServiceInjectsManagedSharedDirectVolumeWhenWorkloadDoesNotProvideMount(
 	if got, want := template.Annotations[ResolvedDeliveryReasonAnnotation], string(DeliveryReasonNodeSharedRuntimePlane); got != want {
 		t.Fatalf("resolved delivery reason annotation = %q, want %q", got, want)
 	}
-	if result.RegistryAccess.AuthSecretName != "" || result.RegistryAccess.CASecretName != "" {
-		t.Fatalf("shared-direct must not project registry access, got %#v", result.RegistryAccess)
+	if !deliverycontract.VerifyResolvedDeliverySignature(owner.GetNamespace(), template.Annotations, testDeliveryAuthKey) {
+		t.Fatalf("expected controller-stamped resolved delivery signature")
 	}
 	if got := len(template.Spec.ImagePullSecrets); got != 0 {
 		t.Fatalf("shared-direct must prune runtime imagePullSecret, got %#v", template.Spec.ImagePullSecrets)
@@ -101,22 +81,19 @@ func TestServiceInjectsManagedSharedDirectVolumeWhenWorkloadDoesNotProvideMount(
 	if got, want := template.Spec.Containers[0].VolumeMounts[0].MountPath, DefaultCacheMountPath; got != want {
 		t.Fatalf("managed cache mount path = %q, want %q", got, want)
 	}
-	if got, want := template.Spec.NodeSelector["ai.deckhouse.io/node-cache"], "true"; got != want {
-		t.Fatalf("node selector = %q, want %q", got, want)
-	}
-	if got, want := template.Spec.NodeSelector[nodecache.RuntimeReadyNodeLabelKey], nodecache.RuntimeReadyNodeLabelValue; got != want {
-		t.Fatalf("runtime ready selector = %q, want %q", got, want)
+	if len(template.Spec.NodeSelector) != 0 {
+		t.Fatalf("shared-direct must not inject node selectors, got %#v", template.Spec.NodeSelector)
 	}
 	if HasSchedulingGate(template) {
-		t.Fatalf("did not expect scheduling gate when a ready node exists")
+		t.Fatalf("did not expect scheduling gate for ready managed CSI delivery")
 	}
 
 	volume, found := findVolumeByName(template.Spec.Volumes, DefaultManagedCacheName)
 	if !found {
-		t.Fatalf("expected managed cache volume %q to be injected", DefaultManagedCacheName)
+		t.Fatalf("expected managed cache volume %q", DefaultManagedCacheName)
 	}
 	if volume.CSI == nil {
-		t.Fatalf("expected injected volume to use inline CSI, got %#v", volume.VolumeSource)
+		t.Fatalf("expected managed volume to use inline CSI, got %#v", volume.VolumeSource)
 	}
 	if got, want := volume.CSI.Driver, NodeCacheCSIDriverName; got != want {
 		t.Fatalf("CSI driver = %q, want %q", got, want)
@@ -130,16 +107,16 @@ func TestServiceInjectsManagedSharedDirectVolumeWhenWorkloadDoesNotProvideMount(
 	if got, want := volume.CSI.VolumeAttributes[nodeCacheCSIAttributeArtifactDigest], publishedArtifact().Digest; got != want {
 		t.Fatalf("artifact digest attribute = %q, want %q", got, want)
 	}
-	secret := &corev1.Secret{}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: projectedAuthSecret, Namespace: "team-a"}, secret); !apierrors.IsNotFound(err) {
-		t.Fatalf("shared-direct must delete stale projected auth secret, got err %v", err)
+	secrets := &corev1.SecretList{}
+	if err := kubeClient.List(context.Background(), secrets); err != nil {
+		t.Fatalf("List(secrets) error = %v", err)
 	}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: projectedRuntimePullSecret, Namespace: "team-a"}, secret); !apierrors.IsNotFound(err) {
-		t.Fatalf("shared-direct must delete stale runtime pull secret, got err %v", err)
+	if len(secrets.Items) != 0 {
+		t.Fatalf("shared-direct must not create or delete workload namespace secrets, got %#v", secrets.Items)
 	}
 }
 
-func TestServiceRejectsConflictingManagedNodeCacheSelector(t *testing.T) {
+func TestServicePreservesUserProvidedSharedDirectVolumeAttributes(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
@@ -150,60 +127,17 @@ func TestServiceRejectsConflictingManagedNodeCacheSelector(t *testing.T) {
 	)
 
 	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{RuntimeImage: "example.com/ai-models:latest"},
 		ManagedCache: ManagedCacheOptions{
 			Enabled: true,
-			NodeSelector: map[string]string{
-				"ai.deckhouse.io/node-cache":       "true",
-				nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue,
-			},
 		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+		DeliveryAuthKey:         testDeliveryAuthKey,
+		RegistrySourceNamespace: "d8-ai-models",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	template := podTemplateWithoutCacheMount("runtime")
-	template.Spec.NodeSelector = map[string]string{"ai.deckhouse.io/node-cache": "false"}
-
-	_, err = service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
-		Artifact: publishedArtifact(),
-		Topology: TopologyHints{ReplicaCount: 1},
-	}, template)
-	if err == nil || err.Error() != `runtime delivery managed node-cache selector conflicts on "ai.deckhouse.io/node-cache": workload has "false", node-cache requires "true"` {
-		t.Fatalf("unexpected error %v", err)
-	}
-}
-
-func TestServiceKeepsSchedulingGateWhenManagedSharedDirectHasNoReadyNode(t *testing.T) {
-	t.Parallel()
-
-	scheme := testkit.NewScheme(t)
-	owner := testkit.NewModel()
-	kubeClient := testkit.NewFakeClient(t, scheme, nil,
-		owner,
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
-	)
-
-	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{RuntimeImage: "example.com/ai-models:latest"},
-		ManagedCache: ManagedCacheOptions{
-			Enabled: true,
-			NodeSelector: map[string]string{
-				"ai.deckhouse.io/node-cache":       "true",
-				nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue,
-			},
-		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
-	})
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-
-	template := podTemplateWithoutCacheMount("runtime")
+	template := podTemplateWithNodeCacheVolume("runtime")
 	_, err = service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
 		Topology: TopologyHints{ReplicaCount: 1},
@@ -211,8 +145,13 @@ func TestServiceKeepsSchedulingGateWhenManagedSharedDirectHasNoReadyNode(t *test
 	if err != nil {
 		t.Fatalf("ApplyToPodTemplate() error = %v", err)
 	}
-	if !HasSchedulingGate(template) {
-		t.Fatalf("expected scheduling gate while no ready node-cache runtime node exists")
+
+	volume, found := findVolumeByName(template.Spec.Volumes, DefaultManagedCacheName)
+	if !found || volume.CSI == nil {
+		t.Fatalf("expected managed CSI volume, got %#v", template.Spec.Volumes)
+	}
+	if got, want := volume.CSI.VolumeAttributes["user.deckhouse.io/cache"], "enabled"; got != want {
+		t.Fatalf("expected user-provided CSI attributes to be preserved, got %q", got)
 	}
 }
 
@@ -227,23 +166,18 @@ func TestServiceRefreshesManagedSharedDirectVolumeAttributes(t *testing.T) {
 	)
 
 	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{RuntimeImage: "example.com/ai-models:latest"},
 		ManagedCache: ManagedCacheOptions{
 			Enabled: true,
-			NodeSelector: map[string]string{
-				"ai.deckhouse.io/node-cache":       "true",
-				nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue,
-			},
 		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+		DeliveryAuthKey:         testDeliveryAuthKey,
+		RegistrySourceNamespace: "d8-ai-models",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
 	template := podTemplateWithCacheMount("runtime", DefaultManagedCacheName, DefaultCacheMountPath)
-	template.Spec.InitContainers = []corev1.Container{{Name: DefaultInitContainerName}}
+	template.Spec.InitContainers = []corev1.Container{{Name: LegacyMaterializerInitContainerName}}
 	template.Spec.Volumes[0].VolumeSource = corev1.VolumeSource{
 		CSI: &corev1.CSIVolumeSource{
 			Driver: NodeCacheCSIDriverName,

@@ -136,9 +136,10 @@ Manual A30/vLLM SharedDirect drill:
 - target node: `k8s-w3-gpu.apiac.ru`;
 - target model: `ClusterModel/a30-user-bge-m3`;
 - target image: `rayproject/ray-llm:2.54.0-py311-cu128`;
-- workload manifest должен содержать только annotation
+- workload manifest должен содержать annotation
   `ai.deckhouse.io/model-refs: model=ClusterModel/a30-user-bge-m3`, vLLM
-  command/resources/probes and GPU scheduling;
+  command/resources/probes and GPU scheduling; node-cache CSI volume должен
+  появиться только после mutation;
 - запрещены ручные `materialize-artifact`, PVC `model-cache-pvc`, DMCR Secret
   env and cache mkdir;
 - detailed script:
@@ -226,7 +227,8 @@ Evidence commands:
 - upload reservation допускает превышение capacity;
 - cleanup удаляет runtime state без request-scoped backend cleanup evidence;
 - controller/upload-gateway после rollout остаются на master/control-plane;
-- SharedDirect workload попадает на ноду без ready node-cache runtime;
+- SharedDirect workload попадает на ноду без ready node-cache runtime и
+  зависает/падает на CSI mount вместо явного scheduler/placement отказа;
 - any human-facing role allows Secret, pod log/exec/attach/port-forward,
   `*/status`, `*/finalizers` or internal runtime objects unexpectedly;
 - namespaced `use` grants `ClusterModel`, or cluster personas cannot operate

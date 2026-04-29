@@ -38,7 +38,7 @@ flowchart LR
   Worker --> DMCR["internal DMCR"]
   Controller --> Status["status.resolved / artifact / conditions"]
   Workload["workload with ai.deckhouse.io/model annotations"] --> Delivery["workload delivery controller"]
-  Delivery --> Cache["node-cache / materialize path"]
+  Delivery --> Cache["node-cache CSI"]
   Cache --> DMCR
 ```
 

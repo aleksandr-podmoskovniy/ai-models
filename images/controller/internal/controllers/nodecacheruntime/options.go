@@ -27,21 +27,22 @@ import (
 )
 
 type Options struct {
-	Enabled             bool
-	Namespace           string
-	RuntimeImage        string
-	CSIRegistrarImage   string
-	ImagePullSecretName string
-	ServiceAccountName  string
-	StorageClassName    string
-	SharedVolumeSize    string
-	MaxTotalSize        string
-	MaxUnusedAge        string
-	ScanInterval        string
-	OCIInsecure         bool
-	OCIAuthSecretName   string
-	OCIRegistryCASecret string
-	NodeSelectorLabels  map[string]string
+	Enabled                bool
+	Namespace              string
+	RuntimeImage           string
+	CSIRegistrarImage      string
+	ImagePullSecretName    string
+	ServiceAccountName     string
+	StorageClassName       string
+	SharedVolumeSize       string
+	MaxTotalSize           string
+	MaxUnusedAge           string
+	ScanInterval           string
+	OCIInsecure            bool
+	OCIAuthSecretName      string
+	DeliveryAuthSecretName string
+	OCIRegistryCASecret    string
+	NodeSelectorLabels     map[string]string
 }
 
 func (o Options) Validate() error {
@@ -78,21 +79,22 @@ func (o Options) runtimeSpec(node *corev1.Node) k8sadapters.RuntimeSpec {
 		nodeHostname = nodeName
 	}
 	return k8sadapters.RuntimeSpec{
-		Namespace:           o.Namespace,
-		NodeName:            nodeName,
-		NodeHostname:        nodeHostname,
-		RuntimeImage:        o.RuntimeImage,
-		CSIRegistrarImage:   o.CSIRegistrarImage,
-		ImagePullSecretName: o.ImagePullSecretName,
-		ServiceAccountName:  o.ServiceAccountName,
-		StorageClassName:    o.StorageClassName,
-		SharedVolumeSize:    o.SharedVolumeSize,
-		MaxTotalSize:        o.MaxTotalSize,
-		MaxUnusedAge:        o.MaxUnusedAge,
-		ScanInterval:        o.ScanInterval,
-		OCIInsecure:         o.OCIInsecure,
-		OCIAuthSecretName:   o.OCIAuthSecretName,
-		OCIRegistryCASecret: o.OCIRegistryCASecret,
+		Namespace:              o.Namespace,
+		NodeName:               nodeName,
+		NodeHostname:           nodeHostname,
+		RuntimeImage:           o.RuntimeImage,
+		CSIRegistrarImage:      o.CSIRegistrarImage,
+		ImagePullSecretName:    o.ImagePullSecretName,
+		ServiceAccountName:     o.ServiceAccountName,
+		StorageClassName:       o.StorageClassName,
+		SharedVolumeSize:       o.SharedVolumeSize,
+		MaxTotalSize:           o.MaxTotalSize,
+		MaxUnusedAge:           o.MaxUnusedAge,
+		ScanInterval:           o.ScanInterval,
+		OCIInsecure:            o.OCIInsecure,
+		OCIAuthSecretName:      o.OCIAuthSecretName,
+		DeliveryAuthSecretName: o.DeliveryAuthSecretName,
+		OCIRegistryCASecret:    o.OCIRegistryCASecret,
 	}
 }
 
@@ -118,6 +120,8 @@ func (o Options) validateRequiredFields() error {
 		return errors.New("node cache runtime scan interval must not be empty")
 	case strings.TrimSpace(o.OCIAuthSecretName) == "":
 		return errors.New("node cache runtime OCI auth secret must not be empty")
+	case strings.TrimSpace(o.DeliveryAuthSecretName) == "":
+		return errors.New("node cache runtime delivery auth secret must not be empty")
 	case len(o.NodeSelectorLabels) == 0:
 		return errors.New("node cache runtime node selector must not be empty")
 	default:

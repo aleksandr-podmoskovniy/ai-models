@@ -53,6 +53,9 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	if got, want := pod.Spec.ServiceAccountName, "ai-models-publication-worker"; got != want {
 		t.Fatalf("unexpected service account %q", got)
 	}
+	if pod.Spec.AutomountServiceAccountToken == nil || !*pod.Spec.AutomountServiceAccountToken {
+		t.Fatalf("expected explicit service account token mount for publication worker, got %#v", pod.Spec.AutomountServiceAccountToken)
+	}
 	if len(pod.Spec.ImagePullSecrets) != 1 || pod.Spec.ImagePullSecrets[0].Name != "ai-models-module-registry" {
 		t.Fatalf("unexpected imagePullSecrets %#v", pod.Spec.ImagePullSecrets)
 	}

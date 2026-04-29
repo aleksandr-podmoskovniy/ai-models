@@ -22,6 +22,7 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
+	deliverycontract "github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -94,12 +95,13 @@ func DesiredPod(spec RuntimeSpec) (*corev1.Pod, error) {
 			},
 		},
 		Spec: corev1.PodSpec{
-			RestartPolicy:      corev1.RestartPolicyAlways,
-			DNSPolicy:          corev1.DNSClusterFirst,
-			SchedulerName:      corev1.DefaultSchedulerName,
-			ServiceAccountName: spec.ServiceAccountName,
-			ImagePullSecrets:   imagePullSecrets(spec.ImagePullSecretName),
-			Affinity:           runtimeNodeAffinity(spec),
+			RestartPolicy:                corev1.RestartPolicyAlways,
+			DNSPolicy:                    corev1.DNSClusterFirst,
+			SchedulerName:                corev1.DefaultSchedulerName,
+			ServiceAccountName:           spec.ServiceAccountName,
+			AutomountServiceAccountToken: ptr.To(true),
+			ImagePullSecrets:             imagePullSecrets(spec.ImagePullSecretName),
+			Affinity:                     runtimeNodeAffinity(spec),
 			Tolerations: []corev1.Toleration{{
 				Operator: corev1.TolerationOpExists,
 			}},
@@ -222,7 +224,10 @@ func registrarSecurityContext() *corev1.SecurityContext {
 		RunAsUser:                ptr.To[int64](0),
 		RunAsNonRoot:             ptr.To(false),
 		AllowPrivilegeEscalation: ptr.To(false),
-		SeccompProfile:           &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 	}
 }
 
@@ -247,6 +252,15 @@ func podEnv(spec RuntimeSpec) []corev1.EnvVar {
 			},
 		},
 		{Name: "PUBLICATION_OCI_INSECURE", Value: strconv.FormatBool(spec.OCIInsecure)},
+		{
+			Name: deliverycontract.DeliveryAuthKeyEnv,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: spec.DeliveryAuthSecretName},
+					Key:                  "salt",
+				},
+			},
+		},
 		{
 			Name: "AI_MODELS_OCI_USERNAME",
 			ValueFrom: &corev1.EnvVarSource{

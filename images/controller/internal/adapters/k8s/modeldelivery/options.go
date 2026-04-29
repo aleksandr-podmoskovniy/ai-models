@@ -25,14 +25,13 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	deliverycontract "github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
-	corev1 "k8s.io/api/core/v1"
 )
 
 const (
-	DefaultInitContainerName = deliverycontract.DefaultMaterializerInitContainerName
-	DefaultCacheMountPath    = "/data/modelcache"
-	DefaultManagedCacheName  = "ai-models-node-cache"
-	NodeCacheCSIDriverName   = nodecache.CSIDriverName
+	LegacyMaterializerInitContainerName = "ai-models-materializer"
+	DefaultCacheMountPath               = "/data/modelcache"
+	DefaultManagedCacheName             = "ai-models-node-cache"
+	NodeCacheCSIDriverName              = nodecache.CSIDriverName
 
 	ResolvedDigestAnnotation         = deliverycontract.ResolvedDigestAnnotation
 	ResolvedArtifactURIAnnotation    = deliverycontract.ResolvedArtifactURIAnnotation
@@ -40,16 +39,13 @@ const (
 	ResolvedDeliveryModeAnnotation   = deliverycontract.ResolvedDeliveryModeAnnotation
 	ResolvedDeliveryReasonAnnotation = deliverycontract.ResolvedDeliveryReasonAnnotation
 	ResolvedModelsAnnotation         = deliverycontract.ResolvedModelsAnnotation
+	ResolvedSignatureAnnotation      = deliverycontract.ResolvedSignatureAnnotation
 
-	ModelPathEnv     = "AI_MODELS_MODEL_PATH"
-	ModelDigestEnv   = "AI_MODELS_MODEL_DIGEST"
-	ModelFamilyEnv   = "AI_MODELS_MODEL_FAMILY"
-	ModelsDirEnv     = "AI_MODELS_MODELS_DIR"
-	ModelsEnv        = "AI_MODELS_MODELS"
-	LogFormatEnv     = "LOG_FORMAT"
-	LogLevelEnv      = "LOG_LEVEL"
-	defaultLogFormat = "json"
-	defaultLogLevel  = "info"
+	ModelPathEnv   = "AI_MODELS_MODEL_PATH"
+	ModelDigestEnv = "AI_MODELS_MODEL_DIGEST"
+	ModelFamilyEnv = "AI_MODELS_MODEL_FAMILY"
+	ModelsDirEnv   = "AI_MODELS_MODELS_DIR"
+	ModelsEnv      = "AI_MODELS_MODELS"
 
 	nodeCacheCSIAttributeArtifactURI    = nodecache.CSIAttributeArtifactURI
 	nodeCacheCSIAttributeArtifactDigest = nodecache.CSIAttributeArtifactDigest
@@ -57,14 +53,8 @@ const (
 )
 
 type Options struct {
-	RuntimeImage    string
-	ImagePullPolicy corev1.PullPolicy
-	LogFormat       string
-	LogLevel        string
-	OCIInsecure     bool
-
-	InitContainerName string
-	CacheMountPath    string
+	LegacyInitContainerName string
+	CacheMountPath          string
 }
 
 type ManagedCacheOptions struct {
@@ -72,21 +62,13 @@ type ManagedCacheOptions struct {
 	VolumeName       string
 	CapacityBytes    int64
 	RuntimeNamespace string
-	NodeSelector     map[string]string
 }
 
+const DeliveryAuthKeyEnv = deliverycontract.DeliveryAuthKeyEnv
+
 func NormalizeOptions(options Options) Options {
-	if options.ImagePullPolicy == "" {
-		options.ImagePullPolicy = corev1.PullIfNotPresent
-	}
-	if strings.TrimSpace(options.LogFormat) == "" {
-		options.LogFormat = defaultLogFormat
-	}
-	if strings.TrimSpace(options.LogLevel) == "" {
-		options.LogLevel = defaultLogLevel
-	}
-	if strings.TrimSpace(options.InitContainerName) == "" {
-		options.InitContainerName = DefaultInitContainerName
+	if strings.TrimSpace(options.LegacyInitContainerName) == "" {
+		options.LegacyInitContainerName = LegacyMaterializerInitContainerName
 	}
 	if strings.TrimSpace(options.CacheMountPath) == "" {
 		options.CacheMountPath = DefaultCacheMountPath
@@ -96,10 +78,8 @@ func NormalizeOptions(options Options) Options {
 
 func ValidateOptions(options Options) error {
 	switch {
-	case strings.TrimSpace(options.RuntimeImage) == "":
-		return errors.New("runtime delivery image must not be empty")
-	case strings.TrimSpace(options.InitContainerName) == "":
-		return errors.New("runtime delivery init container name must not be empty")
+	case strings.TrimSpace(options.LegacyInitContainerName) == "":
+		return errors.New("runtime delivery legacy init container name must not be empty")
 	case strings.TrimSpace(options.CacheMountPath) == "":
 		return errors.New("runtime delivery cache mount path must not be empty")
 	case !strings.HasPrefix(strings.TrimSpace(options.CacheMountPath), "/"):
@@ -113,7 +93,6 @@ func NormalizeManagedCacheOptions(options ManagedCacheOptions) ManagedCacheOptio
 		options.VolumeName = DefaultManagedCacheName
 	}
 	options.RuntimeNamespace = strings.TrimSpace(options.RuntimeNamespace)
-	options.NodeSelector = copyCleanStringMap(options.NodeSelector)
 	return options
 }
 
@@ -128,21 +107,6 @@ func ValidateManagedCacheOptions(options ManagedCacheOptions) error {
 		return errors.New("runtime delivery managed cache capacity bytes must not be negative")
 	}
 	return nil
-}
-
-func copyCleanStringMap(input map[string]string) map[string]string {
-	if len(input) == 0 {
-		return nil
-	}
-	output := make(map[string]string, len(input))
-	for key, value := range input {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
-		output[key] = strings.TrimSpace(value)
-	}
-	return output
 }
 
 func ModelPath(options Options) string {
@@ -174,7 +138,7 @@ func namedModelEnv(alias, suffix string) string {
 	return fmt.Sprintf("AI_MODELS_MODEL_%s_%s", alias, suffix)
 }
 
-func managedInitContainerName(baseName, alias string) string {
+func managedResourceName(baseName, alias string) string {
 	baseName = strings.TrimSpace(baseName)
 	alias = strings.TrimSpace(alias)
 	name := baseName + "-" + alias
@@ -194,30 +158,24 @@ func managedInitContainerName(baseName, alias string) string {
 }
 
 func managedModelVolumeName(baseName, alias string) string {
-	return managedInitContainerName(baseName, alias)
+	return managedResourceName(baseName, alias)
 }
 
 type DeliveryMode string
 
 const (
-	DeliveryModeMaterializeBridge DeliveryMode = deliverycontract.DeliveryModeMaterializeBridge
-	DeliveryModeSharedPVCBridge   DeliveryMode = deliverycontract.DeliveryModeSharedPVCBridge
-	DeliveryModeSharedDirect      DeliveryMode = deliverycontract.DeliveryModeSharedDirect
+	DeliveryModeSharedDirect DeliveryMode = deliverycontract.DeliveryModeSharedDirect
 )
 
 type DeliveryReason string
 
 const (
-	DeliveryReasonWorkloadCacheVolume            DeliveryReason = deliverycontract.DeliveryReasonWorkloadCacheVolume
-	DeliveryReasonManagedBridgeVolume            DeliveryReason = deliverycontract.DeliveryReasonManagedBridgeVolume
-	DeliveryReasonStatefulSetClaimTemplate       DeliveryReason = deliverycontract.DeliveryReasonStatefulSetClaimTemplate
-	DeliveryReasonWorkloadSharedPersistentVolume DeliveryReason = deliverycontract.DeliveryReasonWorkloadSharedPersistentVolume
-	DeliveryReasonNodeSharedRuntimePlane         DeliveryReason = deliverycontract.DeliveryReasonNodeSharedRuntimePlane
+	DeliveryReasonNodeSharedRuntimePlane DeliveryReason = deliverycontract.DeliveryReasonNodeSharedRuntimePlane
 )
 
 type DeliveryGateReason string
 
 const (
 	DeliveryGateReasonInsufficientNodeCacheCapacity DeliveryGateReason = "InsufficientNodeCacheCapacity"
-	DeliveryGateReasonNoReadyNodeCacheRuntime       DeliveryGateReason = "NoReadyNodeCacheRuntime"
+	DeliveryGateReasonNodeCacheDeliveryDisabled     DeliveryGateReason = "NodeCacheDeliveryDisabled"
 )

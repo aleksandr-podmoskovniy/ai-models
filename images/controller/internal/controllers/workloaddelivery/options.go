@@ -33,9 +33,7 @@ type Options struct {
 }
 
 func (o Options) Enabled() bool {
-	return strings.TrimSpace(o.Service.Render.RuntimeImage) != "" &&
-		strings.TrimSpace(o.Service.RegistrySourceNamespace) != "" &&
-		strings.TrimSpace(o.Service.RegistrySourceAuthSecretName) != ""
+	return strings.TrimSpace(o.Service.RegistrySourceNamespace) != ""
 }
 
 func (o Options) Validate() error {
@@ -49,20 +47,15 @@ func (o Options) Validate() error {
 	switch {
 	case strings.TrimSpace(normalized.Service.RegistrySourceNamespace) == "":
 		return errors.New("workload delivery registry source namespace must not be empty")
-	case strings.TrimSpace(normalized.Service.RegistrySourceAuthSecretName) == "":
-		return errors.New("workload delivery registry source auth secret name must not be empty")
 	}
 	return nil
 }
 
 func normalizeOptions(options Options) Options {
 	options.Service = modeldelivery.ServiceOptions{
-		Render:                       modeldelivery.NormalizeOptions(options.Service.Render),
-		ManagedCache:                 modeldelivery.NormalizeManagedCacheOptions(options.Service.ManagedCache),
-		RegistrySourceNamespace:      options.Service.RegistrySourceNamespace,
-		RegistrySourceAuthSecretName: options.Service.RegistrySourceAuthSecretName,
-		RegistrySourceCASecretName:   options.Service.RegistrySourceCASecretName,
-		RuntimeImagePullSecretName:   options.Service.RuntimeImagePullSecretName,
+		Render:                  modeldelivery.NormalizeOptions(options.Service.Render),
+		ManagedCache:            modeldelivery.NormalizeManagedCacheOptions(options.Service.ManagedCache),
+		RegistrySourceNamespace: options.Service.RegistrySourceNamespace,
 	}
 	return options
 }

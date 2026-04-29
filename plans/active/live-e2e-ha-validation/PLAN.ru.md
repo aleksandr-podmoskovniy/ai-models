@@ -29,9 +29,9 @@ Keep active:
   live запуска.
 - `observability-signal-hardening` — остаётся executable: pending Slice 4
   должен проверить live metrics/alerts и добить log field dictionary.
-- `ray-a30-ai-models-registry-cutover` — остаётся executable: pending Slice 5
-  должен проверить A30 embedder/reranker/STT load после выката annotation-only
-  RayService delivery.
+- `ray-a30-ai-models-registry-cutover` — archived: KubeRay-specific delivery
+  больше не является целевой архитектурой. A30 проверка должна идти через
+  generic PodTemplate CSI contract или plain Deployment/vLLM.
 
 Archived:
 
@@ -240,8 +240,10 @@ SharedDirect preflight:
 
 - `ModuleConfig` has `nodeCache.enabled=true`;
 - SDS/local storage CRDs exist and runtime PVCs are bound;
-- node-cache runtime pods ready on selected nodes;
-- ready node labels/taints allow target workload placement.
+- workload metadata declares only the model annotation; controller injects
+  node-cache CSI volumes for requested model aliases;
+- user workload or ai-inference sets nodeSelector/affinity/tolerations for a
+  node where node-cache runtime and local storage are actually ready.
 
 Pass:
 
@@ -256,7 +258,8 @@ Pass:
 Цель:
 
 - отдельно от RayService/GitOps проверить, что обычный `Deployment` с одной
-  annotation получает все ai-models delivery mutations сам;
+  annotation получает node-cache CSI volume, resolved artifact attributes,
+  mounts и env от ai-models;
 - отладить CSI/node-cache mount на A30/MIG ноде с локальными дисками;
 - доказать, что vLLM видит модель по стабильному пути, а workload не содержит
   ручной `materialize-artifact`, PVC, DMCR credentials или cache mkdir.
@@ -288,10 +291,10 @@ Pass:
   Pod;
 - `k8s-w3-gpu.apiac.ru` gets
   `ai.deckhouse.io/node-cache-runtime-ready=true`;
-- manual vLLM `Deployment` contains only user intent:
+- manual vLLM `Deployment` contains only user-owned intent:
   model annotation, vLLM image/command, GPU scheduling and probes;
 - controller mutates PodTemplate into SharedDirect:
-  inline CSI volume `node-cache.ai-models.deckhouse.io`, stable
+  controller-created CSI volume with resolved artifact attributes, stable
   `/data/modelcache` mount, resolved model annotations/env, no materializer
   init container;
 - Pod lands on `k8s-w3-gpu.apiac.ru`, consumes `gpu.deckhouse.io/a30-mig-1g6`
@@ -304,7 +307,9 @@ Stop/fix:
 - workload requires manually written ai-models internals;
 - mutation leaves MaterializeBridge instead of SharedDirect while node-cache is
   ready;
-- workload schedules onto a node without ready node-cache runtime;
+- workload schedules onto a node without ready node-cache runtime and then
+  hangs/fails on CSI mount instead of being rejected by scheduler/placement
+  policy;
 - CSI mount hangs without clear condition/log reason;
 - vLLM downloads the model from HF instead of reading
   `/data/modelcache/models/model`;

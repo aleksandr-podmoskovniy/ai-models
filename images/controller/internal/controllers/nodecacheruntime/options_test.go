@@ -27,18 +27,19 @@ func TestOptionsValidate(t *testing.T) {
 	t.Parallel()
 
 	options := Options{
-		Enabled:            true,
-		Namespace:          "d8-ai-models",
-		RuntimeImage:       "runtime:latest",
-		CSIRegistrarImage:  "registrar:latest",
-		ServiceAccountName: "ai-models-node-cache-runtime",
-		StorageClassName:   "ai-models-node-cache",
-		SharedVolumeSize:   "64Gi",
-		MaxTotalSize:       "64Gi",
-		MaxUnusedAge:       "24h",
-		ScanInterval:       "5m",
-		OCIAuthSecretName:  "ai-models-dmcr-auth-read",
-		NodeSelectorLabels: map[string]string{"node-role.deckhouse.io/ai-models-cache": "enabled"},
+		Enabled:                true,
+		Namespace:              "d8-ai-models",
+		RuntimeImage:           "runtime:latest",
+		CSIRegistrarImage:      "registrar:latest",
+		ServiceAccountName:     "ai-models-node-cache-runtime",
+		StorageClassName:       "ai-models-node-cache",
+		SharedVolumeSize:       "64Gi",
+		MaxTotalSize:           "64Gi",
+		MaxUnusedAge:           "24h",
+		ScanInterval:           "5m",
+		OCIAuthSecretName:      "ai-models-dmcr-auth-read",
+		DeliveryAuthSecretName: "ai-models-dmcr-auth",
+		NodeSelectorLabels:     map[string]string{"node-role.deckhouse.io/ai-models-cache": "enabled"},
 	}
 	if err := options.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
@@ -49,18 +50,19 @@ func TestOptionsValidateRejectsInvalidSharedVolumeSize(t *testing.T) {
 	t.Parallel()
 
 	options := Options{
-		Enabled:            true,
-		Namespace:          "d8-ai-models",
-		RuntimeImage:       "runtime:latest",
-		CSIRegistrarImage:  "registrar:latest",
-		ServiceAccountName: "ai-models-node-cache-runtime",
-		StorageClassName:   "ai-models-node-cache",
-		SharedVolumeSize:   "invalid",
-		MaxTotalSize:       "64Gi",
-		MaxUnusedAge:       "24h",
-		ScanInterval:       "5m",
-		OCIAuthSecretName:  "ai-models-dmcr-auth-read",
-		NodeSelectorLabels: map[string]string{"node-role.deckhouse.io/ai-models-cache": "enabled"},
+		Enabled:                true,
+		Namespace:              "d8-ai-models",
+		RuntimeImage:           "runtime:latest",
+		CSIRegistrarImage:      "registrar:latest",
+		ServiceAccountName:     "ai-models-node-cache-runtime",
+		StorageClassName:       "ai-models-node-cache",
+		SharedVolumeSize:       "invalid",
+		MaxTotalSize:           "64Gi",
+		MaxUnusedAge:           "24h",
+		ScanInterval:           "5m",
+		OCIAuthSecretName:      "ai-models-dmcr-auth-read",
+		DeliveryAuthSecretName: "ai-models-dmcr-auth",
+		NodeSelectorLabels:     map[string]string{"node-role.deckhouse.io/ai-models-cache": "enabled"},
 	}
 	if err := options.Validate(); err == nil {
 		t.Fatal("expected invalid shared volume size error")
@@ -71,18 +73,19 @@ func TestOptionsValidateRejectsMaxTotalSizeGreaterThanSharedVolume(t *testing.T)
 	t.Parallel()
 
 	options := Options{
-		Enabled:            true,
-		Namespace:          "d8-ai-models",
-		RuntimeImage:       "runtime:latest",
-		CSIRegistrarImage:  "registrar:latest",
-		ServiceAccountName: "ai-models-node-cache-runtime",
-		StorageClassName:   "ai-models-node-cache",
-		SharedVolumeSize:   "64Gi",
-		MaxTotalSize:       "65Gi",
-		MaxUnusedAge:       "24h",
-		ScanInterval:       "5m",
-		OCIAuthSecretName:  "ai-models-dmcr-auth-read",
-		NodeSelectorLabels: map[string]string{"node-role.deckhouse.io/ai-models-cache": "enabled"},
+		Enabled:                true,
+		Namespace:              "d8-ai-models",
+		RuntimeImage:           "runtime:latest",
+		CSIRegistrarImage:      "registrar:latest",
+		ServiceAccountName:     "ai-models-node-cache-runtime",
+		StorageClassName:       "ai-models-node-cache",
+		SharedVolumeSize:       "64Gi",
+		MaxTotalSize:           "65Gi",
+		MaxUnusedAge:           "24h",
+		ScanInterval:           "5m",
+		OCIAuthSecretName:      "ai-models-dmcr-auth-read",
+		DeliveryAuthSecretName: "ai-models-dmcr-auth",
+		NodeSelectorLabels:     map[string]string{"node-role.deckhouse.io/ai-models-cache": "enabled"},
 	}
 	if err := options.Validate(); err == nil {
 		t.Fatal("expected max total size validation error")

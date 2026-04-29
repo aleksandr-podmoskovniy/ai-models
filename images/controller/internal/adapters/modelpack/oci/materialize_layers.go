@@ -35,22 +35,17 @@ import (
 
 func decodeManifestLayers(manifest map[string]any) ([]publishLayerDescriptor, error) {
 	layers, _ := manifest["layers"].([]any)
-	descriptors := make([]publishLayerDescriptor, 0, len(layers))
-	for index, layer := range layers {
-		layerMap, _ := layer.(map[string]any)
-		if layerMap == nil {
-			return nil, fmt.Errorf("registry manifest layer %d is invalid", index)
-		}
-		descriptor, err := decodeManifestLayer(index, layerMap)
-		if err != nil {
-			return nil, err
-		}
-		descriptors = append(descriptors, descriptor)
+	layerSet, err := classifyManifestLayers(layers)
+	if err != nil {
+		return nil, err
 	}
-	return descriptors, nil
+	if layerSet.Chunked() {
+		return nil, errors.New("chunked ModelPack layout is not a legacy layer layout")
+	}
+	return layerSet.Legacy, nil
 }
 
-func decodeManifestLayer(index int, layerMap map[string]any) (publishLayerDescriptor, error) {
+func decodeLegacyManifestLayer(index int, layerMap map[string]any) (publishLayerDescriptor, error) {
 	mediaType := strings.TrimSpace(stringValue(layerMap["mediaType"]))
 	parsedType, err := parseLayerMediaType(mediaType)
 	if err != nil {
@@ -85,11 +80,12 @@ func extractLayers(
 	destination string,
 ) error {
 	manifest, _ := payload["manifest"].(map[string]any)
-	layers, err := decodeManifestLayers(manifest)
+	layers, _ := manifest["layers"].([]any)
+	layerSet, err := classifyManifestLayers(layers)
 	if err != nil {
 		return err
 	}
-	for index, layer := range layers {
+	for index, layer := range layerSet.Legacy {
 		resp, err := GetBlobResponse(ctx, client, reference, layer.Digest, auth)
 		if err != nil {
 			return err
@@ -101,6 +97,9 @@ func extractLayers(
 		if err := resp.Body.Close(); err != nil {
 			return err
 		}
+	}
+	if layerSet.Chunked() {
+		return extractChunkedLayers(ctx, client, reference, auth, destination, layerSet)
 	}
 	return nil
 }

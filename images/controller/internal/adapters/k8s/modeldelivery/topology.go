@@ -52,13 +52,7 @@ func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, 
 
 	hints = normalizeTopologyHints(hints)
 	if claimTemplateExists(hints.VolumeClaimTemplates, cacheMount.VolumeName) {
-		return CacheTopology{
-			Kind:           CacheTopologyPerPod,
-			CacheMount:     cacheMount,
-			ClaimName:      cacheMount.VolumeName,
-			DeliveryMode:   DeliveryModeMaterializeBridge,
-			DeliveryReason: DeliveryReasonStatefulSetClaimTemplate,
-		}, nil
+		return CacheTopology{}, NewWorkloadContractError("runtime delivery does not support explicit cache claim template %q; use node-cache CSI delivery", cacheMount.VolumeName)
 	}
 
 	volume, found := findVolumeByName(template.Spec.Volumes, cacheMount.VolumeName)
@@ -74,31 +68,23 @@ func detectCacheTopology(template *corev1.PodTemplateSpec, hints TopologyHints, 
 			DeliveryMode:   DeliveryModeSharedDirect,
 			DeliveryReason: DeliveryReasonNodeSharedRuntimePlane,
 		}, nil
+	default:
+		return CacheTopology{}, unsupportedCacheVolumeError(cacheMount, volume)
+	}
+}
+
+func unsupportedCacheVolumeError(cacheMount CacheMount, volume corev1.Volume) error {
+	switch {
 	case volume.PersistentVolumeClaim != nil:
 		claimName := strings.TrimSpace(volume.PersistentVolumeClaim.ClaimName)
 		if claimName == "" {
-			return CacheTopology{}, NewWorkloadContractError("runtime delivery cache volume %q must reference a non-empty persistentVolumeClaim name", cacheMount.VolumeName)
+			return NewWorkloadContractError("runtime delivery cache volume %q must reference a non-empty persistentVolumeClaim name", cacheMount.VolumeName)
 		}
-		return CacheTopology{
-			Kind:           CacheTopologySharedPVC,
-			CacheMount:     cacheMount,
-			ClaimName:      claimName,
-			DeliveryMode:   DeliveryModeSharedPVCBridge,
-			DeliveryReason: DeliveryReasonWorkloadSharedPersistentVolume,
-		}, nil
+		return NewWorkloadContractError("runtime delivery does not support explicit cache persistentVolumeClaim %q; use node-cache CSI delivery", claimName)
 	case volume.EmptyDir != nil || volume.Ephemeral != nil:
-		reason := DeliveryReasonWorkloadCacheVolume
-		if strings.TrimSpace(managedVolumeName) != "" && volume.Name == strings.TrimSpace(managedVolumeName) {
-			reason = DeliveryReasonManagedBridgeVolume
-		}
-		return CacheTopology{
-			Kind:           CacheTopologyPerPod,
-			CacheMount:     cacheMount,
-			DeliveryMode:   DeliveryModeMaterializeBridge,
-			DeliveryReason: reason,
-		}, nil
+		return NewWorkloadContractError("runtime delivery does not support explicit cache volume %q; use node-cache CSI delivery", cacheMount.VolumeName)
 	default:
-		return CacheTopology{}, NewWorkloadContractError("runtime delivery cache volume %q uses unsupported source; expected csi, persistentVolumeClaim, emptyDir, ephemeral, or StatefulSet claim template", cacheMount.VolumeName)
+		return NewWorkloadContractError("runtime delivery cache volume %q uses unsupported source; expected node-cache CSI volume", cacheMount.VolumeName)
 	}
 }
 

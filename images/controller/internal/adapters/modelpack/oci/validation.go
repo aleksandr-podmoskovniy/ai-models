@@ -31,11 +31,12 @@ func ValidatePayload(payload InspectPayload) error {
 		return err
 	}
 	layers, _ := manifest["layers"].([]any)
-	if err := validateModelPackLayers(layers); err != nil {
+	layerSet, err := validateModelPackLayers(layers)
+	if err != nil {
 		return err
 	}
 	configBlob, _ := payload["configBlob"].(map[string]any)
-	if err := validateModelPackConfigBlob(configBlob, len(layers)); err != nil {
+	if err := validateModelPackConfigBlob(configBlob, len(layers), layerSet.Chunked()); err != nil {
 		return err
 	}
 	return nil
@@ -62,31 +63,18 @@ func validateModelPackManifest(manifest map[string]any) error {
 	return nil
 }
 
-func validateModelPackLayers(layers []any) error {
+func validateModelPackLayers(layers []any) (modelPackLayerSet, error) {
 	if len(layers) == 0 {
-		return errors.New("registry manifest must contain at least one layer")
+		return modelPackLayerSet{}, errors.New("registry manifest must contain at least one layer")
 	}
-	for index, layer := range layers {
-		layerMap, _ := layer.(map[string]any)
-		if layerMap == nil {
-			return fmt.Errorf("registry manifest layer %d is invalid", index)
-		}
-		mediaType := strings.TrimSpace(stringValue(layerMap["mediaType"]))
-		if _, err := parseLayerMediaType(mediaType); err != nil {
-			return fmt.Errorf("registry manifest layer %d mediaType is invalid: %w", index, err)
-		}
-		annotations, _ := layerMap["annotations"].(map[string]any)
-		if strings.TrimSpace(stringValue(annotations[ModelPackFilepathAnnotation])) == "" {
-			return fmt.Errorf("registry manifest layer %d is missing %q annotation", index, ModelPackFilepathAnnotation)
-		}
-		if strings.TrimSpace(stringValue(layerMap["digest"])) == "" {
-			return fmt.Errorf("registry manifest layer %d is missing digest", index)
-		}
+	layerSet, err := classifyManifestLayers(layers)
+	if err != nil {
+		return modelPackLayerSet{}, err
 	}
-	return nil
+	return layerSet, nil
 }
 
-func validateModelPackConfigBlob(configBlob map[string]any, layerCount int) error {
+func validateModelPackConfigBlob(configBlob map[string]any, layerCount int, chunked bool) error {
 	if configBlob == nil {
 		return errors.New("registry inspect payload is missing config blob")
 	}
@@ -98,14 +86,19 @@ func validateModelPackConfigBlob(configBlob map[string]any, layerCount int) erro
 	if modelfs == nil {
 		return errors.New("registry config blob is missing modelfs")
 	}
-	if got := strings.TrimSpace(stringValue(modelfs["type"])); got != "layers" {
-		return fmt.Errorf("registry config blob modelfs.type must be %q, got %q", "layers", got)
+	gotType := strings.TrimSpace(stringValue(modelfs["type"]))
+	if chunked {
+		if gotType != "layers" && gotType != "chunked" {
+			return fmt.Errorf("registry config blob modelfs.type must be %q or %q for chunked layout, got %q", "layers", "chunked", gotType)
+		}
+	} else if gotType != "layers" {
+		return fmt.Errorf("registry config blob modelfs.type must be %q, got %q", "layers", gotType)
 	}
 	diffIDs, _ := modelfs["diffIds"].([]any)
 	if len(diffIDs) == 0 {
 		return errors.New("registry config blob modelfs.diffIds must not be empty")
 	}
-	if len(diffIDs) != layerCount {
+	if !chunked && len(diffIDs) != layerCount {
 		return fmt.Errorf("registry config blob diffIds count %d must match layer count %d", len(diffIDs), layerCount)
 	}
 	for index, diffID := range diffIDs {

@@ -21,22 +21,17 @@ import (
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
+	deliverycontract "github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
 	corev1 "k8s.io/api/core/v1"
 )
 
-func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest string, deliveryMode DeliveryMode, deliveryReason DeliveryReason) error {
+func applyRendered(template *corev1.PodTemplateSpec, namespace string, rendered Rendered, digest string, deliveryMode DeliveryMode, deliveryReason DeliveryReason, deliveryAuthKey string) error {
 	if template == nil {
 		return errors.New("runtime delivery pod template must not be nil")
 	}
 
 	RemoveSchedulingGate(template)
-	switch {
-	case len(rendered.InitContainers) > 0:
-		template.Spec.InitContainers = upsertContainers(template.Spec.InitContainers, rendered.InitContainers)
-		template.Spec.InitContainers = removeManagedInitContainersExcept(template.Spec.InitContainers, rendered.InitContainerName, rendered.InitContainerNames)
-	default:
-		template.Spec.InitContainers = removeManagedInitContainersExcept(template.Spec.InitContainers, rendered.InitContainerName, nil)
-	}
+	template.Spec.InitContainers = removeManagedInitContainersExcept(template.Spec.InitContainers, rendered.LegacyInitContainerName, nil)
 	template.Spec.Containers = replaceManagedRuntimeEnv(template.Spec.Containers, rendered.RuntimeEnv)
 	containers, err := upsertRuntimeVolumeMounts(template.Spec.Containers, rendered.RuntimeVolumeMounts)
 	if err != nil {
@@ -45,7 +40,6 @@ func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest s
 	template.Spec.Containers = containers
 	template.Spec.Volumes = upsertVolumes(template.Spec.Volumes, rendered.Volumes)
 	template.Spec.Volumes = removeUnreferencedVolumeByName(template.Spec.Volumes, template.Spec, ociregistry.CAVolumeName)
-	template.Spec.ImagePullSecrets = upsertImagePullSecrets(template.Spec.ImagePullSecrets, rendered.ImagePullSecrets)
 	template.Spec.ImagePullSecrets = removeImagePullSecretsByName(template.Spec.ImagePullSecrets, rendered.ImagePullSecretNamesPrune)
 	template.Annotations = reconcileAnnotations(template.Annotations, map[string]string{
 		ResolvedDigestAnnotation:         digest,
@@ -55,24 +49,10 @@ func applyRendered(template *corev1.PodTemplateSpec, rendered Rendered, digest s
 		ResolvedDeliveryReasonAnnotation: string(deliveryReason),
 		ResolvedModelsAnnotation:         rendered.ResolvedModels,
 	})
+	template.Annotations = reconcileAnnotations(template.Annotations, map[string]string{
+		ResolvedSignatureAnnotation: deliverycontract.SignResolvedDelivery(namespace, template.Annotations, deliveryAuthKey),
+	})
 	return nil
-}
-
-func upsertContainers(existing []corev1.Container, desired []corev1.Container) []corev1.Container {
-	for _, container := range desired {
-		existing = upsertContainer(existing, container)
-	}
-	return existing
-}
-
-func upsertContainer(existing []corev1.Container, desired corev1.Container) []corev1.Container {
-	for i := range existing {
-		if existing[i].Name == desired.Name {
-			existing[i] = desired
-			return existing
-		}
-	}
-	return append(existing, desired)
 }
 
 func replaceManagedRuntimeEnv(containers []corev1.Container, desired []corev1.EnvVar) []corev1.Container {
@@ -166,23 +146,6 @@ func removeManagedInitContainersExcept(existing []corev1.Container, baseName str
 }
 
 func upsertEnv(existing []corev1.EnvVar, desired []corev1.EnvVar) []corev1.EnvVar {
-	for _, item := range desired {
-		replaced := false
-		for index := range existing {
-			if existing[index].Name == item.Name {
-				existing[index] = item
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			existing = append(existing, item)
-		}
-	}
-	return existing
-}
-
-func upsertImagePullSecrets(existing []corev1.LocalObjectReference, desired []corev1.LocalObjectReference) []corev1.LocalObjectReference {
 	for _, item := range desired {
 		replaced := false
 		for index := range existing {

@@ -86,10 +86,33 @@ func ensureManagedCacheTemplate(
 	bindings []ModelBinding,
 	aliasContract bool,
 ) error {
-	if aliasContract && options.ManagedCache.Enabled {
-		return ensureManagedNodeSelector(template, NormalizeManagedCacheOptions(options.ManagedCache).NodeSelector)
+	if aliasContract {
+		return ensureManagedAliasCacheTemplate(template, options, bindings)
 	}
 	return ensureManagedCacheMount(template, options, bindings[0].Artifact, bindings[0].ArtifactFamily)
+}
+
+func ensureManagedAliasCacheTemplate(
+	template *corev1.PodTemplateSpec,
+	options ServiceOptions,
+	bindings []ModelBinding,
+) error {
+	managed := NormalizeManagedCacheOptions(options.ManagedCache)
+	if !managed.Enabled {
+		return nil
+	}
+	for _, binding := range bindings {
+		volumeName := managedModelVolumeName(managed.VolumeName, binding.Alias)
+		var err error
+		template.Spec.Volumes, err = stampManagedCacheVolume(template.Spec.Volumes, volumeName, binding.Artifact, binding.ArtifactFamily)
+		if err != nil {
+			return err
+		}
+		mountPath := NamedModelPath(options.Render, binding.Alias)
+		template.Spec.Containers = ensureManagedCacheVolumeMounts(template.Spec.Containers, volumeName, mountPath)
+		template.Spec.InitContainers = ensureManagedCacheVolumeMounts(template.Spec.InitContainers, volumeName, mountPath)
+	}
+	return nil
 }
 
 func detectApplyTopology(
@@ -108,12 +131,4 @@ func detectApplyTopology(
 		}, nil
 	}
 	return detectCacheTopology(template, hints, mountPath, managedVolumeName)
-}
-
-func volumeNames(volumes []corev1.Volume) []string {
-	names := make([]string, 0, len(volumes))
-	for _, volume := range volumes {
-		names = append(names, volume.Name)
-	}
-	return names
 }

@@ -246,7 +246,6 @@ func (a *App) logRuntimeConfiguration() {
 	if a.workloadDelivery.Enabled() {
 		a.logger.Info(
 			"controller workload delivery configured",
-			slog.String("deliveryRuntimeImage", a.workloadDelivery.Service.Render.RuntimeImage),
 			slog.String("deliveryRegistrySourceNamespace", a.workloadDelivery.Service.RegistrySourceNamespace),
 		)
 	}

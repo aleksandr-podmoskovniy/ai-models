@@ -17,25 +17,10 @@ limitations under the License.
 package nodecache
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
-
-	deliverycontract "github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
-)
-
-const (
-	WorkloadResolvedDigestAnnotation         = deliverycontract.ResolvedDigestAnnotation
-	WorkloadResolvedArtifactURIAnnotation    = deliverycontract.ResolvedArtifactURIAnnotation
-	WorkloadResolvedArtifactFamilyAnnotation = deliverycontract.ResolvedArtifactFamilyAnnotation
-	WorkloadResolvedDeliveryModeAnnotation   = deliverycontract.ResolvedDeliveryModeAnnotation
-	WorkloadResolvedDeliveryReasonAnnotation = deliverycontract.ResolvedDeliveryReasonAnnotation
-	WorkloadResolvedModelsAnnotation         = deliverycontract.ResolvedModelsAnnotation
-
-	WorkloadDeliveryModeSharedDirect       = deliverycontract.DeliveryModeSharedDirect
-	WorkloadDeliveryReasonNodeCacheRuntime = deliverycontract.DeliveryReasonNodeSharedRuntimePlane
 )
 
 type DesiredArtifact struct {
@@ -43,49 +28,6 @@ type DesiredArtifact struct {
 	Digest      string
 	Family      string
 	SizeBytes   int64
-}
-
-func DesiredArtifactsFromWorkloadAnnotations(annotations map[string]string) ([]DesiredArtifact, bool, error) {
-	if strings.TrimSpace(annotations[WorkloadResolvedDeliveryModeAnnotation]) != WorkloadDeliveryModeSharedDirect ||
-		strings.TrimSpace(annotations[WorkloadResolvedDeliveryReasonAnnotation]) != WorkloadDeliveryReasonNodeCacheRuntime {
-		return nil, false, nil
-	}
-	if models := strings.TrimSpace(annotations[WorkloadResolvedModelsAnnotation]); models != "" {
-		artifacts, err := desiredArtifactsFromResolvedModels(models)
-		return artifacts, len(artifacts) > 0, err
-	}
-
-	artifact := DesiredArtifact{
-		ArtifactURI: strings.TrimSpace(annotations[WorkloadResolvedArtifactURIAnnotation]),
-		Digest:      strings.TrimSpace(annotations[WorkloadResolvedDigestAnnotation]),
-		Family:      strings.TrimSpace(annotations[WorkloadResolvedArtifactFamilyAnnotation]),
-	}
-	artifacts, err := NormalizeDesiredArtifacts([]DesiredArtifact{artifact})
-	return artifacts, len(artifacts) > 0, err
-}
-
-type resolvedModelAnnotation struct {
-	URI       string `json:"uri"`
-	Digest    string `json:"digest"`
-	Family    string `json:"family,omitempty"`
-	SizeBytes int64  `json:"sizeBytes,omitempty"`
-}
-
-func desiredArtifactsFromResolvedModels(value string) ([]DesiredArtifact, error) {
-	var entries []resolvedModelAnnotation
-	if err := json.Unmarshal([]byte(value), &entries); err != nil {
-		return nil, err
-	}
-	artifacts := make([]DesiredArtifact, 0, len(entries))
-	for _, entry := range entries {
-		artifacts = append(artifacts, DesiredArtifact{
-			ArtifactURI: entry.URI,
-			Digest:      entry.Digest,
-			Family:      entry.Family,
-			SizeBytes:   entry.SizeBytes,
-		})
-	}
-	return NormalizeDesiredArtifacts(artifacts)
 }
 
 func NormalizeDesiredArtifacts(artifacts []DesiredArtifact) ([]DesiredArtifact, error) {

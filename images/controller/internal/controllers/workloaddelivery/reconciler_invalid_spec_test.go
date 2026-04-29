@@ -33,7 +33,9 @@ func TestDeploymentReconcilerBlocksInvalidCacheMountWithoutRetryNoise(t *testing
 	t.Parallel()
 
 	model := readyModel()
-	workload := annotatedDeploymentWithoutCacheMount(map[string]string{ModelAnnotation: model.Name}, 1)
+	workload := annotatedDeployment(map[string]string{ModelAnnotation: model.Name}, 1, corev1.VolumeSource{
+		PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "legacy-model-cache"},
+	})
 	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
 
 	result := reconcileDeployment(t, reconciler, workload)
@@ -51,17 +53,15 @@ func TestDeploymentReconcilerBlocksInvalidCacheMountWithoutRetryNoise(t *testing
 	if got, want := blocked.Spec.Template.Annotations[DeliveryBlockedReasonAnnotation], deliveryBlockedReasonInvalidSpec; got != want {
 		t.Fatalf("blocked reason = %q, want %q", got, want)
 	}
-	if got := blocked.Spec.Template.Annotations[DeliveryBlockedMessageAnnotation]; !strings.Contains(got, "must mount writable model cache") {
+	if got := blocked.Spec.Template.Annotations[DeliveryBlockedMessageAnnotation]; !strings.Contains(got, "does not support explicit cache persistentVolumeClaim") {
 		t.Fatalf("blocked message = %q", got)
 	}
-	if hasInitContainer(blocked.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
+	if hasInitContainer(blocked.Spec.Template.Spec.InitContainers, modeldelivery.LegacyMaterializerInitContainerName) {
 		t.Fatalf("did not expect runtime delivery init container for invalid workload")
 	}
 	if events := drainRecordedEvents(t, reconciler); countRecordedEvents(events, "ModelDeliveryBlocked") != 1 {
 		t.Fatalf("first reconcile events = %#v, want one ModelDeliveryBlocked", events)
 	}
-	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
-
 	result = reconcileDeployment(t, reconciler, &blocked)
 	if result != (ctrl.Result{}) {
 		t.Fatalf("unexpected second reconcile result %#v", result)
@@ -71,11 +71,13 @@ func TestDeploymentReconcilerBlocksInvalidCacheMountWithoutRetryNoise(t *testing
 	}
 }
 
-func TestDeploymentReconcilerClearsBlockedStateAfterCacheMountAppears(t *testing.T) {
+func TestDeploymentReconcilerClearsBlockedStateAfterSwitchingToSharedDirect(t *testing.T) {
 	t.Parallel()
 
 	model := readyModel()
-	workload := annotatedDeploymentWithoutCacheMount(map[string]string{ModelAnnotation: model.Name}, 1)
+	workload := annotatedDeployment(map[string]string{ModelAnnotation: model.Name}, 1, corev1.VolumeSource{
+		PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "legacy-model-cache"},
+	})
 	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
 
 	result := reconcileDeployment(t, reconciler, workload)
@@ -88,16 +90,14 @@ func TestDeploymentReconcilerClearsBlockedStateAfterCacheMountAppears(t *testing
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &fixed); err != nil {
 		t.Fatalf("Get(blocked deployment) error = %v", err)
 	}
-	fixed.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{{
-		Name:      "model-cache",
-		MountPath: modeldelivery.DefaultCacheMountPath,
-	}}
-	fixed.Spec.Template.Spec.Volumes = []corev1.Volume{{
-		Name: "model-cache",
+	fixed.Spec.Template.Spec.Containers[0].VolumeMounts = nil
+	fixed.Spec.Template.Spec.Volumes = nil
+	fixed.Spec.Template.Spec.Volumes = append(fixed.Spec.Template.Spec.Volumes, corev1.Volume{
+		Name: modeldelivery.DefaultManagedCacheName,
 		VolumeSource: corev1.VolumeSource{
-			EmptyDir: &corev1.EmptyDirVolumeSource{},
+			CSI: nodeCacheCSIVolumeSource(),
 		},
-	}}
+	})
 	if err := kubeClient.Update(context.Background(), &fixed); err != nil {
 		t.Fatalf("Update(fixed deployment) error = %v", err)
 	}
@@ -129,7 +129,9 @@ func TestDeploymentReconcilerClearsBlockedStateWhenFixedWorkloadWaitsForModel(t 
 	t.Parallel()
 
 	model := readyModel()
-	workload := annotatedDeploymentWithoutCacheMount(map[string]string{ModelAnnotation: model.Name}, 1)
+	workload := annotatedDeployment(map[string]string{ModelAnnotation: model.Name}, 1, corev1.VolumeSource{
+		PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "legacy-model-cache"},
+	})
 	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
 
 	result := reconcileDeployment(t, reconciler, workload)
@@ -142,16 +144,14 @@ func TestDeploymentReconcilerClearsBlockedStateWhenFixedWorkloadWaitsForModel(t 
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &fixed); err != nil {
 		t.Fatalf("Get(blocked deployment) error = %v", err)
 	}
-	fixed.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{{
-		Name:      "model-cache",
-		MountPath: modeldelivery.DefaultCacheMountPath,
-	}}
-	fixed.Spec.Template.Spec.Volumes = []corev1.Volume{{
-		Name: "model-cache",
+	fixed.Spec.Template.Spec.Containers[0].VolumeMounts = nil
+	fixed.Spec.Template.Spec.Volumes = nil
+	fixed.Spec.Template.Spec.Volumes = append(fixed.Spec.Template.Spec.Volumes, corev1.Volume{
+		Name: modeldelivery.DefaultManagedCacheName,
 		VolumeSource: corev1.VolumeSource{
-			EmptyDir: &corev1.EmptyDirVolumeSource{},
+			CSI: nodeCacheCSIVolumeSource(),
 		},
-	}}
+	})
 	if err := kubeClient.Update(context.Background(), &fixed); err != nil {
 		t.Fatalf("Update(fixed deployment) error = %v", err)
 	}

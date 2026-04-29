@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
-	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -63,20 +62,9 @@ func TestDeploymentReconcilerKeepsSchedulingGateWhileReferencedModelIsPending(t 
 		EmptyDir: &corev1.EmptyDirVolumeSource{},
 	})
 	workload.Spec.Template.Annotations = map[string]string{modeldelivery.ResolvedDigestAnnotation: "sha256:old"}
-	workload.Spec.Template.Spec.InitContainers = []corev1.Container{{Name: modeldelivery.DefaultInitContainerName}}
-
-	authSecretName, err := resourcenames.OCIRegistryAuthSecretName(workload.UID)
-	if err != nil {
-		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
-	}
-	runtimeImagePullSecretName, err := resourcenames.RuntimeImagePullSecretName(workload.UID)
-	if err != nil {
-		t.Fatalf("RuntimeImagePullSecretName() error = %v", err)
-	}
-	workload.Spec.Template.Spec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: runtimeImagePullSecretName}}
-	projectedAuth := testkit.NewOCIRegistryWriteAuthSecret(workload.Namespace, authSecretName)
-	projectedRuntimePull := testkit.NewOCIRegistryWriteAuthSecret(workload.Namespace, runtimeImagePullSecretName)
-	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName), projectedAuth, projectedRuntimePull)
+	workload.Spec.Template.Spec.InitContainers = []corev1.Container{{Name: modeldelivery.LegacyMaterializerInitContainerName}}
+	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
+	createLegacyProjectedAccess(t, kubeClient, workload.Namespace, workload.UID)
 
 	result := reconcileDeployment(t, reconciler, workload)
 	if result != (ctrl.Result{}) {
@@ -88,8 +76,8 @@ func TestDeploymentReconcilerKeepsSchedulingGateWhileReferencedModelIsPending(t 
 		t.Fatalf("Get(cleaned deployment) error = %v", err)
 	}
 	assertPendingDeliveryTemplate(t, &cleaned.Spec.Template)
-	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
-	assertProjectedRuntimeImagePullSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
+	assertLegacyProjectedAuthSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
+	assertLegacyRuntimeImagePullSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
 }
 
 func TestDeploymentReconcilerKeepsSchedulingGateWhenReferencedModelIsMissing(t *testing.T) {
@@ -99,6 +87,7 @@ func TestDeploymentReconcilerKeepsSchedulingGateWhenReferencedModelIsMissing(t *
 		EmptyDir: &corev1.EmptyDirVolumeSource{},
 	})
 	reconciler, kubeClient := newDeploymentReconciler(t, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
+	createLegacyProjectedAccess(t, kubeClient, workload.Namespace, workload.UID)
 
 	result := reconcileDeployment(t, reconciler, workload)
 	if result != (ctrl.Result{}) {
@@ -112,9 +101,11 @@ func TestDeploymentReconcilerKeepsSchedulingGateWhenReferencedModelIsMissing(t *
 	if !modeldelivery.HasSchedulingGate(&gated.Spec.Template) {
 		t.Fatalf("expected scheduling gate %q while model is missing", modeldelivery.SchedulingGateName)
 	}
-	if hasInitContainer(gated.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
-		t.Fatalf("did not expect init container %q while model is missing", modeldelivery.DefaultInitContainerName)
+	if hasInitContainer(gated.Spec.Template.Spec.InitContainers, modeldelivery.LegacyMaterializerInitContainerName) {
+		t.Fatalf("did not expect init container %q while model is missing", modeldelivery.LegacyMaterializerInitContainerName)
 	}
+	assertLegacyProjectedAuthSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
+	assertLegacyRuntimeImagePullSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
 }
 
 func TestDeploymentReconcilerRemovesSchedulingGateWhenRuntimeDeliveryIsReady(t *testing.T) {
@@ -167,15 +158,15 @@ func TestCronJobReconcilerAppliesRuntimeDeliveryWithoutAdmissionGate(t *testing.
 		t.Fatalf("resolved digest annotation = %q, want %q", got, testDigest)
 	}
 	if modeldelivery.HasSchedulingGate(template) {
-		t.Fatalf("did not expect scheduling gate %q on CronJob fallback", modeldelivery.SchedulingGateName)
+		t.Fatalf("did not expect scheduling gate %q on CronJob runtime delivery", modeldelivery.SchedulingGateName)
 	}
 }
 
 func assertPendingDeliveryTemplate(t *testing.T, template *corev1.PodTemplateSpec) {
 	t.Helper()
 
-	if hasInitContainer(template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
-		t.Fatalf("did not expect init container %q while model is pending", modeldelivery.DefaultInitContainerName)
+	if hasInitContainer(template.Spec.InitContainers, modeldelivery.LegacyMaterializerInitContainerName) {
+		t.Fatalf("did not expect init container %q while model is pending", modeldelivery.LegacyMaterializerInitContainerName)
 	}
 	for _, annotation := range []string{
 		modeldelivery.ResolvedDigestAnnotation,

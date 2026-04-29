@@ -141,7 +141,7 @@ func TestNewAllowsCleanupOnlyRuntimeWithoutPublicationPlaneConfiguration(t *test
 	}
 }
 
-func TestNewAcceptsWorkloadDeliveryWithDefaultInitContainerName(t *testing.T) {
+func TestNewAcceptsWorkloadDeliveryWithDefaultLegacyInitCleanupName(t *testing.T) {
 	t.Parallel()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -154,11 +154,7 @@ func TestNewAcceptsWorkloadDeliveryWithDefaultInitContainerName(t *testing.T) {
 		},
 		WorkloadDelivery: workloaddelivery.Options{
 			Service: modeldelivery.ServiceOptions{
-				Render: modeldelivery.Options{
-					RuntimeImage: "example.com/ai-models/controller-runtime:dev",
-				},
-				RegistrySourceNamespace:      "d8-ai-models",
-				RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+				RegistrySourceNamespace: "d8-ai-models",
 			},
 		},
 	})

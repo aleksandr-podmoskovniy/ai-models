@@ -17,6 +17,7 @@ limitations under the License.
 package modeldelivery
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -30,23 +31,22 @@ func ensureManagedCacheMount(template *corev1.PodTemplateSpec, options ServiceOp
 		return nil
 	}
 
-	cacheMount, found, err := resolveCacheMount(template, options.Render.CacheMountPath)
+	volumeName := managed.VolumeName
+	if cacheMount, found, err := resolveCacheMount(template, options.Render.CacheMountPath); err != nil {
+		return err
+	} else if found {
+		if volume, volumeFound := findVolumeByName(template.Spec.Volumes, cacheMount.VolumeName); volumeFound && !isNodeCacheCSIVolume(volume) {
+			return unsupportedCacheVolumeError(cacheMount, volume)
+		}
+		volumeName = cacheMount.VolumeName
+	}
+	var err error
+	template.Spec.Volumes, err = stampManagedCacheVolume(template.Spec.Volumes, volumeName, artifact, family)
 	if err != nil {
 		return err
 	}
-	if found && cacheMount.VolumeName != managed.VolumeName {
-		return nil
-	}
-
-	template.Spec.Volumes, err = upsertManagedCacheVolume(template.Spec.Volumes, managed, artifact, family)
-	if err != nil {
-		return err
-	}
-	if err := ensureManagedNodeSelector(template, managed.NodeSelector); err != nil {
-		return err
-	}
-	template.Spec.Containers = ensureManagedCacheVolumeMounts(template.Spec.Containers, managed.VolumeName, options.Render.CacheMountPath)
-	template.Spec.InitContainers = ensureManagedCacheVolumeMounts(template.Spec.InitContainers, managed.VolumeName, options.Render.CacheMountPath)
+	template.Spec.Containers = ensureManagedCacheVolumeMounts(template.Spec.Containers, volumeName, options.Render.CacheMountPath)
+	template.Spec.InitContainers = ensureManagedCacheVolumeMounts(template.Spec.InitContainers, volumeName, options.Render.CacheMountPath)
 	return nil
 }
 
@@ -72,66 +72,71 @@ func RemoveManagedCacheTemplateState(template *corev1.PodTemplateSpec, options S
 	return PruneManagedCacheTemplateState(template, managed.VolumeName, nil)
 }
 
-func upsertManagedCacheVolume(volumes []corev1.Volume, options ManagedCacheOptions, artifact publication.PublishedArtifact, family string) ([]corev1.Volume, error) {
-	desired, err := managedCacheVolume(options, artifact, family)
-	if err != nil {
-		return nil, err
-	}
+func stampManagedCacheVolume(volumes []corev1.Volume, volumeName string, artifact publication.PublishedArtifact, family string) ([]corev1.Volume, error) {
+	volumeName = strings.TrimSpace(volumeName)
 	for index := range volumes {
-		if volumes[index].Name != desired.Name {
+		if volumes[index].Name != volumeName {
 			continue
 		}
-		volumes[index] = desired
+		if err := stampNodeCacheCSIVolume(&volumes[index], artifact, family); err != nil {
+			return nil, err
+		}
 		return volumes, nil
 	}
-	return append(volumes, desired), nil
+	volume := corev1.Volume{
+		Name: volumeName,
+		VolumeSource: corev1.VolumeSource{
+			CSI: &corev1.CSIVolumeSource{
+				Driver:   NodeCacheCSIDriverName,
+				ReadOnly: ptrBool(true),
+			},
+		},
+	}
+	if err := stampNodeCacheCSIVolume(&volume, artifact, family); err != nil {
+		return nil, err
+	}
+	return append(volumes, volume), nil
 }
 
-func managedCacheVolume(options ManagedCacheOptions, artifact publication.PublishedArtifact, family string) (corev1.Volume, error) {
+func stampNodeCacheCSIVolume(volume *corev1.Volume, artifact publication.PublishedArtifact, family string) error {
+	if volume == nil {
+		return errors.New("runtime delivery node-cache CSI volume must not be nil")
+	}
+	if volume.CSI == nil || strings.TrimSpace(volume.CSI.Driver) != NodeCacheCSIDriverName {
+		return NewWorkloadContractError("runtime delivery volume %q must use node-cache CSI driver %q", volume.Name, NodeCacheCSIDriverName)
+	}
 	artifactURI := strings.TrimSpace(artifact.URI)
 	digest := strings.TrimSpace(artifact.Digest)
 	if artifactURI == "" || digest == "" {
-		return corev1.Volume{}, fmt.Errorf("runtime delivery managed cache CSI volume requires artifact URI and digest")
+		return fmt.Errorf("runtime delivery node-cache CSI volume %q requires artifact URI and digest", volume.Name)
 	}
 
-	attributes := map[string]string{
-		nodeCacheCSIAttributeArtifactURI:    artifactURI,
-		nodeCacheCSIAttributeArtifactDigest: digest,
-	}
+	attributes := copyVolumeAttributes(volume.CSI.VolumeAttributes)
+	attributes[nodeCacheCSIAttributeArtifactURI] = artifactURI
+	attributes[nodeCacheCSIAttributeArtifactDigest] = digest
 	if family = strings.TrimSpace(family); family != "" {
 		attributes[nodeCacheCSIAttributeArtifactFamily] = family
+	} else {
+		delete(attributes, nodeCacheCSIAttributeArtifactFamily)
 	}
-	return corev1.Volume{
-		Name: options.VolumeName,
-		VolumeSource: corev1.VolumeSource{
-			CSI: &corev1.CSIVolumeSource{
-				Driver:           NodeCacheCSIDriverName,
-				ReadOnly:         ptrBool(true),
-				VolumeAttributes: attributes,
-			},
-		},
-	}, nil
+	volume.CSI.VolumeAttributes = attributes
+	volume.CSI.ReadOnly = ptrBool(true)
+	return nil
+}
+
+func copyVolumeAttributes(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return map[string]string{}
+	}
+	output := make(map[string]string, len(input)+3)
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
 }
 
 func ptrBool(value bool) *bool {
 	return &value
-}
-
-func ensureManagedNodeSelector(template *corev1.PodTemplateSpec, selector map[string]string) error {
-	if len(selector) == 0 {
-		return nil
-	}
-	if template.Spec.NodeSelector == nil {
-		template.Spec.NodeSelector = map[string]string{}
-	}
-	for key, value := range selector {
-		existing, found := template.Spec.NodeSelector[key]
-		if found && existing != value {
-			return fmt.Errorf("runtime delivery managed node-cache selector conflicts on %q: workload has %q, node-cache requires %q", key, existing, value)
-		}
-		template.Spec.NodeSelector[key] = value
-	}
-	return nil
 }
 
 func ensureManagedCacheVolumeMounts(containers []corev1.Container, volumeName, mountPath string) []corev1.Container {

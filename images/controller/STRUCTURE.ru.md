@@ -46,6 +46,7 @@ images/controller/
     domain/
       publishstate/
       ingestadmission/
+      modelsource/
       storagecapacity/
     application/
       deletion/
@@ -65,6 +66,7 @@ images/controller/
     publishedsnapshot/
     publicationartifact/
     nodecache/
+    workloaddelivery/
     controllers/
       catalogstatus/
       catalogcleanup/
@@ -103,6 +105,7 @@ images/controller/
       publishworker/
       uploadsession/
       artifactcleanup/
+      backendprefix/
       nodecachecsi/
       nodecacheruntime/
     support/
@@ -150,6 +153,10 @@ images/controller/
   conditions and status projection.
 - `internal/domain/ingestadmission/` — cheap source-agnostic fail-fast
   invariants before heavy byte path.
+- `internal/domain/modelsource/` — pure `Model` / `ClusterModel` source
+  classification: exactly-one source validation, trusted remote source type
+  detection and provider-specific URL parsing for `HuggingFace` / `Ollama`.
+  It does not plan runtime Pods, fetch bytes or shape Kubernetes objects.
 - `internal/domain/storagecapacity/` — pure artifact storage ledger math:
   capacity limit, committed bytes, active reservations, available bytes and
   `InsufficientStorage` decision.
@@ -192,6 +199,10 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
   materialization plus internal current-link и stable workload-model-link
   helper surface, single-writer coordination, per-digest retry/backoff,
   bounded eviction planning и module-owned maintenance loop;
+- `internal/workloaddelivery/` — shared workload-delivery contract for resolved
+  annotations, delivery mode/reason constants and HMAC signing. Controllers,
+  K8s delivery adapter and node-cache runtime import this package instead of
+  duplicating annotation strings or inventing per-adapter contracts;
 - `internal/monitoring/collectorhealth/` — общий low-cardinality scrape-health
   contract для controller collectors: `collector_up`, scrape duration and last
   successful scrape timestamp. Он не знает public objects и не заменяет
@@ -219,12 +230,13 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
   over `sds-node-configurator` / `sds-local-volume` CR boundaries.
 - `nodecacheruntime/` — owner controller for per-node runtime Pod/PVC,
   runtime-readiness Node label and node-selection reconciliation.
-- `workloaddelivery/` — owner controller for top-level workload annotations
-  `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel` /
-  `ai.deckhouse.io/model-refs` on built-in workloads and optional
-  KubeRay integration when `ray.io/v1 RayService` and `ray.io/v1 RayCluster`
-  exist in discovery. `RayService` stays the GitOps-owned declaration source;
-  ai-models mutates only generated `RayCluster` pod templates.
+- `workloaddelivery/` — owner controller for built-in Kubernetes workloads
+  with stable PodTemplate fields and annotations `ai.deckhouse.io/model` /
+  `ai.deckhouse.io/clustermodel` / `ai.deckhouse.io/model-refs`. External
+  controllers must render one of the supported Kubernetes workload templates
+  or use a future trusted delivery API; ai-models не должен снова тащить
+  controller-specific shims для `RayService`, `RayCluster` или любых других
+  сторонних CRD.
 
 Controller package оправдан ownership, а не удобством чтения. Новый controller
 package без нового owner — patchwork.
@@ -268,8 +280,12 @@ Non-K8s adapters:
   native publish/remove over `DMCR` direct-upload v2 с поздним digest и
   one-pass raw publish для range-capable тяжёлых слоёв плюс registry metadata
   path, mixed bundle/raw object-source и archive-source layer handling,
-  manifest/config validation, inspect/materialize и layer/media-type handling
-  не должны утекать в `publicationartifact/` или в worker shell;
+  legacy raw/tar плюс internal chunk-index/chunk-pack `ModelPack` layout
+  validation/materialize routing, manifest/config validation, inspect/materialize
+  и layer/media-type handling не должны утекать в `publicationartifact/` или в
+  worker shell. Chunked layout остаётся internal immutable storage/distribution
+  contract: workloads после materialize видят обычный каталог модели, а не
+  custom runtime format;
 - `sourcefetch/` остаётся boundary для remote source fetch, archive inspection,
   remote summary extraction и object-source planning;
 - `k8s/nodecachesubstrate/` держит только shaping и live-state extraction для
@@ -279,10 +295,9 @@ Non-K8s adapters:
   runtime Pod/PVC и bounded runtime-side вычитку набора опубликованных
   артефактов, реально нужных live Pod'ам на текущей ноде; cache maintenance
   policy и public workload semantics не должны утекать туда. Единственный
-  допустимый cross-adapter контракт здесь — narrow projection из
-  workload-delivery annotations в desired-artifact set для конкретной ноды; при
-  расширении этот контракт надо вынести в shared projection type, а не
-  наращивать adapter-to-adapter imports;
+  допустимый cross-boundary контракт здесь — `internal/workloaddelivery`
+  resolved-annotation/signature contract; adapter-to-adapter imports из
+  `modeldelivery` или controller-local annotation mirrors запрещены;
 - `k8s/cleanupstate/` держит только module-private Secret-backed cleanup state:
   cleanup handle, completed marker and upload-stage handoff. Public status и
   delete policy остаются в `application/deletion` и controller owner;
@@ -318,13 +333,17 @@ Non-K8s adapters:
 - `internal/dataplane/publishworker/`
 - `internal/dataplane/uploadsession/`
 - `internal/dataplane/artifactcleanup/`
+- `internal/dataplane/backendprefix/`
 - `internal/dataplane/nodecachecsi/`
 - `internal/dataplane/nodecacheruntime/`
 
 `publishworker`, `uploadsession` и `artifactcleanup` — controller-owned
-one-shot runtimes. `nodecachecsi` и `nodecacheruntime` — long-running node-local
-dataplane inside the dedicated node-cache runtime image. Оба типа dataplane
-нельзя смешивать с reconciler code и нельзя откатывать назад в backend scripts.
+one-shot runtimes. `backendprefix` — узкий helper для module-private DMCR
+metadata prefix, общий для publish/cleanup dataplane; он не должен решать
+cleanup policy или знать Kubernetes. `nodecachecsi` и `nodecacheruntime` —
+long-running node-local dataplane inside the dedicated node-cache runtime image.
+Все dataplane packages нельзя смешивать с reconciler code и нельзя откатывать
+назад в backend scripts.
 
 Live rules для `publishworker`:
 
@@ -392,6 +411,8 @@ extraction; если пакет решает policy, runtime semantics или st
   upload streaming и result shaping;
 - `uploadsession` split на session info, probe/init, multipart completion,
   handoff rejection and thin helper seams instead of one API test monolith;
+- `backendprefix` tests prove safe OCI reference parsing for module-private
+  DMCR metadata cleanup paths and reject schemes/path traversal;
 - `k8s/uploadsession` tests split на get-or-create, projected persisted phase,
   delete semantics and controller-owned phase sync instead of one lifecycle
   matrix file;
@@ -415,7 +436,11 @@ extraction; если пакет решает policy, runtime semantics или st
 - `modelpack/oci` split на publish/materialize/validation/session shells,
   отдельные layer-matrix publish/validation/archive-helper proofs и thin
   file, registry-server, registry dispatch, registry upload-state and
-  registry content-state helper seams вместо одного mixed helper shell.
+  registry content-state helper seams вместо одного mixed helper shell;
+- `modelpack/oci` chunked layout tests prove that legacy manifests remain
+  valid, chunk-index/chunk-pack manifests validate separately from file layers,
+  invalid chunk indexes fail closed, and synthetic chunked artifacts materialize
+  back into the stable `model/` contract path.
 
 ## 4. Жёсткие правила на следующий refactor
 
@@ -458,6 +483,14 @@ extraction; если пакет решает policy, runtime semantics или st
   - profile resolution
   - publish invocation
   в один oversized `run.go`.
+
+### `internal/controllers/workloaddelivery/`
+
+- Пакет остаётся owner-level reconciler for supported Kubernetes workloads.
+- Сюда нельзя возвращать branches под конкретные сторонние CRD/controllers
+  вроде `RayService` / `RayCluster`: это снова создаст протекание абстракций.
+- Если external runtime требует интеграцию, он должен либо рендерить supported
+  PodTemplate workload, либо получить отдельный explicit delivery API slice.
 
 ### `internal/nodecache/`
 

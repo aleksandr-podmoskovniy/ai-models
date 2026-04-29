@@ -73,9 +73,6 @@ func podTemplatesAndHints(object client.Object) ([]workloadPodTemplate, error) {
 			Hints:    modeldelivery.HintsForCronJob(typed),
 		}}, nil
 	default:
-		if isRayClusterObject(object) {
-			return rayClusterPodTemplates(object)
-		}
 		return nil, fmt.Errorf("unsupported workload delivery object type %T", object)
 	}
 }
@@ -90,7 +87,7 @@ func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeld
 	if modeldelivery.RemoveSchedulingGate(template) {
 		changed = true
 	}
-	initContainers, removedInit := modeldelivery.RemoveManagedInitContainers(template.Spec.InitContainers, options.Render.InitContainerName)
+	initContainers, removedInit := modeldelivery.RemoveManagedInitContainers(template.Spec.InitContainers, options.Render.LegacyInitContainerName)
 	if removedInit {
 		template.Spec.InitContainers = initContainers
 		changed = true
@@ -108,6 +105,7 @@ func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeld
 		modeldelivery.ResolvedDeliveryModeAnnotation,
 		modeldelivery.ResolvedDeliveryReasonAnnotation,
 		modeldelivery.ResolvedModelsAnnotation,
+		modeldelivery.ResolvedSignatureAnnotation,
 		DeliveryBlockedReasonAnnotation,
 		DeliveryBlockedMessageAnnotation,
 	} {
@@ -153,7 +151,7 @@ func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldeli
 	if modeldelivery.HasSchedulingGate(template) {
 		return true
 	}
-	if modeldelivery.HasManagedInitContainer(template.Spec.InitContainers, options.Render.InitContainerName) {
+	if modeldelivery.HasManagedInitContainer(template.Spec.InitContainers, options.Render.LegacyInitContainerName) {
 		return true
 	}
 	for _, volume := range template.Spec.Volumes {

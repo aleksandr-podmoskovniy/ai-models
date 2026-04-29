@@ -1030,6 +1030,180 @@ webhooks:
             ],
         )
 
+    def test_validate_controller_runtime_rbac_source_accepts_split_writes(self) -> None:
+        content = """---
+kind: ClusterRole
+metadata:
+  name: {{ include "ai-models.controllerName" . }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "delete"]
+---
+kind: Role
+metadata:
+  name: {{ include "ai-models.controllerName" . }}-runtime-writes
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "persistentvolumeclaims"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+kind: RoleBinding
+metadata:
+  name: {{ include "ai-models.controllerName" . }}-runtime-writes
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ai-models.controllerServiceAccountName" . }}
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            path = root / "templates/controller/rbac.yaml"
+            path.parent.mkdir(parents=True)
+            path.write_text(content, encoding="utf-8")
+            errors = MODULE._validate_controller_runtime_rbac_source(root)
+
+        self.assertEqual(errors, [])
+
+    def test_validate_controller_runtime_rbac_source_rejects_cluster_writes(self) -> None:
+        content = """---
+kind: ClusterRole
+metadata:
+  name: {{ include "ai-models.controllerName" . }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "patch"]
+"""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            path = root / "templates/controller/rbac.yaml"
+            path.parent.mkdir(parents=True)
+            path.write_text(content, encoding="utf-8")
+            errors = MODULE._validate_controller_runtime_rbac_source(root)
+
+        self.assertIn(
+            "templates/controller/rbac.yaml: controller ClusterRole must not grant cluster-wide pods write verbs",
+            errors,
+        )
+        self.assertIn(
+            "templates/controller/rbac.yaml: controller ClusterRole must not grant cluster-wide persistentvolumeclaims write verbs",
+            errors,
+        )
+        self.assertIn(
+            "templates/controller/rbac.yaml: controller ClusterRole must not grant cluster-wide leases write verbs",
+            errors,
+        )
+        self.assertIn(
+            "templates/controller/rbac.yaml: controller ClusterRole must not grant cluster-wide secrets create/update/patch verbs",
+            errors,
+        )
+        self.assertIn(
+            "templates/controller/rbac.yaml: controller ClusterRole must grant delete on secrets for legacy projected access cleanup",
+            errors,
+        )
+        self.assertIn(
+            "templates/controller/rbac.yaml: missing controller runtime-writes Role",
+            errors,
+        )
+        self.assertIn(
+            "templates/controller/rbac.yaml: missing controller runtime-writes RoleBinding",
+            errors,
+        )
+
+    def test_validate_render_accepts_explicit_service_account_token_mounts(self) -> None:
+        content = """---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-models-controller
+spec:
+  template:
+    spec:
+      serviceAccountName: ai-models-controller
+      automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-models-upload-gateway
+spec:
+  template:
+    spec:
+      serviceAccountName: ai-models-upload-gateway
+      automountServiceAccountToken: true
+""" + self._controller_contract_docs()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE._validate_explicit_service_account_token_automount(
+                render_path,
+                render_path.read_text(encoding="utf-8"),
+            )
+
+        self.assertEqual(errors, [])
+
+    def test_validate_render_rejects_implicit_service_account_token_mounts(self) -> None:
+        content = """---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-models-controller
+spec:
+  template:
+    spec:
+      serviceAccountName: ai-models-controller
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-models-upload-gateway
+spec:
+  template:
+    spec:
+      serviceAccountName: ai-models-upload-gateway
+""" + self._controller_contract_docs()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE._validate_explicit_service_account_token_automount(
+                render_path,
+                render_path.read_text(encoding="utf-8"),
+            )
+
+        self.assertIn(
+            "helm-template-test.yaml: Deployment/ai-models-controller must explicitly set automountServiceAccountToken: true",
+            errors,
+        )
+        self.assertIn(
+            "helm-template-test.yaml: Deployment/ai-models-upload-gateway must explicitly set automountServiceAccountToken: true",
+            errors,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

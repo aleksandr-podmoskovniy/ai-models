@@ -191,20 +191,20 @@ The current bounded contract is:
 - `LocalStorageClass`, `LVMVolumeGroupSet`, VG and thin-pool names are
   internal ai-models constants, not public ModuleConfig knobs.
 
-With `nodeCache.enabled=true`, workloads that do not bring an explicit cache
-volume are cut over to the node-cache SharedDirect path:
+With `nodeCache.enabled=true`, SharedDirect is an annotation-only workload
+contract:
 
-- the controller injects an inline CSI volume
-  `node-cache.ai-models.deckhouse.io` at `/data/modelcache`;
-- the injected CSI volume carries only immutable artifact attributes
-  (URI, digest, optional family), not storage-specific public API fields;
-- the controller propagates the effective node-cache node selector into managed
-  workload pod templates and fails on conflicts instead of scheduling them onto
-  unsupported nodes;
-- the controller also requires the dynamic
-  `ai.deckhouse.io/node-cache-runtime-ready=true` node label and keeps the
-  managed scheduling gate while no selected node has a ready runtime Pod and a
-  bound shared cache PVC;
+- workload metadata declares only `ai.deckhouse.io/model`,
+  `ai.deckhouse.io/clustermodel` or `ai.deckhouse.io/model-refs`;
+- the controller injects the inline CSI volume with driver
+  `node-cache.ai-models.deckhouse.io`, the stable mount, runtime env and
+  internal artifact attributes;
+- for a single model the managed volume name is `ai-models-node-cache`; for
+  `ai.deckhouse.io/model-refs` each alias gets
+  `ai-models-node-cache-<alias>`;
+- the controller does not add node selectors, labels, affinity or workload
+  scheduling policy. Placement is owned by the user workload, ai-inference or
+  another scheduler;
 - the workload namespace no longer receives projected DMCR read Secret/CA or
   bridge runtime imagePullSecret for the managed SharedDirect path;
 - workloads get a stable runtime-facing model delivery contract. Legacy
@@ -216,17 +216,17 @@ volume are cut over to the node-cache SharedDirect path:
   under `/data/modelcache/models/<alias>` plus `AI_MODELS_MODELS_DIR`,
   `AI_MODELS_MODELS` with alias/path/digest/family entries, and per-alias
   `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}` variables;
-- for KubeRay `RayService`, the same annotations stay on the GitOps-owned
-  `RayService`, but the controller does not patch `RayService.spec`: runtime
-  wiring is applied to generated `RayCluster` pod templates so ArgoCD does not
-  roll managed mutation back to the Git state;
+- ai-models does not contain CRD-specific adapters for higher-level
+  controllers such as KubeRay. Render a supported Kubernetes workload with the
+  model annotation on workload metadata, or let ai-inference render a native
+  workload;
 - the controller now also writes managed `PodTemplateSpec` annotations with the
   selected delivery mode and the reason that mode was chosen, so the
   node-cache runtime can discover desired artifacts from live Pods on its node;
 - `runtimehealth` metrics now aggregate managed top-level workloads by
   namespace, kind, delivery mode, and delivery reason, so operators can see
-  where workloads still use explicit legacy bridge storage and where they use
-  SharedDirect without scraping ad-hoc object lists;
+  which workloads are managed through SharedDirect and which delivery reason
+  is active without scraping ad-hoc object lists;
 - ai-models now keeps a separate per-node shared cache plane as a
   controller-owned stable runtime Pod plus stable PVC over the managed
   `LocalStorageClass`; the shared volume size is controlled by
@@ -246,9 +246,10 @@ volume are cut over to the node-cache SharedDirect path:
   from the per-node shared cache PVC into the kubelet target path; if the
   digest is not materialized yet, CSI returns transient `Unavailable` and
   kubelet retries after prefetch;
-- CSI NodePublish fail-closes through `podInfoOnMount`: the mount is allowed
-  only for the live Pod on the same node that the controller already marked as
-  a managed SharedDirect Pod for the same digest;
+- CSI NodePublish fail-closes through `podInfoOnMount` plus a controller-only
+  HMAC signature over resolved delivery annotations: the mount is allowed only
+  for the live Pod on the same node that the controller marked as a managed
+  SharedDirect Pod for the same digest;
 - `node-cache-runtime` derives the set of published artifacts required by live
   SharedDirect managed Pods scheduled on the current node and prefetches them
   into the shared node-local digest store;
@@ -263,18 +264,20 @@ Failure scenarios:
 - if the SDS CRDs are actually absent from the cluster, the substrate
   controller cannot create `LVMVolumeGroupSet` / `LocalStorageClass`, and the
   node-cache layer will not become ready;
-- if a selected node has no local block device matching the effective
-  node-cache block-device selector, the managed `LVMVolumeGroup` for that node
-  will not become ready, the `LocalStorageClass` will not include that node,
-  and the cache runtime PVC/Pod remain unscheduled or pending;
-- while no selected node has a ready runtime Pod and a bound shared cache PVC,
-  managed SharedDirect workload templates keep the ai-models scheduling gate
-  instead of rolling out Pods that would hang on CSI mount.
+- if a workload is scheduled onto a node without a ready node-cache runtime and
+  usable local storage, the CSI mount fails or waits with kubelet events.
+  ai-models does not infer or inject workload placement; placement must be
+  expressed by the workload, ai-inference, or another scheduler;
+- if managed node-cache delivery is disabled or the requested model set cannot
+  fit into the configured per-node cache size, ai-models keeps its scheduling
+  gate and reports a clear delivery condition/event.
 
-Explicit workload-provided cache volumes remain a legacy bridge path for now:
-they still use `materialize-artifact` and the digest-scoped shared-PVC bridge
-logic where applicable. They are not the managed default path after this
-cutover.
+Explicit workload-provided cache volumes are no longer a delivery fallback:
+the controller rejects such templates with a clear condition/event and waits
+for the managed SharedDirect CSI contract. User manifests should set only the
+model annotation. A pre-existing mount at `/data/modelcache` is allowed only if
+it already uses the node-cache CSI driver; otherwise it is rejected instead of
+being silently converted.
 
 There is still no public cleanup or TTL knob yet: the workload-facing shared
 mount contract now exists, but eviction policy remains internal runtime

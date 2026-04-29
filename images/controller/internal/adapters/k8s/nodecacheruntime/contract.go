@@ -43,21 +43,22 @@ const (
 )
 
 type RuntimeSpec struct {
-	Namespace           string
-	NodeName            string
-	NodeHostname        string
-	RuntimeImage        string
-	CSIRegistrarImage   string
-	ImagePullSecretName string
-	ServiceAccountName  string
-	StorageClassName    string
-	SharedVolumeSize    string
-	MaxTotalSize        string
-	MaxUnusedAge        string
-	ScanInterval        string
-	OCIInsecure         bool
-	OCIAuthSecretName   string
-	OCIRegistryCASecret string
+	Namespace              string
+	NodeName               string
+	NodeHostname           string
+	RuntimeImage           string
+	CSIRegistrarImage      string
+	ImagePullSecretName    string
+	ServiceAccountName     string
+	StorageClassName       string
+	SharedVolumeSize       string
+	MaxTotalSize           string
+	MaxUnusedAge           string
+	ScanInterval           string
+	OCIInsecure            bool
+	OCIAuthSecretName      string
+	DeliveryAuthSecretName string
+	OCIRegistryCASecret    string
 }
 
 func PodName(nodeName string) (string, error) {

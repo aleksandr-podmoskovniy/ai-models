@@ -22,6 +22,7 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
+	deliverycontract "github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -62,65 +63,44 @@ func TestBootstrapOptionsEnableWorkloadDelivery(t *testing.T) {
 	t.Parallel()
 
 	config := managerConfig{
-		LogFormat:                                  "json",
-		LogLevel:                                   "debug",
-		CleanupNamespace:                           "d8-ai-models",
-		PublicationWorkerImage:                     "example.com/controller-runtime:dev",
-		PublicationWorkerImagePullSecretName:       "module-registry",
-		PublicationWorkerNamespace:                 "d8-ai-models",
-		WorkloadDeliveryRuntimeImagePullSecretName: "workload-runtime-pull",
-		PublicationOCICASecretName:                 "ai-models-dmcr-ca",
-		PublicationOCIInsecure:                     false,
-		PublicationOCIDirectUploadEndpoint:         "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443",
-		PublicationSourceFetchMode:                 publicationports.SourceFetchModeDirect,
-		ArtifactsBucket:                            "models",
-		ArtifactsS3Endpoint:                        "https://s3.example.test",
-		ArtifactsS3Region:                          "test",
-		ArtifactsCredentialsSecretName:             "artifacts-credentials",
-		NodeCacheEnabled:                           true,
-		NodeCacheRuntimeImage:                      "example.com/node-cache-runtime:dev",
-		NodeCacheCSIRegistrarImage:                 "registry.example.test/csi-node-driver-registrar@sha256:aaaa",
-		NodeCacheMaxSize:                           "200Gi",
-		NodeCacheSharedVolumeSize:                  "64Gi",
-		NodeCacheStorageClassName:                  "ai-models-node-cache",
-		NodeCacheVolumeGroupSetName:                "ai-models-node-cache",
-		NodeCacheVolumeGroupNameOnNode:             "ai-models-cache",
-		NodeCacheThinPoolName:                      "model-cache",
-		NodeCacheNodeSelectorJSON:                  `{"node-role.kubernetes.io/worker":""}`,
-		NodeCacheBlockDeviceJSON:                   `{"status.blockdevice.storage.deckhouse.io/model":"nvme"}`,
+		LogFormat:                            "json",
+		LogLevel:                             "debug",
+		CleanupNamespace:                     "d8-ai-models",
+		PublicationWorkerImage:               "example.com/controller-runtime:dev",
+		PublicationWorkerImagePullSecretName: "module-registry",
+		PublicationWorkerNamespace:           "d8-ai-models",
+		PublicationOCICASecretName:           "ai-models-dmcr-ca",
+		PublicationOCIInsecure:               false,
+		PublicationOCIDirectUploadEndpoint:   "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443",
+		PublicationSourceFetchMode:           publicationports.SourceFetchModeDirect,
+		ArtifactsBucket:                      "models",
+		ArtifactsS3Endpoint:                  "https://s3.example.test",
+		ArtifactsS3Region:                    "test",
+		ArtifactsCredentialsSecretName:       "artifacts-credentials",
+		NodeCacheEnabled:                     true,
+		NodeCacheRuntimeImage:                "example.com/node-cache-runtime:dev",
+		NodeCacheCSIRegistrarImage:           "registry.example.test/csi-node-driver-registrar@sha256:aaaa",
+		NodeCacheMaxSize:                     "200Gi",
+		NodeCacheSharedVolumeSize:            "64Gi",
+		NodeCacheStorageClassName:            "ai-models-node-cache",
+		NodeCacheVolumeGroupSetName:          "ai-models-node-cache",
+		NodeCacheVolumeGroupNameOnNode:       "ai-models-cache",
+		NodeCacheThinPoolName:                "model-cache",
+		NodeCacheNodeSelectorJSON:            `{"node-role.kubernetes.io/worker":""}`,
+		NodeCacheBlockDeviceJSON:             `{"status.blockdevice.storage.deckhouse.io/model":"nvme"}`,
+		DeliveryAuthKey:                      "test-delivery-auth-key",
 	}
 
 	options := config.bootstrapOptions(corev1.ResourceRequirements{})
 
-	if got, want := options.WorkloadDelivery.Service.Render.RuntimeImage, config.PublicationWorkerImage; got != want {
-		t.Fatalf("delivery runtime image = %q, want %q", got, want)
-	}
-	if got, want := options.WorkloadDelivery.Service.Render.LogLevel, config.LogLevel; got != want {
-		t.Fatalf("delivery runtime log level = %q, want %q", got, want)
-	}
 	if got, want := options.WorkloadDelivery.Service.Render.CacheMountPath, modeldelivery.DefaultCacheMountPath; got != want {
 		t.Fatalf("delivery cache mount path = %q, want %q", got, want)
 	}
 	if got, want := options.WorkloadDelivery.Service.ManagedCache.Enabled, config.NodeCacheEnabled; got != want {
 		t.Fatalf("delivery managed cache enabled = %t, want %t", got, want)
 	}
-	if got, want := options.WorkloadDelivery.Service.ManagedCache.NodeSelector["node-role.kubernetes.io/worker"], ""; got != want {
-		t.Fatalf("delivery managed cache node selector = %q, want %q", got, want)
-	}
-	if got, want := options.WorkloadDelivery.Service.ManagedCache.NodeSelector["ai.deckhouse.io/node-cache-runtime-ready"], "true"; got != want {
-		t.Fatalf("delivery managed cache ready selector = %q, want %q", got, want)
-	}
 	if got, want := options.WorkloadDelivery.Service.RegistrySourceNamespace, config.PublicationWorkerNamespace; got != want {
 		t.Fatalf("delivery source namespace = %q, want %q", got, want)
-	}
-	if got, want := options.WorkloadDelivery.Service.RegistrySourceAuthSecretName, defaultDMCRReadAuthSecretName; got != want {
-		t.Fatalf("delivery source auth secret = %q, want %q", got, want)
-	}
-	if got, want := options.WorkloadDelivery.Service.RegistrySourceCASecretName, config.PublicationOCICASecretName; got != want {
-		t.Fatalf("delivery source CA secret = %q, want %q", got, want)
-	}
-	if got, want := options.WorkloadDelivery.Service.RuntimeImagePullSecretName, config.WorkloadDeliveryRuntimeImagePullSecretName; got != want {
-		t.Fatalf("delivery runtime image pull secret = %q, want %q", got, want)
 	}
 	if got, want := options.PublicationRuntime.RuntimeLogLevel, config.LogLevel; got != want {
 		t.Fatalf("publication runtime log level = %q, want %q", got, want)
@@ -206,7 +186,7 @@ func TestParseManagerConfigRejectsEmptyNodeCacheRuntimeImageWhenNodeCacheEnabled
 }
 
 func TestParseManagerConfigRejectsNodeCacheSharedVolumeGreaterThanMaxSize(t *testing.T) {
-	t.Parallel()
+	t.Setenv(deliverycontract.DeliveryAuthKeyEnv, "test-delivery-auth-key")
 
 	_, exitCode, err := parseManagerConfig([]string{
 		"--node-cache-enabled=true",
@@ -224,6 +204,27 @@ func TestParseManagerConfigRejectsNodeCacheSharedVolumeGreaterThanMaxSize(t *tes
 		t.Fatalf("parseManagerConfig() exitCode = %d, want 2", exitCode)
 	}
 	if !strings.Contains(err.Error(), "node-cache-shared-volume-size must not exceed node-cache-max-size") {
+		t.Fatalf("parseManagerConfig() error = %q", err.Error())
+	}
+}
+
+func TestParseManagerConfigRejectsMissingDeliveryAuthKeyWhenNodeCacheEnabled(t *testing.T) {
+	t.Parallel()
+
+	_, exitCode, err := parseManagerConfig([]string{
+		"--node-cache-enabled=true",
+		"--node-cache-runtime-image=example.com/node-cache-runtime:dev",
+		"--node-cache-csi-registrar-image=registry.example.test/csi-node-driver-registrar@sha256:aaaa",
+		`--node-cache-node-selector-json={"node-role.kubernetes.io/worker":""}`,
+		`--node-cache-block-device-selector-json={"status.blockdevice.storage.deckhouse.io/model":"nvme"}`,
+	})
+	if err == nil {
+		t.Fatal("parseManagerConfig() error = nil, want error")
+	}
+	if exitCode != 2 {
+		t.Fatalf("parseManagerConfig() exitCode = %d, want 2", exitCode)
+	}
+	if !strings.Contains(err.Error(), deliverycontract.DeliveryAuthKeyEnv+" must not be empty when node cache is enabled") {
 		t.Fatalf("parseManagerConfig() error = %q", err.Error())
 	}
 }

@@ -64,7 +64,6 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 	artifactsObjectStorage := c.objectStorageOptions()
 	nodeSelectorLabels, _ := parseMatchLabelsJSON(c.NodeCacheNodeSelectorJSON)
 	blockDeviceSelectorLabels, _ := parseMatchLabelsJSON(c.NodeCacheBlockDeviceJSON)
-	managedDeliveryNodeSelector := managedNodeCacheDeliverySelector(nodeSelectorLabels)
 
 	return bootstrap.Options{
 		Cleanup: c.cleanupOptions(),
@@ -74,7 +73,7 @@ func (c managerConfig) bootstrapOptions(resources corev1.ResourceRequirements) b
 		),
 		NodeCacheRuntime:   c.nodeCacheRuntimeOptions(nodeSelectorLabels),
 		NodeCacheSubstrate: c.nodeCacheSubstrateOptions(nodeSelectorLabels, blockDeviceSelectorLabels),
-		WorkloadDelivery:   c.workloadDeliveryOptions(managedDeliveryNodeSelector),
+		WorkloadDelivery:   c.workloadDeliveryOptions(),
 		Runtime: bootstrap.RuntimeOptions{
 			MetricsBindAddress:      c.MetricsBindAddress,
 			HealthProbeBindAddress:  c.HealthProbeBindAddress,
@@ -139,21 +138,22 @@ func (c managerConfig) storageAccountingOptions() storageaccounting.Options {
 
 func (c managerConfig) nodeCacheRuntimeOptions(nodeSelectorLabels map[string]string) nodecacheruntime.Options {
 	return nodecacheruntime.Options{
-		Enabled:             c.NodeCacheEnabled,
-		Namespace:           c.CleanupNamespace,
-		RuntimeImage:        c.NodeCacheRuntimeImage,
-		CSIRegistrarImage:   c.NodeCacheCSIRegistrarImage,
-		ImagePullSecretName: c.PublicationWorkerImagePullSecretName,
-		ServiceAccountName:  nodecache.RuntimeServiceAccount,
-		StorageClassName:    c.NodeCacheStorageClassName,
-		SharedVolumeSize:    c.NodeCacheSharedVolumeSize,
-		MaxTotalSize:        c.NodeCacheSharedVolumeSize,
-		MaxUnusedAge:        nodecache.DefaultMaxUnusedAge.String(),
-		ScanInterval:        nodecache.DefaultMaintenancePeriod.String(),
-		OCIInsecure:         c.PublicationOCIInsecure,
-		OCIAuthSecretName:   defaultDMCRReadAuthSecretName,
-		OCIRegistryCASecret: c.PublicationOCICASecretName,
-		NodeSelectorLabels:  nodeSelectorLabels,
+		Enabled:                c.NodeCacheEnabled,
+		Namespace:              c.CleanupNamespace,
+		RuntimeImage:           c.NodeCacheRuntimeImage,
+		CSIRegistrarImage:      c.NodeCacheCSIRegistrarImage,
+		ImagePullSecretName:    c.PublicationWorkerImagePullSecretName,
+		ServiceAccountName:     nodecache.RuntimeServiceAccount,
+		StorageClassName:       c.NodeCacheStorageClassName,
+		SharedVolumeSize:       c.NodeCacheSharedVolumeSize,
+		MaxTotalSize:           c.NodeCacheSharedVolumeSize,
+		MaxUnusedAge:           nodecache.DefaultMaxUnusedAge.String(),
+		ScanInterval:           nodecache.DefaultMaintenancePeriod.String(),
+		OCIInsecure:            c.PublicationOCIInsecure,
+		OCIAuthSecretName:      defaultDMCRReadAuthSecretName,
+		DeliveryAuthSecretName: defaultDMCRAuthSecretName,
+		OCIRegistryCASecret:    c.PublicationOCICASecretName,
+		NodeSelectorLabels:     nodeSelectorLabels,
 	}
 }
 
@@ -173,15 +173,11 @@ func (c managerConfig) nodeCacheSubstrateOptions(
 	}
 }
 
-func (c managerConfig) workloadDeliveryOptions(managedDeliveryNodeSelector map[string]string) workloaddelivery.Options {
+func (c managerConfig) workloadDeliveryOptions() workloaddelivery.Options {
 	cacheCapacityBytes, _ := cmdsupport.ParseOptionalPositiveBytesQuantity(c.NodeCacheSharedVolumeSize, "node-cache-shared-volume-size")
 	return workloaddelivery.Options{
 		Service: modeldelivery.ServiceOptions{
 			Render: modeldelivery.Options{
-				RuntimeImage:   c.PublicationWorkerImage,
-				LogFormat:      c.LogFormat,
-				LogLevel:       c.LogLevel,
-				OCIInsecure:    c.PublicationOCIInsecure,
 				CacheMountPath: modeldelivery.DefaultCacheMountPath,
 			},
 			ManagedCache: modeldelivery.ManagedCacheOptions{
@@ -189,27 +185,9 @@ func (c managerConfig) workloadDeliveryOptions(managedDeliveryNodeSelector map[s
 				VolumeName:       modeldelivery.DefaultManagedCacheName,
 				CapacityBytes:    cacheCapacityBytes,
 				RuntimeNamespace: c.CleanupNamespace,
-				NodeSelector:     managedDeliveryNodeSelector,
 			},
-			RegistrySourceNamespace:      cmdsupport.FallbackString(c.PublicationWorkerNamespace, c.CleanupNamespace),
-			RegistrySourceAuthSecretName: defaultDMCRReadAuthSecretName,
-			RegistrySourceCASecretName:   c.PublicationOCICASecretName,
-			RuntimeImagePullSecretName: cmdsupport.FallbackString(
-				c.WorkloadDeliveryRuntimeImagePullSecretName,
-				c.PublicationWorkerImagePullSecretName,
-			),
+			DeliveryAuthKey:         c.DeliveryAuthKey,
+			RegistrySourceNamespace: cmdsupport.FallbackString(c.PublicationWorkerNamespace, c.CleanupNamespace),
 		},
 	}
-}
-
-func managedNodeCacheDeliverySelector(nodeSelectorLabels map[string]string) map[string]string {
-	if len(nodeSelectorLabels) == 0 {
-		return nil
-	}
-	selector := make(map[string]string, len(nodeSelectorLabels)+1)
-	for key, value := range nodeSelectorLabels {
-		selector[key] = value
-	}
-	selector[nodecache.RuntimeReadyNodeLabelKey] = nodecache.RuntimeReadyNodeLabelValue
-	return selector
 }

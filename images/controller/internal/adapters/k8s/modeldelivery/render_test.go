@@ -17,52 +17,37 @@ limitations under the License.
 package modeldelivery
 
 import (
+	"strings"
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	corev1 "k8s.io/api/core/v1"
 )
 
-func TestRenderBuildsMaterializerAgainstExistingCacheMount(t *testing.T) {
+func TestRenderBuildsSharedDirectWithoutMaterializer(t *testing.T) {
 	t.Parallel()
 
 	rendered, err := Render(Input{
-		Artifact: publication.PublishedArtifact{
-			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
-			URI:       "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
-			Digest:    "sha256:deadbeef",
-			MediaType: "application/vnd.cncf.model.manifest.v1+json",
-		},
+		Artifact:       renderArtifact(),
 		ArtifactFamily: "hf-safetensors-v1",
-		RegistryAccess: ociregistry.Projection{
-			AuthSecretName: "projected-registry-auth",
-			CASecretName:   "projected-registry-ca",
-		},
 		CacheMount: CacheMount{
-			VolumeName: "model-cache",
+			VolumeName: DefaultManagedCacheName,
 			MountPath:  DefaultCacheMountPath,
 		},
-	}, Options{
-		RuntimeImage: "example.com/ai-models:latest",
-	})
+		TopologyKind:              CacheTopologyDirect,
+		LegacyImagePullSecretName: "legacy-runtime-pull",
+	}, Options{})
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	if got, want := rendered.InitContainers[0].Name, DefaultInitContainerName; got != want {
-		t.Fatalf("init container name = %q, want %q", got, want)
-	}
-	if got, want := rendered.InitContainers[0].Args, []string{"materialize-artifact"}; len(got) != len(want) || got[0] != want[0] {
-		t.Fatalf("unexpected init args %#v", got)
+	if got, want := rendered.ImagePullSecretNamesPrune, []string{"legacy-runtime-pull"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("image pull secret prune list = %#v, want %#v", got, want)
 	}
 	if got, want := rendered.ModelPath, nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
 		t.Fatalf("model path = %q, want %q", got, want)
-	}
-	if got, want := rendered.InitContainers[0].VolumeMounts[0].Name, "model-cache"; got != want {
-		t.Fatalf("cache volume name = %q, want %q", got, want)
 	}
 	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
 		t.Fatalf("runtime model path env = %q, want %q", got, want)
@@ -73,200 +58,24 @@ func TestRenderBuildsMaterializerAgainstExistingCacheMount(t *testing.T) {
 	if got, want := envValue(rendered.RuntimeEnv, ModelFamilyEnv), "hf-safetensors-v1"; got != want {
 		t.Fatalf("runtime model family env = %q, want %q", got, want)
 	}
-	if got := envValue(rendered.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_CACHE_ROOT"); got != DefaultCacheMountPath {
-		t.Fatalf("cache root env = %q, want %q", got, DefaultCacheMountPath)
-	}
-	if got := envValue(rendered.InitContainers[0].Env, LogLevelEnv); got != defaultLogLevel {
-		t.Fatalf("log level env = %q, want %q", got, defaultLogLevel)
-	}
-	if got := envValue(rendered.InitContainers[0].Env, "AI_MODELS_OCI_CA_FILE"); got != ociregistry.CAFilePath {
-		t.Fatalf("unexpected OCI CA env %q", got)
-	}
-	assertMaterializerSecurityContext(t, rendered.InitContainers[0].SecurityContext)
-	if got := len(rendered.Volumes); got != 1 {
-		t.Fatalf("expected only CA volume injection, got %#v", rendered.Volumes)
-	}
-}
-
-func assertMaterializerSecurityContext(t *testing.T, context *corev1.SecurityContext) {
-	t.Helper()
-
-	if context == nil {
-		t.Fatal("expected materializer security context")
-	}
-	if context.AllowPrivilegeEscalation == nil || *context.AllowPrivilegeEscalation {
-		t.Fatalf("expected allowPrivilegeEscalation=false, got %#v", context.AllowPrivilegeEscalation)
-	}
-	if context.ReadOnlyRootFilesystem == nil || !*context.ReadOnlyRootFilesystem {
-		t.Fatalf("expected readOnlyRootFilesystem=true, got %#v", context.ReadOnlyRootFilesystem)
-	}
-	if context.RunAsNonRoot == nil || !*context.RunAsNonRoot {
-		t.Fatalf("expected runAsNonRoot=true, got %#v", context.RunAsNonRoot)
-	}
-	if context.Capabilities == nil || len(context.Capabilities.Drop) != 1 || context.Capabilities.Drop[0] != "ALL" {
-		t.Fatalf("expected drop ALL capabilities, got %#v", context.Capabilities)
-	}
-	if context.SeccompProfile == nil || context.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
-		t.Fatalf("expected runtime default seccomp, got %#v", context.SeccompProfile)
-	}
-}
-
-func TestRenderBuildsDigestScopedModelPathForSharedPVCTopology(t *testing.T) {
-	t.Parallel()
-
-	rendered, err := Render(Input{
-		Artifact: publication.PublishedArtifact{
-			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
-			URI:       "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
-			Digest:    "sha256:deadbeef",
-			MediaType: "application/vnd.cncf.model.manifest.v1+json",
-		},
-		RegistryAccess: ociregistry.Projection{
-			AuthSecretName: "projected-registry-auth",
-		},
-		CacheMount: CacheMount{
-			VolumeName: "model-cache",
-			MountPath:  DefaultCacheMountPath,
-		},
-		TopologyKind: CacheTopologySharedPVC,
-	}, Options{
-		RuntimeImage: "example.com/ai-models:latest",
-	})
-	if err != nil {
-		t.Fatalf("Render() error = %v", err)
-	}
-
-	if got, want := rendered.ModelPath, nodecache.SharedArtifactModelPath(DefaultCacheMountPath, "sha256:deadbeef"); got != want {
-		t.Fatalf("model path = %q, want %q", got, want)
-	}
-	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.SharedArtifactModelPath(DefaultCacheMountPath, "sha256:deadbeef"); got != want {
-		t.Fatalf("runtime model path env = %q, want %q", got, want)
-	}
-	if got := envValue(rendered.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_SHARED_STORE"); got != "true" {
-		t.Fatalf("shared store env = %q, want true", got)
-	}
-}
-
-func TestRenderBuildsSharedDirectWithoutMaterializer(t *testing.T) {
-	t.Parallel()
-
-	rendered, err := Render(Input{
-		Artifact: publication.PublishedArtifact{
-			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
-			URI:       "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
-			Digest:    "sha256:deadbeef",
-			MediaType: "application/vnd.cncf.model.manifest.v1+json",
-		},
-		ArtifactFamily: "hf-safetensors-v1",
-		CacheMount: CacheMount{
-			VolumeName: DefaultManagedCacheName,
-			MountPath:  DefaultCacheMountPath,
-		},
-		TopologyKind: CacheTopologyDirect,
-	}, Options{
-		RuntimeImage: "example.com/ai-models:latest",
-	})
-	if err != nil {
-		t.Fatalf("Render() error = %v", err)
-	}
-
-	if len(rendered.InitContainers) != 0 {
-		t.Fatalf("did not expect init containers for shared-direct render")
-	}
-	if got, want := rendered.InitContainerName, DefaultInitContainerName; got != want {
-		t.Fatalf("init container name = %q, want %q", got, want)
-	}
-	if got, want := rendered.ModelPath, nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
-		t.Fatalf("model path = %q, want %q", got, want)
-	}
-	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
-		t.Fatalf("runtime model path env = %q, want %q", got, want)
-	}
 	if len(rendered.Volumes) != 0 {
 		t.Fatalf("did not expect registry CA volumes for shared-direct render, got %#v", rendered.Volumes)
 	}
 }
 
-func TestRenderBuildsRuntimeImagePullSecretReference(t *testing.T) {
+func TestRenderRejectsNonDirectTopology(t *testing.T) {
 	t.Parallel()
 
-	rendered, err := Render(Input{
-		Artifact: publication.PublishedArtifact{
-			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
-			URI:       "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
-			Digest:    "sha256:deadbeef",
-			MediaType: "application/vnd.cncf.model.manifest.v1+json",
-		},
-		RegistryAccess: ociregistry.Projection{
-			AuthSecretName: "projected-registry-auth",
-		},
-		RuntimeImagePullSecretName: "projected-runtime-pull",
+	_, err := Render(Input{
+		Artifact: renderArtifact(),
 		CacheMount: CacheMount{
-			VolumeName: "model-cache",
-			MountPath:  DefaultCacheMountPath,
-		},
-	}, Options{
-		RuntimeImage: "example.com/ai-models:latest",
-	})
-	if err != nil {
-		t.Fatalf("Render() error = %v", err)
-	}
-
-	if got, want := len(rendered.ImagePullSecrets), 1; got != want {
-		t.Fatalf("image pull secrets count = %d, want %d", got, want)
-	}
-	if got, want := rendered.ImagePullSecrets[0].Name, "projected-runtime-pull"; got != want {
-		t.Fatalf("image pull secret name = %q, want %q", got, want)
-	}
-}
-
-func TestRenderBuildsSharedCacheCoordinationEnv(t *testing.T) {
-	t.Parallel()
-
-	rendered, err := Render(Input{
-		Artifact: publication.PublishedArtifact{
-			Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
-			URI:       "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
-			Digest:    "sha256:deadbeef",
-			MediaType: "application/vnd.cncf.model.manifest.v1+json",
-		},
-		RegistryAccess: ociregistry.Projection{
-			AuthSecretName: "projected-registry-auth",
-		},
-		CacheMount: CacheMount{
-			VolumeName: "model-cache",
+			VolumeName: DefaultManagedCacheName,
 			MountPath:  DefaultCacheMountPath,
 		},
 		TopologyKind: CacheTopologySharedPVC,
-		Coordination: Coordination{
-			Mode: CoordinationModeShared,
-		},
-	}, Options{
-		RuntimeImage: "example.com/ai-models:latest",
-	})
-	if err != nil {
-		t.Fatalf("Render() error = %v", err)
-	}
-
-	if got, want := envValue(rendered.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_COORDINATION_MODE"), CoordinationModeShared; got != want {
-		t.Fatalf("coordination mode = %q, want %q", got, want)
-	}
-	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.SharedArtifactModelPath(DefaultCacheMountPath, "sha256:deadbeef"); got != want {
-		t.Fatalf("runtime model path env = %q, want %q", got, want)
-	}
-	if got := envValue(rendered.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_COORDINATION_NAMESPACE"); got != "" {
-		t.Fatalf("did not expect coordination namespace env, got %q", got)
-	}
-
-	var holderEnv *corev1.EnvVar
-	for i := range rendered.InitContainers[0].Env {
-		if rendered.InitContainers[0].Env[i].Name == "AI_MODELS_MATERIALIZE_COORDINATION_HOLDER_ID" {
-			holderEnv = &rendered.InitContainers[0].Env[i]
-			break
-		}
-	}
-	if holderEnv == nil || holderEnv.ValueFrom == nil || holderEnv.ValueFrom.FieldRef == nil || holderEnv.ValueFrom.FieldRef.FieldPath != "metadata.name" {
-		t.Fatalf("expected holder id downward API env, got %#v", holderEnv)
+	}, Options{})
+	if err == nil || !strings.Contains(err.Error(), "supports only node-cache CSI SharedDirect delivery") {
+		t.Fatalf("expected non-direct delivery error, got %v", err)
 	}
 }
 
@@ -274,15 +83,9 @@ func TestRenderRejectsMissingCacheVolume(t *testing.T) {
 	t.Parallel()
 
 	_, err := Render(Input{
-		Artifact: publication.PublishedArtifact{
-			Kind:   modelsv1alpha1.ModelArtifactLocationKindOCI,
-			URI:    "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
-			Digest: "sha256:deadbeef",
-		},
-		RegistryAccess: ociregistry.Projection{AuthSecretName: "projected-registry-auth"},
-	}, Options{
-		RuntimeImage: "example.com/ai-models:latest",
-	})
+		Artifact:     renderArtifact(),
+		TopologyKind: CacheTopologyDirect,
+	}, Options{})
 	if err == nil || err.Error() != "runtime delivery cache volume name must not be empty" {
 		t.Fatalf("expected missing cache volume error, got %v", err)
 	}
@@ -292,21 +95,24 @@ func TestRenderRejectsMismatchedCacheMountContract(t *testing.T) {
 	t.Parallel()
 
 	_, err := Render(Input{
-		Artifact: publication.PublishedArtifact{
-			Kind:   modelsv1alpha1.ModelArtifactLocationKindOCI,
-			URI:    "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
-			Digest: "sha256:deadbeef",
-		},
-		RegistryAccess: ociregistry.Projection{AuthSecretName: "projected-registry-auth"},
+		Artifact: renderArtifact(),
 		CacheMount: CacheMount{
-			VolumeName: "model-cache",
+			VolumeName: DefaultManagedCacheName,
 			MountPath:  "/models",
 		},
-	}, Options{
-		RuntimeImage: "example.com/ai-models:latest",
-	})
+		TopologyKind: CacheTopologyDirect,
+	}, Options{})
 	if err == nil || err.Error() != "runtime delivery cache mount contract is inconsistent" {
 		t.Fatalf("expected inconsistent cache mount error, got %v", err)
+	}
+}
+
+func renderArtifact() publication.PublishedArtifact {
+	return publication.PublishedArtifact{
+		Kind:      modelsv1alpha1.ModelArtifactLocationKindOCI,
+		URI:       "dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/model@sha256:deadbeef",
+		Digest:    "sha256:deadbeef",
+		MediaType: "application/vnd.cncf.model.manifest.v1+json",
 	}
 }
 

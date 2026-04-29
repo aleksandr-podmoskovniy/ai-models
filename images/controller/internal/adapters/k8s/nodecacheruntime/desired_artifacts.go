@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
+	deliverycontract "github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,17 +39,28 @@ const (
 )
 
 type DesiredArtifactsClient struct {
-	client kubernetes.Interface
+	client          kubernetes.Interface
+	deliveryAuthKey string
 }
 
 func NewDesiredArtifactsClient(client kubernetes.Interface) (*DesiredArtifactsClient, error) {
 	if client == nil {
 		return nil, errors.New("node cache runtime desired artifacts client must not be nil")
 	}
-	return &DesiredArtifactsClient{client: client}, nil
+	return NewDesiredArtifactsClientWithAuthKey(client, "")
 }
 
-func NewInClusterDesiredArtifactsClient() (*DesiredArtifactsClient, error) {
+func NewDesiredArtifactsClientWithAuthKey(client kubernetes.Interface, deliveryAuthKey string) (*DesiredArtifactsClient, error) {
+	if client == nil {
+		return nil, errors.New("node cache runtime desired artifacts client must not be nil")
+	}
+	return &DesiredArtifactsClient{
+		client:          client,
+		deliveryAuthKey: strings.TrimSpace(deliveryAuthKey),
+	}, nil
+}
+
+func NewInClusterDesiredArtifactsClient(deliveryAuthKey string) (*DesiredArtifactsClient, error) {
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, err
@@ -57,7 +69,7 @@ func NewInClusterDesiredArtifactsClient() (*DesiredArtifactsClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewDesiredArtifactsClient(clientset)
+	return NewDesiredArtifactsClientWithAuthKey(clientset, deliveryAuthKey)
 }
 
 func (c *DesiredArtifactsClient) LoadNodeDesiredArtifacts(ctx context.Context, nodeName string) ([]nodecache.DesiredArtifact, error) {
@@ -74,7 +86,7 @@ func (c *DesiredArtifactsClient) LoadNodeDesiredArtifacts(ctx context.Context, n
 	if err != nil {
 		return nil, err
 	}
-	return desiredArtifactsFromScheduledPods(pods, nodeName)
+	return desiredArtifactsFromScheduledPods(pods, nodeName, c.deliveryAuthKey)
 }
 
 func (c *DesiredArtifactsClient) scheduledPods(ctx context.Context, nodeName string) ([]corev1.Pod, error) {
@@ -87,14 +99,14 @@ func (c *DesiredArtifactsClient) scheduledPods(ctx context.Context, nodeName str
 	return podList.Items, nil
 }
 
-func desiredArtifactsFromScheduledPods(pods []corev1.Pod, nodeName string) ([]nodecache.DesiredArtifact, error) {
+func desiredArtifactsFromScheduledPods(pods []corev1.Pod, nodeName, deliveryAuthKey string) ([]nodecache.DesiredArtifact, error) {
 	artifacts := make([]nodecache.DesiredArtifact, 0, len(pods))
 	for index := range pods {
 		pod := &pods[index]
 		if strings.TrimSpace(pod.Spec.NodeName) != nodeName || !IsActiveScheduledPod(pod) {
 			continue
 		}
-		podArtifacts, found, err := DesiredArtifactsFromPod(pod)
+		podArtifacts, found, err := VerifiedDesiredArtifactsFromPod(pod, deliveryAuthKey)
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +126,7 @@ func (c *DesiredArtifactsClient) AllowCSIPublish(ctx context.Context, nodeName s
 	if err != nil || !ok {
 		return false, err
 	}
-	artifacts, found, err := DesiredArtifactsFromPod(pod)
+	artifacts, found, err := VerifiedDesiredArtifactsFromPod(pod, c.deliveryAuthKey)
 	if err != nil || !found {
 		return false, err
 	}
@@ -205,17 +217,50 @@ func DesiredArtifactsFromPod(pod *corev1.Pod) ([]nodecache.DesiredArtifact, bool
 	if pod == nil {
 		return nil, false, errors.New("node cache runtime pod must not be nil")
 	}
-	artifacts, found, err := nodecache.DesiredArtifactsFromWorkloadAnnotations(pod.GetAnnotations())
+	resolved, found, err := deliverycontract.ResolvedArtifactsFromAnnotations(pod.GetAnnotations())
 	if err != nil {
 		return nil, false, err
 	}
 	if found {
+		artifacts, err := desiredArtifactsFromResolvedArtifacts(resolved)
+		if err != nil {
+			return nil, false, err
+		}
 		return artifacts, true, nil
 	}
-	annotations := pod.GetAnnotations()
-	if strings.TrimSpace(annotations[nodecache.WorkloadResolvedDeliveryModeAnnotation]) == nodecache.WorkloadDeliveryModeSharedDirect &&
-		strings.TrimSpace(annotations[nodecache.WorkloadResolvedDeliveryReasonAnnotation]) == nodecache.WorkloadDeliveryReasonNodeCacheRuntime {
+	if deliverycontract.IsSharedDirectResolvedDelivery(pod.GetAnnotations()) {
 		return nil, false, errors.New("managed pod shared-direct artifact annotations are incomplete")
 	}
 	return nil, false, nil
+}
+
+func VerifiedDesiredArtifactsFromPod(pod *corev1.Pod, deliveryAuthKey string) ([]nodecache.DesiredArtifact, bool, error) {
+	deliveryAuthKey = strings.TrimSpace(deliveryAuthKey)
+	if deliveryAuthKey == "" {
+		return DesiredArtifactsFromPod(pod)
+	}
+	if pod == nil {
+		return nil, false, errors.New("node cache runtime pod must not be nil")
+	}
+	annotations := pod.GetAnnotations()
+	if !deliverycontract.IsSharedDirectResolvedDelivery(annotations) {
+		return nil, false, nil
+	}
+	if !deliverycontract.VerifyResolvedDeliverySignature(pod.GetNamespace(), annotations, deliveryAuthKey) {
+		return nil, false, nil
+	}
+	return DesiredArtifactsFromPod(pod)
+}
+
+func desiredArtifactsFromResolvedArtifacts(resolved []deliverycontract.ResolvedArtifact) ([]nodecache.DesiredArtifact, error) {
+	artifacts := make([]nodecache.DesiredArtifact, 0, len(resolved))
+	for _, artifact := range resolved {
+		artifacts = append(artifacts, nodecache.DesiredArtifact{
+			ArtifactURI: artifact.ArtifactURI,
+			Digest:      artifact.Digest,
+			Family:      artifact.Family,
+			SizeBytes:   artifact.SizeBytes,
+		})
+	}
+	return nodecache.NormalizeDesiredArtifacts(artifacts)
 }

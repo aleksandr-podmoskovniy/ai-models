@@ -33,11 +33,12 @@ func buildPodSpec(
 	container corev1.Container,
 ) corev1.PodSpec {
 	return corev1.PodSpec{
-		RestartPolicy:      corev1.RestartPolicyNever,
-		ServiceAccountName: options.ServiceAccountName,
-		ImagePullSecrets:   imagePullSecrets(options.ImagePullSecretName),
-		Volumes:            buildVolumes(options, sourcePlan),
-		Containers:         []corev1.Container{container},
+		RestartPolicy:                corev1.RestartPolicyNever,
+		ServiceAccountName:           options.ServiceAccountName,
+		AutomountServiceAccountToken: ptr.To(true),
+		ImagePullSecrets:             imagePullSecrets(options.ImagePullSecretName),
+		Volumes:                      buildVolumes(options, sourcePlan),
+		Containers:                   []corev1.Container{container},
 	}
 }
 

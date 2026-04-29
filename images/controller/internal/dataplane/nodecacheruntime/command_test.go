@@ -28,6 +28,7 @@ func TestParseConfigFromEnv(t *testing.T) {
 	t.Setenv(nodeCacheScanIntervalEnv, "10m")
 	t.Setenv(nodeCacheNodeNameEnv, "node-1")
 	t.Setenv(nodeCacheCSIEndpointEnv, "/csi/custom.sock")
+	t.Setenv(deliveryAuthKeyEnv, "test-delivery-auth-key")
 
 	config, exitCode, err := parseConfig(nil)
 	if err != nil {
@@ -53,6 +54,9 @@ func TestParseConfigFromEnv(t *testing.T) {
 	}
 	if got, want := config.CSIEndpoint, "/csi/custom.sock"; got != want {
 		t.Fatalf("CSIEndpoint = %q, want %q", got, want)
+	}
+	if got, want := config.DeliveryAuthKey, "test-delivery-auth-key"; got != want {
+		t.Fatalf("DeliveryAuthKey = %q, want %q", got, want)
 	}
 }
 

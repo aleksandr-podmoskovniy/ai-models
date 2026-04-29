@@ -162,8 +162,9 @@ Useful fields:
 
 ## Attaching a Model to a Workload
 
-Set only an annotation on the Pod template. The controller injects the mount,
-environment variables, and delivery wiring.
+Set only the model annotation on workload metadata. The controller injects the
+node-cache CSI volume, mount, runtime environment variables and internal
+artifact attributes.
 
 ```yaml
 apiVersion: apps/v1
@@ -171,6 +172,8 @@ kind: Deployment
 metadata:
   name: embedder
   namespace: ai-demo
+  annotations:
+    ai.deckhouse.io/model: bge-m3
 spec:
   selector:
     matchLabels:
@@ -179,8 +182,6 @@ spec:
     metadata:
       labels:
         app: embedder
-      annotations:
-        ai.deckhouse.io/model: bge-m3
     spec:
       containers:
         - name: app

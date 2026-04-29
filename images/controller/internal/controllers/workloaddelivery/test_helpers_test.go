@@ -25,11 +25,9 @@ import (
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
-	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -47,30 +45,21 @@ const (
 )
 
 func newDeploymentReconciler(t *testing.T, objects ...client.Object) (*baseReconciler, client.Client) {
+	objects = append(objects, readyNodeCacheRuntimeNode())
 	return newDeploymentReconcilerWithOptions(t, defaultServiceOptions(), objects...)
 }
 
 func newDeploymentReconcilerWithManagedCache(t *testing.T, objects ...client.Object) (*baseReconciler, client.Client) {
-	objects = append(objects, readyNodeCacheRuntimeNode())
-	serviceOptions := defaultServiceOptions()
-	serviceOptions.ManagedCache = modeldelivery.ManagedCacheOptions{
-		Enabled: true,
-		NodeSelector: map[string]string{
-			"ai.deckhouse.io/node-cache":       "true",
-			nodecache.RuntimeReadyNodeLabelKey: nodecache.RuntimeReadyNodeLabelValue,
-		},
-	}
-	return newDeploymentReconcilerWithOptions(t, serviceOptions, objects...)
+	return newDeploymentReconciler(t, objects...)
 }
 
 func defaultServiceOptions() modeldelivery.ServiceOptions {
 	return modeldelivery.ServiceOptions{
-		Render: modeldelivery.Options{
-			RuntimeImage: "example.com/ai-models/controller-runtime:dev",
+		ManagedCache: modeldelivery.ManagedCacheOptions{
+			Enabled: true,
 		},
-		RegistrySourceNamespace:      testRegistryNamespace,
-		RegistrySourceAuthSecretName: testRegistryAuthName,
-		RuntimeImagePullSecretName:   testRuntimePullSecret,
+		DeliveryAuthKey:         "test-delivery-auth-key",
+		RegistrySourceNamespace: testRegistryNamespace,
 	}
 }
 
@@ -97,9 +86,6 @@ func newWorkloadReconcilerWithOptions(
 	t.Helper()
 
 	scheme := testkit.NewScheme(t, addToScheme)
-	if serviceOptions.RuntimeImagePullSecretName != "" {
-		objects = append(objects, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, serviceOptions.RuntimeImagePullSecretName))
-	}
 	kubeClient := testkit.NewFakeClient(t, scheme, nil, objects...)
 	service, err := modeldelivery.NewService(kubeClient, scheme, serviceOptions)
 	if err != nil {
@@ -166,6 +152,9 @@ func pendingModel() *modelsv1alpha1.Model {
 }
 
 func annotatedDeployment(annotations map[string]string, replicas int32, volumeSource corev1.VolumeSource) *appsv1.Deployment {
+	if volumeSource.EmptyDir != nil {
+		return annotatedDeploymentWithNodeCacheVolume(annotations, replicas)
+	}
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "runtime",
@@ -196,6 +185,37 @@ func annotatedDeployment(annotations map[string]string, replicas int32, volumeSo
 				},
 			},
 		},
+	}
+}
+
+func annotatedDeploymentWithNodeCacheVolume(annotations map[string]string, replicas int32) *appsv1.Deployment {
+	workload := annotatedDeploymentWithoutCacheMount(annotations, replicas)
+	workload.Spec.Template.Spec.Volumes = []corev1.Volume{{
+		Name: modeldelivery.DefaultManagedCacheName,
+		VolumeSource: corev1.VolumeSource{
+			CSI: nodeCacheCSIVolumeSource(),
+		},
+	}}
+	return workload
+}
+
+func addNodeCacheAliasVolumes(template *corev1.PodTemplateSpec, aliases ...string) {
+	for _, alias := range aliases {
+		template.Spec.Volumes = append(template.Spec.Volumes, corev1.Volume{
+			Name: modeldelivery.DefaultManagedCacheName + "-" + alias,
+			VolumeSource: corev1.VolumeSource{
+				CSI: nodeCacheCSIVolumeSource(),
+			},
+		})
+	}
+}
+
+func nodeCacheCSIVolumeSource() *corev1.CSIVolumeSource {
+	readOnly := true
+	return &corev1.CSIVolumeSource{
+		Driver:           modeldelivery.NodeCacheCSIDriverName,
+		ReadOnly:         &readOnly,
+		VolumeAttributes: map[string]string{"user.deckhouse.io/cache": "enabled"},
 	}
 }
 
@@ -256,54 +276,14 @@ func runtimeEnvValue(containers []corev1.Container, name string) string {
 	return ""
 }
 
-func assertProjectedAuthSecretExists(t *testing.T, kubeClient client.Client, namespace string, ownerUID types.UID) {
-	t.Helper()
-
-	name, err := resourcenames.OCIRegistryAuthSecretName(ownerUID)
-	if err != nil {
-		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
+func countVolumeByName(volumes []corev1.Volume, name string) int {
+	count := 0
+	for _, volume := range volumes {
+		if volume.Name == name {
+			count++
+		}
 	}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, &corev1.Secret{}); err != nil {
-		t.Fatalf("expected projected auth secret %s/%s, got err=%v", namespace, name, err)
-	}
-}
-
-func assertProjectedAuthSecretDeleted(t *testing.T, kubeClient client.Client, namespace string, ownerUID types.UID) {
-	t.Helper()
-
-	name, err := resourcenames.OCIRegistryAuthSecretName(ownerUID)
-	if err != nil {
-		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
-	}
-	err = kubeClient.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, &corev1.Secret{})
-	if !apierrors.IsNotFound(err) {
-		t.Fatalf("expected projected auth secret %s/%s to be deleted, got err=%v", namespace, name, err)
-	}
-}
-
-func assertProjectedRuntimeImagePullSecretExists(t *testing.T, kubeClient client.Client, namespace string, ownerUID types.UID) {
-	t.Helper()
-
-	name, err := resourcenames.RuntimeImagePullSecretName(ownerUID)
-	if err != nil {
-		t.Fatalf("RuntimeImagePullSecretName() error = %v", err)
-	}
-	if err := kubeClient.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, &corev1.Secret{}); err != nil {
-		t.Fatalf("expected projected runtime image pull secret %s/%s, got err=%v", namespace, name, err)
-	}
-}
-
-func assertProjectedRuntimeImagePullSecretDeleted(t *testing.T, kubeClient client.Client, namespace string, ownerUID types.UID) {
-	t.Helper()
-
-	name, err := resourcenames.RuntimeImagePullSecretName(ownerUID)
-	if err != nil {
-		t.Fatalf("RuntimeImagePullSecretName() error = %v", err)
-	}
-	err = kubeClient.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, &corev1.Secret{})
-	if !apierrors.IsNotFound(err) {
-		t.Fatalf("expected projected runtime image pull secret %s/%s to be deleted, got err=%v", namespace, name, err)
-	}
+	return count
 }
 
 func reconcileDeployment(t *testing.T, reconciler *baseReconciler, workload *appsv1.Deployment) ctrl.Result {

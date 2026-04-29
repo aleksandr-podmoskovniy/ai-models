@@ -24,8 +24,11 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 type deployment = appsv1.Deployment
@@ -42,6 +45,7 @@ func TestDeploymentReconcilerRemovesManagedStateWhenAnnotationDisappears(t *test
 	if _, err := reconciler.reconcileWorkload(context.Background(), workload); err != nil {
 		t.Fatalf("initial reconcileWorkload() error = %v", err)
 	}
+	createLegacyProjectedAccess(t, kubeClient, workload.Namespace, workload.UID)
 
 	var updated deployment
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &updated); err != nil {
@@ -61,8 +65,8 @@ func TestDeploymentReconcilerRemovesManagedStateWhenAnnotationDisappears(t *test
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &cleaned); err != nil {
 		t.Fatalf("Get(cleaned deployment) error = %v", err)
 	}
-	if hasInitContainer(cleaned.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
-		t.Fatalf("did not expect init container %q after annotation removal", modeldelivery.DefaultInitContainerName)
+	if hasInitContainer(cleaned.Spec.Template.Spec.InitContainers, modeldelivery.LegacyMaterializerInitContainerName) {
+		t.Fatalf("did not expect init container %q after annotation removal", modeldelivery.LegacyMaterializerInitContainerName)
 	}
 	if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, modeldelivery.ModelPathEnv) {
 		t.Fatalf("did not expect runtime env %q after annotation removal", modeldelivery.ModelPathEnv)
@@ -88,8 +92,52 @@ func TestDeploymentReconcilerRemovesManagedStateWhenAnnotationDisappears(t *test
 	if got := len(cleaned.Spec.Template.Spec.ImagePullSecrets); got != 0 {
 		t.Fatalf("did not expect imagePullSecrets after annotation removal, got %#v", cleaned.Spec.Template.Spec.ImagePullSecrets)
 	}
-	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
-	assertProjectedRuntimeImagePullSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
+	if controllerutil.ContainsFinalizer(&cleaned, Finalizer) {
+		t.Fatalf("did not expect delivery cleanup finalizer after annotation removal, got %#v", cleaned.Finalizers)
+	}
+	assertLegacyProjectedAuthSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
+	assertLegacyRuntimeImagePullSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
+}
+
+func TestDeploymentReconcilerFinalizesAppliedDeliveryOnDelete(t *testing.T) {
+	t.Parallel()
+
+	model := readyModel()
+	workload := annotatedDeployment(map[string]string{ModelAnnotation: model.Name}, 1, corev1.VolumeSource{
+		EmptyDir: &corev1.EmptyDirVolumeSource{},
+	})
+	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
+
+	if _, err := reconciler.reconcileWorkload(context.Background(), workload); err != nil {
+		t.Fatalf("initial reconcileWorkload() error = %v", err)
+	}
+
+	var applied deployment
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &applied); err != nil {
+		t.Fatalf("Get(applied deployment) error = %v", err)
+	}
+	if !controllerutil.ContainsFinalizer(&applied, Finalizer) {
+		t.Fatalf("expected delivery cleanup finalizer before delete, got %#v", applied.Finalizers)
+	}
+	createLegacyProjectedAccess(t, kubeClient, workload.Namespace, workload.UID)
+	now := metav1.Now()
+	applied.DeletionTimestamp = &now
+
+	result := reconcileDeployment(t, reconciler, &applied)
+	if result != (ctrl.Result{}) {
+		t.Fatalf("unexpected reconcile result %#v", result)
+	}
+
+	var finalized deployment
+	err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &finalized)
+	if err != nil && !apierrors.IsNotFound(err) {
+		t.Fatalf("Get(finalized deployment) error = %v", err)
+	}
+	if err == nil && controllerutil.ContainsFinalizer(&finalized, Finalizer) {
+		t.Fatalf("expected delivery cleanup finalizer to be removed, got %#v", finalized.Finalizers)
+	}
+	assertLegacyProjectedAuthSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
+	assertLegacyRuntimeImagePullSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
 }
 
 func TestDeploymentReconcilerIgnoresUnmanagedWorkloadWithoutAnnotations(t *testing.T) {
@@ -109,11 +157,11 @@ func TestDeploymentReconcilerIgnoresUnmanagedWorkloadWithoutAnnotations(t *testi
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &unchanged); err != nil {
 		t.Fatalf("Get(deployment) error = %v", err)
 	}
-	if hasInitContainer(unchanged.Spec.Template.Spec.InitContainers, modeldelivery.DefaultInitContainerName) {
-		t.Fatalf("did not expect init container %q", modeldelivery.DefaultInitContainerName)
+	if hasInitContainer(unchanged.Spec.Template.Spec.InitContainers, modeldelivery.LegacyMaterializerInitContainerName) {
+		t.Fatalf("did not expect init container %q", modeldelivery.LegacyMaterializerInitContainerName)
 	}
-	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
-	assertProjectedRuntimeImagePullSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
+	assertLegacyProjectedAuthSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
+	assertLegacyRuntimeImagePullSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
 }
 
 func TestDeploymentReconcilerIgnoresModuleNamespaceWorkload(t *testing.T) {
@@ -150,6 +198,7 @@ func TestDeploymentReconcilerRemovesInjectedManagedCacheStateWhenAnnotationDisap
 	if _, err := reconciler.reconcileWorkload(context.Background(), workload); err != nil {
 		t.Fatalf("initial reconcileWorkload() error = %v", err)
 	}
+	createLegacyProjectedAccess(t, kubeClient, workload.Namespace, workload.UID)
 
 	var updated deployment
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &updated); err != nil {
@@ -172,6 +221,9 @@ func TestDeploymentReconcilerRemovesInjectedManagedCacheStateWhenAnnotationDisap
 	if len(cleaned.Spec.Template.Spec.Containers[0].VolumeMounts) != 0 {
 		t.Fatalf("did not expect managed cache mount after cleanup, got %#v", cleaned.Spec.Template.Spec.Containers[0].VolumeMounts)
 	}
+	if controllerutil.ContainsFinalizer(&cleaned, Finalizer) {
+		t.Fatalf("did not expect delivery cleanup finalizer after managed cache cleanup, got %#v", cleaned.Finalizers)
+	}
 	for _, envName := range []string{
 		modeldelivery.ModelPathEnv,
 		modeldelivery.ModelDigestEnv,
@@ -186,5 +238,6 @@ func TestDeploymentReconcilerRemovesInjectedManagedCacheStateWhenAnnotationDisap
 			t.Fatalf("did not expect managed cache volume %q after cleanup", modeldelivery.DefaultManagedCacheName)
 		}
 	}
-	assertProjectedRuntimeImagePullSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
+	assertLegacyRuntimeImagePullSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
+	assertLegacyProjectedAuthSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
 }

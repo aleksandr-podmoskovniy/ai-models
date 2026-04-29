@@ -67,10 +67,8 @@ Current phase-2 slice implemented here:
   caller supplies direct-upload state, the adapter can continue interrupted
   raw-layer upload from persisted session state while the helper session is
   still alive, instead of depending only on one live worker process;
-- `internal/nodecache` for shared node-local cache contract reused by legacy
-  explicit-volume materialize bridge paths and the module-owned node-cache
-  runtime plane: digest-addressed shared store layout, ready marker
-  parsing, separate consumer materialization plus internal current-link and
+- `internal/nodecache` for the module-owned SharedDirect node-local cache
+  runtime plane: digest-addressed shared store layout, ready marker parsing,
   stable workload-model-link helper contract, single-writer coordination,
   access timestamp handling, desired-artifact prefetch into the shared store
   with per-digest retry/backoff, protected-digest-aware bounded cache
@@ -83,23 +81,19 @@ Current phase-2 slice implemented here:
   kubelet target path;
 - `internal/adapters/k8s/modeldelivery` for reusable consumer-side
   `PodTemplateSpec` mutation over the workload-facing node-cache
-  `SharedDirect` inline CSI contract for managed workloads without an explicit
-  cache volume, plus legacy `materialize-artifact` mutation for explicit
-  workload-provided cache volumes; it keeps the fixed `/data/modelcache`
-  cache-root contract, topology-aware per-pod versus shared PVC bridge
-  handling where the legacy bridge is still explicit, and cross-namespace
-  read-only DMCR auth/CA projection only for paths that still materialize in
-  the workload namespace; the stable workload-facing runtime env contract keeps
+  `SharedDirect` inline CSI contract. It does not render workload-namespace
+  materializer init containers, projected registry credentials, explicit cache
+  PVC bridges, or emptyDir/ephemeral fallbacks; unsupported storage topology
+  fails closed. The stable workload-facing runtime env contract keeps
   legacy primary-model variables (`AI_MODELS_MODEL_PATH` /
   `AI_MODELS_MODEL_DIGEST` / `AI_MODELS_MODEL_FAMILY`) and adds alias-based
   multi-model delivery through `ai.deckhouse.io/model-refs`,
   `/data/modelcache/models/<alias>`, `AI_MODELS_MODELS_DIR`,
   `AI_MODELS_MODELS` with alias/path/digest/family entries, and per-alias
   `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}` variables without leaking raw
-  cache-root layout details into consumers; managed `SharedDirect` also
-  requires the dynamic `ai.deckhouse.io/node-cache-runtime-ready=true` node
-  label and keeps the ai-models scheduling gate while no selected node has a
-  ready runtime plane;
+  cache-root layout details into consumers; managed `SharedDirect` requires a
+  user-declared node-cache CSI volume and leaves node placement to the workload
+  owner or scheduler;
 - `internal/adapters/k8s/nodecacheruntime` for stable per-node Pod/PVC shaping
   of the node-cache runtime plane, Deckhouse-style CSI registration sidecar and
   hostPath/socket wiring, plus runtime-side extraction of the published
@@ -115,16 +109,15 @@ Current phase-2 slice implemented here:
   first rollout, then the controller
   resolves `Model` or `ClusterModel`, reuses the shared `k8s/modeldelivery`
   service, writes resolved artifact plus delivery mode/reason annotations onto
-  `PodTemplateSpec`, removes the scheduling gate only after the selected
-  runtime plane is ready for managed `SharedDirect`,
-  auto-injects the managed node-cache inline CSI `SharedDirect` volume when
-  node-cache substrate is enabled and the workload did not bring a cache mount,
-  propagates the configured node-cache node selector into managed workloads,
+  `PodTemplateSpec`, stamps artifact attributes on the user-declared
+  node-cache CSI volume, removes the scheduling gate only after delivery
+  preflight passes, leaves workload placement to the workload owner or
+  scheduler,
   fail-closes when user-provided `/data/modelcache` storage topology is invalid
   instead of inventing a second storage contract,
-  and keeps side-effecting registry Secret projection controller-driven instead
-  of moving it into admission; watch scope is now narrow to opt-in or
-  already-managed workloads plus referenced
+  and performs delete-only cleanup for legacy projected registry Secrets without
+  creating workload-namespace credentials; watch scope is now narrow to opt-in
+  or already-managed workloads plus referenced
   `Model` / `ClusterModel` objects;
 - `internal/controllers/nodecachesubstrate` for ai-models-owned managed local
   storage substrate: it keeps one `LVMVolumeGroupSet` plus one
@@ -145,9 +138,7 @@ Current phase-2 slice implemented here:
   `nodeCacheRuntime` distroless image, exposes the
   `node-cache.ai-models.deckhouse.io` CSI socket through `node-driver-registrar`
   and bind-mounts ready digest stores into workloads; module render also
-  publishes the workload-facing inline CSI driver identity, while
-  explicit-volume materialize bridge workloads remain outside the managed
-  SharedDirect desired-artifact set;
+  publishes the workload-facing inline CSI driver identity;
 - `internal/adapters/sourcefetch` for safe `HuggingFace` remote source fetch
   and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport, source mirror transfer, archive inspection and
@@ -303,9 +294,8 @@ Current phase-2 slice implemented here:
   over the managed node-cache runtime plane: stable per-node agent `Pod`
   phase/readiness, selector-scoped desired-vs-ready summary gauges, shared-
   cache `PVC` bind/requested-size signals, and aggregated top-level workload
-  delivery mode/reason counts plus bridge init-container
-  `waiting/running/succeeded/failed` state signals from ai-models-owned
-  runtime state instead of ad-hoc `kubectl` inspection;
+  delivery mode/reason counts from ai-models-owned runtime state instead of
+  ad-hoc `kubectl` inspection;
 - `internal/support/cleanuphandle` for controller-owned backend-specific delete
   state
   that must not leak into public status;
@@ -374,9 +364,8 @@ Current controller scope excludes:
 - richer source auth flows beyond the current minimal projection contract:
   `HuggingFace` supports a projected token secret, but broader source
   integrations and richer auth/session handoff stay out of scope;
-- live runtime integration with `ai-inference` and concrete init-container
-  pod mutation/runtime injection; reusable consumer-side wiring now exists,
-  but concrete `ai-inference` integration remains a separate adapter-specific
-  step;
+- live runtime integration with `ai-inference`; reusable SharedDirect
+  consumer-side wiring now exists, but concrete `ai-inference` integration
+  remains a separate adapter-specific step;
 - richer publication hardening beyond the current implementation adapter:
   implementation switching and stronger trust/promotion semantics.

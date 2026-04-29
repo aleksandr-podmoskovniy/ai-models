@@ -154,6 +154,7 @@ HUMAN_RBAC_FORBIDDEN_MARKERS = (
     "uploadsessions",
     "directuploadstates",
 )
+CONTROLLER_RUNTIME_WRITE_VERBS = ("create", "update", "patch", "delete")
 
 
 def _find_secret(
@@ -183,6 +184,40 @@ def _split_yaml_documents(content: str) -> list[str]:
     if current:
         documents.append("\n".join(current))
     return documents
+
+
+def _document_has_kind(document: str, kind: str) -> bool:
+    return re.search(rf"(?m)^kind:\s+{re.escape(kind)}\s*$", document) is not None
+
+
+def _document_has_metadata_name(document: str, name: str) -> bool:
+    return re.search(rf"(?m)^\s*name:\s+{re.escape(name)}\s*$", document) is not None
+
+
+def _quoted_items(raw: str) -> set[str]:
+    return set(re.findall(r'"([^"]+)"', raw))
+
+
+def _resource_rule_verbs(document: str, resource: str) -> list[set[str]]:
+    result: list[set[str]] = []
+    for match in re.finditer(
+        r"resources:\s*\[([^\]]+)\]\s*\n\s*verbs:\s*\[([^\]]+)\]",
+        document,
+    ):
+        resources = _quoted_items(match.group(1))
+        if resource in resources:
+            result.append(_quoted_items(match.group(2)))
+    return result
+
+
+def _document_grants_any_verb(
+    document: str, resource: str, verbs: tuple[str, ...]
+) -> bool:
+    disallowed = set(verbs)
+    return any(
+        rule_verbs & disallowed
+        for rule_verbs in _resource_rule_verbs(document, resource)
+    )
 
 
 def _leading_spaces(line: str) -> int:
@@ -788,6 +823,118 @@ def _validate_upload_gateway_storage_accounting_rbac(path: Path, content: str) -
     return errors
 
 
+def _validate_explicit_service_account_token_automount(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    required = {
+        "ai-models-controller": "ai-models-controller",
+        "ai-models-upload-gateway": "ai-models-upload-gateway",
+    }
+    for raw_document in _split_yaml_documents(content):
+        documents = _parse_render_documents(raw_document)
+        document = documents[0] if documents else None
+        if not document or document.get("kind") != "Deployment":
+            continue
+        metadata = document.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        name = metadata.get("name")
+        service_account = required.get(str(name))
+        if not service_account:
+            continue
+        if f"serviceAccountName: {service_account}" not in raw_document:
+            continue
+        if not re.search(
+            r"(?m)^\s*automountServiceAccountToken:\s+true\s*$",
+            raw_document,
+        ):
+            errors.append(
+                f"{path.name}: Deployment/{name} must explicitly set automountServiceAccountToken: true"
+            )
+    return errors
+
+
+def _validate_controller_runtime_rbac_source(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    path = Path("templates/controller/rbac.yaml")
+    content = (repo_root / path).read_text(encoding="utf-8")
+    documents = _split_yaml_documents(content)
+
+    controller_cluster_role = next(
+        (
+            document
+            for document in documents
+            if _document_has_kind(document, "ClusterRole")
+            and _document_has_metadata_name(
+                document, '{{ include "ai-models.controllerName" . }}'
+            )
+        ),
+        "",
+    )
+    if not controller_cluster_role:
+        errors.append(f"{path}: missing controller ClusterRole")
+    else:
+        for resource in ("pods", "persistentvolumeclaims", "leases"):
+            if _document_grants_any_verb(
+                controller_cluster_role, resource, CONTROLLER_RUNTIME_WRITE_VERBS
+            ):
+                errors.append(
+                    f"{path}: controller ClusterRole must not grant cluster-wide {resource} write verbs"
+                )
+        if _document_grants_any_verb(
+            controller_cluster_role, "secrets", ("create", "update", "patch")
+        ):
+            errors.append(
+                f"{path}: controller ClusterRole must not grant cluster-wide secrets create/update/patch verbs"
+            )
+        secret_verbs = set().union(*_resource_rule_verbs(controller_cluster_role, "secrets"))
+        if "delete" not in secret_verbs:
+            errors.append(
+                f"{path}: controller ClusterRole must grant delete on secrets for legacy projected access cleanup"
+            )
+
+    runtime_write_role = next(
+        (
+            document
+            for document in documents
+            if _document_has_kind(document, "Role")
+            and _document_has_metadata_name(
+                document, '{{ include "ai-models.controllerName" . }}-runtime-writes'
+            )
+        ),
+        "",
+    )
+    if not runtime_write_role:
+        errors.append(f"{path}: missing controller runtime-writes Role")
+    else:
+        for resource in ("pods", "persistentvolumeclaims", "secrets"):
+            verbs = set().union(*_resource_rule_verbs(runtime_write_role, resource))
+            if not set(CONTROLLER_RUNTIME_WRITE_VERBS).issubset(verbs):
+                errors.append(
+                    f"{path}: controller runtime-writes Role must grant module-namespace {resource} writes"
+                )
+        lease_verbs = set().union(*_resource_rule_verbs(runtime_write_role, "leases"))
+        if not {"get", "list", "watch", *CONTROLLER_RUNTIME_WRITE_VERBS}.issubset(
+            lease_verbs
+        ):
+            errors.append(
+                f"{path}: controller runtime-writes Role must grant module-namespace Lease leadership verbs"
+            )
+
+    runtime_write_binding = any(
+        _document_has_kind(document, "RoleBinding")
+        and _document_has_metadata_name(
+            document, '{{ include "ai-models.controllerName" . }}-runtime-writes'
+        )
+        and 'name: {{ include "ai-models.controllerServiceAccountName" . }}'
+        in document
+        for document in documents
+    )
+    if not runtime_write_binding:
+        errors.append(f"{path}: missing controller runtime-writes RoleBinding")
+
+    return errors
+
+
 def _validate_template_sources(repo_root: Path) -> list[str]:
     errors: list[str] = []
     for template, label, values_path, forbidden_markers in VALUES_BACKED_TLS_TEMPLATE_RULES:
@@ -857,6 +1004,8 @@ def _validate_template_sources(repo_root: Path) -> list[str]:
             "templates/controller/deployment.yaml: publication worker must not "
             "reuse controllerServiceAccountName"
         )
+
+    errors.extend(_validate_controller_runtime_rbac_source(repo_root))
 
     return errors
 
@@ -1305,6 +1454,7 @@ def validate_render(path: Path) -> list[str]:
     errors.extend(_validate_controller_cleanup_runtime(path, content))
     errors.extend(_validate_publication_worker_identity(path, content))
     errors.extend(_validate_upload_gateway_storage_accounting_rbac(path, content))
+    errors.extend(_validate_explicit_service_account_token_automount(path, content))
     errors.extend(_validate_ai_models_monitoring_wiring(path, content))
     errors.extend(_validate_values_backed_tls_secrets(path, content))
     errors.extend(_validate_upload_gateway_ingress_tls(path, content))

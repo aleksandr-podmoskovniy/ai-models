@@ -29,10 +29,21 @@ import (
 )
 
 func newCronJobReconciler(t *testing.T, objects ...client.Object) (*baseReconciler, client.Client) {
+	objects = append(objects, readyNodeCacheRuntimeNode())
 	return newWorkloadReconcilerWithOptions(t, batchv1.AddToScheme, defaultServiceOptions(), objects...)
 }
 
 func annotatedCronJob(annotations map[string]string, volumeSource corev1.VolumeSource) *batchv1.CronJob {
+	if volumeSource.EmptyDir != nil {
+		workload := annotatedCronJobWithoutCacheMount(annotations)
+		workload.Spec.JobTemplate.Spec.Template.Spec.Volumes = []corev1.Volume{{
+			Name: modeldelivery.DefaultManagedCacheName,
+			VolumeSource: corev1.VolumeSource{
+				CSI: nodeCacheCSIVolumeSource(),
+			},
+		}}
+		return workload
+	}
 	return &batchv1.CronJob{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "runtime",
@@ -57,6 +68,31 @@ func annotatedCronJob(annotations map[string]string, volumeSource corev1.VolumeS
 						Volumes: []corev1.Volume{{
 							Name:         "model-cache",
 							VolumeSource: volumeSource,
+						}},
+					},
+				},
+			}},
+		},
+	}
+}
+
+func annotatedCronJobWithoutCacheMount(annotations map[string]string) *batchv1.CronJob {
+	return &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "runtime",
+			Namespace:   "team-a",
+			UID:         types.UID("660e8400-e29b-41d4-a716-446655440999"),
+			Annotations: annotations,
+		},
+		Spec: batchv1.CronJobSpec{
+			Schedule: "* * * * *",
+			JobTemplate: batchv1.JobTemplateSpec{Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "runtime"}},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "runtime",
+							Image: "example.com/runtime:dev",
 						}},
 					},
 				},

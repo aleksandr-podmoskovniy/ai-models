@@ -21,7 +21,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
@@ -30,21 +29,18 @@ import (
 )
 
 type ServiceOptions struct {
-	Render       Options
-	ManagedCache ManagedCacheOptions
+	Render          Options
+	ManagedCache    ManagedCacheOptions
+	DeliveryAuthKey string
 
-	RegistrySourceNamespace      string
-	RegistrySourceAuthSecretName string
-	RegistrySourceCASecretName   string
-	RuntimeImagePullSecretName   string
+	RegistrySourceNamespace string
 }
 
 type ApplyRequest struct {
-	Artifact        publication.PublishedArtifact
-	ArtifactFamily  string
-	Bindings        []ModelBinding
-	TargetNamespace string
-	Topology        TopologyHints
+	Artifact       publication.PublishedArtifact
+	ArtifactFamily string
+	Bindings       []ModelBinding
+	Topology       TopologyHints
 }
 
 type ModelBinding struct {
@@ -56,7 +52,6 @@ type ModelBinding struct {
 type ApplyResult struct {
 	CacheMountPath    string
 	ModelPath         string
-	RegistryAccess    ociregistry.Projection
 	ResolvedDigestKey string
 	TopologyKind      CacheTopologyKind
 	DeliveryMode      DeliveryMode
@@ -103,7 +98,7 @@ func (s *Service) ApplyToPodTemplate(
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	gate, err := s.deliveryGateForTemplate(ctx, topology.Kind, input, template)
+	gate, err := s.deliveryGateForTemplate(topology.Kind, input)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -113,16 +108,15 @@ func (s *Service) ApplyToPodTemplate(
 		return ApplyResult{}, err
 	}
 
-	if err := applyRendered(template, rendered, input.Artifact.Digest, topology.DeliveryMode, topology.DeliveryReason); err != nil {
+	if err := applyRendered(template, owner.GetNamespace(), rendered, input.Artifact.Digest, topology.DeliveryMode, topology.DeliveryReason, s.options.DeliveryAuthKey); err != nil {
 		return ApplyResult{}, err
 	}
 	s.pruneManagedCacheTemplateState(template, topology, rendered, aliasContract)
-	applyReadyNodeSchedulingGate(template, topology.Kind, gate.Ready)
+	applyDeliverySchedulingGate(template, topology.Kind, gate.Ready)
 
 	return ApplyResult{
 		CacheMountPath:    topology.CacheMount.MountPath,
 		ModelPath:         rendered.ModelPath,
-		RegistryAccess:    input.RegistryAccess,
 		ResolvedDigestKey: ResolvedDigestAnnotation,
 		TopologyKind:      topology.Kind,
 		DeliveryMode:      topology.DeliveryMode,
@@ -156,7 +150,7 @@ func (s *Service) renderInput(
 	if err != nil {
 		return Input{}, CacheTopology{}, false, err
 	}
-	input, err := s.resolveRenderInput(ctx, owner, request, bindings, aliasContract, topology)
+	input, err := s.resolveRenderInput(owner, bindings, aliasContract, topology)
 	if err != nil {
 		return Input{}, CacheTopology{}, false, err
 	}
@@ -164,53 +158,27 @@ func (s *Service) renderInput(
 }
 
 func (s *Service) resolveRenderInput(
-	ctx context.Context,
 	owner client.Object,
-	request ApplyRequest,
 	bindings []ModelBinding,
 	aliasContract bool,
 	topology CacheTopology,
 ) (Input, error) {
-	targetNamespace, err := resolveTargetNamespace(owner, request.TargetNamespace)
-	if err != nil {
-		return Input{}, err
-	}
-	if err := s.prepareTopologyAccess(ctx, owner, targetNamespace, topology.Kind); err != nil {
-		return Input{}, err
-	}
-	coordination, err := s.resolveCoordination(ctx, targetNamespace, topology, request.Topology, bindings[0].Artifact.Digest)
-	if err != nil {
-		return Input{}, err
-	}
-	projection, err := s.ensureRegistryProjection(ctx, owner, targetNamespace, topology.Kind)
-	if err != nil {
-		return Input{}, err
-	}
-	runtimeImagePullSecretName, err := s.runtimeImagePullSecretName(ctx, owner, targetNamespace, topology.Kind)
+	legacyImagePullSecretName, err := legacyRuntimeImagePullSecretName(owner, topology.Kind)
 	if err != nil {
 		return Input{}, err
 	}
 	return Input{
-		Artifact:                   bindings[0].Artifact,
-		ArtifactFamily:             bindings[0].ArtifactFamily,
-		Bindings:                   inputBindings(bindings, aliasContract),
-		RegistryAccess:             projection,
-		RuntimeImagePullSecretName: runtimeImagePullSecretName,
-		CacheMount:                 topology.CacheMount,
-		TopologyKind:               topology.Kind,
-		Coordination:               coordination,
+		Artifact:                  bindings[0].Artifact,
+		ArtifactFamily:            bindings[0].ArtifactFamily,
+		Bindings:                  inputBindings(bindings, aliasContract),
+		LegacyImagePullSecretName: legacyImagePullSecretName,
+		CacheMount:                topology.CacheMount,
+		TopologyKind:              topology.Kind,
 	}, nil
 }
 
-func (s *Service) prepareTopologyAccess(ctx context.Context, owner client.Object, targetNamespace string, topologyKind CacheTopologyKind) error {
-	if topologyKind != CacheTopologyDirect {
-		return nil
-	}
-	return s.cleanupProjectedRuntimeAccess(ctx, owner, targetNamespace)
-}
-
-func applyReadyNodeSchedulingGate(template *corev1.PodTemplateSpec, topologyKind CacheTopologyKind, readyNodes bool) {
-	if topologyKind == CacheTopologyDirect && !readyNodes {
+func applyDeliverySchedulingGate(template *corev1.PodTemplateSpec, topologyKind CacheTopologyKind, ready bool) {
+	if topologyKind == CacheTopologyDirect && !ready {
 		EnsureSchedulingGate(template)
 	}
 }
@@ -228,52 +196,17 @@ func validateApplyInputs(s *Service, owner client.Object, template *corev1.PodTe
 	}
 }
 
-func (s *Service) ensureRegistryProjection(ctx context.Context, owner client.Object, targetNamespace string, topologyKind CacheTopologyKind) (ociregistry.Projection, error) {
-	if topologyKind == CacheTopologyDirect {
-		return ociregistry.Projection{}, nil
-	}
-	return ociregistry.EnsureProjectedAccessFromSourceNamespace(
-		ctx,
-		s.client,
-		s.scheme,
-		owner,
-		targetNamespace,
-		owner.GetUID(),
-		s.options.RegistrySourceNamespace,
-		s.options.RegistrySourceAuthSecretName,
-		s.options.RegistrySourceCASecretName,
-	)
-}
-
-func (s *Service) runtimeImagePullSecretName(ctx context.Context, owner client.Object, targetNamespace string, topologyKind CacheTopologyKind) (string, error) {
-	if topologyKind == CacheTopologyDirect {
-		return resourcenames.RuntimeImagePullSecretName(owner.GetUID())
-	}
-	if strings.TrimSpace(s.options.RuntimeImagePullSecretName) == "" {
+func legacyRuntimeImagePullSecretName(owner client.Object, topologyKind CacheTopologyKind) (string, error) {
+	if topologyKind != CacheTopologyDirect {
 		return "", nil
 	}
-	return ociregistry.EnsureProjectedImagePullSecretFromSourceNamespace(
-		ctx,
-		s.client,
-		s.scheme,
-		owner,
-		targetNamespace,
-		owner.GetUID(),
-		s.options.RegistrySourceNamespace,
-		s.options.RuntimeImagePullSecretName,
-	)
-}
-
-func (s *Service) cleanupProjectedRuntimeAccess(ctx context.Context, owner client.Object, targetNamespace string) error {
-	if err := ociregistry.DeleteProjectedAccess(ctx, s.client, targetNamespace, owner.GetUID()); err != nil {
-		return err
-	}
-	return ociregistry.DeleteProjectedImagePullSecret(ctx, s.client, targetNamespace, owner.GetUID())
+	return resourcenames.RuntimeImagePullSecretName(owner.GetUID())
 }
 
 func NormalizeServiceOptions(options ServiceOptions) ServiceOptions {
 	options.Render = NormalizeOptions(options.Render)
 	options.ManagedCache = NormalizeManagedCacheOptions(options.ManagedCache)
+	options.DeliveryAuthKey = strings.TrimSpace(options.DeliveryAuthKey)
 	return options
 }
 
@@ -285,23 +218,10 @@ func validateServiceOptions(options ServiceOptions) error {
 		return err
 	}
 	switch {
+	case options.ManagedCache.Enabled && strings.TrimSpace(options.DeliveryAuthKey) == "":
+		return errors.New("runtime delivery auth key must not be empty when managed node-cache delivery is enabled")
 	case strings.TrimSpace(options.RegistrySourceNamespace) == "":
 		return errors.New("runtime delivery registry source namespace must not be empty")
-	case strings.TrimSpace(options.RegistrySourceAuthSecretName) == "":
-		return errors.New("runtime delivery registry source auth secret name must not be empty")
 	}
 	return nil
-}
-
-func resolveTargetNamespace(owner client.Object, explicit string) (string, error) {
-	if namespace := strings.TrimSpace(explicit); namespace != "" {
-		return namespace, nil
-	}
-	if owner == nil {
-		return "", errors.New("runtime delivery target namespace must not be empty")
-	}
-	if namespace := strings.TrimSpace(owner.GetNamespace()); namespace != "" {
-		return namespace, nil
-	}
-	return "", errors.New("runtime delivery target namespace must not be empty")
 }

@@ -37,15 +37,11 @@ func TestServicePrunesStaleMultiModelStateWhenSwitchingToSingleSharedDirect(t *t
 		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
 	)
 	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{RuntimeImage: "example.com/ai-models:latest"},
 		ManagedCache: ManagedCacheOptions{
 			Enabled: true,
-			NodeSelector: map[string]string{
-				"ai.deckhouse.io/node-cache": "true",
-			},
 		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+		DeliveryAuthKey:         testDeliveryAuthKey,
+		RegistrySourceNamespace: "d8-ai-models",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -117,25 +113,27 @@ func TestServicePrunesStaleMultiModelStateWhenSwitchingToSingleSharedDirect(t *t
 	}
 }
 
-func TestServicePrunesRemovedAliasFromBridgeDelivery(t *testing.T) {
+func TestServicePrunesRemovedAliasFromSharedDirectDelivery(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
 	owner := testkit.NewModel()
 	kubeClient := testkit.NewFakeClient(t, scheme, nil,
 		owner,
-		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
+		readyNode(),
 	)
 	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render:                       Options{RuntimeImage: "example.com/ai-models:latest"},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+		ManagedCache: ManagedCacheOptions{
+			Enabled: true,
+		},
+		DeliveryAuthKey:         testDeliveryAuthKey,
+		RegistrySourceNamespace: "d8-ai-models",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	template := podTemplateWithCacheMount("runtime", "model-cache", DefaultCacheMountPath)
+	template := podTemplateWithoutCacheMount("runtime")
 	multi := ApplyRequest{
 		Artifact: publishedArtifactWithDigest("sha256:primary"),
 		Bindings: []ModelBinding{
@@ -159,8 +157,8 @@ func TestServicePrunesRemovedAliasFromBridgeDelivery(t *testing.T) {
 		t.Fatalf("primary-only ApplyToPodTemplate() error = %v", err)
 	}
 
-	if hasContainer(template.Spec.InitContainers, managedInitContainerName(DefaultInitContainerName, "embed")) {
-		t.Fatalf("expected removed alias materializer to be pruned")
+	if got := len(template.Spec.InitContainers); got != 0 {
+		t.Fatalf("did not expect shared-direct init containers, got %#v", template.Spec.InitContainers)
 	}
 	for _, name := range []string{
 		NamedModelPathEnv("embed"),
@@ -173,6 +171,12 @@ func TestServicePrunesRemovedAliasFromBridgeDelivery(t *testing.T) {
 	}
 	if got := template.Annotations[ResolvedModelsAnnotation]; strings.Contains(got, "embed") {
 		t.Fatalf("expected resolved models annotation to drop embed alias, got %q", got)
+	}
+	if got := countVolumeByName(template.Spec.Volumes, DefaultManagedCacheName+"-embed"); got != 0 {
+		t.Fatalf("expected removed alias CSI volume to be pruned, got %d", got)
+	}
+	if got := countVolumeByName(template.Spec.Volumes, DefaultManagedCacheName+"-main"); got != 1 {
+		t.Fatalf("expected main alias CSI volume to remain, got %d", got)
 	}
 }
 
@@ -187,13 +191,11 @@ func TestServiceRejectsAliasMountPathConflict(t *testing.T) {
 		testkit.NewOCIRegistryWriteAuthSecret("d8-ai-models", "ai-models-dmcr-auth-read"),
 	)
 	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{RuntimeImage: "example.com/ai-models:latest"},
 		ManagedCache: ManagedCacheOptions{
-			Enabled:      true,
-			NodeSelector: map[string]string{"ai.deckhouse.io/node-cache": "true"},
+			Enabled: true,
 		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+		DeliveryAuthKey:         testDeliveryAuthKey,
+		RegistrySourceNamespace: "d8-ai-models",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -215,13 +217,4 @@ func TestServiceRejectsAliasMountPathConflict(t *testing.T) {
 	if err == nil || err.Error() != "runtime delivery volume mount path conflicts with existing workload mount" {
 		t.Fatalf("unexpected error %v", err)
 	}
-}
-
-func hasContainer(containers []corev1.Container, name string) bool {
-	for _, container := range containers {
-		if container.Name == name {
-			return true
-		}
-	}
-	return false
 }

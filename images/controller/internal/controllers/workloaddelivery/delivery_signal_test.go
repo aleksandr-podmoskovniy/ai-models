@@ -33,8 +33,8 @@ func TestDeliverySignalStateFromTemplateProjectsWorkloadFacingContract(t *testin
 				modeldelivery.ResolvedDigestAnnotation:         "  sha256:test  ",
 				modeldelivery.ResolvedArtifactURIAnnotation:    "  registry.example/gemma@sha256:test ",
 				modeldelivery.ResolvedArtifactFamilyAnnotation: " gemma ",
-				modeldelivery.ResolvedDeliveryModeAnnotation:   " MaterializeBridge ",
-				modeldelivery.ResolvedDeliveryReasonAnnotation: " WorkloadCacheVolume ",
+				modeldelivery.ResolvedDeliveryModeAnnotation:   " SharedDirect ",
+				modeldelivery.ResolvedDeliveryReasonAnnotation: " NodeSharedRuntimePlane ",
 				"other": "ignored",
 			},
 		},
@@ -57,8 +57,8 @@ func TestDeliverySignalStateFromTemplateProjectsWorkloadFacingContract(t *testin
 		ArtifactURI:    "registry.example/gemma@sha256:test",
 		ArtifactFamily: "gemma",
 		ModelPath:      "/data/modelcache/model",
-		DeliveryMode:   "MaterializeBridge",
-		DeliveryReason: "WorkloadCacheVolume",
+		DeliveryMode:   "SharedDirect",
+		DeliveryReason: "NodeSharedRuntimePlane",
 	}
 	if got != want {
 		t.Fatalf("deliverySignalStateFromTemplate() = %#v, want %#v", got, want)

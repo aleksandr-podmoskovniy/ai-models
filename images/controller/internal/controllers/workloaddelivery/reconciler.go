@@ -21,8 +21,6 @@ import (
 	"log/slog"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
-	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/client-go/tools/record"
@@ -49,6 +47,9 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 	if moduleNamespaceWorkload(object, r.options.Service) {
 		return ctrl.Result{}, nil
 	}
+	if !object.GetDeletionTimestamp().IsZero() {
+		return ctrl.Result{}, r.finalizeWorkloadDelivery(ctx, object)
+	}
 
 	original := object.DeepCopyObject().(client.Object)
 
@@ -67,11 +68,10 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 	}
 
 	result, err := r.delivery.ApplyToPodTemplate(ctx, object, modeldelivery.ApplyRequest{
-		Artifact:        resolution.Artifact,
-		ArtifactFamily:  resolution.Family,
-		Bindings:        resolution.modelDeliveryBindings(usesModelRefsAnnotation(object.GetAnnotations())),
-		TargetNamespace: object.GetNamespace(),
-		Topology:        hints,
+		Artifact:       resolution.Artifact,
+		ArtifactFamily: resolution.Family,
+		Bindings:       resolution.modelDeliveryBindings(usesModelRefsAnnotation(object.GetAnnotations())),
+		Topology:       hints,
 	}, template)
 	if err != nil {
 		if modeldelivery.IsWorkloadContractError(err) {
@@ -80,7 +80,12 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 		r.recorder.Event(object, "Warning", "ModelDeliveryFailed", err.Error())
 		return ctrl.Result{}, err
 	}
-	clearDeliveryBlockedState(template)
+	ensureDeliveryFinalizer(object)
+	if result.GateReason != "" {
+		setDeliveryBlockedState(template, string(result.GateReason), result.GateMessage)
+	} else {
+		clearDeliveryBlockedState(template)
+	}
 
 	patchResult, err := r.patchAppliedWorkload(ctx, object, original, template)
 	if err != nil {
@@ -203,7 +208,9 @@ func (r *baseReconciler) patchAppliedWorkload(
 	if err != nil {
 		return deliveryPatchResult{}, err
 	}
-	if equality.Semantic.DeepEqual(currentTemplate, template) {
+	templateChanged := !equality.Semantic.DeepEqual(currentTemplate, template)
+	finalizersChanged := !equality.Semantic.DeepEqual(original.GetFinalizers(), object.GetFinalizers())
+	if !templateChanged && !finalizersChanged {
 		return deliveryPatchResult{}, nil
 	}
 
@@ -216,32 +223,4 @@ func (r *baseReconciler) patchAppliedWorkload(
 	}
 	result.patched = true
 	return result, nil
-}
-
-func (r *baseReconciler) removeManagedDelivery(
-	ctx context.Context,
-	object client.Object,
-	original client.Object,
-	template *corev1.PodTemplateSpec,
-) error {
-	changed := removeManagedTemplateState(template, r.options.Service)
-	if err := ociregistry.DeleteProjectedAccess(ctx, r.client, object.GetNamespace(), object.GetUID()); err != nil {
-		return err
-	}
-	runtimeImagePullSecretName, err := resourcenames.RuntimeImagePullSecretName(object.GetUID())
-	if err != nil {
-		return err
-	}
-	var removed bool
-	template.Spec.ImagePullSecrets, removed = removeImagePullSecretByName(template.Spec.ImagePullSecrets, runtimeImagePullSecretName)
-	if removed {
-		changed = true
-	}
-	if err := ociregistry.DeleteProjectedImagePullSecret(ctx, r.client, object.GetNamespace(), object.GetUID()); err != nil {
-		return err
-	}
-	if !changed {
-		return nil
-	}
-	return r.client.Patch(ctx, object, client.MergeFrom(original))
 }

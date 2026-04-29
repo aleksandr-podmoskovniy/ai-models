@@ -20,7 +20,6 @@ import (
 	"context"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -64,7 +63,7 @@ func (r *baseReconciler) keepManagedDeliveryStopped(
 	if reason != "" {
 		setDeliveryBlockedState(template, reason, message)
 	}
-	if err := ociregistry.DeleteProjectedAccess(ctx, r.client, object.GetNamespace(), object.GetUID()); err != nil {
+	if err := deleteLegacyProjectedAccess(ctx, r.client, object); err != nil {
 		return false, err
 	}
 	runtimeImagePullSecretName, err := resourcenames.RuntimeImagePullSecretName(object.GetUID())
@@ -73,9 +72,7 @@ func (r *baseReconciler) keepManagedDeliveryStopped(
 	}
 	var removed bool
 	template.Spec.ImagePullSecrets, removed = removeImagePullSecretByName(template.Spec.ImagePullSecrets, runtimeImagePullSecretName)
-	if err := ociregistry.DeleteProjectedImagePullSecret(ctx, r.client, object.GetNamespace(), object.GetUID()); err != nil {
-		return false, err
-	}
+	removeDeliveryFinalizer(object)
 	if !removed && equality.Semantic.DeepEqual(original, object) {
 		return false, nil
 	}

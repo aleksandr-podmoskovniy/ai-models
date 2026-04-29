@@ -17,22 +17,17 @@ limitations under the License.
 package workloaddelivery
 
 const (
-	DefaultMaterializerInitContainerName = "ai-models-materializer"
-
 	ResolvedDigestAnnotation         = "ai.deckhouse.io/resolved-digest"
 	ResolvedArtifactURIAnnotation    = "ai.deckhouse.io/resolved-artifact-uri"
 	ResolvedArtifactFamilyAnnotation = "ai.deckhouse.io/resolved-artifact-family"
 	ResolvedDeliveryModeAnnotation   = "ai.deckhouse.io/resolved-delivery-mode"
 	ResolvedDeliveryReasonAnnotation = "ai.deckhouse.io/resolved-delivery-reason"
 	ResolvedModelsAnnotation         = "ai.deckhouse.io/resolved-models"
+	ResolvedSignatureAnnotation      = "ai.deckhouse.io/resolved-signature"
 
-	DeliveryModeMaterializeBridge = "MaterializeBridge"
-	DeliveryModeSharedPVCBridge   = "SharedPVCBridge"
-	DeliveryModeSharedDirect      = "SharedDirect"
+	DeliveryAuthKeyEnv = "AI_MODELS_DELIVERY_AUTH_KEY"
 
-	DeliveryReasonWorkloadCacheVolume            = "WorkloadCacheVolume"
-	DeliveryReasonManagedBridgeVolume            = "ManagedBridgeVolume"
-	DeliveryReasonStatefulSetClaimTemplate       = "StatefulSetClaimTemplate"
-	DeliveryReasonWorkloadSharedPersistentVolume = "WorkloadSharedPersistentVolumeClaim"
-	DeliveryReasonNodeSharedRuntimePlane         = "NodeSharedRuntimePlane"
+	DeliveryModeSharedDirect = "SharedDirect"
+
+	DeliveryReasonNodeSharedRuntimePlane = "NodeSharedRuntimePlane"
 )

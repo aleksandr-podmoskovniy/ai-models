@@ -28,6 +28,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/cmdsupport"
 	"github.com/deckhouse/ai-models/controller/internal/dataplane/nodecachecsi"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
+	deliverycontract "github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -42,15 +43,17 @@ const (
 	nodeCacheScanIntervalEnv  = nodecache.RuntimeScanIntervalEnv
 	nodeCacheNodeNameEnv      = k8snodecacheruntime.RuntimeNodeNameEnv
 	nodeCacheCSIEndpointEnv   = nodecache.CSIEndpointEnv
+	deliveryAuthKeyEnv        = deliverycontract.DeliveryAuthKeyEnv
 )
 
 type runtimeConfig struct {
-	CacheRoot    string
-	MaxTotalSize string
-	MaxUnusedAge time.Duration
-	ScanInterval time.Duration
-	NodeName     string
-	CSIEndpoint  string
+	CacheRoot       string
+	MaxTotalSize    string
+	MaxUnusedAge    time.Duration
+	ScanInterval    time.Duration
+	NodeName        string
+	CSIEndpoint     string
+	DeliveryAuthKey string
 }
 
 func Run(args []string) int {
@@ -84,7 +87,7 @@ func Run(args []string) int {
 	ctx, stop := cmdsupport.SignalContext()
 	defer stop()
 
-	desiredArtifactsClient, err := k8snodecacheruntime.NewInClusterDesiredArtifactsClient()
+	desiredArtifactsClient, err := k8snodecacheruntime.NewInClusterDesiredArtifactsClient(config.DeliveryAuthKey)
 	if err != nil {
 		return cmdsupport.CommandError(commandName, err)
 	}
@@ -150,12 +153,13 @@ func (a nodeCSIPublishAuthorizer) AllowPublish(ctx context.Context, attributes m
 
 func parseConfig(args []string) (runtimeConfig, int, error) {
 	config := runtimeConfig{
-		CacheRoot:    cmdsupport.EnvOr(nodeCacheRootEnv, ""),
-		MaxTotalSize: cmdsupport.EnvOr(nodeCacheMaxSizeEnv, ""),
-		MaxUnusedAge: durationEnvOr(nodeCacheMaxUnusedAgeEnv, nodecache.DefaultMaxUnusedAge),
-		ScanInterval: durationEnvOr(nodeCacheScanIntervalEnv, nodecache.DefaultMaintenancePeriod),
-		NodeName:     cmdsupport.EnvOr(nodeCacheNodeNameEnv, ""),
-		CSIEndpoint:  cmdsupport.EnvOr(nodeCacheCSIEndpointEnv, nodecache.CSIContainerSocketPath),
+		CacheRoot:       cmdsupport.EnvOr(nodeCacheRootEnv, ""),
+		MaxTotalSize:    cmdsupport.EnvOr(nodeCacheMaxSizeEnv, ""),
+		MaxUnusedAge:    durationEnvOr(nodeCacheMaxUnusedAgeEnv, nodecache.DefaultMaxUnusedAge),
+		ScanInterval:    durationEnvOr(nodeCacheScanIntervalEnv, nodecache.DefaultMaintenancePeriod),
+		NodeName:        cmdsupport.EnvOr(nodeCacheNodeNameEnv, ""),
+		CSIEndpoint:     cmdsupport.EnvOr(nodeCacheCSIEndpointEnv, nodecache.CSIContainerSocketPath),
+		DeliveryAuthKey: cmdsupport.EnvOr(deliveryAuthKeyEnv, ""),
 	}
 
 	flags := cmdsupport.NewFlagSet(commandName)
@@ -165,6 +169,7 @@ func parseConfig(args []string) (runtimeConfig, int, error) {
 	flags.DurationVar(&config.ScanInterval, "scan-interval", config.ScanInterval, "Maintenance scan interval.")
 	flags.StringVar(&config.NodeName, "node-name", config.NodeName, "Current node name used to resolve the required published artifacts for this node.")
 	flags.StringVar(&config.CSIEndpoint, "csi-endpoint", config.CSIEndpoint, "Unix socket path exposed to kubelet through node-driver-registrar.")
+	flags.StringVar(&config.DeliveryAuthKey, "delivery-auth-key", config.DeliveryAuthKey, "HMAC key used to verify controller-stamped workload delivery annotations.")
 	if err := flags.Parse(args); err != nil {
 		return runtimeConfig{}, 2, err
 	}
@@ -176,6 +181,9 @@ func parseConfig(args []string) (runtimeConfig, int, error) {
 	}
 	if strings.TrimSpace(config.CSIEndpoint) == "" {
 		return runtimeConfig{}, 2, fmt.Errorf("%s must not be empty", nodeCacheCSIEndpointEnv)
+	}
+	if strings.TrimSpace(config.DeliveryAuthKey) == "" {
+		return runtimeConfig{}, 2, fmt.Errorf("%s must not be empty", deliveryAuthKeyEnv)
 	}
 	return config, 0, nil
 }

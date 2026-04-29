@@ -24,14 +24,10 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 const (
@@ -39,7 +35,6 @@ const (
 	statefulSetControllerName = defaultControllerNamePrefix + "-statefulset"
 	daemonSetControllerName   = defaultControllerNamePrefix + "-daemonset"
 	cronJobControllerName     = defaultControllerNamePrefix + "-cronjob"
-	rayClusterControllerName  = defaultControllerNamePrefix + "-raycluster"
 )
 
 var errUnexpectedWorkloadListItem = errors.New("workload list returned a non-object item")
@@ -78,40 +73,6 @@ var coreWorkloadKinds = []workloadKind{
 	},
 }
 
-var rayClusterWorkloadKind = workloadKind{
-	kind:           "RayCluster",
-	controllerName: rayClusterControllerName,
-	object:         newRayClusterObject,
-	list:           newRayClusterList,
-}
-
-var rayServiceReferenceKind = workloadKind{
-	kind:           "RayService",
-	controllerName: "",
-	object:         newRayServiceObject,
-	list:           newRayServiceList,
-}
-
-func enabledWorkloadKinds(restMapper meta.RESTMapper) []workloadKind {
-	kinds := append([]workloadKind(nil), coreWorkloadKinds...)
-	if rayDeliveryAPIAvailable(restMapper) {
-		kinds = append(kinds, rayClusterWorkloadKind)
-	}
-	return kinds
-}
-
-func rayDeliveryAPIAvailable(restMapper meta.RESTMapper) bool {
-	return rayAPIAvailable(restMapper, rayServiceGVK) && rayAPIAvailable(restMapper, rayClusterGVK)
-}
-
-func rayAPIAvailable(restMapper meta.RESTMapper, gvk schema.GroupVersionKind) bool {
-	if restMapper == nil {
-		return false
-	}
-	_, err := restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
-	return err == nil
-}
-
 type workloadReconciler struct {
 	baseReconciler
 	newObject func() client.Object
@@ -128,13 +89,8 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 	if err := options.Validate(); err != nil {
 		return err
 	}
-	registerRayTypes(mgr.GetScheme())
-	kinds := enabledWorkloadKinds(mgr.GetRESTMapper())
-	indexedKinds := kinds
-	if rayDeliveryAPIAvailable(mgr.GetRESTMapper()) {
-		indexedKinds = append(indexedKinds, rayServiceReferenceKind)
-	}
-	if err := indexWorkloadReferences(context.Background(), mgr.GetFieldIndexer(), indexedKinds); err != nil {
+	kinds := append([]workloadKind(nil), coreWorkloadKinds...)
+	if err := indexWorkloadReferences(context.Background(), mgr.GetFieldIndexer(), kinds); err != nil {
 		return err
 	}
 
@@ -152,12 +108,6 @@ func SetupWithManager(mgr ctrl.Manager, options Options) error {
 			logger:   controllerLogger(kind.kind),
 			recorder: mgr.GetEventRecorderFor(kind.controllerName),
 		}
-		if kind.kind == rayClusterWorkloadKind.kind {
-			if err := setupRayClusterController(mgr, kind, base); err != nil {
-				return err
-			}
-			continue
-		}
 		if err := setupWorkloadController(mgr, kind, base); err != nil {
 			return err
 		}
@@ -171,22 +121,6 @@ func setupWorkloadController(mgr ctrl.Manager, kind workloadKind, base baseRecon
 		For(kind.object(), builder.WithPredicates(workloadEventFilter(base.options.Service))).
 		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapWorkloadsForModel(kind))).
 		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapWorkloadsForClusterModel(kind)))
-	if base.options.Service.ManagedCache.Enabled {
-		controller = controller.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(base.mapWorkloadsForNodeCacheReadiness(kind)), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
-	}
-	return controller.Complete(&workloadReconciler{baseReconciler: base, newObject: kind.object})
-}
-
-func setupRayClusterController(mgr ctrl.Manager, kind workloadKind, base baseReconciler) error {
-	controller := ctrl.NewControllerManagedBy(mgr).
-		Named(kind.controllerName).
-		For(kind.object(), builder.WithPredicates(workloadEventFilter(base.options.Service))).
-		Watches(newRayServiceObject(), handler.EnqueueRequestsFromMapFunc(base.mapRayClustersForRayService())).
-		Watches(&modelsv1alpha1.Model{}, handler.EnqueueRequestsFromMapFunc(base.mapRayClustersForModel())).
-		Watches(&modelsv1alpha1.ClusterModel{}, handler.EnqueueRequestsFromMapFunc(base.mapRayClustersForClusterModel()))
-	if base.options.Service.ManagedCache.Enabled {
-		controller = controller.Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(base.mapWorkloadsForNodeCacheReadiness(kind)), builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}))
-	}
 	return controller.Complete(&workloadReconciler{baseReconciler: base, newObject: kind.object})
 }
 
@@ -194,9 +128,6 @@ func (r *workloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	object := r.newObject()
 	if err := r.client.Get(ctx, req.NamespacedName, object); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-	if isRayClusterObject(object) {
-		return r.reconcileRayCluster(ctx, object)
 	}
 	return r.reconcileWorkload(ctx, object)
 }

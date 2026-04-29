@@ -25,6 +25,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	admissionv1 "k8s.io/api/admission/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -40,20 +41,18 @@ func setupAdmission(mgr ctrl.Manager) error {
 		return errors.New("manager must not be nil")
 	}
 
-	handler := newAdmissionHandler(mgr.GetScheme(), mgr.GetAPIReader())
+	handler := newAdmissionHandler(mgr.GetScheme())
 	mgr.GetWebhookServer().Register(admissionPath, &admission.Webhook{Handler: handler})
 	return nil
 }
 
 type admissionHandler struct {
 	decoder admission.Decoder
-	reader  client.Reader
 }
 
-func newAdmissionHandler(scheme *runtime.Scheme, reader client.Reader) *admissionHandler {
+func newAdmissionHandler(scheme *runtime.Scheme) *admissionHandler {
 	return &admissionHandler{
 		decoder: admission.NewDecoder(scheme),
-		reader:  reader,
 	}
 }
 
@@ -99,10 +98,10 @@ func (h *admissionHandler) Handle(ctx context.Context, request admission.Request
 func (h *admissionHandler) shouldGate(
 	ctx context.Context,
 	request admission.Request,
-	object client.Object,
+	object metav1.Object,
 	template *corev1.PodTemplateSpec,
 ) (bool, error) {
-	references, found, err := h.deliveryReferences(ctx, object)
+	references, found, err := parseReferences(object.GetAnnotations())
 	if err != nil || !found {
 		return false, err
 	}
@@ -117,7 +116,7 @@ func (h *admissionHandler) shouldGate(
 	if err != nil || !found {
 		return found, err
 	}
-	oldReferences, oldFound, err := h.deliveryReferences(ctx, oldObject)
+	oldReferences, oldFound, err := parseReferences(oldObject.GetAnnotations())
 	if err != nil || !oldFound {
 		return true, err
 	}
@@ -125,30 +124,6 @@ func (h *admissionHandler) shouldGate(
 		return true, nil
 	}
 	return !equalReferences(oldReferences, references), nil
-}
-
-func (h *admissionHandler) deliveryReferences(ctx context.Context, object client.Object) ([]Reference, bool, error) {
-	references, found, err := parseReferences(object.GetAnnotations())
-	if err != nil || found || !isRayClusterObject(object) {
-		return references, found, err
-	}
-	source, found, err := h.rayServiceOwner(ctx, object)
-	if err != nil || !found {
-		return nil, false, err
-	}
-	return parseReferences(source.GetAnnotations())
-}
-
-func (h *admissionHandler) rayServiceOwner(ctx context.Context, rayCluster client.Object) (client.Object, bool, error) {
-	ref, found := rayServiceOwner(rayCluster)
-	if !found || h.reader == nil {
-		return nil, false, nil
-	}
-	source := newRayServiceObject()
-	if err := h.reader.Get(ctx, client.ObjectKey{Namespace: rayCluster.GetNamespace(), Name: ref.Name}, source); err != nil {
-		return nil, false, client.IgnoreNotFound(err)
-	}
-	return source, true, nil
 }
 
 func equalReferences(left, right []Reference) bool {
@@ -196,8 +171,8 @@ func objectForKind(kind metav1.GroupVersionKind) (client.Object, error) {
 		return &appsv1.StatefulSet{}, nil
 	case kind.Group == "apps" && kind.Version == "v1" && kind.Kind == "DaemonSet":
 		return &appsv1.DaemonSet{}, nil
-	case kind.Group == rayClusterGVK.Group && kind.Version == rayClusterGVK.Version && kind.Kind == rayClusterGVK.Kind:
-		return newRayClusterObject(), nil
+	case kind.Group == "batch" && kind.Version == "v1" && kind.Kind == "CronJob":
+		return &batchv1.CronJob{}, nil
 	default:
 		return nil, errors.New("unsupported workload delivery admission object kind")
 	}

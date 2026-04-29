@@ -20,9 +20,8 @@ collector/logger patterns без запуска subagents. Делегация з
   live e2e/HA; observability live proof будет фиксироваться там.
 - `observability-signal-hardening` — current. Компактный executable bundle
   для pending Slice 4: live metrics/alerts и log field dictionary.
-- `ray-a30-ai-models-registry-cutover` — keep. Отдельный executable
-  operational cutover; observability changes не должны смешиваться с A30 load
-  validation.
+- `ray-a30-ai-models-registry-cutover` — archived. KubeRay-specific cutover
+  premise superseded by generic PodTemplate CSI delivery contract.
 
 ## 4. Slices
 

@@ -17,13 +17,16 @@ limitations under the License.
 package modeldelivery
 
 import (
+	"testing"
+
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"testing"
 )
+
+const testDeliveryAuthKey = "test-delivery-auth-key"
 
 func publishedArtifact() publication.PublishedArtifact {
 	return publication.PublishedArtifact{
@@ -35,16 +38,7 @@ func publishedArtifact() publication.PublishedArtifact {
 	}
 }
 
-func projectedAuthSecretName(t *testing.T, ownerUID types.UID) string {
-	t.Helper()
-	name, err := resourcenames.OCIRegistryAuthSecretName(ownerUID)
-	if err != nil {
-		t.Fatalf("OCIRegistryAuthSecretName() error = %v", err)
-	}
-	return name
-}
-
-func projectedRuntimeImagePullSecretName(t *testing.T, ownerUID types.UID) string {
+func legacyRuntimeImagePullSecretNameForTest(t *testing.T, ownerUID types.UID) string {
 	t.Helper()
 	name, err := resourcenames.RuntimeImagePullSecretName(ownerUID)
 	if err != nil {
@@ -105,6 +99,25 @@ func podTemplateWithPVCMount(containerName, volumeName, claimName, mountPath str
 			}},
 		},
 	}
+}
+
+func podTemplateWithNodeCacheVolume(containerName string) *corev1.PodTemplateSpec {
+	template := podTemplateWithoutCacheMount(containerName)
+	addNodeCacheVolume(template, DefaultManagedCacheName)
+	return template
+}
+
+func addNodeCacheVolume(template *corev1.PodTemplateSpec, name string) {
+	template.Spec.Volumes = append(template.Spec.Volumes, corev1.Volume{
+		Name: name,
+		VolumeSource: corev1.VolumeSource{
+			CSI: &corev1.CSIVolumeSource{
+				Driver:           NodeCacheCSIDriverName,
+				ReadOnly:         ptrBool(true),
+				VolumeAttributes: map[string]string{"user.deckhouse.io/cache": "enabled"},
+			},
+		},
+	})
 }
 
 func podTemplateWithoutCacheMount(containerName string) *corev1.PodTemplateSpec {

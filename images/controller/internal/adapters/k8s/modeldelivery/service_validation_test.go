@@ -35,11 +35,7 @@ func TestServiceRejectsMissingCacheMount(t *testing.T) {
 	)
 
 	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
-		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+		RegistrySourceNamespace: "d8-ai-models",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -74,11 +70,7 @@ func TestServiceRejectsAmbiguousCacheMountVolume(t *testing.T) {
 	)
 
 	service, err := NewService(kubeClient, scheme, ServiceOptions{
-		Render: Options{
-			RuntimeImage: "example.com/ai-models:latest",
-		},
-		RegistrySourceNamespace:      "d8-ai-models",
-		RegistrySourceAuthSecretName: "ai-models-dmcr-auth-read",
+		RegistrySourceNamespace: "d8-ai-models",
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)

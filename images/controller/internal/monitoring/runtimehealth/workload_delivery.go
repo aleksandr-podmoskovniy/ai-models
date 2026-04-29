@@ -46,19 +46,10 @@ type workloadDeliveryPodKey struct {
 	deliveryReason string
 }
 
-type workloadDeliveryInitStateKey struct {
-	namespace      string
-	deliveryMode   string
-	deliveryReason string
-	state          string
-	reason         string
-}
-
 func (c *Collector) collectManagedWorkloadDelivery(ctx context.Context, ch chan<- prometheus.Metric) error {
 	workloadCounts := make(map[workloadDeliveryCountKey]int)
 	managedPodCounts := make(map[workloadDeliveryPodKey]int)
 	readyPodCounts := make(map[workloadDeliveryPodKey]int)
-	initStateCounts := make(map[workloadDeliveryInitStateKey]int)
 
 	if err := c.countManagedDeployments(ctx, workloadCounts); err != nil {
 		return err
@@ -72,11 +63,11 @@ func (c *Collector) collectManagedWorkloadDelivery(ctx context.Context, ch chan<
 	if err := c.countManagedCronJobs(ctx, workloadCounts); err != nil {
 		return err
 	}
-	if err := c.countManagedPods(ctx, managedPodCounts, readyPodCounts, initStateCounts); err != nil {
+	if err := c.countManagedPods(ctx, managedPodCounts, readyPodCounts); err != nil {
 		return err
 	}
 
-	reportManagedWorkloadDelivery(ch, workloadCounts, managedPodCounts, readyPodCounts, initStateCounts)
+	reportManagedWorkloadDelivery(ch, workloadCounts, managedPodCounts, readyPodCounts)
 	return nil
 }
 
@@ -128,7 +119,6 @@ func (c *Collector) countManagedPods(
 	ctx context.Context,
 	managed map[workloadDeliveryPodKey]int,
 	ready map[workloadDeliveryPodKey]int,
-	initState map[workloadDeliveryInitStateKey]int,
 ) error {
 	var list corev1.PodList
 	if err := c.reader.List(ctx, &list, client.UnsafeDisableDeepCopy); err != nil {
@@ -149,18 +139,6 @@ func (c *Collector) countManagedPods(
 		if podReady(&list.Items[i]) {
 			ready[key]++
 		}
-
-		state, reason, trackedState := managedInitState(&list.Items[i])
-		if !trackedState {
-			continue
-		}
-		initState[workloadDeliveryInitStateKey{
-			namespace:      key.namespace,
-			deliveryMode:   key.deliveryMode,
-			deliveryReason: key.deliveryReason,
-			state:          state,
-			reason:         reason,
-		}]++
 	}
 	return nil
 }
@@ -205,38 +183,11 @@ func managedDeliveryLabels(annotations map[string]string) (string, string, bool)
 	return mode, reason, true
 }
 
-func managedInitState(pod *corev1.Pod) (string, string, bool) {
-	if pod == nil {
-		return "", "", false
-	}
-	for _, status := range pod.Status.InitContainerStatuses {
-		if status.Name != deliverycontract.DefaultMaterializerInitContainerName {
-			continue
-		}
-		switch {
-		case status.State.Waiting != nil:
-			return "Waiting", strings.TrimSpace(status.State.Waiting.Reason), true
-		case status.State.Running != nil:
-			return "Running", "", true
-		case status.State.Terminated != nil:
-			state := "Succeeded"
-			if status.State.Terminated.ExitCode != 0 {
-				state = "Failed"
-			}
-			return state, strings.TrimSpace(status.State.Terminated.Reason), true
-		default:
-			return "Unknown", "", true
-		}
-	}
-	return "", "", false
-}
-
 func reportManagedWorkloadDelivery(
 	ch chan<- prometheus.Metric,
 	workloadCounts map[workloadDeliveryCountKey]int,
 	managedPodCounts map[workloadDeliveryPodKey]int,
 	readyPodCounts map[workloadDeliveryPodKey]int,
-	initStateCounts map[workloadDeliveryInitStateKey]int,
 ) {
 	for key, count := range workloadCounts {
 		ch <- prometheus.MustNewConstMetric(
@@ -267,18 +218,6 @@ func reportManagedWorkloadDelivery(
 			key.namespace,
 			key.deliveryMode,
 			key.deliveryReason,
-		)
-	}
-	for key, count := range initStateCounts {
-		ch <- prometheus.MustNewConstMetric(
-			workloadDeliveryInitStateMetric.desc,
-			prometheus.GaugeValue,
-			float64(count),
-			key.namespace,
-			key.deliveryMode,
-			key.deliveryReason,
-			key.state,
-			key.reason,
 		)
 	}
 }

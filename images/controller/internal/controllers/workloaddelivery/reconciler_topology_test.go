@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestDeploymentReconcilerRejectsSharedWorkloadPersistentVolumeClaimWithoutRWX(t *testing.T) {
+func TestDeploymentReconcilerRejectsSharedWorkloadPersistentVolumeClaimBridge(t *testing.T) {
 	t.Parallel()
 
 	model := readyModel()
@@ -46,6 +46,7 @@ func TestDeploymentReconcilerRejectsSharedWorkloadPersistentVolumeClaimWithoutRW
 		},
 	}
 	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, pvc, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
+	createLegacyProjectedAccess(t, kubeClient, workload.Namespace, workload.UID)
 
 	result := reconcileDeployment(t, reconciler, workload)
 	if result != (ctrl.Result{}) {
@@ -58,13 +59,14 @@ func TestDeploymentReconcilerRejectsSharedWorkloadPersistentVolumeClaimWithoutRW
 	if got, want := blocked.Spec.Template.Annotations[DeliveryBlockedReasonAnnotation], deliveryBlockedReasonInvalidSpec; got != want {
 		t.Fatalf("blocked reason = %q, want %q", got, want)
 	}
-	if got := blocked.Spec.Template.Annotations[DeliveryBlockedMessageAnnotation]; !strings.Contains(got, "ReadWriteMany") {
+	if got := blocked.Spec.Template.Annotations[DeliveryBlockedMessageAnnotation]; !strings.Contains(got, "does not support explicit cache persistentVolumeClaim") {
 		t.Fatalf("unexpected blocked message %q", got)
 	}
 	if !modeldelivery.HasSchedulingGate(&blocked.Spec.Template) {
 		t.Fatalf("expected scheduling gate for invalid runtime delivery spec")
 	}
-	assertProjectedAuthSecretDeleted(t, kubeClient, workload.Namespace, workload.UID)
+	assertLegacyProjectedAuthSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
+	assertLegacyRuntimeImagePullSecretAbsent(t, kubeClient, workload.Namespace, workload.UID)
 	if events := drainRecordedEvents(t, reconciler); countRecordedEvents(events, "ModelDeliveryBlocked") != 1 {
 		t.Fatalf("events = %#v, want one ModelDeliveryBlocked", events)
 	}

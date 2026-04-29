@@ -18,37 +18,22 @@ package workloaddelivery
 
 import (
 	"testing"
-
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-func TestEnabledWorkloadKindsSkipsRayClusterWhenKubeRayCRDsAreMissing(t *testing.T) {
+func TestCoreWorkloadKindsAreStableBuiltInPodTemplateOwners(t *testing.T) {
 	t.Parallel()
 
-	kinds := enabledWorkloadKinds(meta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "apps", Version: "v1"}}))
-	if got, want := len(kinds), len(coreWorkloadKinds); got != want {
-		t.Fatalf("kind count = %d, want %d", got, want)
+	got := make([]string, 0, len(coreWorkloadKinds))
+	for _, kind := range coreWorkloadKinds {
+		got = append(got, kind.kind)
 	}
-	for _, kind := range kinds {
-		if kind.kind == "RayCluster" {
-			t.Fatalf("RayCluster should not be enabled without discovery mapping")
+	want := []string{"Deployment", "StatefulSet", "DaemonSet", "CronJob"}
+	if len(got) != len(want) {
+		t.Fatalf("kind count = %d, want %d: %v", len(got), len(want), got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("kind[%d] = %q, want %q", index, got[index], want[index])
 		}
-	}
-}
-
-func TestEnabledWorkloadKindsAddsRayClusterWhenKubeRayCRDsExist(t *testing.T) {
-	t.Parallel()
-
-	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{rayServiceGVK.GroupVersion()})
-	mapper.Add(rayServiceGVK, meta.RESTScopeNamespace)
-	mapper.Add(rayClusterGVK, meta.RESTScopeNamespace)
-
-	kinds := enabledWorkloadKinds(mapper)
-	if got, want := len(kinds), len(coreWorkloadKinds)+1; got != want {
-		t.Fatalf("kind count = %d, want %d", got, want)
-	}
-	if got, want := kinds[len(kinds)-1].kind, "RayCluster"; got != want {
-		t.Fatalf("last kind = %q, want %q", got, want)
 	}
 }

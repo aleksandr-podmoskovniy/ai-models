@@ -21,12 +21,11 @@ import (
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
-func TestRenderBuildsAliasMaterializersForMultipleModels(t *testing.T) {
+func TestRenderBuildsAliasRuntimeContractForMultipleSharedDirectModels(t *testing.T) {
 	t.Parallel()
 
 	rendered, err := Render(Input{
@@ -35,29 +34,16 @@ func TestRenderBuildsAliasMaterializersForMultipleModels(t *testing.T) {
 			{Alias: "main", Artifact: publishedArtifactWithDigest("sha256:primary"), ArtifactFamily: "hf-safetensors-v1"},
 			{Alias: "embed", Artifact: publishedArtifactWithDigest("sha256:embed"), ArtifactFamily: "embedding-v1"},
 		},
-		RegistryAccess: ociregistry.Projection{
-			AuthSecretName: "projected-registry-auth",
-		},
 		CacheMount: CacheMount{
-			VolumeName: "model-cache",
+			VolumeName: DefaultManagedCacheName,
 			MountPath:  DefaultCacheMountPath,
 		},
-	}, Options{
-		RuntimeImage: "example.com/ai-models:latest",
-	})
+		TopologyKind: CacheTopologyDirect,
+	}, Options{})
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	if got, want := len(rendered.InitContainers), 2; got != want {
-		t.Fatalf("init container count = %d, want %d", got, want)
-	}
-	if got, want := rendered.InitContainers[0].Name, "ai-models-materializer-main"; got != want {
-		t.Fatalf("first init name = %q, want %q", got, want)
-	}
-	if got, want := envValue(rendered.InitContainers[0].Env, "AI_MODELS_MATERIALIZE_MODEL_ALIAS"), "main"; got != want {
-		t.Fatalf("first alias env = %q, want %q", got, want)
-	}
 	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.WorkloadModelAliasPath(DefaultCacheMountPath, "main"); got != want {
 		t.Fatalf("primary model path = %q, want %q", got, want)
 	}
@@ -93,7 +79,7 @@ func TestRenderBuildsAliasMaterializersForMultipleModels(t *testing.T) {
 	}
 }
 
-func TestRenderBuildsAliasCSIVolumesForMultipleSharedDirectModels(t *testing.T) {
+func TestRenderBuildsAliasMountsForManagedSharedDirectVolumes(t *testing.T) {
 	t.Parallel()
 
 	rendered, err := Render(Input{
@@ -107,21 +93,16 @@ func TestRenderBuildsAliasCSIVolumesForMultipleSharedDirectModels(t *testing.T) 
 			MountPath:  DefaultCacheMountPath,
 		},
 		TopologyKind: CacheTopologyDirect,
-	}, Options{
-		RuntimeImage: "example.com/ai-models:latest",
-	})
+	}, Options{})
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	if len(rendered.InitContainers) != 0 {
-		t.Fatalf("did not expect materializers for shared-direct multi-model render")
+	if got := len(rendered.Volumes); got != 0 {
+		t.Fatalf("render must keep CSI volume ownership in service layer, got %d", got)
 	}
-	if got, want := len(rendered.Volumes), 2; got != want {
-		t.Fatalf("volume count = %d, want %d", got, want)
-	}
-	if got, want := rendered.Volumes[0].VolumeSource.CSI.VolumeAttributes[nodeCacheCSIAttributeArtifactDigest], "sha256:primary"; got != want {
-		t.Fatalf("first csi digest = %q, want %q", got, want)
+	if got, want := rendered.RuntimeVolumeMounts[0].Name, managedModelVolumeName(DefaultManagedCacheName, "main"); got != want {
+		t.Fatalf("main mount volume = %q, want %q", got, want)
 	}
 	if got, want := rendered.RuntimeVolumeMounts[1].MountPath, nodecache.WorkloadModelAliasPath(DefaultCacheMountPath, "draft"); got != want {
 		t.Fatalf("draft mount path = %q, want %q", got, want)
