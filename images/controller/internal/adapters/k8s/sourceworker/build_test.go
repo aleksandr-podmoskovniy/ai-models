@@ -117,6 +117,27 @@ func TestBuildDirectHuggingFacePublicationOmitsMirrorArgsAndArtifactsProjection(
 	}
 }
 
+func TestBuildAcceptsOllamaPublicationRequest(t *testing.T) {
+	t.Parallel()
+
+	request := testOperationRequest()
+	request.Spec.Source.URL = "https://ollama.com/library/qwen3.6:latest"
+	options := testOptions()
+	options.SourceFetch = publicationports.SourceFetchModeDirect
+
+	pod, err := Build(request, options, "", "")
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	assertContains(t, pod.Spec.Containers[0].Args, "--source-type")
+	assertContains(t, pod.Spec.Containers[0].Args, "Ollama")
+	assertContains(t, pod.Spec.Containers[0].Args, "--source-url")
+	assertContains(t, pod.Spec.Containers[0].Args, "https://ollama.com/library/qwen3.6:latest")
+	assertNotContains(t, pod.Spec.Containers[0].Args, "--hf-model-id")
+	assertNoEnv(t, pod.Spec.Containers[0].Env, "HF_TOKEN")
+}
+
 func TestBuildProjectsOnlyArtifactsCAForDirectLayerUpload(t *testing.T) {
 	t.Parallel()
 

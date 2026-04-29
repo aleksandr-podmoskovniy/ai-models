@@ -106,13 +106,13 @@ false
 {{- define "ai-models.nodeCacheMaxSize" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
-{{- default "200Gi" (index $nodeCache "maxSize") -}}
+{{- default "200Gi" (index $nodeCache "size") -}}
 {{- end -}}
 
 {{- define "ai-models.nodeCacheSharedVolumeSize" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
-{{- default "64Gi" (index $nodeCache "sharedVolumeSize") -}}
+{{- default "200Gi" (index $nodeCache "size") -}}
 {{- end -}}
 
 {{- define "ai-models.nodeCacheQuantityBytes" -}}
@@ -144,40 +144,32 @@ false
 {{- end -}}
 
 {{- define "ai-models.nodeCacheStorageClassName" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
-{{- default "ai-models-node-cache" (index $nodeCache "storageClassName") -}}
+ai-models-node-cache
 {{- end -}}
 
 {{- define "ai-models.nodeCacheVolumeGroupSetName" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
-{{- default "ai-models-node-cache" (index $nodeCache "volumeGroupSetName") -}}
+ai-models-node-cache
 {{- end -}}
 
 {{- define "ai-models.nodeCacheVolumeGroupNameOnNode" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
-{{- default "ai-models-cache" (index $nodeCache "volumeGroupNameOnNode") -}}
+ai-models-cache
 {{- end -}}
 
 {{- define "ai-models.nodeCacheThinPoolName" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
-{{- default "model-cache" (index $nodeCache "thinPoolName") -}}
+model-cache
 {{- end -}}
 
 {{- define "ai-models.nodeCacheNodeSelectorJSON" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
-{{- $selector := (index $nodeCache "nodeSelector") | default dict -}}
+{{- $selector := default (dict "ai.deckhouse.io/model-cache" "true") (index $nodeCache "nodeSelector") -}}
 {{- toJson $selector -}}
 {{- end -}}
 
 {{- define "ai-models.nodeCacheBlockDeviceSelectorJSON" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
 {{- $nodeCache := (index $moduleValues "nodeCache") | default dict -}}
-{{- $selector := (index $nodeCache "blockDeviceSelector") | default dict -}}
+{{- $selector := default (dict "ai.deckhouse.io/model-cache" "true") (index $nodeCache "blockDeviceSelector") -}}
 {{- toJson $selector -}}
 {{- end -}}
 
@@ -218,7 +210,8 @@ ai.deckhouse.io/dmcr-gc-request
 
 {{- define "ai-models.dmcrGCSchedule" -}}
 {{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $dmcr := (index $moduleValues "dmcr") | default dict -}}
+{{- $internal := (index $moduleValues "internal") | default dict -}}
+{{- $dmcr := (index $internal "dmcr") | default dict -}}
 {{- $gc := (index $dmcr "gc") | default dict -}}
 {{- if hasKey $gc "schedule" -}}
 {{- index $gc "schedule" -}}
@@ -493,9 +486,7 @@ true
 {{- end -}}
 
 {{- define "ai-models.sourceFetchMode" -}}
-{{- $moduleValues := (index .Values "aiModels") | default dict -}}
-{{- $artifacts := (index $moduleValues "artifacts") | default dict -}}
-{{- lower (default "Direct" (index $artifacts "sourceFetchMode")) -}}
+direct
 {{- end -}}
 
 {{- define "ai-models.artifactsCredentialsSecretName" -}}
@@ -651,18 +642,9 @@ true
         {{- fail (printf "aiModels.nodeCache.enabled requires global.enabledModules to include %s" $module) -}}
       {{- end -}}
     {{- end -}}
-    {{- $nodeSelector := (index $nodeCache "nodeSelector") | default dict -}}
-    {{- if eq (len $nodeSelector) 0 -}}
-      {{- fail "aiModels.nodeCache.nodeSelector must not be empty when nodeCache is enabled" -}}
-    {{- end -}}
-    {{- $blockDeviceSelector := (index $nodeCache "blockDeviceSelector") | default dict -}}
-    {{- if eq (len $blockDeviceSelector) 0 -}}
-      {{- fail "aiModels.nodeCache.blockDeviceSelector must not be empty when nodeCache is enabled" -}}
-    {{- end -}}
-    {{- $maxSizeBytes := include "ai-models.nodeCacheQuantityBytes" (include "ai-models.nodeCacheMaxSize" .) | int64 -}}
-    {{- $sharedVolumeSizeBytes := include "ai-models.nodeCacheQuantityBytes" (include "ai-models.nodeCacheSharedVolumeSize" .) | int64 -}}
-    {{- if gt $sharedVolumeSizeBytes $maxSizeBytes -}}
-      {{- fail "aiModels.nodeCache.sharedVolumeSize must not be greater than aiModels.nodeCache.maxSize" -}}
+    {{- $sizeBytes := include "ai-models.nodeCacheQuantityBytes" (include "ai-models.nodeCacheMaxSize" .) | int64 -}}
+    {{- if le $sizeBytes 0 -}}
+      {{- fail "aiModels.nodeCache.size must be greater than zero" -}}
     {{- end -}}
     {{- if not (include "ai-models.nodeCacheCSIRegistrarImage" . | trim) -}}
       {{- fail "aiModels.nodeCache.enabled requires csiNodeDriverRegistrar image digest in global.modulesImages" -}}

@@ -37,6 +37,7 @@ import (
 
 const (
 	publishSourceTypeEnv          = "AI_MODELS_PUBLISH_SOURCE_TYPE"
+	publishSourceURLEnv           = "AI_MODELS_IMPORT_SOURCE_URL"
 	publishHFModelIDEnv           = "AI_MODELS_IMPORT_HF_MODEL_ID"
 	publishUploadPathEnv          = "AI_MODELS_IMPORT_UPLOAD_PATH"
 	publishUploadStageBucketEnv   = "AI_MODELS_IMPORT_UPLOAD_STAGE_BUCKET"
@@ -58,6 +59,7 @@ func runPublishWorker(args []string) int {
 
 	var sourceType string
 	var artifactURI string
+	var sourceURL string
 	var hfModelID string
 	var uploadPath string
 	var uploadStageBucket string
@@ -81,8 +83,9 @@ func runPublishWorker(args []string) int {
 	var storageOwnerNamespace string
 	var storageOwnerUID string
 
-	flags.StringVar(&sourceType, "source-type", cmdsupport.EnvOr(publishSourceTypeEnv, string(modelsv1alpha1.ModelSourceTypeHuggingFace)), "Source type: HuggingFace or Upload.")
+	flags.StringVar(&sourceType, "source-type", cmdsupport.EnvOr(publishSourceTypeEnv, string(modelsv1alpha1.ModelSourceTypeHuggingFace)), "Source type: HuggingFace, Ollama or Upload.")
 	flags.StringVar(&artifactURI, "artifact-uri", "", "Controller-owned destination OCI reference.")
+	flags.StringVar(&sourceURL, "source-url", cmdsupport.EnvOr(publishSourceURLEnv, ""), "Remote source URL for non-HuggingFace providers.")
 	flags.StringVar(&hfModelID, "hf-model-id", cmdsupport.EnvOr(publishHFModelIDEnv, ""), "Hugging Face repo ID.")
 	flags.StringVar(&uploadPath, "upload-path", cmdsupport.EnvOr(publishUploadPathEnv, ""), "Uploaded archive path.")
 	flags.StringVar(&uploadStageBucket, "upload-stage-bucket", cmdsupport.EnvOr(publishUploadStageBucketEnv, ""), "Bucket containing staged upload input.")
@@ -159,6 +162,7 @@ func runPublishWorker(args []string) int {
 	logger := publishWorkerLogger(
 		modelsv1alpha1.ModelSourceType(sourceType),
 		artifactURI,
+		sourceURL,
 		hfModelID,
 		uploadStageFileName,
 		modelsv1alpha1.ModelInputFormat(inputFormat),
@@ -175,6 +179,7 @@ func runPublishWorker(args []string) int {
 	result, err := publishworker.Run(ctx, publishworker.Options{
 		SourceType:              modelsv1alpha1.ModelSourceType(sourceType),
 		ArtifactURI:             artifactURI,
+		SourceURL:               sourceURL,
 		HFModelID:               hfModelID,
 		OCIDirectUploadEndpoint: ociDirectUploadEndpoint,
 		DirectUploadCAFile:      cmdsupport.EnvOr("AI_MODELS_S3_CA_FILE", ""),
@@ -234,6 +239,7 @@ func runPublishWorker(args []string) int {
 func publishWorkerLogger(
 	sourceType modelsv1alpha1.ModelSourceType,
 	artifactURI string,
+	sourceURL string,
 	hfModelID string,
 	uploadFileName string,
 	inputFormat modelsv1alpha1.ModelInputFormat,
@@ -254,6 +260,10 @@ func publishWorkerLogger(
 	case modelsv1alpha1.ModelSourceTypeHuggingFace:
 		if strings.TrimSpace(hfModelID) != "" {
 			logger = logger.With(slog.String("sourceRepoID", strings.TrimSpace(hfModelID)))
+		}
+	case modelsv1alpha1.ModelSourceTypeOllama:
+		if strings.TrimSpace(sourceURL) != "" {
+			logger = logger.With(slog.String("sourceURL", strings.TrimSpace(sourceURL)))
 		}
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		if strings.TrimSpace(uploadFileName) != "" {

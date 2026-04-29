@@ -84,6 +84,24 @@ Module chart остаётся DKP-style chart, как в `gpu-control-plane` и
 - derived/internal values должны жить в `values.yaml`, templates/helpers и
   image/runtime code, а не в user-facing config surface.
 
+### `docs/`
+
+`docs/` хранит публичную документацию модуля в DKP docs layout.
+
+Правила:
+- hand-written pages (`README`, `USER_GUIDE`, `ADMIN_GUIDE`, `EXAMPLES`,
+  `FAQ`, `CONFIGURATION`) объясняют workflows, эксплуатацию, примеры и
+  ограничения;
+- generated schema entrypoints (`docs/CR.md`, `docs/CR.ru.md`) не являются
+  местом для ручного описания CRD fields;
+- `docs/CR*.md` должны оставаться frontmatter plus `<!-- SCHEMA -->`;
+- если нужно изменить описание полей CRD или module config, менять надо
+  canonical OpenAPI/API source, а не rendered docs page;
+- для docs changes обязательна явная проверка source of truth: OpenAPI/API,
+  templates, hand-written docs или generated entrypoint;
+- `make lint-docs` проверяет docs markers; при изменении generated docs source
+  нужен соответствующий render/codegen check.
+
 ### `images/`
 
 `images/` хранит image definitions и executable runtime code модуля.

@@ -31,8 +31,9 @@ productized DMCR cleanup surface:
 - model finalizer still does not wait for physical GC to finish before
   disappearing; physical bytes are reclaimed by a later coalesced cleanup
   cycle;
-- public `dmcr.gc.schedule` can enqueue periodic stale-sweep requests even
-  without a concrete delete event;
+- the module-owned default schedule can enqueue periodic stale-sweep requests
+  even without a concrete delete event; this cadence is internal wiring, not a
+  public `ModuleConfig` knob;
 - at startup, the scheduled loop performs a report-only stale check, retries
   transient check failures, and queues the normal scheduled request only when
   stale cleanup candidates already exist and no other GC request is active or

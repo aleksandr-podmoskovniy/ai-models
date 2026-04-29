@@ -118,9 +118,26 @@ Engineering expectations carried by this baseline:
 - explicit review of governance changes as a first-class scope
 - explicit DKP user-facing RBAC coverage for relevant API/auth/exposure/runtime
   entrypoint tasks
+- explicit documentation source-of-truth discipline: generated docs entrypoints
+  stay generated, while OpenAPI/API/template surfaces carry the canonical schema
+  and behavior descriptions
 - portable core over disguised module-specific prose
 - active contains only executable work surfaces; completed reviews, one-off
   research, and historical logs belong in `plans/archive/<year>/`
+
+Documentation source-of-truth:
+
+- `docs/CR*.md` are DKP docs render entrypoints. They must contain only
+  frontmatter and the `<!-- SCHEMA -->` marker, not hand-written CRD field
+  inventories.
+- Public configuration schema descriptions belong in `openapi/`.
+- Public resource schema descriptions belong in API/OpenAPI/CRD source surfaces
+  and generated artifacts, not manually copied into rendered docs pages.
+- Hand-written public guides under `docs/` explain workflows, examples,
+  operations and limits. They must not duplicate generated schema tables.
+- Any docs task must state whether it changes source docs, generated docs
+  entrypoints, OpenAPI/API source, or all of them, and must run the matching
+  docs/render checks.
 
 Active bundle hygiene:
 

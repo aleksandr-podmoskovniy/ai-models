@@ -70,6 +70,13 @@ func sourceArgs(plan SourceWorkerPlan, ownerUID types.UID, rawBucket string, mod
 		}
 		return append(huggingFaceArgs(plan.HuggingFace), remoteRawStageArgs(ownerUID, rawBucket, mode)...)
 	}
+	if plan.Ollama != nil {
+		mode := publicationports.SourceFetchModeDirect
+		if len(modes) > 0 {
+			mode = publicationports.NormalizeSourceFetchMode(modes[0])
+		}
+		return append(ollamaArgs(plan.Ollama), remoteRawStageArgs(ownerUID, rawBucket, mode)...)
+	}
 	if plan.Upload != nil {
 		return uploadArgs(plan.Upload)
 	}
@@ -82,6 +89,10 @@ func huggingFaceArgs(source *HuggingFaceSourcePlan) []string {
 		args = append(args, "--revision", source.Revision)
 	}
 	return args
+}
+
+func ollamaArgs(source *OllamaSourcePlan) []string {
+	return []string{"--source-url", strings.TrimSpace(source.URL)}
 }
 
 func uploadArgs(source *UploadSourcePlan) []string {

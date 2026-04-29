@@ -29,13 +29,14 @@ properties:
     description: |
       Shared S3-compatible storage used by ai-models.
       Controller-owned upload staging always uses the fixed `raw/` subtree in
-      the same bucket. Remote source mirror uses that subtree only in `Mirror`
-      mode. The internal DMCR publication plane writes fixed `dmcr/` objects.
+      the same bucket when the module needs temporary source objects. The
+      internal DMCR publication plane writes fixed `dmcr/` objects. Prefixes
+      are module-owned and are not configurable.
     additionalProperties: false
     properties:
       bucket:
         type: string
-        description: Bucket name shared by upload staging, source mirror state, and published model bytes.
+        description: Bucket name shared by upload staging, temporary source objects, and published model bytes.
         default: ""
       endpoint:
         type: string
@@ -54,20 +55,6 @@ properties:
           directly in `d8-ai-models`. This Secret is required; inline
           credentials are not supported.
         default: ""
-      sourceFetchMode:
-        type: string
-        enum:
-          - Mirror
-          - Direct
-        default: Direct
-        description: |
-          Cluster-level remote source fetch mode for publication workers.
-          This setting applies only to remote `spec.source.url` ingestion.
-          `Mirror` first stores selected remote source files in controller-owned
-          object storage under `raw/` and then publishes from that durable
-          temporary copy when the source adapter supports it. `Direct`
-          publishes from the canonical source boundary directly without the
-          intermediate mirror copy.
       caSecretName:
         type: string
         description: |
@@ -93,30 +80,6 @@ properties:
         type: boolean
         description: Use path-style S3 requests.
         default: true
-  dmcr:
-    type: object
-    additionalProperties: false
-    description: |
-      Stable DMCR cleanup scheduling settings exposed by ai-models.
-      These settings productize the stale sweep for published repository
-      metadata, source-mirror prefixes, and orphan direct-upload residue
-      without exposing internal secret-driven maintenance choreography as a
-      public contract.
-    properties:
-      gc:
-        type: object
-        additionalProperties: false
-        description: Parameters for DMCR stale sweep and garbage collection.
-        properties:
-          schedule:
-            type: string
-            default: "*/20 * * * *"
-            description: |
-              Cron schedule for periodic DMCR stale sweep of published model
-              repositories, source mirrors, and orphan direct-upload residue.
-              The default is every 20 minutes. Set an empty string to disable
-              periodic sweep. Operators can still run `dmcr-cleaner gc check`
-              for report-only inspection inside the DMCR Pod.
   nodeCache:
     type: object
     additionalProperties: false
@@ -127,50 +90,35 @@ properties:
       manually. When enabled it requires Deckhouse `sds-node-configurator` and
       `sds-local-volume` modules. Managed workloads without an explicit cache
       volume are delivered through the workload-facing SharedDirect node-cache
-      path; explicit workload-provided cache volumes remain a legacy bridge.
+      path. Internal storage object names are fixed by the module.
+
+      By default ai-models selects nodes and `BlockDevice` objects labelled
+      `ai.deckhouse.io/model-cache=true`. Override selectors only when the
+      cluster already has a stricter placement labelling convention.
     properties:
       enabled:
         type: boolean
         description: Enable ai-models-managed node-local cache substrate.
         default: false
-      maxSize:
-        type: string
-        description: Per-node cache substrate size used as thin-pool budget.
-        default: 200Gi
-      sharedVolumeSize:
+      size:
         type: string
         description: |
-          Size of the per-node shared cache volume used by the module-owned
-          node-cache runtime Pod/PVC plane for prefetch and maintenance of the
-          shared node-local digest store. This value also caps the runtime
-          eviction budget and must not be larger than `maxSize`.
-        default: 64Gi
-      storageClassName:
-        type: string
-        description: Name of the managed `LocalStorageClass` created by ai-models.
-        default: ai-models-node-cache
-      volumeGroupSetName:
-        type: string
-        description: Name of the managed `LVMVolumeGroupSet`.
-        default: ai-models-node-cache
-      volumeGroupNameOnNode:
-        type: string
-        description: Actual VG name created on each selected node for the managed cache substrate.
-        default: ai-models-cache
-      thinPoolName:
-        type: string
-        description: Thin-pool name created inside the managed VG for cache capacity budgeting.
-        default: model-cache
+          Per-node cache size. The same value is used for the managed thin-pool
+          budget and for the per-node shared cache PVC requested by the
+          node-cache runtime.
+        default: 200Gi
       nodeSelector:
         type: object
-        description: Required matchLabels selector for nodes that should host managed node-local cache substrate.
-        default: {}
+        description: MatchLabels selector for nodes that should host managed node-local cache substrate.
+        default:
+          ai.deckhouse.io/model-cache: "true"
         additionalProperties:
           type: string
       blockDeviceSelector:
         type: object
-        description: Required matchLabels selector for BlockDevice resources used to build the managed cache VG.
-        default: {}
+        description: MatchLabels selector for BlockDevice resources used to build the managed cache VG.
+        default:
+          ai.deckhouse.io/model-cache: "true"
         additionalProperties:
           type: string
 additionalProperties: false

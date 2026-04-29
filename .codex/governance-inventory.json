@@ -71,6 +71,8 @@
       "path": ".agents/skills/dkp-module-shell/SKILL.md",
       "must_include": [
         "No values/OpenAPI/template drift.",
+        "No hand-written CRD field inventory in `docs/CR*.md`",
+        "Before editing public docs, identify the source of truth",
         "No shell/build change without matching render/verify evidence."
       ]
     },
@@ -114,6 +116,8 @@
       "must_include": [
         "check them as one instruction system",
         "no lower-level file contradicts a higher-level rule",
+        "Check documentation source-of-truth",
+        "generated docs entrypoints such as `docs/CR*.md` were not hand-written",
         "active contains only executable work surfaces",
         "completed current bundle is archived or has an explicit next executable slice",
         "active bundle disposition",
@@ -173,6 +177,7 @@
       "path": ".codex/agents/module-implementer.toml",
       "sandbox_mode": "workspace-write",
       "must_include": [
+        "do not hand-write CRD field inventories in docs/CR*.md",
         "Do not treat repo-local workflow governance edits (",
         "they need their own bundle and explicit consistency review."
       ]
@@ -183,6 +188,7 @@
       "sandbox_mode": "read-only",
       "must_include": [
         "include governance-surface consistency in the review",
+        "verify docs source-of-truth",
         "core roles stay module-agnostic",
         "Treat oversized active bundles",
         "completed current bundle left in `plans/active`"
@@ -195,6 +201,7 @@
       "must_include": [
         "review them as one instruction system and treat contradictions across layers as real findings.",
         "missing access-level coverage",
+        "hand-written generated docs",
         "source-repo product assumptions leaking into reusable core",
         "completed current bundle left in `plans/active`",
         "active shortlist and archive rationale"
@@ -205,6 +212,7 @@
       "path": ".codex/agents/task-framer.toml",
       "sandbox_mode": "workspace-write",
       "must_include": [
+        "For docs tasks, require a source-of-truth statement",
         "archive stale or oversized active bundles instead of creating sibling sources of truth.",
         "active contains only executable work surfaces",
         "Classify active bundles as keep, merge, archive, or delete before writing a new bundle",
@@ -239,6 +247,8 @@
         "active contains only executable work surfaces",
         "Every active bundle must have a concrete next executable slice",
         "A completed current task bundle must not remain in `plans/active`",
+        "Documentation source-of-truth:",
+        "`docs/CR*.md` are DKP docs render entrypoints",
         "For a sibling module such as `ai-inference`",
         "Files that must be reviewed and rewritten during porting:",
         ".codex/governance-inventory.json",
@@ -251,6 +261,8 @@
       "must_include": [
         "reuse canonical active bundle",
         "это отдельный governance bundle",
+        "Для docs tasks Codex обязан отдельно назвать source of truth",
+        "`docs/CR*.md`",
         "что остаётся reusable core;",
         "source repo baseline;",
         "access levels/personas",
@@ -272,6 +284,8 @@
       "path": "docs/development/REVIEW_CHECKLIST.ru.md",
       "must_include": [
         "## Workflow governance",
+        "## Документация",
+        "`docs/CR.md` и `docs/CR.ru.md`",
         "## RBAC и доступы",
         "`make lint-codex-governance` прогнан",
         "не противоречат `AGENTS.md` и `.codex/README.md`",
@@ -282,6 +296,8 @@
     {
       "path": "docs/development/REPO_LAYOUT.ru.md",
       "must_include": [
+        "### `docs/`",
+        "`docs/CR*.md` должны оставаться frontmatter plus `<!-- SCHEMA -->`",
         "### `docs/development/`",
         "это governance task, а не incidental docs cleanup;",
         "обязателен `make lint-codex-governance`."

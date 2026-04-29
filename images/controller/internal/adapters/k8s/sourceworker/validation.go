@@ -38,6 +38,7 @@ type Options struct {
 type SourceWorkerPlan struct {
 	SourceType  modelsv1alpha1.ModelSourceType
 	HuggingFace *HuggingFaceSourcePlan
+	Ollama      *OllamaSourcePlan
 	Upload      *UploadSourcePlan
 }
 
@@ -50,6 +51,10 @@ type HuggingFaceSourcePlan struct {
 	RepoID        string
 	Revision      string
 	AuthSecretRef *SourceAuthSecretRef
+}
+
+type OllamaSourcePlan struct {
+	URL string
 }
 
 type UploadSourcePlan struct {
@@ -146,7 +151,11 @@ func planSourceWorker(
 		if spec.Source.AuthSecretRef != nil {
 			return SourceWorkerPlan{}, errors.New("source worker ollama authSecretRef is not supported yet")
 		}
-		return SourceWorkerPlan{}, errors.New("source worker ollama source publication is not implemented yet")
+		if _, _, err := modelsource.ParseOllamaLibraryURL(spec.Source.URL); err != nil {
+			return SourceWorkerPlan{}, err
+		}
+		plan.Ollama = &OllamaSourcePlan{URL: strings.TrimSpace(spec.Source.URL)}
+		return plan, nil
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		if uploadStage == nil {
 			return SourceWorkerPlan{}, errors.New("source worker upload source requires a staged upload handle")

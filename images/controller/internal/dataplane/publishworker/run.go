@@ -32,6 +32,7 @@ import (
 type Options struct {
 	SourceType              modelsv1alpha1.ModelSourceType
 	ArtifactURI             string
+	SourceURL               string
 	HFModelID               string
 	OCIDirectUploadEndpoint string
 	DirectUploadCAFile      string
@@ -66,7 +67,7 @@ func Run(ctx context.Context, options Options) (publicationartifact.Result, erro
 	if err := publicationports.ValidateSourceFetchMode(options.SourceFetchMode); err != nil {
 		return publicationartifact.Result{}, err
 	}
-	if options.SourceType == modelsv1alpha1.ModelSourceTypeHuggingFace {
+	if options.SourceType == modelsv1alpha1.ModelSourceTypeHuggingFace || options.SourceType == modelsv1alpha1.ModelSourceTypeOllama {
 		if options.SourceFetchMode == publicationports.SourceFetchModeMirror {
 			switch {
 			case strings.TrimSpace(options.RawStageBucket) == "":

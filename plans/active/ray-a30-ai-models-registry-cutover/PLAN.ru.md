@@ -13,10 +13,13 @@ primarily live inspection, GitOps manifest cutover and e2e validation.
 
 ## 3. Active bundle disposition
 
-- `capacity-cache-admission-hardening` — keep; current code hardening slice.
 - `live-e2e-ha-validation` — keep; canonical live e2e runbook.
-- `observability-signal-hardening` — keep; separate logs/metrics workstream.
-- `ray-a30-ai-models-registry-cutover` — current operational cutover.
+- `observability-signal-hardening` — keep; separate executable logs/metrics
+  workstream.
+- `ray-a30-ai-models-registry-cutover` — keep; current operational cutover,
+  pending post-rollout endpoint load validation.
+- `capacity-cache-admission-hardening` — archived; implementation is complete
+  and live proof belongs to `live-e2e-ha-validation`.
 
 ## 4. Slices
 

@@ -85,13 +85,6 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 			wantErr: "requires a staged upload handle",
 		},
 		{
-			name: "ollama source is fail closed until adapter exists",
-			mutate: func(request *publicationports.Request) {
-				request.Spec.Source.URL = "https://ollama.com/library/qwen3.6"
-			},
-			wantErr: "ollama source publication is not implemented yet",
-		},
-		{
 			name: "ollama auth secret is rejected until auth contract exists",
 			mutate: func(request *publicationports.Request) {
 				request.Spec.Source.URL = "https://ollama.com/library/qwen3.6"
@@ -124,6 +117,24 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 				t.Fatalf("Validate() error = %q, want substring %q", got, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestSourcePlanAcceptsOllamaSource(t *testing.T) {
+	t.Parallel()
+
+	request := testOperationRequest()
+	request.Spec.Source.URL = "https://ollama.com/library/qwen3.6:latest"
+
+	plan, err := sourcePlan(request)
+	if err != nil {
+		t.Fatalf("sourcePlan() error = %v", err)
+	}
+	if plan.Ollama == nil {
+		t.Fatal("expected ollama source plan")
+	}
+	if got, want := plan.Ollama.URL, "https://ollama.com/library/qwen3.6:latest"; got != want {
+		t.Fatalf("unexpected ollama URL %q", got)
 	}
 }
 

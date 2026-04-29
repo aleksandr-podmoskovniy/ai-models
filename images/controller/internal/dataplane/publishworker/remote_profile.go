@@ -65,11 +65,16 @@ func resolveRemoteProfile(
 		return &resolved, nil
 	case modelsv1alpha1.ModelInputFormatGGUF:
 		resolved, err := ggufprofile.ResolveSummary(ggufprofile.SummaryInput{
-			ModelFileName:      remote.ProfileSummary.ModelFileName,
-			ModelSizeBytes:     remote.ProfileSummary.ModelSizeBytes,
-			Task:               options.Task,
-			SourceDeclaredTask: remote.Fallbacks.SourceDeclaredTask,
-			TaskHint:           remote.Fallbacks.TaskHint,
+			ModelFileName:       remote.ProfileSummary.ModelFileName,
+			ModelSizeBytes:      remote.ProfileSummary.ModelSizeBytes,
+			Task:                options.Task,
+			SourceDeclaredTask:  remote.Fallbacks.SourceDeclaredTask,
+			TaskHint:            remote.Fallbacks.TaskHint,
+			Family:              remote.ProfileSummary.Family,
+			Architecture:        remote.ProfileSummary.Architecture,
+			ParameterCount:      remote.ProfileSummary.ParameterCount,
+			Quantization:        remote.ProfileSummary.Quantization,
+			ContextWindowTokens: remote.ProfileSummary.ContextWindowTokens,
 		})
 		if err != nil {
 			return nil, err

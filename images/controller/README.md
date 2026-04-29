@@ -139,7 +139,7 @@ Current phase-2 slice implemented here:
 - module render now keeps the first real node-local cache runtime plane as a
   controller-owned stable per-node Pod plus stable PVC over the ai-models-
   managed `LocalStorageClass`; that shared-store volume is sized by
-  `nodeCache.sharedVolumeSize`, reads the published artifacts required by live
+  `nodeCache.size`, reads the published artifacts required by live
   `SharedDirect` managed Pods on the current node, prefetches immutable
   artifacts into the shared node-local digest store through the dedicated
   `nodeCacheRuntime` distroless image, exposes the
@@ -152,11 +152,9 @@ Current phase-2 slice implemented here:
   and archive hardening, with one canonical remote ingest entrypoint
   over shared HTTP transport, source mirror transfer, archive inspection and
   remote summary extraction instead of split orchestration in the worker;
-  remote `source.url` bytes now support two explicit runtime modes:
-  direct remote object-source publication and controller-owned temporary source
-  mirror under the shared `raw/` object subtree; the cluster-level default is
-  `Direct`, while `Mirror` stays an explicit opt-in for durable intermediate
-  copy semantics; both paths avoid a local
+  remote `source.url` bytes use a module-owned policy over direct remote
+  object-source publication and controller-owned temporary source objects
+  where the adapter needs durable resume semantics; both paths avoid a local
   `workspace/model`, provider-card noise such as downloads/likes/tags is not
   retained in the adapter payload without an explicit consumer, and the remote
   adapter now hands worker code explicit seams for source provenance,
@@ -203,10 +201,11 @@ Current phase-2 slice implemented here:
 - `internal/adapters/k8s/uploadsession` for controller-owned upload session
   supplements:
   one short-lived hash-only session `Secret` per upload plus a separate
-  owner-scoped token handoff `Secret` referenced from `status.upload` for
-  `spec.source.upload`; raw Bearer values are not projected into public model
-  status, while the shared gateway footprint now lives in the controller
-  deployment shell instead of per-upload runtime objects; the package also
+  owner-scoped token handoff `Secret` kept as internal recovery state for
+  `spec.source.upload`; `status.upload` projects time-bounded secret upload
+  URLs, matching the direct upload UX in virtualization, while the shared
+  gateway footprint now lives in the controller deployment shell instead of
+  per-upload runtime objects; the package also
   implements the shared upload-session runtime port directly,
   consumes the shared `publishop.Request` without local request wrappers or a
   separate request-mapping file, and does not keep a second runtime-proxy
@@ -253,20 +252,21 @@ Current phase-2 slice implemented here:
   archive-source path, and the live worker shell no longer keeps a successful
   `checkpointDir` fallback;
 - `internal/dataplane/uploadsession` for the controller-owned upload session
-  runtime; it now serves the shared `/v1/upload/<sessionID>` multipart
-  session/control API, persists session state in the upload Secret, and marks
-  the staged upload result back into that Secret after multipart completion,
-  after which controller requeues the object into the normal publish-worker
-  path; the runtime now also syncs the server-side multipart part manifest
-  from object storage for resumability/state inspection and persists explicit
-  `probing` / `expired` edges instead of keeping them only implicit in probe
-  data or expiry timestamps; once controller takes ownership after upload
-  handoff, the gateway now also treats `publishing/completed` as closed
-  session phases and rejects any late multipart mutation attempts instead of
-  letting the preserved manifest imply a still-open upload; user-facing upload
-  auth is Bearer-only, token-bearing query URLs are no longer part of the
-  projected status contract, and token handoff Secrets remain internal
-  controller/runtime state;
+  runtime; it now serves the shared `/v1/upload/<sessionID>` simple `PUT`
+  upload path plus multipart session/control API, persists session state in the
+  upload Secret, and marks the staged upload result back into that Secret after
+  direct or multipart completion, after which controller requeues the object
+  into the normal publish-worker path; the runtime now also syncs the
+  server-side multipart part manifest from object storage for
+  resumability/state inspection and persists explicit `probing` / `expired`
+  edges instead of keeping them only implicit in probe data or expiry
+  timestamps; once controller takes ownership after upload handoff, the gateway
+  now also treats `publishing/completed` as closed session phases and rejects
+  any late multipart mutation attempts instead of letting the preserved
+  manifest imply a still-open upload; user-facing upload auth is the projected
+  secret URL, legacy Bearer headers remain compatibility-only, token-bearing
+  query URLs are not part of the status contract, and token handoff Secrets
+  remain internal controller/runtime state;
 - `internal/dataplane/artifactcleanup` for the controller-owned published
   artifact removal runtime;
 - `internal/publishedsnapshot` for immutable published-artifact snapshots used

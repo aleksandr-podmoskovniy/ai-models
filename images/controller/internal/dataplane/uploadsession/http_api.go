@@ -36,20 +36,20 @@ func newHandler(api *sessionAPI) http.Handler {
 }
 
 func (api *sessionAPI) handleUpload(writer http.ResponseWriter, request *http.Request) {
-	sessionID, action, ok := routeFromRequestPath(request.URL.Path)
+	sessionID, pathToken, action, ok := routeFromRequestPath(request.URL.Path)
 	if !ok {
 		http.NotFound(writer, request)
 		return
 	}
 
-	session, ok := api.loadAuthorizedSession(writer, request, sessionID)
+	session, ok := api.loadAuthorizedSession(writer, request, sessionID, pathToken)
 	if !ok {
 		return
 	}
 	api.dispatchUploadRequest(writer, request, action, session)
 }
 
-func (api *sessionAPI) loadAuthorizedSession(writer http.ResponseWriter, request *http.Request, sessionID string) (SessionRecord, bool) {
+func (api *sessionAPI) loadAuthorizedSession(writer http.ResponseWriter, request *http.Request, sessionID string, pathToken string) (SessionRecord, bool) {
 	session, found, err := api.options.Sessions.Load(request.Context(), sessionID)
 	switch {
 	case err != nil:
@@ -58,7 +58,7 @@ func (api *sessionAPI) loadAuthorizedSession(writer http.ResponseWriter, request
 	case !found:
 		http.NotFound(writer, request)
 		return SessionRecord{}, false
-	case !authorizeUploadRequest(request, session.UploadTokenHash):
+	case !authorizeUploadRequest(request, pathToken, session.UploadTokenHash):
 		http.Error(writer, "invalid upload token", http.StatusUnauthorized)
 		return SessionRecord{}, false
 	}
@@ -99,6 +99,8 @@ func (api *sessionAPI) dispatchUploadRequest(writer http.ResponseWriter, request
 	switch request.Method {
 	case http.MethodGet:
 		api.dispatchGet(writer, request, action, session)
+	case http.MethodPut:
+		api.dispatchPut(writer, request, action, session)
 	case http.MethodPost:
 		api.dispatchPost(writer, request, action, session)
 	default:
@@ -112,6 +114,14 @@ func (api *sessionAPI) dispatchGet(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	api.handleInfo(request.Context(), writer, session)
+}
+
+func (api *sessionAPI) dispatchPut(writer http.ResponseWriter, request *http.Request, action string, session SessionRecord) {
+	if action != "" {
+		http.NotFound(writer, request)
+		return
+	}
+	api.handleDirectUpload(writer, request, session)
 }
 
 func (api *sessionAPI) dispatchPost(writer http.ResponseWriter, request *http.Request, action string, session SessionRecord) {

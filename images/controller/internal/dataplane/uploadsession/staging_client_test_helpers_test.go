@@ -18,6 +18,7 @@ package uploadsession
 
 import (
 	"context"
+	"io"
 
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 )
@@ -39,6 +40,9 @@ type fakeStagingClient struct {
 	statInput       uploadstagingports.StatInput
 	statOutput      uploadstagingports.ObjectStat
 	statErr         error
+	uploaded        uploadstagingports.UploadInput
+	uploadedPayload []byte
+	uploadErr       error
 	deleted         uploadstagingports.DeleteInput
 	deleteErr       error
 }
@@ -89,7 +93,16 @@ func (c *fakeStagingClient) Download(context.Context, uploadstagingports.Downloa
 	return nil
 }
 
-func (c *fakeStagingClient) Upload(context.Context, uploadstagingports.UploadInput) error {
+func (c *fakeStagingClient) Upload(_ context.Context, input uploadstagingports.UploadInput) error {
+	c.uploaded = input
+	if c.uploadErr != nil {
+		return c.uploadErr
+	}
+	payload, err := io.ReadAll(input.Body)
+	if err != nil {
+		return err
+	}
+	c.uploadedPayload = payload
 	return nil
 }
 

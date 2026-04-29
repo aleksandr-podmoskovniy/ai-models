@@ -20,7 +20,6 @@ properties:
       endpoint: ""
       region: us-east-1
       credentialsSecretName: ""
-      sourceFetchMode: Direct
       caSecretName: ""
       capacityLimit: ""
       insecure: false
@@ -38,13 +37,6 @@ properties:
       credentialsSecretName:
         type: string
         default: ""
-      sourceFetchMode:
-        type: string
-        default: Direct
-        enum:
-          - Mirror
-          - Direct
-        description: Remote source fetch mode used for `spec.source.url` ingestion.
       caSecretName:
         type: string
         default: ""
@@ -58,68 +50,34 @@ properties:
       usePathStyle:
         type: boolean
         default: true
-  dmcr:
-    type: object
-    description: Stable DMCR cleanup scheduling settings exposed by ai-models.
-    additionalProperties: false
-    default:
-      gc:
-        schedule: "*/20 * * * *"
-    properties:
-      gc:
-        type: object
-        additionalProperties: false
-        default:
-          schedule: "*/20 * * * *"
-        properties:
-          schedule:
-            type: string
-            default: "*/20 * * * *"
   nodeCache:
     type: object
     description: SDS-backed managed node-local cache substrate settings exposed by ai-models.
     additionalProperties: false
     default:
       enabled: false
-      maxSize: 200Gi
-      sharedVolumeSize: 64Gi
-      storageClassName: ai-models-node-cache
-      volumeGroupSetName: ai-models-node-cache
-      volumeGroupNameOnNode: ai-models-cache
-      thinPoolName: model-cache
-      nodeSelector: {}
-      blockDeviceSelector: {}
+      size: 200Gi
+      nodeSelector:
+        ai.deckhouse.io/model-cache: "true"
+      blockDeviceSelector:
+        ai.deckhouse.io/model-cache: "true"
     properties:
       enabled:
         type: boolean
         default: false
-      maxSize:
+      size:
         type: string
         default: 200Gi
-      sharedVolumeSize:
-        type: string
-        description: Must not be larger than `maxSize`; also caps the runtime eviction budget.
-        default: 64Gi
-      storageClassName:
-        type: string
-        default: ai-models-node-cache
-      volumeGroupSetName:
-        type: string
-        default: ai-models-node-cache
-      volumeGroupNameOnNode:
-        type: string
-        default: ai-models-cache
-      thinPoolName:
-        type: string
-        default: model-cache
       nodeSelector:
         type: object
-        default: {}
+        default:
+          ai.deckhouse.io/model-cache: "true"
         additionalProperties:
           type: string
       blockDeviceSelector:
         type: object
-        default: {}
+        default:
+          ai.deckhouse.io/model-cache: "true"
         additionalProperties:
           type: string
   registry:
@@ -180,23 +138,16 @@ properties:
             endpoint: ""
             region: us-east-1
             credentialsSecretName: ""
-            sourceFetchMode: Direct
             caSecretName: ""
             insecure: false
             usePathStyle: true
-          dmcr:
-            gc:
-              schedule: "*/20 * * * *"
           nodeCache:
             enabled: false
-            maxSize: 200Gi
-            sharedVolumeSize: 64Gi
-            storageClassName: ai-models-node-cache
-            volumeGroupSetName: ai-models-node-cache
-            volumeGroupNameOnNode: ai-models-cache
-            thinPoolName: model-cache
-            nodeSelector: {}
-            blockDeviceSelector: {}
+            size: 200Gi
+            nodeSelector:
+              ai.deckhouse.io/model-cache: "true"
+            blockDeviceSelector:
+              ai.deckhouse.io/model-cache: "true"
         additionalProperties: true
       controller:
         type: object

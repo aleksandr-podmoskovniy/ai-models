@@ -30,45 +30,73 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/support/uploadsessiontoken"
 )
 
-func routeFromRequestPath(path string) (sessionID string, action string, ok bool) {
+func routeFromRequestPath(path string) (sessionID string, pathToken string, action string, ok bool) {
 	if !strings.HasPrefix(path, "/v1/upload/") {
-		return "", "", false
+		return "", "", "", false
 	}
 	rest := strings.Trim(strings.TrimPrefix(path, "/v1/upload/"), "/")
 	if rest == "" {
-		return "", "", false
+		return "", "", "", false
 	}
-	sessionID, action, found := strings.Cut(rest, "/")
-	sessionID = strings.TrimSpace(sessionID)
+	parts := strings.Split(rest, "/")
+	if len(parts) > 3 {
+		return "", "", "", false
+	}
+	sessionID = strings.TrimSpace(parts[0])
 	if sessionID == "" {
-		return "", "", false
+		return "", "", "", false
 	}
-	if !found {
-		return sessionID, "", true
-	}
-	action = "/" + strings.Trim(strings.TrimSpace(action), "/")
-	switch action {
-	case "/probe", "/init", "/parts", "/complete", "/abort":
-		return sessionID, action, true
+
+	switch len(parts) {
+	case 1:
+		return sessionID, "", "", true
+	case 2:
+		if action, ok := uploadAction(parts[1]); ok {
+			return sessionID, "", action, true
+		}
+		pathToken = strings.TrimSpace(parts[1])
+		if pathToken == "" {
+			return "", "", "", false
+		}
+		return sessionID, pathToken, "", true
+	case 3:
+		pathToken = strings.TrimSpace(parts[1])
+		if pathToken == "" {
+			return "", "", "", false
+		}
+		if action, ok := uploadAction(parts[2]); ok {
+			return sessionID, pathToken, action, true
+		}
+		return "", "", "", false
 	default:
-		return "", "", false
+		return "", "", "", false
 	}
 }
 
-func requestToken(request *http.Request) string {
+func uploadAction(raw string) (string, bool) {
+	action := "/" + strings.Trim(strings.TrimSpace(raw), "/")
+	switch action {
+	case "/probe", "/init", "/parts", "/complete", "/abort":
+		return action, true
+	default:
+		return "", false
+	}
+}
+
+func requestToken(request *http.Request, pathToken string) string {
 	auth := strings.TrimSpace(request.Header.Get("Authorization"))
 	if strings.HasPrefix(auth, "Bearer ") {
 		return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	}
-	return ""
+	return strings.TrimSpace(pathToken)
 }
 
-func authorizeUploadRequest(request *http.Request, expectedTokenHash string) bool {
+func authorizeUploadRequest(request *http.Request, pathToken string, expectedTokenHash string) bool {
 	expectedTokenHash = strings.TrimSpace(expectedTokenHash)
 	if expectedTokenHash == "" {
 		return false
 	}
-	token := requestToken(request)
+	token := requestToken(request, pathToken)
 	if token == "" {
 		return false
 	}

@@ -29,13 +29,14 @@ func buildUploadStatus(
 	artifactURI string,
 	options Options,
 	sessionID string,
+	rawToken string,
 	expiresAt metav1.Time,
 ) modelsv1alpha1.ModelUploadStatus {
 	return modelsv1alpha1.ModelUploadStatus{
 		ExpiresAt:    &expiresAt,
 		Repository:   strings.TrimSpace(artifactURI),
-		ExternalURL:  buildExternalUploadURL(options.Gateway.PublicHost, sessionID),
-		InClusterURL: buildInClusterUploadURL(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID),
+		ExternalURL:  buildExternalUploadURL(options.Gateway.PublicHost, sessionID, rawToken),
+		InClusterURL: buildInClusterUploadURL(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID, rawToken),
 	}
 }
 
@@ -47,19 +48,28 @@ func buildAuthorizationHeaderValue(token string) string {
 	return "Bearer " + token
 }
 
-func buildInClusterUploadURL(serviceName, namespace, sessionID string) string {
-	return buildInClusterUploadURLBase(serviceName, namespace, sessionID)
+func buildInClusterUploadURL(serviceName, namespace, sessionID, rawToken string) string {
+	return buildInClusterUploadURLBase(serviceName, namespace, secretSessionPath(sessionID, rawToken))
 }
 
-func buildExternalUploadURL(publicHost, sessionID string) string {
-	return buildExternalUploadURLBase(publicHost, sessionID)
+func buildExternalUploadURL(publicHost, sessionID, rawToken string) string {
+	return buildExternalUploadURLBase(publicHost, secretSessionPath(sessionID, rawToken))
 }
 
 func sessionPath(sessionID string) string {
 	return "/v1/upload/" + url.PathEscape(strings.TrimSpace(sessionID))
 }
 
-func buildInClusterUploadURLBase(serviceName, namespace, sessionID string) string {
+func secretSessionPath(sessionID, rawToken string) string {
+	path := sessionPath(sessionID)
+	rawToken = strings.TrimSpace(rawToken)
+	if rawToken == "" {
+		return path
+	}
+	return path + "/" + url.PathEscape(rawToken)
+}
+
+func buildInClusterUploadURLBase(serviceName, namespace, path string) string {
 	if strings.TrimSpace(serviceName) == "" || strings.TrimSpace(namespace) == "" {
 		return ""
 	}
@@ -68,16 +78,16 @@ func buildInClusterUploadURLBase(serviceName, namespace, sessionID string) strin
 		serviceName,
 		namespace,
 		uploadPort,
-		sessionPath(sessionID),
+		path,
 	)
 }
 
-func buildExternalUploadURLBase(publicHost, sessionID string) string {
+func buildExternalUploadURLBase(publicHost, path string) string {
 	publicHost = strings.TrimSpace(publicHost)
 	if publicHost == "" {
 		return ""
 	}
-	return fmt.Sprintf("https://%s%s", publicHost, sessionPath(sessionID))
+	return fmt.Sprintf("https://%s%s", publicHost, path)
 }
 
 func tokenFromAuthorizationHeaderValue(value string) (string, bool) {

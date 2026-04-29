@@ -17,10 +17,12 @@ collector/logger patterns без запуска subagents. Делегация з
 ## 3. Active Bundle Disposition
 
 - `live-e2e-ha-validation` — keep. Это отдельный executable workstream для
-  live e2e/HA; текущий observability hardening является подготовительным code
-  slice и не должен смешиваться с runbook/history e2e.
-- `observability-signal-hardening` — current. Компактный bundle только для
-  метрик/логов.
+  live e2e/HA; observability live proof будет фиксироваться там.
+- `observability-signal-hardening` — current. Компактный executable bundle
+  для pending Slice 4: live metrics/alerts и log field dictionary.
+- `ray-a30-ai-models-registry-cutover` — keep. Отдельный executable
+  operational cutover; observability changes не должны смешиваться с A30 load
+  validation.
 
 ## 4. Slices
 

@@ -22,6 +22,7 @@
 
 - `Safetensors` text/chat.
 - `GGUF` text/chat.
+- Ollama registry GGUF: one small model and one larger model.
 - `Diffusers` text-to-image.
 - `Diffusers` text-to-video или image-to-video, если есть достаточно маленький
   публичный artifact.
@@ -95,6 +96,12 @@ Publication/runtime:
 - HF Direct: small Safetensors/GGUF `Model`;
 - HF Direct: small `ClusterModel`;
 - HF Mirror: durable mirror state, resume-safe publish, cleanup mirror prefix;
+- Ollama Direct: small GGUF `Model` from `https://ollama.com/library/...`,
+  proving registry manifest/config/model-layer path, not HTML scraping;
+- Ollama Direct: larger GGUF `ClusterModel` to exercise raw-layer streaming,
+  storage reservation and interruption replay;
+- Ollama Mirror, if internal mirror mode is enabled in the tested build:
+  durable source mirror state, resume-safe transfer and cleanup mirror prefix;
 - Upload: multipart upload через gateway, replay после restart gateway или
   controller;
 - Diffusers: image generation и video generation layout либо публикуется как
@@ -102,6 +109,11 @@ Publication/runtime:
   тяжёлого byte path;
 - metadata/capabilities: chat, embeddings, rerank, STT, TTS, CV, multimodal,
   image/video generation, tool-calling без overclaim MCP.
+- ai-inference handoff evidence:
+  `sourceCapabilities.provider`, `format`, `family`, `parameterCount`,
+  `quantization`, `contextWindowTokens`, `supportedEndpointTypes` and
+  `supportedFeatures`; CR status must not contain concrete runtime selection
+  such as `vllm`, `ollama` or `compatibleRuntimes`.
 
 Workload delivery:
 
@@ -122,6 +134,7 @@ HA/interruption:
 - delete upload-gateway pod during upload;
 - delete DMCR pod during direct-upload;
 - delete active source-worker during raw-layer upload;
+- delete active source-worker during larger Ollama raw-layer upload;
 - restart node-cache runtime during mount/materialization when SharedDirect is
   enabled.
 

@@ -98,6 +98,12 @@ func TestServiceGetOrCreateCreatesSharedGatewaySessionSecret(t *testing.T) {
 	if got := string(tokenSecret.Data[TokenSecretAuthorizationHeaderKey]); !strings.HasPrefix(got, "Bearer ") {
 		t.Fatalf("unexpected token secret value %q", got)
 	}
+	rawToken, ok := tokenFromAuthorizationHeaderValue(string(tokenSecret.Data[TokenSecretAuthorizationHeaderKey]))
+	if !ok {
+		t.Fatalf("unexpected token secret value %q", string(tokenSecret.Data[TokenSecretAuthorizationHeaderKey]))
+	}
+	assertUploadStatusUsesSecretURL(t, handle.UploadStatus.ExternalURL, rawToken)
+	assertUploadStatusUsesSecretURL(t, handle.UploadStatus.InClusterURL, rawToken)
 }
 
 func TestServiceGetOrCreateReusesTokenSecretForExistingSession(t *testing.T) {
@@ -131,8 +137,8 @@ func TestServiceGetOrCreateReusesTokenSecretForExistingSession(t *testing.T) {
 	if created {
 		t.Fatal("expected existing session to be reused")
 	}
-	if handle.UploadStatus.InClusterURL != owner.Status.Upload.InClusterURL {
-		t.Fatalf("expected persisted in-cluster URL to be reused, got %q", handle.UploadStatus.InClusterURL)
+	if got, want := handle.UploadStatus.InClusterURL, "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222/existing-token"; got != want {
+		t.Fatalf("unexpected in-cluster URL %q, want %q", got, want)
 	}
 }
 
@@ -172,10 +178,6 @@ func TestServiceGetOrCreateRecreatesStaleSecretWithoutTokenHash(t *testing.T) {
 	if handle == nil {
 		t.Fatal("expected upload session handle")
 	}
-	if handle.UploadStatus.InClusterURL != "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222" {
-		t.Fatalf("unexpected recreated in-cluster URL %q", handle.UploadStatus.InClusterURL)
-	}
-
 	updatedSecret := &corev1.Secret{}
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(secret), updatedSecret); err != nil {
 		t.Fatalf("Get(updated secret) error = %v", err)
@@ -197,6 +199,14 @@ func TestServiceGetOrCreateRecreatesStaleSecretWithoutTokenHash(t *testing.T) {
 	if got := string(updatedTokenSecret.Data[TokenSecretAuthorizationHeaderKey]); got == "Bearer existing-token" {
 		t.Fatalf("expected recreated session to rotate upload token secret value, got %q", got)
 	}
+	rawToken, ok := tokenFromAuthorizationHeaderValue(string(updatedTokenSecret.Data[TokenSecretAuthorizationHeaderKey]))
+	if !ok {
+		t.Fatalf("unexpected token secret value %q", string(updatedTokenSecret.Data[TokenSecretAuthorizationHeaderKey]))
+	}
+	if rawToken == "existing-token" {
+		t.Fatalf("expected rotated raw token, got %q", rawToken)
+	}
+	assertUploadStatusUsesSecretURL(t, handle.UploadStatus.InClusterURL, rawToken)
 }
 
 func TestServiceGetOrCreateRefreshesMultipartProgressFromStaging(t *testing.T) {
@@ -265,5 +275,15 @@ func TestServiceGetOrCreateRefreshesMultipartProgressFromStaging(t *testing.T) {
 	}
 	if got, want := session.Multipart.UploadedParts[0].SizeBytes+session.Multipart.UploadedParts[1].SizeBytes, int64(128); got != want {
 		t.Fatalf("unexpected persisted uploaded size %d", got)
+	}
+}
+
+func assertUploadStatusUsesSecretURL(t *testing.T, uploadURL string, rawToken string) {
+	t.Helper()
+	if !strings.HasSuffix(uploadURL, "/"+rawToken) {
+		t.Fatalf("expected upload URL %q to end with secret token %q", uploadURL, rawToken)
+	}
+	if strings.Contains(uploadURL, "Bearer") {
+		t.Fatalf("upload URL must not contain bearer header prefix: %q", uploadURL)
 	}
 }

@@ -136,8 +136,10 @@ func sourceUsesObjectStorage(plan SourceWorkerPlan, options Options) bool {
 	if plan.Upload != nil {
 		return true
 	}
-	return plan.HuggingFace != nil &&
-		publicationports.NormalizeSourceFetchMode(options.SourceFetch) == publicationports.SourceFetchModeMirror
+	if publicationports.NormalizeSourceFetchMode(options.SourceFetch) != publicationports.SourceFetchModeMirror {
+		return false
+	}
+	return plan.HuggingFace != nil || plan.Ollama != nil
 }
 
 func directUploadTrustRequired(options Options) bool {

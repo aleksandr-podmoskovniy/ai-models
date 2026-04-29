@@ -76,9 +76,10 @@ quantization, capabilities и подробный `model_info`.
   HuggingFace-specific code path.
 - Ollama GGUF model layer публикуется как model payload, license/params/config
   не смешиваются с weights.
-- Ollama metadata заполняет `format=GGUF`, `family`, `architecture`,
-  `parameterCount`, `quantization`, `contextWindowTokens`,
-  `supportedEndpointTypes`, `supportedFeatures` только из надёжных полей.
+- Ollama metadata заполняет `format=GGUF`, `family`, `parameterCount`,
+  `quantization`, `contextWindowTokens` только из надёжных registry/GGUF
+  фактов. `architecture`, `supportedEndpointTypes` и `supportedFeatures` не
+  заполняются из renderer/HTML/runtime-only hints.
 - Для Ollama есть negative tests: неизвестный tag, manifest без model layer,
   неверный digest, unsupported media type.
 - Проверки проходят: targeted tests, `api` tests/codegen/CRD verify,

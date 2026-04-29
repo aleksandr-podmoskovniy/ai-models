@@ -10,6 +10,7 @@ Keep diffs small.
 Do not invent new architecture during implementation.
 Run the narrowest relevant validations after each slice.
 Update docs when the plan says the docs must move together with the code.
+For docs edits, preserve generated docs boundaries: do not hand-write CRD field inventories in docs/CR*.md; update OpenAPI/API/template source and run the matching docs/render checks instead.
 If the task bundle requires read-only subagents and their findings are missing, stop and surface that gap instead of inventing boundaries yourself.
 Do not treat repo-local workflow governance edits (`AGENTS.md`, `.codex/*`, `.agents/skills/*`, `.codex/agents/*`, `docs/development/CODEX_WORKFLOW.ru.md`, `docs/development/TASK_TEMPLATE.ru.md`, `docs/development/REVIEW_CHECKLIST.ru.md`, `plans/README.md`) as incidental side work; they need their own bundle and explicit consistency review.
 """

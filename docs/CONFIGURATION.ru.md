@@ -10,25 +10,28 @@ weight: 60
 На уровне модуля наружу выставляются только стабильные настройки:
 
 - `logLevel`;
-- `artifacts`.
-- `dmcr`.
+- `artifacts`;
 - `nodeCache`.
 
 Режим HA, HTTPS policy, ingress class, controller/runtime wiring, внутренний
-`DMCR`, upload-gateway и publication worker остаются во global Deckhouse
-settings и internal module values. В user-facing contract больше нет:
+`DMCR`, upload-gateway, publication worker, source-fetch policy и GC cadence
+остаются во global Deckhouse settings и internal module values. В
+user-facing contract нет:
 
 - retired backend auth/workspace и metadata-database knobs;
 - browser SSO knobs;
 - backend-only secrets;
 - внешнего publication registry contract;
 - backend-specific `artifacts.pathPrefix`.
+- настроек реализации `DMCR`;
+- выбора source-fetch транспорта;
+- внутренних имён node-cache storage objects.
 
 `artifacts` задаёт общий S3-compatible storage для byte-path внутри ai-models.
 Разделение внутри bucket фиксировано самим runtime:
 
-- `raw/` для controller-owned upload staging и, если включён режим
-  `artifacts.sourceFetchMode=Mirror`, для временного source mirror;
+- `raw/` для controller-owned upload staging и временных source objects там,
+  где они нужны самому модулю;
 - `dmcr/` для опубликованных OCI-артефактов во внутреннем `DMCR`;
 - отдельные будущие append-only данные модуля могут жить только под
   отдельными фиксированными префиксами.
@@ -46,39 +49,15 @@ Custom trust для S3-compatible endpoint задаётся через `artifact
 который уже discovered module runtime или скопирован из global HTTPS
 `CustomCertificate` path.
 
-`dmcr.gc.schedule` выставляет наружу productized cadence для stale sweep во
-внутреннем registry. По умолчанию ai-models ставит один stale cleanup cycle
-каждые 20 минут. Пустая строка отключает периодический sweep, но не убирает
-operator-facing inspection surface: внутри Pod'а `DMCR` по-прежнему можно
-запустить `dmcr-cleaner gc check` и получить report по stale published
-repository prefix, source-mirror prefix и orphan direct-upload prefix без
-`.dmcr-sealed` reference, который пережил bounded stale-age window.
-
-Если scheduled loop стартует уже после настроенного schedule tick, он делает
-report-only startup check и повторяет его при transient failures. Если stale
-cleanup candidates уже есть и нет другого active или queued GC request, loop
-ставит обычный scheduled request; он не запускает destructive cleanup напрямую
-и всё равно проходит через штатный coalescing debounce. Cleanup cycle использует
-внутренний zero-rollout maintenance gate с runtime ack quorum, а не изменение
-Pod template `DMCR`.
-
-Controller metrics дополнительно показывают private lifecycle этих запросов:
-сколько `dmcr-gc-*` находится в фазах `queued`, `armed`, `done` или
-`unknown`, и сколько секунд конкретный запрос находится в текущей фазе. Это
-операторская наблюдаемость поверх module-private `Secret`, а не новый
-публичный API для пользователей моделей.
-
 Публичный runtime path для моделей теперь controller-owned:
 
-- `Model` / `ClusterModel` используют один cluster-level
-  `artifacts.sourceFetchMode`:
-  - `Mirror`:
-    remote `source.url` сначала идёт через controller-owned source mirror;
-  - `Direct`:
-    remote `source.url` идёт напрямую из canonical remote source boundary;
+- `Model` / `ClusterModel` remote `source.url` ingestion использует
+  module-owned policy. Текущий default — direct streaming из canonical source
+  boundary; модуль может использовать временные source objects внутри себя,
+  если конкретному adapter'у это нужно для resume или безопасности;
 - `spec.source.upload` использует controller-owned upload-session path и
-  остаётся на своей отдельной staged object boundary; upload URL публикуются в
-  status, а raw Bearer header value хранится в указанном token Secret;
+  остаётся на своей отдельной staged object boundary; временные secret upload
+  URL публикуются в status по прямому UX из virtualization;
 - все пути публикуют OCI `ModelPack` артефакты во внутренний `DMCR`;
 - потоковые multi-file remote входы публикуются как одна ограниченная bundle-
   упаковка для мелких companion-файлов плюс отдельные raw-слои для крупных
@@ -104,17 +83,6 @@ RBAC разделён по Deckhouse `user-authz` и `rbacv2`:
 - internal service-account RBAC не aggregate'ится в человеческие роли; `DMCR`
   garbage collection читает только module-private cleanup/GC `Secret` и
   `Lease` в namespace модуля, а не user-facing `Model` или `ClusterModel`.
-
-Default — `artifacts.sourceFetchMode=Direct`.
-
-Trade-off между режимами такой:
-
-- `Mirror` сохраняет durable промежуточную копию в object storage, упрощает
-  повторные публикации и resume на границе remote ingest;
-- `Direct` убирает эту лишнюю копию и ускоряет первую remote загрузку;
-- для `spec.source.upload` effective source boundary уже является staged
-  object, поэтому режим не создаёт вторую промежуточную копию поверх upload
-  staging.
 
 Отдельного выбора транспорта для публикуемых слоёв больше нет.
 Канонический byte path теперь один:
@@ -213,18 +181,16 @@ SharedDirect delivery contract:
 Текущий bounded contract такой:
 
 - `nodeCache.enabled` включает managed substrate controller;
-- `nodeCache.maxSize` становится per-node thin-pool budget;
-- `nodeCache.sharedVolumeSize` задаёт размер per-node shared cache volume,
-  который controller-owned stable runtime Pod/PVC запрашивает поверх managed
-  `LocalStorageClass`;
-- runtime eviction budget для node-cache runtime ограничен этим же
-  `nodeCache.sharedVolumeSize`, а `nodeCache.sharedVolumeSize` не должен быть
-  больше `nodeCache.maxSize`;
-- `nodeCache.storageClassName`, `nodeCache.volumeGroupSetName`,
-  `nodeCache.volumeGroupNameOnNode` и `nodeCache.thinPoolName` задают
-  ai-models-owned имена substrate-объектов;
-- `nodeCache.nodeSelector` и `nodeCache.blockDeviceSelector` — это
-  обязательные `matchLabels` maps для выбора узлов и `BlockDevice`.
+- `nodeCache.size` — единственное решение по per-node cache capacity. Модуль
+  использует это же значение для managed thin-pool budget, per-node shared
+  cache PVC и runtime eviction budget;
+- по умолчанию ai-models выбирает ноды и `BlockDevice` с label
+  `ai.deckhouse.io/model-cache=true`;
+- `nodeCache.nodeSelector` и `nodeCache.blockDeviceSelector` можно
+  переопределить только если в кластере уже есть более строгая схема
+  лейблинга;
+- `LocalStorageClass`, `LVMVolumeGroupSet`, VG и thin-pool names — внутренние
+  constants ai-models, а не public ModuleConfig knobs.
 
 При `nodeCache.enabled=true` workload'ы, которые не принесли явный cache
 volume, переводятся на node-cache SharedDirect path:
@@ -233,8 +199,8 @@ volume, переводятся на node-cache SharedDirect path:
   `node-cache.ai-models.deckhouse.io` в `/data/modelcache`;
 - injected CSI volume несёт только immutable artifact attributes
   (URI, digest, optional family), без storage-specific полей в публичном API;
-- контроллер переносит `nodeCache.nodeSelector` в managed workload pod
-  template и fail'ится при конфликте, вместо запуска на неподходящей ноде;
+- контроллер переносит effective node-cache node selector в managed workload
+  pod template и fail'ится при конфликте, вместо запуска на неподходящей ноде;
 - контроллер дополнительно требует динамический node label
   `ai.deckhouse.io/node-cache-runtime-ready=true` и держит managed scheduling
   gate, пока ни одна выбранная нода не имеет ready runtime Pod и bound shared
@@ -266,8 +232,8 @@ volume, переводятся на node-cache SharedDirect path:
 - ai-models теперь держит отдельный per-node shared cache plane как
   controller-owned stable runtime Pod плюс stable PVC поверх managed
   `LocalStorageClass`; размер этого shared volume задаётся через
-  `nodeCache.sharedVolumeSize`, а storage identity больше не теряется при
-  restart node-agent pod'а;
+  `nodeCache.size`, а storage identity больше не теряется при restart
+  node-agent pod'а;
 - runtime Pod кэша не использует прямой `spec.nodeName`: он привязан к нужной
   ноде через node affinity по `kubernetes.io/hostname`, чтобы Kubernetes
   scheduler мог корректно выбрать local LVM volume для PVC с
@@ -298,8 +264,8 @@ volume, переводятся на node-cache SharedDirect path:
 - если SDS CRD фактически отсутствуют в кластере, substrate controller не
   сможет создать `LVMVolumeGroupSet` / `LocalStorageClass`, и node-cache слой
   не станет готовым;
-- если на выбранной ноде нет подходящего local block device по
-  `nodeCache.blockDeviceSelector`, managed `LVMVolumeGroup` для этой ноды не
+- если на выбранной ноде нет подходящего local block device по effective
+  node-cache block-device selector, managed `LVMVolumeGroup` для этой ноды не
   станет ready, `LocalStorageClass` не получит эту ноду, а runtime PVC/Pod для
   кэша останутся unscheduled или pending;
 - пока ни одна выбранная нода не имеет ready runtime Pod и bound shared cache

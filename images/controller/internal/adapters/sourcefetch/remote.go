@@ -73,6 +73,11 @@ type RemoteProfileSummary struct {
 	WeightFileCount        int64
 	ModelFileName          string
 	ModelSizeBytes         int64
+	Family                 string
+	Architecture           string
+	ParameterCount         int64
+	Quantization           string
+	ContextWindowTokens    int64
 }
 
 type RemoteOpenReadResult struct {
@@ -150,7 +155,7 @@ func FetchRemoteModel(ctx context.Context, options RemoteOptions) (RemoteResult,
 	case modelsv1alpha1.ModelSourceTypeHuggingFace:
 		return fetchHuggingFaceModel(ctx, options)
 	case modelsv1alpha1.ModelSourceTypeOllama:
-		return RemoteResult{}, errors.New("ollama remote source fetch is not implemented yet")
+		return fetchOllamaModel(ctx, options)
 	default:
 		return RemoteResult{}, errors.New("unsupported remote source type")
 	}

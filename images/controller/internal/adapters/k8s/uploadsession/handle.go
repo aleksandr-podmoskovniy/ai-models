@@ -82,7 +82,7 @@ func (s *Service) buildHandle(
 		if _, err := s.ensureTokenSecret(ctx, owner, session, rawToken); err != nil {
 			return nil, err
 		}
-		uploadStatus = buildUploadStatus(artifactURI, s.options, session.Name, session.ExpiresAt)
+		uploadStatus = buildUploadStatus(artifactURI, s.options, session.Name, rawToken, session.ExpiresAt)
 		progress = localUploadProgress(session)
 	}
 

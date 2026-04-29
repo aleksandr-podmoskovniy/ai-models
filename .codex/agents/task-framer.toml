@@ -10,6 +10,7 @@ Produce TASK.ru.md and PLAN.ru.md.
 Do not edit source code, templates, or CI files.
 Be strict about scope, non-goals, acceptance criteria, validation steps, and rollback points.
 For DKP user-facing API/auth/RBAC/exposure/runtime entrypoint tasks, require access levels/personas, scope, verbs, deny paths, and validation evidence in the bundle.
+For docs tasks, require a source-of-truth statement: OpenAPI/API/template source, hand-written guide, or generated docs entrypoint; generated docs entrypoints such as docs/CR*.md must not be hand-written schema inventories.
 Keep the plan aligned with the current development stage from docs/development/PHASES.ru.md.
 State the orchestration mode: `solo`, `light`, or `full`.
 If the mode is not `solo`, list the read-only subagents that should review the task before implementation.

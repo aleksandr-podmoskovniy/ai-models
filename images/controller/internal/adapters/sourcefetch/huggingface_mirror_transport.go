@@ -32,9 +32,9 @@ import (
 )
 
 const (
-	huggingFaceMirrorPartSize       = 16 << 20
-	huggingFaceMirrorUploadURLTTL   = 15 * time.Minute
-	huggingFaceMirrorUploadMimeType = "application/octet-stream"
+	sourceMirrorPartSize       = 16 << 20
+	sourceMirrorUploadURLTTL   = 15 * time.Minute
+	sourceMirrorUploadMimeType = "application/octet-stream"
 )
 
 func mirrorHuggingFaceSnapshotFiles(
@@ -49,7 +49,7 @@ func mirrorHuggingFaceSnapshotFiles(
 	if options == nil || options.Store == nil || options.Client == nil || snapshot == nil {
 		return errors.New("huggingface source mirror options must be fully configured")
 	}
-	tracker, err := loadHuggingFaceMirrorTracker(ctx, options, snapshot)
+	tracker, err := loadSourceMirrorTracker(ctx, options, snapshot)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func mirrorHuggingFaceSnapshotFile(
 	revision string,
 	token string,
 	snapshot *SourceMirrorSnapshot,
-	tracker *huggingFaceMirrorTracker,
+	tracker *sourceMirrorTracker,
 	relativePath string,
 ) error {
 	objectKey := sourcemirrorports.SnapshotFileObjectKey(snapshot.CleanupPrefix, relativePath)
@@ -161,7 +161,7 @@ func rangeHuggingFaceGET(
 func uploadMirrorResponse(
 	ctx context.Context,
 	options *SourceMirrorOptions,
-	tracker *huggingFaceMirrorTracker,
+	tracker *sourceMirrorTracker,
 	relativePath string,
 	objectKey string,
 	fileState sourcemirrorports.SnapshotFileState,
@@ -170,15 +170,15 @@ func uploadMirrorResponse(
 	completedParts := append([]uploadstagingports.CompletedPart(nil), fileState.CompletedParts...)
 	uploadedBytes := fileState.BytesConfirmed
 	nextPartNumber := nextMirrorPartNumber(completedParts)
-	buffer := bytes.NewBuffer(make([]byte, 0, huggingFaceMirrorPartSize))
+	buffer := bytes.NewBuffer(make([]byte, 0, sourceMirrorPartSize))
 	chunk := make([]byte, 1<<20)
 
 	for {
 		readBytes, readErr := body.Read(chunk)
 		if readBytes > 0 {
 			_, _ = buffer.Write(chunk[:readBytes])
-			for buffer.Len() >= huggingFaceMirrorPartSize {
-				partPayload := append([]byte(nil), buffer.Next(huggingFaceMirrorPartSize)...)
+			for buffer.Len() >= sourceMirrorPartSize {
+				partPayload := append([]byte(nil), buffer.Next(sourceMirrorPartSize)...)
 				completed, err := uploadMirrorPart(ctx, options, objectKey, fileState.MultipartUploadID, nextPartNumber, partPayload)
 				if err != nil {
 					return nil, 0, err
@@ -227,7 +227,7 @@ func uploadMirrorPart(
 		Key:        objectKey,
 		UploadID:   uploadID,
 		PartNumber: partNumber,
-		Expires:    huggingFaceMirrorUploadURLTTL,
+		Expires:    sourceMirrorUploadURLTTL,
 	})
 	if err != nil {
 		return uploadstagingports.CompletedPart{}, err
@@ -236,7 +236,7 @@ func uploadMirrorPart(
 	if err != nil {
 		return uploadstagingports.CompletedPart{}, err
 	}
-	request.Header.Set("Content-Type", huggingFaceMirrorUploadMimeType)
+	request.Header.Set("Content-Type", sourceMirrorUploadMimeType)
 	httpClient := http.DefaultClient
 	if options != nil && options.UploadHTTPClient != nil {
 		httpClient = options.UploadHTTPClient
@@ -247,11 +247,11 @@ func uploadMirrorPart(
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return uploadstagingports.CompletedPart{}, unexpectedStatusError(response, "huggingface source mirror upload part")
+		return uploadstagingports.CompletedPart{}, unexpectedStatusError(response, "source mirror upload part")
 	}
 	etag := strings.TrimSpace(response.Header.Get("ETag"))
 	if etag == "" {
-		return uploadstagingports.CompletedPart{}, errors.New("huggingface source mirror upload part response missing ETag")
+		return uploadstagingports.CompletedPart{}, errors.New("source mirror upload part response missing ETag")
 	}
 	return uploadstagingports.CompletedPart{PartNumber: partNumber, ETag: etag}, nil
 }

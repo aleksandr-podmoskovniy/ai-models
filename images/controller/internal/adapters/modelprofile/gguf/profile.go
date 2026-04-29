@@ -38,11 +38,16 @@ type Input struct {
 }
 
 type SummaryInput struct {
-	ModelFileName      string
-	ModelSizeBytes     int64
-	Task               string
-	SourceDeclaredTask string
-	TaskHint           string
+	ModelFileName       string
+	ModelSizeBytes      int64
+	Task                string
+	SourceDeclaredTask  string
+	TaskHint            string
+	Family              string
+	Architecture        string
+	ParameterCount      int64
+	Quantization        string
+	ContextWindowTokens int64
 }
 
 var (
@@ -74,7 +79,8 @@ func ResolveSummary(input SummaryInput) (publicationdata.ResolvedProfile, error)
 	}
 
 	stem := strings.TrimSuffix(filepath.Base(modelFileName), filepath.Ext(modelFileName))
-	return resolveFromSummary(stem, input.ModelSizeBytes, input.Task, input.SourceDeclaredTask, input.TaskHint), nil
+	resolved := resolveFromSummary(stem, input.ModelSizeBytes, input.Task, input.SourceDeclaredTask, input.TaskHint)
+	return applyDeclaredSummary(resolved, input), nil
 }
 
 func resolveFromSummary(stem string, modelSizeBytes int64, explicitTask, sourceDeclaredTask, taskHint string) publicationdata.ResolvedProfile {
@@ -114,6 +120,30 @@ func resolveFromSummary(stem string, modelSizeBytes int64, explicitTask, sourceD
 			EstimatedWorkingSetGiB: profilecommon.EstimatedWorkingSetGiB(modelSizeBytes, parameterCount, precision, quantization),
 		},
 	}
+}
+
+func applyDeclaredSummary(resolved publicationdata.ResolvedProfile, input SummaryInput) publicationdata.ResolvedProfile {
+	if family := strings.TrimSpace(input.Family); family != "" {
+		resolved.Family = family
+		resolved.FamilyConfidence = publicationdata.ProfileConfidenceDeclared
+	}
+	if architecture := strings.TrimSpace(input.Architecture); architecture != "" {
+		resolved.Architecture = architecture
+		resolved.ArchitectureConfidence = publicationdata.ProfileConfidenceDeclared
+	}
+	if input.ParameterCount > 0 {
+		resolved.ParameterCount = input.ParameterCount
+		resolved.ParameterCountConfidence = publicationdata.ProfileConfidenceDeclared
+	}
+	if quantization := strings.TrimSpace(input.Quantization); quantization != "" {
+		resolved.Quantization = quantization
+		resolved.QuantizationConfidence = publicationdata.ProfileConfidenceDeclared
+	}
+	if input.ContextWindowTokens > 0 {
+		resolved.ContextWindowTokens = input.ContextWindowTokens
+		resolved.ContextWindowTokensConfidence = publicationdata.ProfileConfidenceDeclared
+	}
+	return resolved
 }
 
 func resolveTask(explicitTask, sourceDeclaredTask, taskHint string) (string, publicationdata.ProfileConfidence) {

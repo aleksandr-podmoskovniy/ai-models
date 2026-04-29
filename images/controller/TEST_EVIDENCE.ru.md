@@ -27,7 +27,7 @@ paths и test surfaces.
 - Byte path:
   - `resolved HF objects -> bounded companion bundle + raw OCI publish`
 - Runtime selection:
-  - `artifacts.sourceFetchMode=Direct`
+  - module-owned default source fetch policy: `Direct`
 - Full-size local copies during successful publish:
   - `0`
 - Primary evidence:
@@ -52,7 +52,7 @@ paths и test surfaces.
 - Byte path:
   - `HF objects -> source mirror objects -> bounded companion bundle + raw OCI publish`
 - Runtime selection:
-  - `artifacts.sourceFetchMode=Mirror`
+  - internal source mirror policy surface, not a public ModuleConfig knob
 - Full-size local copies during successful publish:
   - `0`
 - Primary evidence:
@@ -596,12 +596,14 @@ paths и test surfaces.
 - Decision surface:
   - bearer-only request authentication
   - probe-time expected-size capture
+  - simple `PUT /v1/upload/<sessionID>` upload for `curl -T`
   - session info and liveness
   - upload probe / multipart init
   - multipart completion and controller handoff rejection
   - expiry and closed-session rejection
 - Primary evidence:
   - `run_session_info_test.go`
+  - `run_direct_upload_test.go`
   - `run_probe_init_test.go`
   - `run_multipart_completion_test.go`
   - `run_multipart_handoff_test.go`

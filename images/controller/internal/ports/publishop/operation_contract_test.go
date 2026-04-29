@@ -45,6 +45,18 @@ func TestRequestValidate(t *testing.T) {
 			},
 		},
 		{
+			name: "valid ollama request",
+			input: Request{
+				Owner:    validOwner(),
+				Identity: validIdentity(),
+				Spec: modelsv1alpha1.ModelSpec{
+					Source: modelsv1alpha1.ModelSourceSpec{
+						URL: "https://ollama.com/library/qwen3.6:latest",
+					},
+				},
+			},
+		},
+		{
 			name: "missing owner kind fails closed",
 			input: Request{
 				Owner: Owner{

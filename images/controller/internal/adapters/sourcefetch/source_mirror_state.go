@@ -26,17 +26,17 @@ import (
 	uploadstagingports "github.com/deckhouse/ai-models/controller/internal/ports/uploadstaging"
 )
 
-type huggingFaceMirrorTracker struct {
+type sourceMirrorTracker struct {
 	options  *SourceMirrorOptions
 	snapshot *SourceMirrorSnapshot
 	state    sourcemirrorports.SnapshotState
 }
 
-func loadHuggingFaceMirrorTracker(
+func loadSourceMirrorTracker(
 	ctx context.Context,
 	options *SourceMirrorOptions,
 	snapshot *SourceMirrorSnapshot,
-) (*huggingFaceMirrorTracker, error) {
+) (*sourceMirrorTracker, error) {
 	state, err := options.Store.LoadState(ctx, snapshot.Locator)
 	if err != nil {
 		if !errors.Is(err, sourcemirrorports.ErrSnapshotNotFound) {
@@ -47,18 +47,18 @@ func loadHuggingFaceMirrorTracker(
 			Phase:   sourcemirrorports.SnapshotPhasePending,
 		}
 	}
-	return &huggingFaceMirrorTracker{
+	return &sourceMirrorTracker{
 		options:  options,
 		snapshot: snapshot,
 		state:    state,
 	}, nil
 }
 
-func (t *huggingFaceMirrorTracker) setSnapshotPhase(ctx context.Context, phase sourcemirrorports.SnapshotPhase) error {
+func (t *sourceMirrorTracker) setSnapshotPhase(ctx context.Context, phase sourcemirrorports.SnapshotPhase) error {
 	return t.setSnapshotPhaseWithError(ctx, phase, nil)
 }
 
-func (t *huggingFaceMirrorTracker) setSnapshotPhaseWithError(ctx context.Context, phase sourcemirrorports.SnapshotPhase, runErr error) error {
+func (t *sourceMirrorTracker) setSnapshotPhaseWithError(ctx context.Context, phase sourcemirrorports.SnapshotPhase, runErr error) error {
 	t.state.Phase = phase
 	t.state.UpdatedAt = time.Now().UTC()
 	if runErr != nil {
@@ -73,7 +73,7 @@ func (t *huggingFaceMirrorTracker) setSnapshotPhaseWithError(ctx context.Context
 	return t.options.Store.SaveState(ctx, t.state)
 }
 
-func (t *huggingFaceMirrorTracker) ensureUpload(ctx context.Context, relativePath string) (sourcemirrorports.SnapshotFileState, error) {
+func (t *sourceMirrorTracker) ensureUpload(ctx context.Context, relativePath string) (sourcemirrorports.SnapshotFileState, error) {
 	state := t.fileState(relativePath)
 	if state.Phase == sourcemirrorports.SnapshotPhaseCompleted {
 		return state, nil
@@ -97,7 +97,7 @@ func (t *huggingFaceMirrorTracker) ensureUpload(ctx context.Context, relativePat
 	return state, nil
 }
 
-func (t *huggingFaceMirrorTracker) syncUploadedParts(
+func (t *sourceMirrorTracker) syncUploadedParts(
 	ctx context.Context,
 	options *SourceMirrorOptions,
 	snapshot *SourceMirrorSnapshot,
@@ -136,7 +136,7 @@ func (t *huggingFaceMirrorTracker) syncUploadedParts(
 	return t.upsertFileState(ctx, state)
 }
 
-func (t *huggingFaceMirrorTracker) appendCompletedPart(
+func (t *sourceMirrorTracker) appendCompletedPart(
 	ctx context.Context,
 	relativePath string,
 	part uploadstagingports.CompletedPart,
@@ -152,7 +152,7 @@ func (t *huggingFaceMirrorTracker) appendCompletedPart(
 	return t.upsertFileState(ctx, state)
 }
 
-func (t *huggingFaceMirrorTracker) completeFile(ctx context.Context, relativePath string, sizeBytes int64) error {
+func (t *sourceMirrorTracker) completeFile(ctx context.Context, relativePath string, sizeBytes int64) error {
 	state := t.fileState(relativePath)
 	state.Path = relativePath
 	state.Phase = sourcemirrorports.SnapshotPhaseCompleted
@@ -162,7 +162,7 @@ func (t *huggingFaceMirrorTracker) completeFile(ctx context.Context, relativePat
 	return t.upsertFileState(ctx, state)
 }
 
-func (t *huggingFaceMirrorTracker) failFile(ctx context.Context, relativePath string, runErr error) error {
+func (t *sourceMirrorTracker) failFile(ctx context.Context, relativePath string, runErr error) error {
 	state := t.fileState(relativePath)
 	state.Path = relativePath
 	state.Phase = sourcemirrorports.SnapshotPhaseFailed
@@ -171,7 +171,7 @@ func (t *huggingFaceMirrorTracker) failFile(ctx context.Context, relativePath st
 	return t.upsertFileState(ctx, state)
 }
 
-func (t *huggingFaceMirrorTracker) upsertFileState(ctx context.Context, state sourcemirrorports.SnapshotFileState) error {
+func (t *sourceMirrorTracker) upsertFileState(ctx context.Context, state sourcemirrorports.SnapshotFileState) error {
 	found := false
 	for index := range t.state.Files {
 		if t.state.Files[index].Path == state.Path {
@@ -187,7 +187,7 @@ func (t *huggingFaceMirrorTracker) upsertFileState(ctx context.Context, state so
 	return t.options.Store.SaveState(ctx, t.state)
 }
 
-func (t *huggingFaceMirrorTracker) fileState(relativePath string) sourcemirrorports.SnapshotFileState {
+func (t *sourceMirrorTracker) fileState(relativePath string) sourcemirrorports.SnapshotFileState {
 	for _, file := range t.state.Files {
 		if file.Path == relativePath {
 			return file
@@ -196,7 +196,7 @@ func (t *huggingFaceMirrorTracker) fileState(relativePath string) sourcemirrorpo
 	return sourcemirrorports.SnapshotFileState{Path: relativePath}
 }
 
-func (t *huggingFaceMirrorTracker) totalBytesConfirmed() int64 {
+func (t *sourceMirrorTracker) totalBytesConfirmed() int64 {
 	var total int64
 	for _, file := range t.state.Files {
 		total += file.BytesConfirmed

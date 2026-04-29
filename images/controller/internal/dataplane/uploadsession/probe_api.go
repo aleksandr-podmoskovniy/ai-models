@@ -154,7 +154,7 @@ func (api *sessionAPI) reserveUploadStorage(
 		return true
 	}
 	if expectedSizeBytes <= 0 {
-		http.Error(writer, "upload probe sizeBytes is required when artifact storage capacity limit is enabled", http.StatusBadRequest)
+		http.Error(writer, "upload sizeBytes is required when artifact storage capacity limit is enabled", http.StatusBadRequest)
 		return false
 	}
 	err := api.options.StorageReservations.ReserveUpload(request.Context(), session, expectedSizeBytes)

@@ -10,26 +10,28 @@ The current `ai-models` configuration contract is intentionally short.
 Only stable module-level settings are exposed:
 
 - `logLevel`;
-- `artifacts`.
-- `dmcr`.
+- `artifacts`;
 - `nodeCache`.
 
 High availability mode, HTTPS policy, ingress class, controller/runtime wiring,
-`DMCR`, upload-gateway, and publication worker internals stay in global
-Deckhouse settings plus internal module values. There is no longer a user-facing
-module contract for:
+`DMCR`, upload-gateway, publication worker internals, source-fetch policy and
+GC cadence stay in global Deckhouse settings plus internal module values. There
+is no user-facing module contract for:
 
 - retired backend auth/workspace and metadata-database knobs;
 - browser SSO knobs;
 - backend-only secrets;
 - external publication registry settings;
 - backend-specific `artifacts.pathPrefix`.
+- `DMCR` implementation settings;
+- source-fetch transport selection;
+- internal node-cache object names.
 
 `artifacts` defines the shared S3-compatible storage for ai-models byte paths.
 The split inside the bucket is fixed by runtime code:
 
-- `raw/` for controller-owned upload staging and, when
-  `artifacts.sourceFetchMode=Mirror`, the temporary source mirror;
+- `raw/` for controller-owned upload staging and temporary source objects when
+  the module needs them;
 - `dmcr/` for published OCI artifacts in the internal `DMCR`;
 - optional future append-only module data under separate fixed prefixes.
 
@@ -45,40 +47,15 @@ ai-models first reuses `credentialsSecretName` if that Secret also contains
 `ca.crt`, and otherwise falls back to the platform CA already discovered by the
 module runtime or copied from the global HTTPS `CustomCertificate` path.
 
-`dmcr.gc.schedule` exposes the productized stale-sweep cadence for the internal
-registry. By default, ai-models enqueues one stale cleanup cycle every 20
-minutes. Setting the schedule to an empty string disables the periodic sweep
-without removing the operator-facing inspection surface: `dmcr-cleaner gc
-check` still reports stale published repository prefixes, source-mirror
-prefixes, and orphan direct-upload prefixes without a `.dmcr-sealed` reference
-that already outlived the bounded stale-age window inside the DMCR Pod.
-
-When the scheduled loop starts after the configured schedule tick, it performs a
-report-only startup check and retries transient check failures. If stale cleanup
-candidates already exist and no other GC request is active or queued, it queues
-the regular scheduled request; it does not run destructive cleanup directly and
-still goes through the normal coalescing debounce. The cleanup cycle uses an
-internal zero-rollout maintenance gate with runtime ack quorum rather than
-changing the DMCR Pod template.
-
-Controller metrics also expose the private lifecycle of these requests: how
-many `dmcr-gc-*` requests are in `queued`, `armed`, `done`, or `unknown`, and
-how many seconds a concrete request has spent in its current phase. This is
-operator observability over a module-private `Secret`, not a new public API for
-model users.
-
 The public runtime path for models is now controller-owned:
 
-- `Model` / `ClusterModel` use one cluster-level
-  `artifacts.sourceFetchMode`:
-  - `Mirror`:
-    remote `source.url` first goes through a controller-owned source mirror;
-  - `Direct`:
-    remote `source.url` is consumed directly from the canonical remote source
-    boundary;
+- `Model` / `ClusterModel` remote `source.url` ingestion uses a module-owned
+  policy. The current default is direct streaming from the canonical source
+  boundary; the module may use temporary source objects internally when a
+  source adapter requires that for resumability or safety;
 - `spec.source.upload` uses the controller-owned upload-session path and stays
-  on its own staged object boundary; upload URLs are projected in status, while
-  the raw Bearer header value is stored in the referenced token Secret;
+  on its own staged object boundary; time-bounded secret upload URLs are
+  projected in status, matching the direct upload UX used by virtualization;
 - all paths publish OCI `ModelPack` artifacts into the internal `DMCR`;
 - streamable multi-file remote inputs publish as one bounded companion bundle
   plus dedicated raw layers for large model payloads, instead of repacking the
@@ -105,17 +82,6 @@ RBAC follows the Deckhouse `user-authz` and `rbacv2` split:
   garbage collection reads only module-private cleanup/GC `Secret` objects and
   `Lease` objects in the module namespace, not user-facing `Model` or
   `ClusterModel` objects.
-
-The default is `artifacts.sourceFetchMode=Direct`.
-
-The trade-off is explicit:
-
-- `Mirror` keeps a durable intermediate copy in object storage and makes
-  re-publish/resume on the remote ingest boundary more predictable;
-- `Direct` removes that extra full copy and speeds up the first remote import;
-- for `spec.source.upload`, the effective source boundary is already the staged
-  object, so the mode does not create a second intermediate copy on top of the
-  upload staging contract.
 
 There is no separate transport choice for published layer payloads. The
 canonical byte path is fixed:
@@ -214,18 +180,16 @@ SharedDirect delivery contract:
 The current bounded contract is:
 
 - `nodeCache.enabled` enables the managed substrate controller;
-- `nodeCache.maxSize` becomes the per-node thin-pool budget;
-- `nodeCache.sharedVolumeSize` defines the per-node shared cache volume
-  requested by the controller-owned stable runtime Pod/PVC over the managed
-  `LocalStorageClass`;
-- the node-cache runtime eviction budget is capped by
-  `nodeCache.sharedVolumeSize`, and `nodeCache.sharedVolumeSize` must not be
-  larger than `nodeCache.maxSize`;
-- `nodeCache.storageClassName`, `nodeCache.volumeGroupSetName`,
-  `nodeCache.volumeGroupNameOnNode`, and `nodeCache.thinPoolName` define the
-  ai-models-owned substrate object names;
-- `nodeCache.nodeSelector` and `nodeCache.blockDeviceSelector` are required
-  `matchLabels` maps used to select substrate nodes and block devices.
+- `nodeCache.size` is the single per-node cache capacity decision. The module
+  uses the same value for the managed thin-pool budget, the per-node shared
+  cache PVC and the runtime eviction budget;
+- by default ai-models selects nodes and `BlockDevice` objects labelled
+  `ai.deckhouse.io/model-cache=true`;
+- `nodeCache.nodeSelector` and `nodeCache.blockDeviceSelector` may override
+  that default only when the cluster already has a stricter labelling
+  convention;
+- `LocalStorageClass`, `LVMVolumeGroupSet`, VG and thin-pool names are
+  internal ai-models constants, not public ModuleConfig knobs.
 
 With `nodeCache.enabled=true`, workloads that do not bring an explicit cache
 volume are cut over to the node-cache SharedDirect path:
@@ -234,8 +198,8 @@ volume are cut over to the node-cache SharedDirect path:
   `node-cache.ai-models.deckhouse.io` at `/data/modelcache`;
 - the injected CSI volume carries only immutable artifact attributes
   (URI, digest, optional family), not storage-specific public API fields;
-- the controller propagates `nodeCache.nodeSelector` into managed workload
-  pod templates and fails on conflicts instead of scheduling them onto
+- the controller propagates the effective node-cache node selector into managed
+  workload pod templates and fails on conflicts instead of scheduling them onto
   unsupported nodes;
 - the controller also requires the dynamic
   `ai.deckhouse.io/node-cache-runtime-ready=true` node label and keeps the
@@ -266,8 +230,8 @@ volume are cut over to the node-cache SharedDirect path:
 - ai-models now keeps a separate per-node shared cache plane as a
   controller-owned stable runtime Pod plus stable PVC over the managed
   `LocalStorageClass`; the shared volume size is controlled by
-  `nodeCache.sharedVolumeSize`, and storage identity no longer depends on the
-  node-agent pod lifecycle;
+  `nodeCache.size`, and storage identity no longer depends on the node-agent
+  pod lifecycle;
 - the cache runtime Pod does not use direct `spec.nodeName`: it is pinned to
   the intended node through `kubernetes.io/hostname` node affinity, so the
   Kubernetes scheduler can correctly choose a local LVM volume for a
@@ -299,8 +263,8 @@ Failure scenarios:
 - if the SDS CRDs are actually absent from the cluster, the substrate
   controller cannot create `LVMVolumeGroupSet` / `LocalStorageClass`, and the
   node-cache layer will not become ready;
-- if a selected node has no local block device matching
-  `nodeCache.blockDeviceSelector`, the managed `LVMVolumeGroup` for that node
+- if a selected node has no local block device matching the effective
+  node-cache block-device selector, the managed `LVMVolumeGroup` for that node
   will not become ready, the `LocalStorageClass` will not include that node,
   and the cache runtime PVC/Pod remain unscheduled or pending;
 - while no selected node has a ready runtime Pod and a bound shared cache PVC,

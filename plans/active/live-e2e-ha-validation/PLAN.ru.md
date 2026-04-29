@@ -23,15 +23,28 @@ unit/template-level evidence.
 
 ## 3. Active bundle disposition
 
-- `live-e2e-ha-validation` — keep active. Это канонический executable runbook
-  для следующего live запуска.
-- `observability-signal-hardening` — keep active. Первый code slice уже даёт
-  `collector_up` / scrape duration / last-success metrics и normalized `err`
-  logs; live e2e должен проверить их после rollout, а alert wiring остаётся
-  следующим observability slice.
-- `pod-placement-policy` — archived to
-  `plans/archive/2026/pod-placement-policy`; placement slice завершён и теперь
+Keep active:
+
+- `live-e2e-ha-validation` — канонический executable runbook для следующего
+  live запуска.
+- `observability-signal-hardening` — остаётся executable: pending Slice 4
+  должен проверить live metrics/alerts и добить log field dictionary.
+- `ray-a30-ai-models-registry-cutover` — остаётся executable: pending Slice 5
+  должен проверить A30 embedder/reranker/STT load после выката annotation-only
+  RayService delivery.
+
+Archived:
+
+- `capacity-cache-admission-hardening` — implementation завершён; live proof
   покрывается этим e2e runbook.
+- `pre-rollout-defect-closure` — defect closure завершён и больше не является
+  рабочей поверхностью.
+- `public-docs-virtualization-style` — public docs slice завершён; следующие
+  docs правки принадлежат feature-specific bundles.
+- `source-capability-taxonomy-ollama` — Ollama registry implementation закрыт;
+  live proof покрывается этим e2e runbook.
+- `pod-placement-policy` — placement slice завершён и покрывается этим e2e
+  runbook.
 
 ## 4. Start gate
 
@@ -107,7 +120,7 @@ Pass:
 
 - для каждого runtime event есть correlation fields:
   `model`, `namespace`/cluster scope, `uid`, `publicationID`,
-  `sourceFetchMode`, `sessionID` или direct-upload state reference.
+  module-owned source policy, `sessionID` или direct-upload state reference.
 - missing collector health metric or `collector_up=0` is a stop condition
   unless it is explained by a controlled negative test.
 
@@ -115,7 +128,7 @@ Pass:
 
 Цель:
 
-- проверить current default `sourceFetchMode=Direct`;
+- проверить current module-owned direct source policy;
 - покрыть `Model` и `ClusterModel`;
 - собрать capabilities/status evidence.
 
@@ -123,6 +136,9 @@ Matrix:
 
 - small Safetensors text/chat model;
 - small GGUF model;
+- small Ollama registry GGUF model;
+- larger Ollama registry GGUF model for raw-layer streaming and interruption
+  replay;
 - small public cluster-scoped Gemma 4-compatible source, если доступен;
 - representative models for embeddings, rerank, STT, TTS, CV, multimodal,
   image/video generation and tool-calling metadata. Если publication layout не
@@ -134,31 +150,29 @@ Pass:
 - unsupported artifacts fail clearly before heavy byte path;
 - `status.resolved.format`, `supportedEndpointTypes`, `supportedFeatures`,
   footprint/provenance match source facts;
+- Ollama status exposes source/provider and registry-derived facts without
+  claiming a concrete runtime (`vllm`, `ollama`, `llama.cpp`);
 - workload delivery works for at least one namespaced `Model` and one
   `ClusterModel`.
 
-### Slice 4. HF Mirror mode
+### Slice 4. Source mirror evidence
 
 Цель:
 
-- временно включить `aiModels.artifacts.sourceFetchMode=Mirror`;
-- доказать durable mirror snapshot/resume/cleanup.
+- доказать, что source mirror semantics не потеряны после удаления public
+  source-fetch mode knob.
 
 Проверки:
 
-- source mirror manifest/state objects created under `raw/.mirror`;
-- worker logs show mirror download/upload phases and resume-safe state;
-- publication reads from mirror object source;
-- delete/GC removes backend artifact and source mirror prefix.
-
-Rollback:
-
-- вернуть `sourceFetchMode=Direct` сразу после mirror scenario.
+- проверить unit/integration evidence для mirror manifest/state, resume-safe
+  state и cleanup;
+- в live e2e не менять `ModuleConfig`: mirror больше не является
+  user-facing cluster toggle.
 
 Pass:
 
-- mirror path reaches `Ready` or recoverable failure with durable state;
-- no orphan mirror prefix after cleanup/GC.
+- нет live-runbook шага, который требует public source-fetch mode override;
+- mirror evidence остаётся в code-level tests или отдельном internal harness.
 
 ### Slice 5. Upload publication and capacity reservation
 
@@ -328,7 +342,7 @@ Pass:
 Pass:
 
 - namespace `ai-models-e2e` removed;
-- `sourceFetchMode` and capacity settings restored;
+- temporary capacity settings restored;
 - no active e2e `Model`/`ClusterModel`;
 - deployments ready and restartCount stable;
 - all findings classified:

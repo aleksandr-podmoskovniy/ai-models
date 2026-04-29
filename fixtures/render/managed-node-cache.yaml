@@ -9,7 +9,3 @@ global:
 aiModels:
   nodeCache:
     enabled: true
-    nodeSelector:
-      ai.deckhouse.io/node-cache: "true"
-    blockDeviceSelector:
-      ai.deckhouse.io/model-cache: "true"

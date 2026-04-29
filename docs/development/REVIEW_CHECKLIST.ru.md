@@ -28,6 +28,17 @@
 - Значения и шаблоны согласованы.
 - Не появилось случайных root-level файлов или каталогов.
 
+## Документация
+- Для docs diff явно понятен source of truth: OpenAPI/API/templates или
+  hand-written page.
+- `docs/CR.md` и `docs/CR.ru.md` не содержат hand-written CRD field inventory;
+  это generated entrypoints с marker `<!-- SCHEMA -->`.
+- Описания config values и CRD fields менялись в canonical source, а не только
+  в rendered docs.
+- Hand-written guides не дублируют generated schema tables.
+- `make lint-docs` прогнан; если менялся source generated docs, прогнан
+  соответствующий render/codegen check.
+
 ## RBAC и доступы
 - Для DKP user-facing API/auth/RBAC/exposure/runtime entrypoint change явно
   перечислены access levels/personas, scope, verbs и intentional deny paths.

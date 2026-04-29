@@ -24,10 +24,24 @@ import (
 )
 
 func (api *sessionAPI) handleMismatchedSize(writer http.ResponseWriter, request *http.Request, session SessionRecord, actualSizeBytes int64) {
+	if session.Multipart == nil {
+		http.Error(writer, "uploaded payload size mismatch and missing staged object state", http.StatusInternalServerError)
+		return
+	}
+	api.handleStagedUploadSizeMismatch(writer, request, session, session.Multipart.Key, actualSizeBytes)
+}
+
+func (api *sessionAPI) handleStagedUploadSizeMismatch(
+	writer http.ResponseWriter,
+	request *http.Request,
+	session SessionRecord,
+	stagingKey string,
+	actualSizeBytes int64,
+) {
 	logger := sessionLogger(session)
 	deleteErr := api.options.StagingClient.Delete(request.Context(), uploadstagingports.DeleteInput{
 		Bucket: api.options.StagingBucket,
-		Key:    session.Multipart.Key,
+		Key:    stagingKey,
 	})
 	failErr := api.options.Sessions.MarkFailed(
 		request.Context(),

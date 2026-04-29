@@ -68,6 +68,18 @@
 - какие проверки нужны на каждом шаге;
 - где rollback point.
 
+Для docs tasks Codex обязан отдельно назвать source of truth:
+- `openapi/` для module config schema;
+- API/OpenAPI/CRD source для generated resource schema docs;
+- hand-written `docs/` pages для workflows, examples, operations и limits;
+- generated entrypoints вроде `docs/CR*.md`, которые нельзя превращать в
+  hand-written schema inventory.
+
+Если задача меняет `docs/CR*.md`, нормальное изменение почти всегда должно
+сохранять только frontmatter и `<!-- SCHEMA -->`. Описание полей должно
+попасть в OpenAPI/API source и пройти render/codegen check, а не копироваться
+вручную в public docs.
+
 Task bundle может оформить сам основной агент. `task_framer` нужен тогда, когда
 intake слишком широкий, расплывчатый или смешивает несколько workstreams.
 
@@ -133,6 +145,11 @@ product/runtime task.
 
 Если менялся repo-local workflow/governance surface, обязательно прогнать:
 - `make lint-codex-governance`
+
+Если менялись public docs:
+- `make lint-docs`
+- `make render-docs` или релевантный codegen/render check, когда менялся
+  source generated docs.
 
 Перед завершением задачи repo-level verification всё равно идёт через обычный
 `make verify`.
