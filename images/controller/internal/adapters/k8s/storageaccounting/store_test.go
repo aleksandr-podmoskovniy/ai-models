@@ -23,8 +23,25 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/domain/storagecapacity"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+func TestStoreEnsureCreatesEmptyLedgerSecret(t *testing.T) {
+	store := newTestStore(t, Options{Namespace: "d8-ai-models", LimitBytes: 100})
+
+	if err := store.Ensure(context.Background()); err != nil {
+		t.Fatalf("Ensure() error = %v", err)
+	}
+
+	secret := &corev1.Secret{}
+	if err := store.client.Get(context.Background(), client.ObjectKey{Namespace: "d8-ai-models", Name: DefaultSecretName}, secret); err != nil {
+		t.Fatalf("Get(secret) error = %v", err)
+	}
+	if secret.Type != corev1.SecretTypeOpaque || len(secret.Data[ledgerDataKey]) == 0 {
+		t.Fatalf("unexpected ensured secret %#v", secret)
+	}
+}
 
 func TestStoreReserveRejectsOverflow(t *testing.T) {
 	store := newTestStore(t, Options{Namespace: "d8-ai-models", LimitBytes: 50})

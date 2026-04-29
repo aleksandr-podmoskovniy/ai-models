@@ -31,8 +31,19 @@ func newHandler(api *sessionAPI) http.Handler {
 		writer.WriteHeader(http.StatusOK)
 		_, _ = writer.Write([]byte("ok\n"))
 	})
-	mux.HandleFunc("/v1/upload/", api.handleUpload)
+	mux.HandleFunc("/v1/upload/", uploadSecurityHeaders(api.handleUpload))
 	return mux
+}
+
+func uploadSecurityHeaders(next http.HandlerFunc) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		header := writer.Header()
+		header.Set("Cache-Control", "no-store")
+		header.Set("Pragma", "no-cache")
+		header.Set("Referrer-Policy", "no-referrer")
+		header.Set("X-Content-Type-Options", "nosniff")
+		next(writer, request)
+	}
 }
 
 func (api *sessionAPI) handleUpload(writer http.ResponseWriter, request *http.Request) {
@@ -58,7 +69,7 @@ func (api *sessionAPI) loadAuthorizedSession(writer http.ResponseWriter, request
 	case !found:
 		http.NotFound(writer, request)
 		return SessionRecord{}, false
-	case !authorizeUploadRequest(request, pathToken, session.UploadTokenHash):
+	case !authorizeUploadRequest(pathToken, session.UploadTokenHash):
 		http.Error(writer, "invalid upload token", http.StatusUnauthorized)
 		return SessionRecord{}, false
 	}

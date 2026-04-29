@@ -67,11 +67,11 @@ func TestServiceGetOrCreateCreatesSharedGatewaySessionSecret(t *testing.T) {
 	if got, want := handle.Progress, "0%"; got != want {
 		t.Fatalf("unexpected progress %q", got)
 	}
-	if !strings.HasPrefix(handle.UploadStatus.ExternalURL, "https://ai-models.example.com/v1/upload/") {
-		t.Fatalf("unexpected external URL %q", handle.UploadStatus.ExternalURL)
+	if !strings.HasPrefix(handle.UploadStatus.External, "https://ai-models.example.com/v1/upload/") {
+		t.Fatalf("unexpected external URL %q", handle.UploadStatus.External)
 	}
-	if !strings.Contains(handle.UploadStatus.InClusterURL, "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/") {
-		t.Fatalf("unexpected in-cluster URL %q", handle.UploadStatus.InClusterURL)
+	if !strings.Contains(handle.UploadStatus.InCluster, "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/") {
+		t.Fatalf("unexpected in-cluster URL %q", handle.UploadStatus.InCluster)
 	}
 	secret := &corev1.Secret{}
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: mustUploadSessionSecret(t, owner.UID).Name, Namespace: "d8-ai-models"}, secret); err != nil {
@@ -95,15 +95,15 @@ func TestServiceGetOrCreateCreatesSharedGatewaySessionSecret(t *testing.T) {
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: tokenSecretName, Namespace: tokenSecretNamespace}, tokenSecret); err != nil {
 		t.Fatalf("Get(token secret) error = %v", err)
 	}
-	if got := string(tokenSecret.Data[TokenSecretAuthorizationHeaderKey]); !strings.HasPrefix(got, "Bearer ") {
-		t.Fatalf("unexpected token secret value %q", got)
+	rawToken := strings.TrimSpace(string(tokenSecret.Data[TokenSecretTokenKey]))
+	if rawToken == "" {
+		t.Fatalf("unexpected empty token secret value: %#v", tokenSecret.Data)
 	}
-	rawToken, ok := tokenFromAuthorizationHeaderValue(string(tokenSecret.Data[TokenSecretAuthorizationHeaderKey]))
-	if !ok {
-		t.Fatalf("unexpected token secret value %q", string(tokenSecret.Data[TokenSecretAuthorizationHeaderKey]))
+	if strings.Contains(rawToken, "Bearer") {
+		t.Fatalf("unexpected token secret value %q", rawToken)
 	}
-	assertUploadStatusUsesSecretURL(t, handle.UploadStatus.ExternalURL, rawToken)
-	assertUploadStatusUsesSecretURL(t, handle.UploadStatus.InClusterURL, rawToken)
+	assertUploadStatusUsesSecretURL(t, handle.UploadStatus.External, rawToken)
+	assertUploadStatusUsesSecretURL(t, handle.UploadStatus.InCluster, rawToken)
 }
 
 func TestServiceGetOrCreateReusesTokenSecretForExistingSession(t *testing.T) {
@@ -137,7 +137,7 @@ func TestServiceGetOrCreateReusesTokenSecretForExistingSession(t *testing.T) {
 	if created {
 		t.Fatal("expected existing session to be reused")
 	}
-	if got, want := handle.UploadStatus.InClusterURL, "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222/existing-token"; got != want {
+	if got, want := handle.UploadStatus.InCluster, "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222/existing-token"; got != want {
 		t.Fatalf("unexpected in-cluster URL %q, want %q", got, want)
 	}
 }
@@ -196,17 +196,14 @@ func TestServiceGetOrCreateRecreatesStaleSecretWithoutTokenHash(t *testing.T) {
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: tokenSecretName, Namespace: tokenSecretNamespace}, updatedTokenSecret); err != nil {
 		t.Fatalf("Get(updated token secret) error = %v", err)
 	}
-	if got := string(updatedTokenSecret.Data[TokenSecretAuthorizationHeaderKey]); got == "Bearer existing-token" {
-		t.Fatalf("expected recreated session to rotate upload token secret value, got %q", got)
-	}
-	rawToken, ok := tokenFromAuthorizationHeaderValue(string(updatedTokenSecret.Data[TokenSecretAuthorizationHeaderKey]))
-	if !ok {
-		t.Fatalf("unexpected token secret value %q", string(updatedTokenSecret.Data[TokenSecretAuthorizationHeaderKey]))
+	rawToken := strings.TrimSpace(string(updatedTokenSecret.Data[TokenSecretTokenKey]))
+	if rawToken == "" {
+		t.Fatalf("unexpected empty token secret value: %#v", updatedTokenSecret.Data)
 	}
 	if rawToken == "existing-token" {
-		t.Fatalf("expected rotated raw token, got %q", rawToken)
+		t.Fatalf("expected recreated session to rotate upload token secret value, got %q", rawToken)
 	}
-	assertUploadStatusUsesSecretURL(t, handle.UploadStatus.InClusterURL, rawToken)
+	assertUploadStatusUsesSecretURL(t, handle.UploadStatus.InCluster, rawToken)
 }
 
 func TestServiceGetOrCreateRefreshesMultipartProgressFromStaging(t *testing.T) {

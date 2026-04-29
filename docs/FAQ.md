@@ -57,7 +57,7 @@ kubectl get nodes --show-labels | grep ai.deckhouse.io/model-cache
 
 The upload URL contains a time-bounded credential, matching the direct upload
 UX used by virtualization. Treat it as a secret: do not paste it into public
-logs or tickets, and prefer `status.upload.inClusterURL` for in-cluster upload.
+logs or tickets, and prefer `status.upload.inCluster` for in-cluster upload.
 
 ## What does ToolCalling mean?
 

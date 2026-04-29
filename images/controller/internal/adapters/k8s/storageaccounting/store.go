@@ -50,6 +50,15 @@ func (s *Store) Enabled() bool {
 	return s != nil && s.options.Enabled()
 }
 
+func (s *Store) Ensure(ctx context.Context) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.update(ctx, func(_ *storagecapacity.Ledger) error {
+		return nil
+	})
+}
+
 func (s *Store) Reserve(ctx context.Context, reservation storagecapacity.Reservation) error {
 	if !s.Enabled() {
 		return nil

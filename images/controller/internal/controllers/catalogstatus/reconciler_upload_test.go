@@ -47,7 +47,7 @@ func TestModelReconcilerProjectsWaitForUploadStatus(t *testing.T) {
 	if got, want := updated.Status.Phase, modelsv1alpha1.ModelPhaseWaitForUpload; got != want {
 		t.Fatalf("unexpected phase %q", got)
 	}
-	if updated.Status.Upload == nil || updated.Status.Upload.InClusterURL != "http://upload-worker.d8-ai-models.svc:8444/upload/token" {
+	if updated.Status.Upload == nil || updated.Status.Upload.InCluster != "http://upload-worker.d8-ai-models.svc:8444/upload/token" {
 		t.Fatalf("unexpected upload status %#v", updated.Status.Upload)
 	}
 	if got, want := updated.Status.Progress, "17%"; got != want {

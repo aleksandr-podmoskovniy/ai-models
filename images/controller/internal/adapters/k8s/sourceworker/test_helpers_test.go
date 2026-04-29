@@ -54,7 +54,7 @@ func testOptions() Options {
 			Namespace:               "d8-ai-models",
 			Image:                   "backend:latest",
 			ImagePullSecretName:     "ai-models-module-registry",
-			ServiceAccountName:      "ai-models-controller",
+			ServiceAccountName:      "ai-models-publication-worker",
 			OCIRepositoryPrefix:     "registry.internal.local/ai-models",
 			OCIRegistrySecretName:   "ai-models-dmcr-auth-write",
 			OCIDirectUploadEndpoint: "https://ai-models-dmcr.d8-ai-models.svc.cluster.local:5443",

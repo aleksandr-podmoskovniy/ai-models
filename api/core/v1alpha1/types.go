@@ -89,10 +89,10 @@ type ResolvedSourceStatus struct {
 }
 
 type ModelUploadStatus struct {
-	ExpiresAt    *metav1.Time `json:"expiresAt,omitempty"`
-	Repository   string       `json:"repository,omitempty"`
-	ExternalURL  string       `json:"externalURL,omitempty"`
-	InClusterURL string       `json:"inClusterURL,omitempty"`
+	ExpiresAt  *metav1.Time `json:"expiresAt,omitempty"`
+	Repository string       `json:"repository,omitempty"`
+	External   string       `json:"external,omitempty"`
+	InCluster  string       `json:"inCluster,omitempty"`
 }
 
 type ModelArtifactStatus struct {

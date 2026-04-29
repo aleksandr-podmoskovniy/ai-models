@@ -24,6 +24,7 @@ import (
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 )
 
 type Input struct {
@@ -140,6 +141,19 @@ func buildMaterializerContainer(name string, input Input, options Options, bindi
 		Args:            []string{"materialize-artifact"},
 		Env:             buildMaterializeEnv(input, options, binding, sharedStore, alias),
 		VolumeMounts:    buildMaterializerVolumeMounts(input, options),
+		SecurityContext: materializerSecurityContext(),
+	}
+}
+
+func materializerSecurityContext() *corev1.SecurityContext {
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: ptr.To(false),
+		ReadOnlyRootFilesystem:   ptr.To(true),
+		RunAsNonRoot:             ptr.To(true),
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 	}
 }
 

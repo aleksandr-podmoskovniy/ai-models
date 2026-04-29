@@ -66,7 +66,7 @@ func mustUploadTokenSecret(t *testing.T, ownerUID types.UID, namespace string, t
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			TokenSecretAuthorizationHeaderKey: []byte("Bearer " + token),
+			TokenSecretTokenKey: []byte(token),
 		},
 	}
 }
@@ -74,9 +74,9 @@ func mustUploadTokenSecret(t *testing.T, ownerUID types.UID, namespace string, t
 func testUploadStatus() modelsv1alpha1.ModelUploadStatus {
 	expiresAt := metav1.NewTime(time.Date(2030, 4, 10, 13, 0, 0, 0, time.UTC))
 	return modelsv1alpha1.ModelUploadStatus{
-		ExpiresAt:    &expiresAt,
-		Repository:   "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/1111-2222:published",
-		ExternalURL:  "https://ai-models.example.com/v1/upload/ai-model-upload-auth-1111-2222",
-		InClusterURL: "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222",
+		ExpiresAt:  &expiresAt,
+		Repository: "registry.internal.local/ai-models/catalog/namespaced/team-a/deepseek-r1-upload/1111-2222:published",
+		External:   "https://ai-models.example.com/v1/upload/ai-model-upload-auth-1111-2222",
+		InCluster:  "http://ai-models-controller.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-1111-2222",
 	}
 }

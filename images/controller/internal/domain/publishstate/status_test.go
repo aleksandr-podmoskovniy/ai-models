@@ -144,10 +144,10 @@ func TestProjectStatusRunningUploadWithSession(t *testing.T) {
 			Phase:    OperationPhaseRunning,
 			Progress: "17%",
 			Upload: &modelsv1alpha1.ModelUploadStatus{
-				ExpiresAt:    &expiresAt,
-				Repository:   "registry.example/upload",
-				ExternalURL:  "https://ai-models.example.com/upload/token",
-				InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
+				ExpiresAt:  &expiresAt,
+				Repository: "registry.example/upload",
+				External:   "https://ai-models.example.com/upload/token",
+				InCluster:  "http://upload-a.d8-ai-models.svc:8444/upload/token",
 			},
 		},
 	)
@@ -157,7 +157,7 @@ func TestProjectStatusRunningUploadWithSession(t *testing.T) {
 	if got, want := projection.Status.Phase, modelsv1alpha1.ModelPhaseWaitForUpload; got != want {
 		t.Fatalf("unexpected phase %q", got)
 	}
-	if projection.Status.Upload == nil || projection.Status.Upload.InClusterURL != "http://upload-a.d8-ai-models.svc:8444/upload/token" {
+	if projection.Status.Upload == nil || projection.Status.Upload.InCluster != "http://upload-a.d8-ai-models.svc:8444/upload/token" {
 		t.Fatalf("unexpected upload status %#v", projection.Status.Upload)
 	}
 	if got, want := projection.Status.Progress, "17%"; got != want {

@@ -128,6 +128,22 @@ Workload delivery:
 - SharedDirect получает scheduling gate, если сумма `sizeBytes` всех aliases
   больше per-node shared cache capacity или size неизвестен.
 
+Manual A30/vLLM SharedDirect drill:
+
+- до подтверждения нового rollout не включать `nodeCache` и не применять
+  workload;
+- target cluster: `k8s.apiac.ru`;
+- target node: `k8s-w3-gpu.apiac.ru`;
+- target model: `ClusterModel/a30-user-bge-m3`;
+- target image: `rayproject/ray-llm:2.54.0-py311-cu128`;
+- workload manifest должен содержать только annotation
+  `ai.deckhouse.io/model-refs: model=ClusterModel/a30-user-bge-m3`, vLLM
+  command/resources/probes and GPU scheduling;
+- запрещены ручные `materialize-artifact`, PVC `model-cache-pvc`, DMCR Secret
+  env and cache mkdir;
+- detailed script:
+  `plans/active/live-e2e-ha-validation/A30_VLLM_SHARED_DIRECT.ru.md`.
+
 HA/interruption:
 
 - delete controller pod during publication;

@@ -60,6 +60,10 @@ Archived:
 - текущие usage/capacity metrics, если доступны;
 - текущие active `Model`/`ClusterModel` во всех namespaces.
 
+Live mutation/config changes are not allowed until the user confirms that the
+new module version has been rolled out. In particular, do not enable
+`nodeCache` or apply manual vLLM workloads before that confirmation.
+
 ## 5. Execution slices
 
 ### Slice 1. Rollout, placement and baseline
@@ -246,6 +250,65 @@ Pass:
   unprepared nodes;
 - multi-model paths are deterministic and vLLM-compatible enough for future
   `ai-inference` consumption.
+
+### Slice 7A. Manual A30 vLLM SharedDirect drill
+
+Цель:
+
+- отдельно от RayService/GitOps проверить, что обычный `Deployment` с одной
+  annotation получает все ai-models delivery mutations сам;
+- отладить CSI/node-cache mount на A30/MIG ноде с локальными дисками;
+- доказать, что vLLM видит модель по стабильному пути, а workload не содержит
+  ручной `materialize-artifact`, PVC, DMCR credentials или cache mkdir.
+
+Факты текущего preflight на `k8s.apiac.ru`:
+
+- target node: `k8s-w3-gpu.apiac.ru`;
+- taint: `dedicated.apiac.ru=w-gpu:NoExecute`;
+- group label: `node.deckhouse.io/group=w-gpu-mig`;
+- local disks discovered by `sds-node-configurator`:
+  `dev-0b257c2c37d39bec8279efd49d0e7d315fddfdfe` and
+  `dev-2c4adac3cce4860ce6686d249ef6a96bf268a2ea`, both `150Gi`,
+  `consumable=true`;
+- ready ClusterModels already exist:
+  `a30-user-bge-m3`, `a30-bge-reranker-v2-m3-en-ru`,
+  `a30-whisper-medium`;
+- current `ModuleConfig ai-models` has `nodeCache` disabled, so SharedDirect
+  cannot be tested until node-cache is enabled after rollout.
+
+Detailed commands and manifests live in
+`plans/active/live-e2e-ha-validation/A30_VLLM_SHARED_DIRECT.ru.md`.
+
+Pass:
+
+- node and selected BlockDevices are labelled with
+  `ai.deckhouse.io/model-cache=true`;
+- after enabling node-cache, ai-models creates managed
+  `LVMVolumeGroupSet`, `LocalStorageClass`, per-node runtime PVC and runtime
+  Pod;
+- `k8s-w3-gpu.apiac.ru` gets
+  `ai.deckhouse.io/node-cache-runtime-ready=true`;
+- manual vLLM `Deployment` contains only user intent:
+  model annotation, vLLM image/command, GPU scheduling and probes;
+- controller mutates PodTemplate into SharedDirect:
+  inline CSI volume `node-cache.ai-models.deckhouse.io`, stable
+  `/data/modelcache` mount, resolved model annotations/env, no materializer
+  init container;
+- Pod lands on `k8s-w3-gpu.apiac.ru`, consumes `gpu.deckhouse.io/a30-mig-1g6`
+  if that resource is available, and serves embeddings through vLLM;
+- node-cache runtime logs show digest prefetch/ready and CSI publish, without
+  restarting on transient materialization errors.
+
+Stop/fix:
+
+- workload requires manually written ai-models internals;
+- mutation leaves MaterializeBridge instead of SharedDirect while node-cache is
+  ready;
+- workload schedules onto a node without ready node-cache runtime;
+- CSI mount hangs without clear condition/log reason;
+- vLLM downloads the model from HF instead of reading
+  `/data/modelcache/models/model`;
+- GPU extended resource is absent on the target node after GPU module checks.
 
 ### Slice 8. Controlled interruption replay
 

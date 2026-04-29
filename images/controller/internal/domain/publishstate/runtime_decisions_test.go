@@ -133,10 +133,10 @@ func TestObserveUploadSession(t *testing.T) {
 		},
 	}
 	uploadStatus := &modelsv1alpha1.ModelUploadStatus{
-		ExternalURL:  "https://ai-models.example.com/upload/token",
-		InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
-		Repository:   "registry.example/upload",
-		ExpiresAt:    &expiresAt,
+		External:   "https://ai-models.example.com/upload/token",
+		InCluster:  "http://upload-a.d8-ai-models.svc:8444/upload/token",
+		Repository: "registry.example/upload",
+		ExpiresAt:  &expiresAt,
 	}
 
 	testCases := []struct {

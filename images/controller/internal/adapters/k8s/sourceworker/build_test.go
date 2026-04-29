@@ -50,12 +50,13 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	assertContains(t, pod.Spec.Containers[0].Args, "107374182400")
 	assertContains(t, pod.Spec.Containers[0].Args, "--storage-reservation-id")
 	assertContains(t, pod.Spec.Containers[0].Args, "1111-2222")
-	if got, want := pod.Spec.ServiceAccountName, "ai-models-controller"; got != want {
+	if got, want := pod.Spec.ServiceAccountName, "ai-models-publication-worker"; got != want {
 		t.Fatalf("unexpected service account %q", got)
 	}
 	if len(pod.Spec.ImagePullSecrets) != 1 || pod.Spec.ImagePullSecrets[0].Name != "ai-models-module-registry" {
 		t.Fatalf("unexpected imagePullSecrets %#v", pod.Spec.ImagePullSecrets)
 	}
+	assertRestrictedWorkerSecurityContext(t, pod.Spec.Containers[0].SecurityContext)
 	if got, want := pod.Spec.Containers[0].Resources.Requests.Cpu().String(), "1"; got != want {
 		t.Fatalf("unexpected cpu request %q", got)
 	}
@@ -268,6 +269,32 @@ func assertNotContains(t *testing.T, values []string, unwanted string) {
 		if value == unwanted {
 			t.Fatalf("did not expect %q in %v", unwanted, values)
 		}
+	}
+}
+
+func assertRestrictedWorkerSecurityContext(t *testing.T, context *corev1.SecurityContext) {
+	t.Helper()
+
+	if context == nil {
+		t.Fatal("expected worker security context")
+	}
+	if context.AllowPrivilegeEscalation == nil || *context.AllowPrivilegeEscalation {
+		t.Fatalf("expected allowPrivilegeEscalation=false, got %#v", context.AllowPrivilegeEscalation)
+	}
+	if context.ReadOnlyRootFilesystem == nil || !*context.ReadOnlyRootFilesystem {
+		t.Fatalf("expected readOnlyRootFilesystem=true, got %#v", context.ReadOnlyRootFilesystem)
+	}
+	if context.RunAsNonRoot == nil || !*context.RunAsNonRoot {
+		t.Fatalf("expected runAsNonRoot=true, got %#v", context.RunAsNonRoot)
+	}
+	if context.RunAsUser == nil || *context.RunAsUser == 0 {
+		t.Fatalf("expected non-root runAsUser, got %#v", context.RunAsUser)
+	}
+	if context.Capabilities == nil || len(context.Capabilities.Drop) != 1 || context.Capabilities.Drop[0] != "ALL" {
+		t.Fatalf("expected drop ALL capabilities, got %#v", context.Capabilities)
+	}
+	if context.SeccompProfile == nil || context.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
+		t.Fatalf("expected runtime default seccomp, got %#v", context.SeccompProfile)
 	}
 }
 

@@ -58,7 +58,7 @@ kubectl get nodes --show-labels | grep ai.deckhouse.io/model-cache
 
 Upload URL содержит временный credential, как direct upload URL в
 virtualization. Считайте его секретом: не вставляйте URL в публичные логи или
-тикеты, а для загрузки из кластера используйте `status.upload.inClusterURL`.
+тикеты, а для загрузки из кластера используйте `status.upload.inCluster`.
 
 ## Что означает ToolCalling?
 

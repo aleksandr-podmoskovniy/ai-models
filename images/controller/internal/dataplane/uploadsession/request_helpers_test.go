@@ -16,11 +16,7 @@ limitations under the License.
 
 package uploadsession
 
-import (
-	"net/http"
-	"net/http/httptest"
-	"testing"
-)
+import "testing"
 
 func TestSanitizedUploadFileName(t *testing.T) {
 	t.Parallel()
@@ -72,16 +68,15 @@ func TestRouteFromRequestPath(t *testing.T) {
 		wantOK      bool
 	}{
 		{
-			name:        "legacy direct",
-			path:        "/v1/upload/session-a",
-			wantSession: "session-a",
-			wantOK:      true,
+			name:   "missing token",
+			path:   "/v1/upload/session-a",
+			wantOK: false,
 		},
 		{
-			name:        "legacy action",
+			name:        "missing token action becomes token value",
 			path:        "/v1/upload/session-a/probe",
 			wantSession: "session-a",
-			wantAction:  "/probe",
+			wantToken:   "probe",
 			wantOK:      true,
 		},
 		{
@@ -132,36 +127,5 @@ func TestRouteFromRequestPath(t *testing.T) {
 				)
 			}
 		})
-	}
-}
-
-func TestRequestTokenPrefersBearerHeader(t *testing.T) {
-	t.Parallel()
-
-	request := httptest.NewRequest(http.MethodGet, "/v1/upload/session-a?token=query-token", nil)
-	request.Header.Set("Authorization", "Bearer header-token")
-
-	if got, want := requestToken(request, "path-token"), "header-token"; got != want {
-		t.Fatalf("requestToken() = %q, want %q", got, want)
-	}
-}
-
-func TestRequestTokenAcceptsPathTokenWithoutBearerHeader(t *testing.T) {
-	t.Parallel()
-
-	request := httptest.NewRequest(http.MethodGet, "/v1/upload/session-a/path-token?token=query-token", nil)
-
-	if got, want := requestToken(request, "path-token"), "path-token"; got != want {
-		t.Fatalf("requestToken() = %q, want %q", got, want)
-	}
-}
-
-func TestRequestTokenRejectsQueryTokenWithoutBearerHeader(t *testing.T) {
-	t.Parallel()
-
-	request := httptest.NewRequest(http.MethodGet, "/v1/upload/session-a?token=query-token", nil)
-
-	if got := requestToken(request, ""); got != "" {
-		t.Fatalf("requestToken() = %q, want empty token", got)
 	}
 }

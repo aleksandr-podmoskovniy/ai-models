@@ -54,7 +54,7 @@ spec:
             - --publication-worker-image={{ include "helm_lib_module_image" (list . "controllerRuntime") }}
             - --publication-worker-image-pull-secret-name={{ include "ai-models.registrySecretName" . }}
             - --publication-worker-namespace=$(POD_NAMESPACE)
-            - --publication-worker-service-account={{ include "ai-models.controllerServiceAccountName" . }}
+            - --publication-worker-service-account={{ include "ai-models.publicationWorkerServiceAccountName" . }}
             - --publication-max-concurrent-workers={{ include "ai-models.publicationMaxConcurrentWorkers" . }}
             - --publication-worker-cpu-request={{ include "ai-models.publicationWorkerCPURequest" . }}
             - --publication-worker-cpu-limit={{ include "ai-models.publicationWorkerCPULimit" . }}

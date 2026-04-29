@@ -252,8 +252,8 @@ Current phase-2 slice implemented here:
   archive-source path, and the live worker shell no longer keeps a successful
   `checkpointDir` fallback;
 - `internal/dataplane/uploadsession` for the controller-owned upload session
-  runtime; it now serves the shared `/v1/upload/<sessionID>` simple `PUT`
-  upload path plus multipart session/control API, persists session state in the
+  runtime; it now serves the shared `/v1/upload/<sessionID>/<token>` simple
+  `PUT` upload path plus multipart session/control API, persists session state in the
   upload Secret, and marks the staged upload result back into that Secret after
   direct or multipart completion, after which controller requeues the object
   into the normal publish-worker path; the runtime now also syncs the
@@ -264,9 +264,8 @@ Current phase-2 slice implemented here:
   now also treats `publishing/completed` as closed session phases and rejects
   any late multipart mutation attempts instead of letting the preserved
   manifest imply a still-open upload; user-facing upload auth is the projected
-  secret URL, legacy Bearer headers remain compatibility-only, token-bearing
-  query URLs are not part of the status contract, and token handoff Secrets
-  remain internal controller/runtime state;
+  secret URL, header/query token variants are not part of the contract, and
+  token handoff Secrets remain internal controller/runtime state;
 - `internal/dataplane/artifactcleanup` for the controller-owned published
   artifact removal runtime;
 - `internal/publishedsnapshot` for immutable published-artifact snapshots used

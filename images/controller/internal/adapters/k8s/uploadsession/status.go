@@ -33,19 +33,11 @@ func buildUploadStatus(
 	expiresAt metav1.Time,
 ) modelsv1alpha1.ModelUploadStatus {
 	return modelsv1alpha1.ModelUploadStatus{
-		ExpiresAt:    &expiresAt,
-		Repository:   strings.TrimSpace(artifactURI),
-		ExternalURL:  buildExternalUploadURL(options.Gateway.PublicHost, sessionID, rawToken),
-		InClusterURL: buildInClusterUploadURL(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID, rawToken),
+		ExpiresAt:  &expiresAt,
+		Repository: strings.TrimSpace(artifactURI),
+		External:   buildExternalUploadURL(options.Gateway.PublicHost, sessionID, rawToken),
+		InCluster:  buildInClusterUploadURL(options.Gateway.ServiceName, options.Runtime.Namespace, sessionID, rawToken),
 	}
-}
-
-func buildAuthorizationHeaderValue(token string) string {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return ""
-	}
-	return "Bearer " + token
 }
 
 func buildInClusterUploadURL(serviceName, namespace, sessionID, rawToken string) string {
@@ -88,16 +80,4 @@ func buildExternalUploadURLBase(publicHost, path string) string {
 		return ""
 	}
 	return fmt.Sprintf("https://%s%s", publicHost, path)
-}
-
-func tokenFromAuthorizationHeaderValue(value string) (string, bool) {
-	value = strings.TrimSpace(value)
-	if !strings.HasPrefix(value, "Bearer ") {
-		return "", false
-	}
-	token := strings.TrimSpace(strings.TrimPrefix(value, "Bearer "))
-	if token == "" {
-		return "", false
-	}
-	return token, true
 }

@@ -152,7 +152,7 @@ spec:
 
 ```bash
 kubectl -n ai-demo wait --for=jsonpath='{.status.phase}'=WaitForUpload model/uploaded-safetensors
-UPLOAD_URL=$(kubectl -n ai-demo get model uploaded-safetensors -o jsonpath='{.status.upload.externalURL}')
+UPLOAD_URL=$(kubectl -n ai-demo get model uploaded-safetensors -o jsonpath='{.status.upload.external}')
 curl -fS --progress-bar -T ./model-bundle.zip "$UPLOAD_URL?filename=model-bundle.zip" | cat
 ```
 

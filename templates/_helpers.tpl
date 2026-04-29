@@ -248,6 +248,10 @@ ai-models-controller
 {{- include "ai-models.controllerName" . -}}
 {{- end -}}
 
+{{- define "ai-models.publicationWorkerServiceAccountName" -}}
+ai-models-publication-worker
+{{- end -}}
+
 {{- define "ai-models.controllerServiceName" -}}
 {{- include "ai-models.controllerName" . -}}
 {{- end -}}

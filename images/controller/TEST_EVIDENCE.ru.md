@@ -596,7 +596,7 @@ paths и test surfaces.
 - Decision surface:
   - bearer-only request authentication
   - probe-time expected-size capture
-  - simple `PUT /v1/upload/<sessionID>` upload for `curl -T`
+  - simple `PUT /v1/upload/<sessionID>/<token>` upload for `curl -T`
   - session info and liveness
   - upload probe / multipart init
   - multipart completion and controller handoff rejection

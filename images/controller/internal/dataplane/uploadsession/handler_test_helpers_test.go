@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"time"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -79,9 +80,27 @@ func decodeResponse(t testingT, body []byte, destination any) {
 }
 
 func authorizedRequest(method, path, token string, body io.Reader) *http.Request {
-	request := httptest.NewRequest(method, path, body)
-	request.Header.Set("Authorization", "Bearer "+token)
-	return request
+	return httptest.NewRequest(method, secretUploadPath(path, token), body)
+}
+
+func secretUploadPath(path, token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" || !strings.HasPrefix(path, "/v1/upload/") {
+		return path
+	}
+	base, query, foundQuery := strings.Cut(path, "?")
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(base, "/v1/upload/"), "/"), "/")
+	if len(parts) == 1 {
+		base = "/v1/upload/" + parts[0] + "/" + token
+	} else if len(parts) == 2 {
+		if _, ok := uploadAction(parts[1]); ok {
+			base = "/v1/upload/" + parts[0] + "/" + token + "/" + parts[1]
+		}
+	}
+	if foundQuery {
+		return base + "?" + query
+	}
+	return base
 }
 
 type testingT interface {

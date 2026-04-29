@@ -49,11 +49,8 @@ func routeFromRequestPath(path string) (sessionID string, pathToken string, acti
 
 	switch len(parts) {
 	case 1:
-		return sessionID, "", "", true
+		return "", "", "", false
 	case 2:
-		if action, ok := uploadAction(parts[1]); ok {
-			return sessionID, "", action, true
-		}
 		pathToken = strings.TrimSpace(parts[1])
 		if pathToken == "" {
 			return "", "", "", false
@@ -83,20 +80,12 @@ func uploadAction(raw string) (string, bool) {
 	}
 }
 
-func requestToken(request *http.Request, pathToken string) string {
-	auth := strings.TrimSpace(request.Header.Get("Authorization"))
-	if strings.HasPrefix(auth, "Bearer ") {
-		return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-	}
-	return strings.TrimSpace(pathToken)
-}
-
-func authorizeUploadRequest(request *http.Request, pathToken string, expectedTokenHash string) bool {
+func authorizeUploadRequest(pathToken string, expectedTokenHash string) bool {
 	expectedTokenHash = strings.TrimSpace(expectedTokenHash)
 	if expectedTokenHash == "" {
 		return false
 	}
-	token := requestToken(request, pathToken)
+	token := strings.TrimSpace(pathToken)
 	if token == "" {
 		return false
 	}

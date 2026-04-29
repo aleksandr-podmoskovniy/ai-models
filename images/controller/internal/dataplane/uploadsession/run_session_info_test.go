@@ -79,6 +79,29 @@ func TestHandlerRejectsInvalidToken(t *testing.T) {
 	}
 }
 
+func TestHandlerSetsUploadSecurityHeaders(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandler(Options{
+		StagingBucket: "ai-models",
+		StagingClient: &fakeStagingClient{},
+		Sessions: &fakeSessionStore{
+			sessions: map[string]SessionRecord{
+				"session-a": issuedSession("session-a"),
+			},
+		},
+	})
+
+	request := authorizedRequest(http.MethodGet, "/v1/upload/session-a", "token-a", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	assertHeader(t, response, "Cache-Control", "no-store")
+	assertHeader(t, response, "Pragma", "no-cache")
+	assertHeader(t, response, "Referrer-Policy", "no-referrer")
+	assertHeader(t, response, "X-Content-Type-Options", "nosniff")
+}
+
 func TestHandlerReturnsSessionInfo(t *testing.T) {
 	t.Parallel()
 
@@ -133,5 +156,12 @@ func TestHandlerReturnsSessionInfo(t *testing.T) {
 	}
 	if len(payload.Multipart.UploadedParts) != 1 || payload.Multipart.UploadedParts[0].SizeBytes != 64 {
 		t.Fatalf("unexpected uploaded parts payload %#v", payload.Multipart.UploadedParts)
+	}
+}
+
+func assertHeader(t *testing.T, response *httptest.ResponseRecorder, name, want string) {
+	t.Helper()
+	if got := response.Header().Get(name); got != want {
+		t.Fatalf("unexpected %s header %q, want %q", name, got, want)
 	}
 }

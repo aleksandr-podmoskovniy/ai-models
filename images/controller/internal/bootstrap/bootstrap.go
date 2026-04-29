@@ -179,6 +179,9 @@ func (a *App) setupManager(mgr ctrl.Manager) error {
 	if err != nil {
 		return err
 	}
+	if err := storageUsage.Ensure(context.Background()); err != nil {
+		return err
+	}
 
 	catalogmetrics.SetupCollector(
 		mgr.GetCache(),

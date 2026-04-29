@@ -67,8 +67,8 @@ func SameUploadStatus(current, desired *modelsv1alpha1.ModelUploadStatus) bool {
 	}
 
 	if current.Repository != desired.Repository ||
-		current.ExternalURL != desired.ExternalURL ||
-		current.InClusterURL != desired.InClusterURL {
+		current.External != desired.External ||
+		current.InCluster != desired.InCluster {
 		return false
 	}
 	switch {

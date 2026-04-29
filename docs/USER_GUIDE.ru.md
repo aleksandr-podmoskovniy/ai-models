@@ -85,20 +85,20 @@ spec:
 
 ```bash
 kubectl -n ai-demo get model uploaded-model \
-  -o jsonpath='{.status.upload.externalURL}{"\n"}'
+  -o jsonpath='{.status.upload.external}{"\n"}'
 ```
 
 URL сам является временным секретом для загрузки, как upload URL в
 virtualization. Не публикуйте его в логах и тикетах. Срок действия указан в
 `status.upload.expiresAt`. Если загрузка идёт изнутри кластера, используйте
-`status.upload.inClusterURL`.
+`status.upload.inCluster`.
 
 Загрузите файл напрямую в upload URL:
 
 ```bash
 UPLOAD_URL=$(
   kubectl -n ai-demo get model uploaded-model \
-    -o jsonpath='{.status.upload.externalURL}'
+    -o jsonpath='{.status.upload.external}'
 )
 
 curl -fS --progress-bar -T ./model.gguf "$UPLOAD_URL" | cat

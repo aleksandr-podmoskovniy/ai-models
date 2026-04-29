@@ -86,12 +86,12 @@ status:
 
 ```bash
 kubectl -n ai-demo get model uploaded-model \
-  -o jsonpath='{.status.upload.externalURL}{"\n"}'
+  -o jsonpath='{.status.upload.external}{"\n"}'
 ```
 
 The URL is a time-bounded secret upload credential, the same UX pattern as
 virtualization image upload URLs. Do not publish it in logs or tickets. It
-expires at `status.upload.expiresAt`. Use `status.upload.inClusterURL` instead
+expires at `status.upload.expiresAt`. Use `status.upload.inCluster` instead
 when uploading from inside the cluster.
 
 Upload the file directly to the upload URL:
@@ -99,7 +99,7 @@ Upload the file directly to the upload URL:
 ```bash
 UPLOAD_URL=$(
   kubectl -n ai-demo get model uploaded-model \
-    -o jsonpath='{.status.upload.externalURL}'
+    -o jsonpath='{.status.upload.external}'
 )
 
 curl -fS --progress-bar -T ./model.gguf "$UPLOAD_URL" | cat

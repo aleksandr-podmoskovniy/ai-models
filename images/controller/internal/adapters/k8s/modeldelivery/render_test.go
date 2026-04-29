@@ -82,8 +82,32 @@ func TestRenderBuildsMaterializerAgainstExistingCacheMount(t *testing.T) {
 	if got := envValue(rendered.InitContainers[0].Env, "AI_MODELS_OCI_CA_FILE"); got != ociregistry.CAFilePath {
 		t.Fatalf("unexpected OCI CA env %q", got)
 	}
+	assertMaterializerSecurityContext(t, rendered.InitContainers[0].SecurityContext)
 	if got := len(rendered.Volumes); got != 1 {
 		t.Fatalf("expected only CA volume injection, got %#v", rendered.Volumes)
+	}
+}
+
+func assertMaterializerSecurityContext(t *testing.T, context *corev1.SecurityContext) {
+	t.Helper()
+
+	if context == nil {
+		t.Fatal("expected materializer security context")
+	}
+	if context.AllowPrivilegeEscalation == nil || *context.AllowPrivilegeEscalation {
+		t.Fatalf("expected allowPrivilegeEscalation=false, got %#v", context.AllowPrivilegeEscalation)
+	}
+	if context.ReadOnlyRootFilesystem == nil || !*context.ReadOnlyRootFilesystem {
+		t.Fatalf("expected readOnlyRootFilesystem=true, got %#v", context.ReadOnlyRootFilesystem)
+	}
+	if context.RunAsNonRoot == nil || !*context.RunAsNonRoot {
+		t.Fatalf("expected runAsNonRoot=true, got %#v", context.RunAsNonRoot)
+	}
+	if context.Capabilities == nil || len(context.Capabilities.Drop) != 1 || context.Capabilities.Drop[0] != "ALL" {
+		t.Fatalf("expected drop ALL capabilities, got %#v", context.Capabilities)
+	}
+	if context.SeccompProfile == nil || context.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
+		t.Fatalf("expected runtime default seccomp, got %#v", context.SeccompProfile)
 	}
 }
 

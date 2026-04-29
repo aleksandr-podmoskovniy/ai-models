@@ -24,6 +24,7 @@ import (
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 )
 
 func buildPodSpec(
@@ -55,7 +56,21 @@ func buildContainer(
 		Args:            append([]string{"publish-worker"}, buildArgs(request, sourcePlan, artifactURI, options)...),
 		Env:             buildEnv(options, sourcePlan, projectedAuthSecretName, directUploadStateSecretName),
 		VolumeMounts:    buildVolumeMounts(options, sourcePlan),
+		SecurityContext: restrictedWorkerSecurityContext(),
 		Resources:       options.Resources,
+	}
+}
+
+func restrictedWorkerSecurityContext() *corev1.SecurityContext {
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: ptr.To(false),
+		ReadOnlyRootFilesystem:   ptr.To(true),
+		RunAsNonRoot:             ptr.To(true),
+		RunAsUser:                ptr.To[int64](64535),
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 	}
 }
 

@@ -30,10 +30,10 @@ import (
 
 func testUploadStatusForObservation(expiresAt *metav1.Time) modelsv1alpha1.ModelUploadStatus {
 	return modelsv1alpha1.ModelUploadStatus{
-		ExternalURL:  "https://ai-models.example.com/upload/token",
-		InClusterURL: "http://upload-a.d8-ai-models.svc:8444/upload/token",
-		Repository:   "registry.example/upload",
-		ExpiresAt:    expiresAt,
+		External:   "https://ai-models.example.com/upload/token",
+		InCluster:  "http://upload-a.d8-ai-models.svc:8444/upload/token",
+		Repository: "registry.example/upload",
+		ExpiresAt:  expiresAt,
 	}
 }
 
@@ -74,7 +74,7 @@ func TestObserveUploadSession(t *testing.T) {
 				if got.Observation.Phase != publicationdomain.OperationPhaseRunning {
 					t.Fatalf("unexpected phase %q", got.Observation.Phase)
 				}
-				if got.Observation.Upload == nil || got.Observation.Upload.InClusterURL == "" {
+				if got.Observation.Upload == nil || got.Observation.Upload.InCluster == "" {
 					t.Fatalf("unexpected upload observation %#v", got.Observation.Upload)
 				}
 				if got.Observation.Progress != "17%" {

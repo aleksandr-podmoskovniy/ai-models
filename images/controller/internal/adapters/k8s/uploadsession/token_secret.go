@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const TokenSecretAuthorizationHeaderKey = "authorizationHeaderValue"
+const TokenSecretTokenKey = "token"
 
 type tokenSecretReference struct {
 	Namespace string
@@ -53,8 +53,8 @@ func (s *Service) ensureTokenSecret(
 	if session == nil {
 		return tokenSecretReference{}, errors.New("upload session must not be nil")
 	}
-	headerValue := buildAuthorizationHeaderValue(rawToken)
-	if headerValue == "" {
+	rawToken = strings.TrimSpace(rawToken)
+	if rawToken == "" {
 		return tokenSecretReference{}, errors.New("upload session token must not be empty")
 	}
 	name, namespace, err := tokenSecretObjectKey(owner.GetUID(), owner.GetNamespace(), s.options.Runtime.Namespace)
@@ -78,7 +78,7 @@ func (s *Service) ensureTokenSecret(
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			TokenSecretAuthorizationHeaderKey: []byte(headerValue),
+			TokenSecretTokenKey: []byte(rawToken),
 		},
 	}
 	if !session.ExpiresAt.IsZero() {
@@ -89,7 +89,7 @@ func (s *Service) ensureTokenSecret(
 	if err != nil {
 		return tokenSecretReference{}, err
 	}
-	if !created && tokenSecretNeedsUpdate(desired, headerValue, session) {
+	if !created && tokenSecretNeedsUpdate(desired, rawToken, session) {
 		desired.Type = corev1.SecretTypeOpaque
 		desired.Labels = mergeMaps(desired.Labels, resourcenames.OwnerLabels(
 			"ai-models-upload-token",
@@ -105,7 +105,7 @@ func (s *Service) ensureTokenSecret(
 		if desired.Data == nil {
 			desired.Data = make(map[string][]byte, 1)
 		}
-		desired.Data[TokenSecretAuthorizationHeaderKey] = []byte(headerValue)
+		desired.Data[TokenSecretTokenKey] = []byte(rawToken)
 		if err := s.client.Update(ctx, desired); err != nil {
 			return tokenSecretReference{}, err
 		}
@@ -114,7 +114,7 @@ func (s *Service) ensureTokenSecret(
 	return tokenSecretReference{
 		Namespace: namespace,
 		Name:      name,
-		Key:       TokenSecretAuthorizationHeaderKey,
+		Key:       TokenSecretTokenKey,
 	}, nil
 }
 
@@ -137,21 +137,21 @@ func (s *Service) tokenFromHandoffSecret(
 		}
 		return "", false, err
 	}
-	token, ok := tokenFromAuthorizationHeaderValue(string(secret.Data[TokenSecretAuthorizationHeaderKey]))
-	if !ok || !tokenMatchesSession(token, session) {
+	rawToken := strings.TrimSpace(string(secret.Data[TokenSecretTokenKey]))
+	if rawToken == "" || !tokenMatchesSession(rawToken, session) {
 		return "", false, nil
 	}
-	return token, true, nil
+	return rawToken, true, nil
 }
 
-func tokenSecretNeedsUpdate(secret *corev1.Secret, headerValue string, session *uploadsessionstate.Session) bool {
+func tokenSecretNeedsUpdate(secret *corev1.Secret, rawToken string, session *uploadsessionstate.Session) bool {
 	if secret == nil {
 		return true
 	}
 	if secret.Type != corev1.SecretTypeOpaque {
 		return true
 	}
-	if string(secret.Data[TokenSecretAuthorizationHeaderKey]) != headerValue {
+	if strings.TrimSpace(string(secret.Data[TokenSecretTokenKey])) != strings.TrimSpace(rawToken) {
 		return true
 	}
 	if session != nil && !session.ExpiresAt.IsZero() {

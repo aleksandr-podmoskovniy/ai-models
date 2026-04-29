@@ -291,9 +291,9 @@ spec:
                   expiresAt:
                     format: date-time
                     type: string
-                  externalURL:
+                  external:
                     type: string
-                  inClusterURL:
+                  inCluster:
                     type: string
                   repository:
                     type: string

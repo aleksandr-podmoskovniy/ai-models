@@ -743,6 +743,51 @@ def _validate_controller_cleanup_runtime(path: Path, content: str) -> list[str]:
     return errors
 
 
+def _validate_publication_worker_identity(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    if (
+        "--publication-worker-service-account=" not in content
+        and "name: ai-models-publication-worker" not in content
+    ):
+        return errors
+
+    if "--publication-worker-service-account=ai-models-controller" in content:
+        errors.append(
+            f"{path.name}: publication worker Pods must not use the controller ServiceAccount"
+        )
+    for marker in (
+        "kind: ServiceAccount\nmetadata:\n  name: ai-models-publication-worker",
+        "kind: Role\nmetadata:\n  name: ai-models-publication-worker",
+        "kind: RoleBinding\nmetadata:\n  name: ai-models-publication-worker",
+        "--publication-worker-service-account=ai-models-publication-worker",
+    ):
+        if marker not in content:
+            errors.append(
+                f"{path.name}: missing publication worker identity marker {marker!r}"
+            )
+    if 'resources: ["secrets"]' not in content or 'verbs: ["get", "create", "update"]' not in content:
+        errors.append(
+            f"{path.name}: publication worker RBAC must be limited to get/create/update secrets in the module namespace"
+        )
+    return errors
+
+
+def _validate_upload_gateway_storage_accounting_rbac(path: Path, content: str) -> list[str]:
+    errors: list[str] = []
+    if "name: ai-models-upload-gateway" not in content:
+        return errors
+
+    if 'resources: ["secrets"]' not in content:
+        errors.append(
+            f"{path.name}: upload gateway RBAC must grant module-namespace Secret access"
+        )
+    if 'verbs: ["get", "create", "update"]' not in content:
+        errors.append(
+            f"{path.name}: upload gateway RBAC must allow get/create/update secrets for session and storage accounting state"
+        )
+    return errors
+
+
 def _validate_template_sources(repo_root: Path) -> list[str]:
     errors: list[str] = []
     for template, label, values_path, forbidden_markers in VALUES_BACKED_TLS_TEMPLATE_RULES:
@@ -790,6 +835,28 @@ def _validate_template_sources(repo_root: Path) -> list[str]:
             errors.append(
                 f"templates/_helpers.tpl: DMCR auth must be hook-owned, found {marker!r}"
             )
+
+    controller_deployment = (
+        repo_root / "templates/controller/deployment.yaml"
+    ).read_text(encoding="utf-8")
+    if (
+        "--publication-worker-service-account={{ include "
+        '"ai-models.publicationWorkerServiceAccountName" . }}'
+        not in controller_deployment
+    ):
+        errors.append(
+            "templates/controller/deployment.yaml: publication worker must use "
+            "dedicated publicationWorkerServiceAccountName helper"
+        )
+    if (
+        "--publication-worker-service-account={{ include "
+        '"ai-models.controllerServiceAccountName" . }}'
+        in controller_deployment
+    ):
+        errors.append(
+            "templates/controller/deployment.yaml: publication worker must not "
+            "reuse controllerServiceAccountName"
+        )
 
     return errors
 
@@ -1236,6 +1303,8 @@ def validate_render(path: Path) -> list[str]:
     errors.extend(_validate_runtime_placement(path, content))
     errors.extend(_validate_system_component_placement(path, content))
     errors.extend(_validate_controller_cleanup_runtime(path, content))
+    errors.extend(_validate_publication_worker_identity(path, content))
+    errors.extend(_validate_upload_gateway_storage_accounting_rbac(path, content))
     errors.extend(_validate_ai_models_monitoring_wiring(path, content))
     errors.extend(_validate_values_backed_tls_secrets(path, content))
     errors.extend(_validate_upload_gateway_ingress_tls(path, content))

@@ -344,6 +344,142 @@ subjects:
             errors,
         )
 
+    def test_validate_publication_worker_identity_accepts_split_runtime_sa(self) -> None:
+        content = """---
+kind: ServiceAccount
+metadata:
+  name: ai-models-publication-worker
+---
+kind: Role
+metadata:
+  name: ai-models-publication-worker
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update"]
+---
+kind: RoleBinding
+metadata:
+  name: ai-models-publication-worker
+---
+kind: Deployment
+metadata:
+  name: ai-models-controller
+spec:
+  template:
+    spec:
+      containers:
+        - args:
+            - --publication-worker-service-account=ai-models-publication-worker
+"""
+
+        errors = MODULE._validate_publication_worker_identity(
+            Path("render.yaml"), content
+        )
+
+        self.assertEqual(errors, [])
+
+    def test_validate_publication_worker_identity_rejects_controller_sa_reuse(self) -> None:
+        content = """---
+kind: Deployment
+metadata:
+  name: ai-models-controller
+spec:
+  template:
+    spec:
+      containers:
+        - args:
+            - --publication-worker-service-account=ai-models-controller
+"""
+
+        errors = MODULE._validate_publication_worker_identity(
+            Path("render.yaml"), content
+        )
+
+        self.assertIn(
+            "render.yaml: publication worker Pods must not use the controller ServiceAccount",
+            errors,
+        )
+        self.assertIn(
+            "render.yaml: missing publication worker identity marker 'kind: ServiceAccount\\nmetadata:\\n  name: ai-models-publication-worker'",
+            errors,
+        )
+
+    def test_validate_publication_worker_identity_rejects_missing_storage_accounting_create(self) -> None:
+        content = """---
+kind: ServiceAccount
+metadata:
+  name: ai-models-publication-worker
+---
+kind: Role
+metadata:
+  name: ai-models-publication-worker
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "update"]
+---
+kind: RoleBinding
+metadata:
+  name: ai-models-publication-worker
+---
+kind: Deployment
+metadata:
+  name: ai-models-controller
+spec:
+  template:
+    spec:
+      containers:
+        - args:
+            - --publication-worker-service-account=ai-models-publication-worker
+"""
+
+        errors = MODULE._validate_publication_worker_identity(
+            Path("render.yaml"), content
+        )
+
+        self.assertIn(
+            "render.yaml: publication worker RBAC must be limited to get/create/update secrets in the module namespace",
+            errors,
+        )
+
+    def test_validate_upload_gateway_storage_accounting_rbac_accepts_create(self) -> None:
+        content = """---
+kind: Role
+metadata:
+  name: ai-models-upload-gateway
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update"]
+"""
+
+        errors = MODULE._validate_upload_gateway_storage_accounting_rbac(
+            Path("render.yaml"), content
+        )
+
+        self.assertEqual(errors, [])
+
+    def test_validate_upload_gateway_storage_accounting_rbac_rejects_missing_create(self) -> None:
+        content = """---
+kind: Role
+metadata:
+  name: ai-models-upload-gateway
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "update"]
+"""
+
+        errors = MODULE._validate_upload_gateway_storage_accounting_rbac(
+            Path("render.yaml"), content
+        )
+
+        self.assertIn(
+            "render.yaml: upload gateway RBAC must allow get/create/update secrets for session and storage accounting state",
+            errors,
+        )
+
     def test_parse_secret_documents_reads_string_data(self) -> None:
         content = """---
 apiVersion: v1
