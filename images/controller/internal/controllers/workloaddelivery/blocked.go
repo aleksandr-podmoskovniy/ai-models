@@ -53,13 +53,13 @@ func (r *baseReconciler) blockWorkloadDelivery(
 	}
 	if changed {
 		r.recorder.Event(object, "Warning", "ModelDeliveryBlocked", cause.Error())
+		r.logger.Info(
+			"runtime delivery blocked by workload spec",
+			slog.String("namespace", object.GetNamespace()),
+			slog.String("name", object.GetName()),
+			slog.String("reason", deliveryBlockedReasonInvalidSpec),
+		)
 	}
-	r.logger.Info(
-		"runtime delivery blocked by workload spec",
-		slog.String("namespace", object.GetNamespace()),
-		slog.String("name", object.GetName()),
-		slog.String("reason", deliveryBlockedReasonInvalidSpec),
-	)
 	return ctrl.Result{}, nil
 }
 

@@ -24,7 +24,6 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/directuploadstate"
-	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ownedresource"
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
@@ -135,33 +134,9 @@ func (s *Service) handleFromPod(
 		progress.Progress,
 		progress.Message,
 		func(ctx context.Context) error {
-			return s.deleteResources(ctx, pod)
+			return s.deleteResources(ctx, pod, directUploadState)
 		},
 	)
-}
-
-func (s *Service) deleteResources(ctx context.Context, pod *corev1.Pod) error {
-	if s == nil || pod == nil {
-		return nil
-	}
-	ownerUID, ok := resourcenames.OwnerUIDFromLabels(pod.Labels)
-	if ok {
-		if err := ociregistry.DeleteProjectedAccess(ctx, s.client, s.options.Namespace, ownerUID); err != nil {
-			return err
-		}
-	}
-	secret, err := s.projectedAuthSecretForPod(pod)
-	if err != nil {
-		return err
-	}
-	if shouldRetainWorkerPodLogs(pod) {
-		return ownedresource.DeleteAll(ctx, s.client, secret)
-	}
-	return ownedresource.DeleteAll(ctx, s.client, secret, pod)
-}
-
-func shouldRetainWorkerPodLogs(pod *corev1.Pod) bool {
-	return pod != nil && pod.Status.Phase == corev1.PodSucceeded
 }
 
 func setSourceWorkerOwnerGeneration(pod *corev1.Pod, ownerGeneration int64) {

@@ -28,18 +28,55 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type workloadPodTemplate struct {
+	Name     string
+	Template *corev1.PodTemplateSpec
+	Hints    modeldelivery.TopologyHints
+	Commit   func() error
+}
+
 func podTemplateAndHints(object client.Object) (*corev1.PodTemplateSpec, modeldelivery.TopologyHints, error) {
+	templates, err := podTemplatesAndHints(object)
+	if err != nil {
+		return nil, modeldelivery.TopologyHints{}, err
+	}
+	if len(templates) == 0 {
+		return nil, modeldelivery.TopologyHints{}, fmt.Errorf("workload delivery object %T has no pod template", object)
+	}
+	return templates[0].Template, templates[0].Hints, nil
+}
+
+func podTemplatesAndHints(object client.Object) ([]workloadPodTemplate, error) {
 	switch typed := object.(type) {
 	case *appsv1.Deployment:
-		return &typed.Spec.Template, modeldelivery.HintsForDeployment(typed), nil
+		return []workloadPodTemplate{{
+			Name:     "deployment",
+			Template: &typed.Spec.Template,
+			Hints:    modeldelivery.HintsForDeployment(typed),
+		}}, nil
 	case *appsv1.StatefulSet:
-		return &typed.Spec.Template, modeldelivery.HintsForStatefulSet(typed), nil
+		return []workloadPodTemplate{{
+			Name:     "statefulset",
+			Template: &typed.Spec.Template,
+			Hints:    modeldelivery.HintsForStatefulSet(typed),
+		}}, nil
 	case *appsv1.DaemonSet:
-		return &typed.Spec.Template, modeldelivery.HintsForDaemonSet(typed), nil
+		return []workloadPodTemplate{{
+			Name:     "daemonset",
+			Template: &typed.Spec.Template,
+			Hints:    modeldelivery.HintsForDaemonSet(typed),
+		}}, nil
 	case *batchv1.CronJob:
-		return &typed.Spec.JobTemplate.Spec.Template, modeldelivery.HintsForCronJob(typed), nil
+		return []workloadPodTemplate{{
+			Name:     "cronjob",
+			Template: &typed.Spec.JobTemplate.Spec.Template,
+			Hints:    modeldelivery.HintsForCronJob(typed),
+		}}, nil
 	default:
-		return nil, modeldelivery.TopologyHints{}, fmt.Errorf("unsupported workload delivery object type %T", object)
+		if isRayClusterObject(object) {
+			return rayClusterPodTemplates(object)
+		}
+		return nil, fmt.Errorf("unsupported workload delivery object type %T", object)
 	}
 }
 
@@ -125,6 +162,15 @@ func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldeli
 		}
 	}
 	return modeldelivery.HasManagedCacheTemplateState(template, options)
+}
+
+func hasManagedTemplateStateInAny(templates []workloadPodTemplate, options modeldelivery.ServiceOptions) bool {
+	for _, ref := range templates {
+		if hasManagedTemplateState(ref.Template, options) {
+			return true
+		}
+	}
+	return false
 }
 
 func removeAnnotation(annotations map[string]string, key string) (map[string]string, bool) {

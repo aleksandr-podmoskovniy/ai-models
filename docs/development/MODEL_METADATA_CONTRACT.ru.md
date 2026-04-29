@@ -25,6 +25,21 @@ runtime/topology. Поэтому `ai-models` считает metadata и resource
 
 ## Публичный CRD contract
 
+Важно: `task` и `supportedEndpointTypes` не являются двумя версиями одного
+поля.
+
+- `task` в текущем status - это source/provider task taxonomy: например
+  Hugging Face `pipeline_tag` / `model-index.results.task.type` или будущая
+  Ollama capability, нормализованная только по строке задачи.
+- `supportedEndpointTypes` - это наша provider-neutral serving taxonomy:
+  какой тип endpoint вообще имеет смысл предложить будущему `ai-inference`.
+
+Поэтому пример `task: text-ranking` + `supportedEndpointTypes: [Rerank]`
+корректен по смыслу, но плох по читаемости: без явного provenance слоя это
+выглядит как дублирование. Целевой API slice должен либо переименовать/nest
+`task` в source-facing capability, либо оставить его только как compatibility
+projection до стабилизации CRD.
+
 Текущая публичная проекция:
 
 ```yaml
@@ -52,12 +67,37 @@ status:
 | `format` | Выбор parser/runtime family. | Когда format известен из source selection или artifact inspection. |
 | `architecture` | Семейство model class для runtime validation. | Только из config/metadata, не из имени файла. |
 | `family` | UX/search и грубая группировка. | Только из надёжного config-derived сигнала. |
-| `task` | Базовый endpoint intent. | Только из config/architecture mapping или другого надёжного source signal. |
+| `task` | Source/provider task provenance, например HF `pipeline_tag`. | Только из config/architecture mapping или другого надёжного source signal. Не является scheduler input. |
 | `parameterCount` | Capacity hint для будущего расчёта. | Только exact/derived. Estimated bytes-based значение наружу не публикуется. |
 | `quantization` | Runtime/parser hint. | Только из metadata/config. Filename-derived GGUF suffix наружу не публикуется как факт. |
 | `contextWindowTokens` | Вход для KV-cache расчёта. | Только из config/tokenizer metadata. |
 | `supportedEndpointTypes` | Предварительная endpoint capability: какой API-тип вообще имеет смысл поднимать. | Только из надёжного `task`. Не заменяет runtime validation. |
 | `supportedFeatures` | Сквозные признаки модели, которые не являются отдельным endpoint: modality и tool calling. | Только из надёжного task/source-declared metadata или tokenizer/chat-template evidence. |
+
+Целевой менее шумный shape для следующего CRD slice:
+
+```yaml
+status:
+  resolved:
+    format: GGUF
+    architecture: qwen35moe
+    family: qwen35moe
+    parameterCount: 36000000000
+    quantization: Q4_K_M
+    contextWindowTokens: 131072
+    supportedEndpointTypes:
+      - Chat
+      - TextGeneration
+    supportedFeatures:
+      - ToolCalling
+    sourceCapabilities:
+      provider: Ollama
+      tasks:
+        - completion
+```
+
+Так consumer видит один главный ответ для запуска (`supportedEndpointTypes`) и
+отдельную provenance/evidence часть (`sourceCapabilities`), не путая их.
 
 Публично не публикуются:
 
@@ -100,6 +140,32 @@ matrix.
 `ToolCalling` добавляется не из task name, а из chat-template evidence
 (`tokenizer_config.chat_template` с явной веткой `tools` / `tool_call`) или
 будущего source-declared факта такого же качества.
+
+## Как читать внешние каталоги
+
+Hugging Face UI показывает несколько независимых осей: `Tasks`, `Libraries`,
+`Apps`, `Inference Providers`, размер параметров и прочие tags. Для
+`ai-models` это не один плоский enum:
+
+- `Tasks` (`pipeline_tag`, task tags, `model-index`) - source/provider task
+  evidence;
+- `Libraries` (`transformers`, `diffusers`, `gguf`, `sentence-transformers`,
+  `onnx`) - format/framework evidence, но не serving guarantee;
+- `Apps` (`vLLM`, `llama.cpp`, `Ollama`, `LM Studio`) - ecosystem/runtime hint,
+  не public runtime compatibility;
+- `Inference Providers` - внешний hosted-serving факт, не применимый напрямую
+  к нашему кластеру;
+- parameter filter - UX/search hint, который нельзя превращать в placement.
+
+Ollama надо читать иначе: public HTML может быть удобен человеку, но
+controller должен опираться на машинные контракты:
+
+- registry manifest/layers для byte path и digest;
+- config/details для `format`, `family`, `parameter_size`, `quantization`;
+- `model_info` для `general.parameter_count`, architecture-specific context
+  fields и tokenizer metadata;
+- `capabilities` как provider capability evidence, а не как готовый
+  `ai-inference` endpoint plan.
 
 ## Confidence model
 

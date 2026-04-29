@@ -130,6 +130,70 @@ Status:
 - changed code keeps duration as `durationMs`, which is normalized by current
   logger handlers to `duration_ms`.
 
+### Slice 5. Post-e2e architecture cleanup
+
+Goal:
+
+- close leftovers found during live e2e without changing user-facing API;
+- keep controller/DMCR signals transition-oriented and HA-safe.
+
+Files:
+
+- `images/controller/internal/controllers/workloaddelivery/*`
+- `images/controller/internal/adapters/modelpack/oci/*`
+- this bundle notes/plan.
+
+Checks:
+
+- targeted workload delivery and OCI adapter tests;
+- controller package tests for changed boundaries;
+- `git diff --check`.
+
+Status:
+
+- implemented after live e2e:
+  - blocked workload delivery log now follows the same transition-only rule as
+    `ModelDeliveryBlocked` event emission;
+  - OCI ModelPack removal trusts successful `DELETE` acknowledgement and no
+    longer performs an expected 404-producing post-delete manifest probe.
+
+### Slice 6. ClusterModel runtime cleanup audit
+
+Goal:
+
+- verify cluster-scoped artifact paths in live DMCR;
+- close the unbounded successful source-worker retention path found on
+  `k8s.apiac.ru`.
+
+Files:
+
+- `images/controller/internal/adapters/k8s/sourceworker/*`
+- this bundle notes/plan.
+
+Checks:
+
+- live `ClusterModel` artifact URI vs DMCR manifest HEAD;
+- targeted sourceworker tests;
+- controller package tests;
+- `git diff --check`.
+
+Status:
+
+- implemented:
+  - live `ClusterModel` artifacts on `k8s.apiac.ru` use cluster-scoped DMCR
+    paths under `/ai-models/catalog/cluster/<name>/<uid>`; the checked
+    `a30-user-bge-m3` manifest returned `200` with the status digest, while
+    the intentionally wrong namespaced path returned `404`;
+  - completed source-worker Pods and terminal direct-upload state are no longer
+    retained after successful publication;
+  - interrupted direct-upload state remains preserved when the worker fails
+    while the persisted phase is still `Running`, so resume semantics are not
+    broken;
+  - live stale successful publish Pods, terminal `ai-model-publish-state-*`
+    Secrets and orphaned projected OCI access Secrets were removed from
+    `d8-ai-models`; cleanup-state Secrets were intentionally kept as the
+    durable delete/finalizer source of truth.
+
 ## 5. Read-only subagent findings
 
 - `api_designer`: broad `any-to-any` must not leak as public declared task;
@@ -161,10 +225,24 @@ public API change is introduced.
 
 ## 7. Final validation
 
-- `cd images/controller && go test ./internal/adapters/modelprofile/safetensors ./internal/dataplane/publishworker ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery`
+Passed in this slice:
+
+- `cd images/controller && go test ./internal/controllers/workloaddelivery`
+- `cd images/controller && go test ./internal/adapters/modelpack/oci`
 - `cd images/controller && go test ./...`
 - `cd images/dmcr && go test ./...`
+- `make lint-controller-size lint-controller-test-size lint-controller-complexity lint-thin-reconcilers`
+- `make deadcode-controller`
 - `git diff --check`
 - `make verify`
+- live `k8s.apiac.ru` check: `ClusterModel` artifact path `HEAD 200`, wrong
+  namespaced path `HEAD 404`, successful publish Pods absent, terminal
+  publish-state Secrets absent, module controller/DMCR Pods at zero restarts
+  after cleanup
+- `cd images/controller && go test ./internal/adapters/k8s/sourceworker ./internal/controllers/catalogstatus`
+
+Previous bundle-level validation:
+
+- `cd images/controller && go test ./internal/adapters/modelprofile/safetensors ./internal/dataplane/publishworker ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery`
 - `review-gate`
 - final `reviewer` pass completed; findings resolved before final validation.

@@ -57,6 +57,31 @@ func TestDeploymentReconcilerSuppressesRepeatedAppliedLogForStaleReconcile(t *te
 	}
 }
 
+func TestDeploymentReconcilerSuppressesRepeatedBlockedLog(t *testing.T) {
+	t.Parallel()
+
+	model := readyModel()
+	workload := annotatedDeploymentWithoutCacheMount(map[string]string{ModelAnnotation: model.Name}, 1)
+	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, testRegistryReadAuthSecret())
+
+	logs := newTestLoggerBuffer()
+	reconciler.logger = logs.logger
+
+	reconcileDeployment(t, reconciler, workload)
+	if got, want := logs.count(`"msg":"runtime delivery blocked by workload spec"`), 1; got != want {
+		t.Fatalf("blocked log count after first reconcile = %d, want %d, logs=%q", got, want, logs.buffer.String())
+	}
+
+	var blocked deployment
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &blocked); err != nil {
+		t.Fatalf("Get(blocked deployment) error = %v", err)
+	}
+	reconcileDeployment(t, reconciler, &blocked)
+	if got, want := logs.count(`"msg":"runtime delivery blocked by workload spec"`), 1; got != want {
+		t.Fatalf("blocked log count after stable reconcile = %d, want %d, logs=%q", got, want, logs.buffer.String())
+	}
+}
+
 func TestDeploymentReconcilerLogsMeaningfulRuntimeDeliveryChange(t *testing.T) {
 	t.Parallel()
 

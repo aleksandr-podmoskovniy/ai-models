@@ -90,6 +90,9 @@ func newWorkloadObjectLike(object client.Object) (client.Object, error) {
 	case *batchv1.CronJob:
 		return &batchv1.CronJob{}, nil
 	default:
+		if isRayClusterObject(object) {
+			return newRayClusterObject(), nil
+		}
 		return nil, fmt.Errorf("unsupported workload delivery object type %T", object)
 	}
 }

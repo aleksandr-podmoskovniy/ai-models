@@ -42,10 +42,10 @@ Evidence:
   - `llm-a30-embed-rayservice` -> `deepvk/USER-bge-m3`;
   - `llm-a30-stt-rayservice` -> `openai/whisper-medium`;
   - `llm-a30-rerank` -> `qilowoq/bge-reranker-v2-m3-en-ru`.
-- RayService is not currently supported by ai-models workload delivery
-  controller, so the immediate cutover uses model materialization into the
-  existing shared PVC path rather than `ai.deckhouse.io/clustermodel`
-  annotations on RayService.
+- Defect found: RayService was not supported by ai-models workload delivery
+  controller, so the earlier manifest-only workaround leaked internal
+  `materialize-artifact` wiring into GitOps manifests. This is now treated as
+  controller feature work, not as acceptable workload config.
 
 ### Slice 2. Publish models through ai-models
 
@@ -76,7 +76,63 @@ Evidence:
   so Ray/vLLM containers can read the produced files without a separate chmod
   job.
 
-### Slice 3. Cut over RayService manifests
+### Slice 3. Add Argo-safe KubeRay workload delivery
+
+Goal:
+
+- keep `RayService` as GitOps-owned declaration object with only
+  user-facing ai-models annotations;
+- mutate only generated `RayCluster` pod templates from the same model delivery
+  annotations;
+- keep clusters without KubeRay safe by enabling the RayCluster controller only
+  when both `ray.io/v1 RayService` and `ray.io/v1 RayCluster` exist in
+  discovery.
+
+Files:
+
+- `images/controller/internal/controllers/workloaddelivery/*ray*`
+- `images/controller/internal/controllers/workloaddelivery/setup.go`
+- `templates/controller/webhook.yaml`
+
+Status: done.
+
+Evidence:
+
+- `RayService` is registered only as the annotation/owner source and is not
+  patched by reconciler or webhook.
+- `RayCluster` is registered as the runtime target and receives generated
+  pod-template delivery state.
+- `RayService` annotation updates enqueue owned RayClusters.
+- Model/ClusterModel readiness updates enqueue RayClusters through indexed
+  RayService declarations.
+- The webhook mutates `RayCluster`, not `RayService`, so ArgoCD no longer sees
+  ai-models-owned drift on `RayService.spec`.
+- Regression tests cover generated RayCluster admission through owner
+  RayService annotations and RayCluster reconciliation over head/worker
+  templates.
+
+Checks:
+
+- `cd images/controller && go test ./internal/controllers/workloaddelivery`
+- `cd images/controller && go test ./...`
+- `make helm-template`
+- `make kubeconform`
+
+Validation:
+
+- `cd images/controller && go test ./internal/controllers/workloaddelivery`
+  passed.
+- `cd images/controller && go test ./...` passed.
+- `make helm-template` passed.
+- `make kubeconform` passed.
+- `make verify` passed after splitting the RayCluster pending path to keep
+  cyclomatic complexity below the repository threshold.
+- MutatingWebhookConfiguration server dry-run passed after rendering with a
+  temporary non-Deckhouse name and without the protected `heritage: deckhouse`
+  label; this validates the CEL `matchConditions` expression against the API
+  server.
+
+### Slice 4. Cut over RayService manifests
 
 Goal:
 
@@ -88,22 +144,25 @@ Checks:
 - local diff;
 - Kubernetes dry-run where possible;
 - live rollout after user-applied GitOps/manual apply.
+- `yq eval '.'` for edited A30 manifests.
+- `git diff --check` for edited external manifests.
 
-Status: done as manifest-only.
+Status: done as annotation-only manifests.
 
 Changed external manifests:
 
 - `09a-a30-ai-models-clustermodels.yaml` declares the three ClusterModels.
-- `11-a30-embed-rayservice.yaml` points Ray Serve to
-  `/data/model-cache/ai-models/a30-user-bge-m3/model` and materializes the
-  published artifact in head/worker initContainers.
-- `13-a30-stt-rayservice.yaml` points Ray Serve to
-  `/data/model-cache/ai-models/a30-whisper-medium/model`, removes the
-  HuggingFace preload initContainer and materializes the published artifact in
-  head/worker initContainers.
-- `14-a30-rerank-rayservice.yaml` points vLLM to
-  `/data/model-cache/ai-models/a30-bge-reranker-v2-m3-en-ru/model` and
-  materializes the published artifact in an initContainer.
+- `11-a30-embed-rayservice.yaml` uses
+  `ai.deckhouse.io/model-refs: model=ClusterModel/a30-user-bge-m3` and points
+  Ray Serve to `/data/modelcache/models/model`.
+- `13-a30-stt-rayservice.yaml` uses
+  `ai.deckhouse.io/model-refs: model=ClusterModel/a30-whisper-medium` and
+  points Ray Serve to `/data/modelcache/models/model`.
+- `14-a30-rerank-rayservice.yaml` uses the matching `model-refs`
+  ClusterModel reference; vLLM points to `/data/modelcache/models/model`.
+- The three manifests no longer contain manual `materialize-artifact`
+  initContainers, raw DMCR URI/digest, registry auth/CA, runtime image, or
+  `mkdir/chown` permission jobs.
 
 Important operational note:
 
@@ -111,7 +170,7 @@ Important operational note:
   temporarily disabled `kuberay-service-llm` self-heal was restored to
   `automated.prune=true,selfHeal=true`; further work is manifest-only.
 
-### Slice 4. Load validation
+### Slice 5. Load validation
 
 Goal:
 
@@ -131,8 +190,9 @@ Evidence:
 
 - Reranker reached Ready on the local materialized path during the temporary
   live check.
-- STT pending Ray cluster reached Ready and Serve logs showed
-  `model_source: /data/model-cache/ai-models/a30-whisper-medium/model`.
+- STT pending Ray cluster reached Ready and Serve logs showed the old manual
+  path before this cleanup. Full endpoint load validation must be repeated
+  after the annotation-only controller build is deployed.
 - Full endpoint load validation is deferred until these manifest changes are
   delivered through the user's intended GitOps path.
 
@@ -145,7 +205,12 @@ shared ai-models storage accounting or DMCR state.
 ## 6. Final validation
 
 - `git diff --check` in ai-models and external `k8s-config` repo.
+- `cd images/controller && go test ./internal/controllers/workloaddelivery`
+- `cd images/controller && go test ./...`
+- `make helm-template`
+- `make kubeconform`
+- `make verify`
+- `yq eval '.'` for edited A30 manifests.
+- `kubectl apply --dry-run=server -n kuberay-projects` for edited A30
+  manifests.
 - Cluster rollout and request evidence recorded in this plan.
-- `yq eval '.'` passed for edited A30 manifests.
-- `kubectl apply --dry-run=server` passed for edited A30 manifests.
-- `git diff --check` passed for edited A30 manifests.

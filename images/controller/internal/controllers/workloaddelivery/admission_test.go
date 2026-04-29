@@ -61,7 +61,7 @@ func TestAdmissionHandlerAddsSchedulingGateOnCreate(t *testing.T) {
 		},
 	}
 
-	handler := newAdmissionHandler(testkit.NewScheme(t, appsv1.AddToScheme))
+	handler := newAdmissionHandler(testkit.NewScheme(t, appsv1.AddToScheme), nil)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -88,7 +88,7 @@ func TestAdmissionHandlerSkipsResolvedUnchangedWorkloadOnUpdate(t *testing.T) {
 		modeldelivery.ResolvedDigestAnnotation: testDigest,
 	}
 
-	handler := newAdmissionHandler(testkit.NewScheme(t, appsv1.AddToScheme))
+	handler := newAdmissionHandler(testkit.NewScheme(t, appsv1.AddToScheme), nil)
 	response := handler.Handle(t.Context(), admissionRequest(
 		admissionv1.Update,
 		metav1.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"},
@@ -116,7 +116,7 @@ func TestAdmissionHandlerGatesReferenceChangeEvenWhenTemplateWasResolved(t *test
 		modeldelivery.ResolvedDigestAnnotation: testDigest,
 	}
 
-	handler := newAdmissionHandler(testkit.NewScheme(t, appsv1.AddToScheme))
+	handler := newAdmissionHandler(testkit.NewScheme(t, appsv1.AddToScheme), nil)
 	response := handler.Handle(t.Context(), admissionRequest(
 		admissionv1.Update,
 		metav1.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"},
@@ -137,7 +137,7 @@ func TestAdmissionHandlerRejectsAmbiguousReference(t *testing.T) {
 	deployment := admissionDeployment("gemma")
 	deployment.Annotations[ClusterModelAnnotation] = "cluster-gemma"
 
-	handler := newAdmissionHandler(testkit.NewScheme(t, appsv1.AddToScheme))
+	handler := newAdmissionHandler(testkit.NewScheme(t, appsv1.AddToScheme), nil)
 	response := handler.Handle(t.Context(), admissionRequest(
 		admissionv1.Create,
 		metav1.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"},
@@ -148,6 +148,33 @@ func TestAdmissionHandlerRejectsAmbiguousReference(t *testing.T) {
 	if response.Allowed {
 		t.Fatal("expected ambiguous workload reference to be denied")
 	}
+}
+
+func TestAdmissionHandlerAddsSchedulingGateToGeneratedRayCluster(t *testing.T) {
+	t.Parallel()
+
+	rayService := annotatedRayService(map[string]string{ModelRefsAnnotation: "model=ClusterModel/gemma"})
+	rayCluster := ownedRayCluster(rayService, 1)
+	scheme := testkit.NewScheme(t, func(scheme *runtime.Scheme) error {
+		registerRayTypes(scheme)
+		return nil
+	})
+	kubeClient := testkit.NewFakeClient(t, scheme, nil, rayService)
+	handler := newAdmissionHandler(scheme, kubeClient)
+
+	response := handler.Handle(t.Context(), admissionRequest(
+		admissionv1.Create,
+		metav1.GroupVersionKind{Group: rayClusterGVK.Group, Version: rayClusterGVK.Version, Kind: rayClusterGVK.Kind},
+		rayCluster,
+		nil,
+	))
+
+	if !response.Allowed {
+		t.Fatalf("expected admission allowed, got %#v", response.Result)
+	}
+	assertPatchPath(t, response.Patches, "/spec/headGroupSpec/template/spec/schedulingGates")
+	assertPatchPath(t, response.Patches, "/spec/workerGroupSpecs/0/template/spec/schedulingGates")
+	assertPatchMentionsGate(t, response.Patches)
 }
 
 func admissionRequest(

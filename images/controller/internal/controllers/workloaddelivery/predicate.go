@@ -52,11 +52,16 @@ func workloadDeliveryInterest(object client.Object, options modeldelivery.Servic
 	if _, found, err := parseReferences(object.GetAnnotations()); err != nil || found {
 		return true
 	}
-	template, _, err := podTemplateAndHints(object)
+	if isRayClusterObject(object) {
+		if _, found := rayServiceOwner(object); found {
+			return true
+		}
+	}
+	templates, err := podTemplatesAndHints(object)
 	if err != nil {
 		return false
 	}
-	return hasManagedTemplateState(template, options)
+	return hasManagedTemplateStateInAny(templates, options)
 }
 
 func moduleNamespaceWorkload(object client.Object, options modeldelivery.ServiceOptions) bool {

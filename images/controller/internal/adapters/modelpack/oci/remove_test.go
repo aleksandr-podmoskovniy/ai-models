@@ -21,63 +21,15 @@ import (
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
-	"time"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
 
-func TestAdapterRemoveFailsWhenRegistryKeepsManifestVisibleAfterDelete(t *testing.T) {
+func TestAdapterRemoveTrustsDeleteAcknowledgementWithoutVisibilityProbe(t *testing.T) {
 	t.Parallel()
 
 	const digest = "sha256:deadbeef"
-	manifestPayload := []byte(`{"schemaVersion":2}`)
-	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		user, pass, ok := request.BasicAuth()
-		if !ok || user != "writer" || pass != "secret" {
-			t.Fatalf("unexpected auth %q/%q", user, pass)
-		}
-		if got, want := request.Header.Get("Accept"), ManifestAcceptHeader; got != want {
-			t.Fatalf("unexpected Accept header %q", got)
-		}
-		switch {
-		case request.Method == http.MethodDelete && request.URL.Path == "/v2/ai-models/catalog/model/manifests/"+digest:
-			writer.WriteHeader(http.StatusAccepted)
-		case request.Method == http.MethodGet && request.URL.Path == "/v2/ai-models/catalog/model/manifests/"+digest:
-			writer.Header().Set("Content-Type", ManifestMediaType)
-			writer.Header().Set("Docker-Content-Digest", digest)
-			writer.WriteHeader(http.StatusOK)
-			_, _ = writer.Write(manifestPayload)
-		default:
-			http.NotFound(writer, request)
-		}
-	}))
-	defer server.Close()
-
-	auth := modelpackports.RegistryAuth{
-		Username: "writer",
-		Password: "secret",
-		CAFile: writeTempFile(t, pem.EncodeToMemory(&pem.Block{
-			Type:  "CERTIFICATE",
-			Bytes: server.Certificate().Raw,
-		})),
-	}
-	adapter := New()
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancel()
-
-	err := adapter.Remove(ctx, immutableOCIReference(serverReference(server, "published"), digest), auth)
-	if err == nil || !strings.Contains(err.Error(), "still exists after delete acknowledgement") {
-		t.Fatalf("Remove() error = %v, want post-delete visibility failure", err)
-	}
-}
-
-func TestAdapterRemoveFailsWhenDeleteVerificationDeadlineExpiresDuringVisibilityCheck(t *testing.T) {
-	t.Parallel()
-
-	const digest = "sha256:deadbeef"
-	manifestPayload := []byte(`{"schemaVersion":2}`)
 	getCalls := 0
 	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		user, pass, ok := request.BasicAuth()
@@ -92,13 +44,7 @@ func TestAdapterRemoveFailsWhenDeleteVerificationDeadlineExpiresDuringVisibility
 			writer.WriteHeader(http.StatusAccepted)
 		case request.Method == http.MethodGet && request.URL.Path == "/v2/ai-models/catalog/model/manifests/"+digest:
 			getCalls++
-			if getCalls == 2 {
-				time.Sleep(150 * time.Millisecond)
-			}
-			writer.Header().Set("Content-Type", ManifestMediaType)
-			writer.Header().Set("Docker-Content-Digest", digest)
-			writer.WriteHeader(http.StatusOK)
-			_, _ = writer.Write(manifestPayload)
+			t.Fatalf("Remove() must not verify successful delete with expected 404-producing GET")
 		default:
 			http.NotFound(writer, request)
 		}
@@ -114,11 +60,47 @@ func TestAdapterRemoveFailsWhenDeleteVerificationDeadlineExpiresDuringVisibility
 		})),
 	}
 	adapter := New()
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancel()
 
-	err := adapter.Remove(ctx, immutableOCIReference(serverReference(server, "published"), digest), auth)
-	if err == nil || !strings.Contains(err.Error(), "still exists after delete acknowledgement") {
-		t.Fatalf("Remove() error = %v, want post-delete visibility failure after verification deadline", err)
+	if err := adapter.Remove(context.Background(), immutableOCIReference(serverReference(server, "published"), digest), auth); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	if getCalls != 0 {
+		t.Fatalf("manifest verification GET calls = %d, want 0", getCalls)
+	}
+}
+
+func TestAdapterRemoveTreatsMissingManifestAsDeleted(t *testing.T) {
+	t.Parallel()
+
+	const digest = "sha256:deadbeef"
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		user, pass, ok := request.BasicAuth()
+		if !ok || user != "writer" || pass != "secret" {
+			t.Fatalf("unexpected auth %q/%q", user, pass)
+		}
+		if got, want := request.Header.Get("Accept"), ManifestAcceptHeader; got != want {
+			t.Fatalf("unexpected Accept header %q", got)
+		}
+		switch {
+		case request.Method == http.MethodDelete && request.URL.Path == "/v2/ai-models/catalog/model/manifests/"+digest:
+			writer.WriteHeader(http.StatusNotFound)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	auth := modelpackports.RegistryAuth{
+		Username: "writer",
+		Password: "secret",
+		CAFile: writeTempFile(t, pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: server.Certificate().Raw,
+		})),
+	}
+	adapter := New()
+
+	if err := adapter.Remove(context.Background(), immutableOCIReference(serverReference(server, "published"), digest), auth); err != nil {
+		t.Fatalf("Remove() error = %v", err)
 	}
 }

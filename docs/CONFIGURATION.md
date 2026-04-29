@@ -251,6 +251,10 @@ volume are cut over to the node-cache SharedDirect path:
   under `/data/modelcache/models/<alias>` plus `AI_MODELS_MODELS_DIR`,
   `AI_MODELS_MODELS` with alias/path/digest/family entries, and per-alias
   `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}` variables;
+- for KubeRay `RayService`, the same annotations stay on the GitOps-owned
+  `RayService`, but the controller does not patch `RayService.spec`: runtime
+  wiring is applied to generated `RayCluster` pod templates so ArgoCD does not
+  roll managed mutation back to the Git state;
 - the controller now also writes managed `PodTemplateSpec` annotations with the
   selected delivery mode and the reason that mode was chosen, so the
   node-cache runtime can discover desired artifacts from live Pods on its node;

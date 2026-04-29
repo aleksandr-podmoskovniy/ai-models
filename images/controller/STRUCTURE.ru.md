@@ -221,7 +221,10 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
   runtime-readiness Node label and node-selection reconciliation.
 - `workloaddelivery/` — owner controller for top-level workload annotations
   `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel` /
-  `ai.deckhouse.io/model-refs`.
+  `ai.deckhouse.io/model-refs` on built-in workloads and optional
+  KubeRay integration when `ray.io/v1 RayService` and `ray.io/v1 RayCluster`
+  exist in discovery. `RayService` stays the GitOps-owned declaration source;
+  ai-models mutates only generated `RayCluster` pod templates.
 
 Controller package оправдан ownership, а не удобством чтения. Новый controller
 package без нового owner — patchwork.

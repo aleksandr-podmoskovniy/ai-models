@@ -38,6 +38,7 @@
 - `images/controller/internal/dataplane/publishworker/*`
 - `images/controller/internal/controllers/workloaddelivery/*`
 - `images/controller/internal/adapters/k8s/modeldelivery/*`
+- `images/controller/internal/adapters/k8s/sourceworker/*`
 - `images/dmcr/internal/garbagecollection/*`
 - `images/dmcr/internal/logging/*`
 - controller runtime logging helpers where needed
@@ -69,6 +70,9 @@
 - Known checksum warning noise is not emitted as non-JSON operator log spam.
 - New/changed logs use stable fields: `duration_ms`, `artifactDigest`,
   `artifactURI`, `sourceType`, `request`, `repository`, `phase`, `err`.
+- Successful source-worker Pods and direct-upload state do not remain as
+  unbounded runtime garbage after a `Model` / `ClusterModel` reaches `Ready`;
+  cleanup-state remains the durable delete/finalizer source of truth.
 - Targeted tests pass for changed packages; `git diff --check` passes.
 
 ## 8. Риски

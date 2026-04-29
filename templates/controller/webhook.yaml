@@ -28,7 +28,7 @@ webhooks:
     matchPolicy: Equivalent
     matchConditions:
       - name: ai-models-workload-reference
-        expression: "has(object.metadata.annotations) && ('ai.deckhouse.io/model' in object.metadata.annotations || 'ai.deckhouse.io/clustermodel' in object.metadata.annotations || 'ai.deckhouse.io/model-refs' in object.metadata.annotations)"
+        expression: "(has(object.metadata.annotations) && ('ai.deckhouse.io/model' in object.metadata.annotations || 'ai.deckhouse.io/clustermodel' in object.metadata.annotations || 'ai.deckhouse.io/model-refs' in object.metadata.annotations)) || (request.resource.group == 'ray.io' && request.resource.resource == 'rayclusters' && has(object.metadata.ownerReferences) && object.metadata.ownerReferences.exists(ref, ref.apiVersion == 'ray.io/v1' && ref.kind == 'RayService'))"
     reinvocationPolicy: Never
     sideEffects: None
     timeoutSeconds: 2
@@ -44,5 +44,10 @@ webhooks:
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["deployments", "statefulsets", "daemonsets"]
+        scope: Namespaced
+      - apiGroups: ["ray.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["rayclusters"]
         scope: Namespaced
 {{- end }}
