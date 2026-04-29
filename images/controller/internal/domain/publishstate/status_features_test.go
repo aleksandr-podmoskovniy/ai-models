@@ -65,6 +65,50 @@ func TestProjectStatusSucceededFiltersUnknownFeatureTypes(t *testing.T) {
 	}
 }
 
+func TestProjectStatusSucceededProjectsFeatureEvidenceWithoutReliableTask(t *testing.T) {
+	t.Parallel()
+
+	projection, err := ProjectStatus(
+		modelsv1alpha1.ModelStatus{},
+		modelsv1alpha1.ModelSpec{},
+		5,
+		modelsv1alpha1.ModelSourceTypeHuggingFace,
+		Observation{
+			Phase: OperationPhaseSucceeded,
+			Snapshot: &publicationdata.Snapshot{
+				Source: publicationdata.SourceProvenance{Type: modelsv1alpha1.ModelSourceTypeHuggingFace},
+				Artifact: publicationdata.PublishedArtifact{
+					Kind: modelsv1alpha1.ModelArtifactLocationKindOCI,
+					URI:  "registry.example/model@sha256:deadbeef",
+				},
+				Resolved: publicationdata.ResolvedProfile{
+					Task:                   "unknown-task",
+					TaskConfidence:         publicationdata.ProfileConfidenceHint,
+					Format:                 "Safetensors",
+					SupportedEndpointTypes: []string{"Chat"},
+					SupportedFeatures:      []string{"ToolCalling", "MadeUp"},
+				},
+			},
+			CleanupHandle: &cleanuphandle.Handle{
+				Kind: cleanuphandle.KindBackendArtifact,
+				Backend: &cleanuphandle.BackendArtifactHandle{
+					Reference: "registry.example/model@sha256:deadbeef",
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("ProjectStatus() error = %v", err)
+	}
+	if len(projection.Status.Resolved.SupportedEndpointTypes) != 0 {
+		t.Fatalf("hint-only task must not project endpoint types: %#v", projection.Status.Resolved.SupportedEndpointTypes)
+	}
+	want := []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeToolCalling}
+	if got := projection.Status.Resolved.SupportedFeatures; !featureTypesEqual(got, want) {
+		t.Fatalf("unexpected feature types %#v", got)
+	}
+}
+
 func featureTypesEqual(got, want []modelsv1alpha1.ModelFeatureType) bool {
 	if len(got) != len(want) {
 		return false

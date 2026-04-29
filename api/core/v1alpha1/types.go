@@ -53,7 +53,7 @@ type ModelStatus struct {
 // +kubebuilder:validation:XValidation:rule="has(self.upload) ? !has(self.authSecretRef) : true",message="source.authSecretRef is only allowed for source.url"
 type ModelSourceSpec struct {
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:Pattern=`^https:\/\/((www\.)?huggingface\.co|hf\.co)\/.+$`
+	// +kubebuilder:validation:Pattern=`^https:\/\/(((www\.)?huggingface\.co|hf\.co)\/.+|(www\.)?ollama\.com\/library\/[^:\/?#]+(:[^\/?#]+)?([\/?#].*)?)$`
 	URL string `json:"url,omitempty"`
 	// For namespaced Model, empty Namespace resolves to the object's namespace.
 	AuthSecretRef *SecretReference   `json:"authSecretRef,omitempty"`
@@ -64,7 +64,7 @@ type ModelSourceSpec struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.authSecretRef)",message="source.authSecretRef is not supported for ClusterModel"
 type ClusterModelSourceSpec struct {
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:Pattern=`^https:\/\/((www\.)?huggingface\.co|hf\.co)\/.+$`
+	// +kubebuilder:validation:Pattern=`^https:\/\/(((www\.)?huggingface\.co|hf\.co)\/.+|(www\.)?ollama\.com\/library\/[^:\/?#]+(:[^\/?#]+)?([\/?#].*)?)$`
 	URL string `json:"url,omitempty"`
 	// AuthSecretRef is intentionally forbidden for ClusterModel because a
 	// cluster-scoped object must not point at namespaced credentials.
@@ -105,10 +105,10 @@ type ModelArtifactStatus struct {
 }
 
 type ModelResolvedStatus struct {
-	Task         string           `json:"task,omitempty"`
-	Family       string           `json:"family,omitempty"`
-	Architecture string           `json:"architecture,omitempty"`
-	Format       ModelInputFormat `json:"format,omitempty"`
+	SourceCapabilities *ModelSourceCapabilities `json:"sourceCapabilities,omitempty"`
+	Family             string                   `json:"family,omitempty"`
+	Architecture       string                   `json:"architecture,omitempty"`
+	Format             ModelInputFormat         `json:"format,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	ParameterCount *int64  `json:"parameterCount,omitempty"`
 	Quantization   *string `json:"quantization,omitempty"`
@@ -120,11 +120,20 @@ type ModelResolvedStatus struct {
 	SupportedFeatures []ModelFeatureType `json:"supportedFeatures,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=HuggingFace;Upload
+type ModelSourceCapabilities struct {
+	Provider ModelSourceType `json:"provider,omitempty"`
+	// +listType=set
+	Tasks []string `json:"tasks,omitempty"`
+	// +listType=set
+	Features []string `json:"features,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=HuggingFace;Ollama;Upload
 type ModelSourceType string
 
 const (
 	ModelSourceTypeHuggingFace ModelSourceType = "HuggingFace"
+	ModelSourceTypeOllama      ModelSourceType = "Ollama"
 	ModelSourceTypeUpload      ModelSourceType = "Upload"
 )
 

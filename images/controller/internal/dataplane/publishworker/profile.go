@@ -130,8 +130,10 @@ func resolveProfile(
 		})
 	case modelsv1alpha1.ModelInputFormatGGUF:
 		return ggufprofile.Resolve(ggufprofile.Input{
-			ModelDir: checkpointDir,
-			Task:     input.Task,
+			ModelDir:           checkpointDir,
+			Task:               input.Task,
+			SourceDeclaredTask: input.SourceDeclaredTask,
+			TaskHint:           input.TaskHint,
 		})
 	default:
 		return publicationdata.ResolvedProfile{}, fmt.Errorf("unsupported model input format %q", inputFormat)

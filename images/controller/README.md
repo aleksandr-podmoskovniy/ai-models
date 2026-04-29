@@ -172,8 +172,8 @@ Current phase-2 slice implemented here:
 - `internal/adapters/modelprofile/safetensors` and
   `internal/adapters/modelprofile/gguf` for ai-inference-oriented metadata
   extraction from normalized model directories, with current live logic based
-  on real weight sizes, confidence-tagged task/family/quantization extraction
-  and endpoint projection only from reliable task evidence; runtime
+  on real weight sizes, confidence-tagged source capability/family/quantization
+  extraction and endpoint projection only from reliable capability evidence; runtime
   compatibility, launch sizing and topology terms such as `KubeRay`, `MIG` or
   `MPS` are not guessed in catalog metadata; `Safetensors` task resolution now
   prefers explicit metadata and checkpoint config/architecture before weaker

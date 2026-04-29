@@ -31,14 +31,18 @@ import (
 )
 
 type Input struct {
-	ModelDir string
-	Task     string
+	ModelDir           string
+	Task               string
+	SourceDeclaredTask string
+	TaskHint           string
 }
 
 type SummaryInput struct {
-	ModelFileName  string
-	ModelSizeBytes int64
-	Task           string
+	ModelFileName      string
+	ModelSizeBytes     int64
+	Task               string
+	SourceDeclaredTask string
+	TaskHint           string
 }
 
 var (
@@ -57,7 +61,7 @@ func Resolve(input Input) (publicationdata.ResolvedProfile, error) {
 	}
 
 	stem := strings.TrimSuffix(filepath.Base(modelPath), filepath.Ext(modelPath))
-	return resolveFromSummary(stem, modelSizeBytes, input.Task), nil
+	return resolveFromSummary(stem, modelSizeBytes, input.Task, input.SourceDeclaredTask, input.TaskHint), nil
 }
 
 func ResolveSummary(input SummaryInput) (publicationdata.ResolvedProfile, error) {
@@ -70,10 +74,10 @@ func ResolveSummary(input SummaryInput) (publicationdata.ResolvedProfile, error)
 	}
 
 	stem := strings.TrimSuffix(filepath.Base(modelFileName), filepath.Ext(modelFileName))
-	return resolveFromSummary(stem, input.ModelSizeBytes, input.Task), nil
+	return resolveFromSummary(stem, input.ModelSizeBytes, input.Task, input.SourceDeclaredTask, input.TaskHint), nil
 }
 
-func resolveFromSummary(stem string, modelSizeBytes int64, task string) publicationdata.ResolvedProfile {
+func resolveFromSummary(stem string, modelSizeBytes int64, explicitTask, sourceDeclaredTask, taskHint string) publicationdata.ResolvedProfile {
 	quantization := detectQuantization(stem)
 	precision := detectPrecision(quantization)
 	parameterCount := detectParameterCount(stem)
@@ -83,16 +87,17 @@ func resolveFromSummary(stem string, modelSizeBytes int64, task string) publicat
 		parameterConfidence = publicationdata.ProfileConfidenceEstimated
 	}
 	capabilities := profilecommon.Capabilities{}
-	task = strings.TrimSpace(task)
-	taskConfidence := publicationdata.ProfileConfidence("")
-	if task != "" {
-		taskConfidence = publicationdata.ProfileConfidenceExact
+	task, taskConfidence := resolveTask(explicitTask, sourceDeclaredTask, taskHint)
+	if taskConfidence.ReliablePublicFact() {
 		capabilities = profilecommon.ResolveCapabilities(task)
 	}
 
 	return publicationdata.ResolvedProfile{
-		Task:                     task,
-		TaskConfidence:           taskConfidence,
+		Task:           task,
+		TaskConfidence: taskConfidence,
+		SourceCapabilities: publicationdata.SourceCapabilities{
+			Tasks: profilecommon.DeclaredSourceTasks(sourceDeclaredTask),
+		},
 		Family:                   normalizeFamily(stem),
 		FamilyConfidence:         publicationdata.ProfileConfidenceHint,
 		Format:                   "GGUF",
@@ -109,6 +114,19 @@ func resolveFromSummary(stem string, modelSizeBytes int64, task string) publicat
 			EstimatedWorkingSetGiB: profilecommon.EstimatedWorkingSetGiB(modelSizeBytes, parameterCount, precision, quantization),
 		},
 	}
+}
+
+func resolveTask(explicitTask, sourceDeclaredTask, taskHint string) (string, publicationdata.ProfileConfidence) {
+	if task := strings.TrimSpace(explicitTask); task != "" {
+		return task, publicationdata.ProfileConfidenceExact
+	}
+	if task := strings.TrimSpace(sourceDeclaredTask); task != "" {
+		return task, publicationdata.ProfileConfidenceDeclared
+	}
+	if task := strings.TrimSpace(taskHint); task != "" {
+		return task, publicationdata.ProfileConfidenceHint
+	}
+	return "", ""
 }
 
 func firstGGUFFile(root string) (string, int64, error) {

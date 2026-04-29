@@ -142,6 +142,11 @@ func planSourceWorker(
 			AuthSecretRef: authSecretRef,
 		}
 		return plan, nil
+	case modelsv1alpha1.ModelSourceTypeOllama:
+		if spec.Source.AuthSecretRef != nil {
+			return SourceWorkerPlan{}, errors.New("source worker ollama authSecretRef is not supported yet")
+		}
+		return SourceWorkerPlan{}, errors.New("source worker ollama source publication is not implemented yet")
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		if uploadStage == nil {
 			return SourceWorkerPlan{}, errors.New("source worker upload source requires a staged upload handle")

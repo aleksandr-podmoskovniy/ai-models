@@ -54,7 +54,6 @@ func TestCollectorLeavesCalculatedFieldsEmptyWhenStatusIsIncomplete(t *testing.T
 		"uid":                  string(model.UID),
 		"resolved_source_type": string(modelsv1alpha1.ModelSourceTypeHuggingFace),
 		"format":               "",
-		"task":                 "",
 		"artifact_kind":        "",
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_model_artifact_size_bytes", map[string]string{

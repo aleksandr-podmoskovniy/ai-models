@@ -85,7 +85,7 @@ spec:
                     type: object
                   url:
                     minLength: 1
-                    pattern: ^https:\/\/((www\.)?huggingface\.co|hf\.co)\/.+$
+                    pattern: ^https:\/\/(((www\.)?huggingface\.co|hf\.co)\/.+|(www\.)?ollama\.com\/library\/[^:\/?#]+(:[^\/?#]+)?([\/?#].*)?)$
                     type: string
                 type: object
                 x-kubernetes-validations:
@@ -220,6 +220,25 @@ spec:
                     type: integer
                   quantization:
                     type: string
+                  sourceCapabilities:
+                    properties:
+                      features:
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: set
+                      provider:
+                        enum:
+                        - HuggingFace
+                        - Ollama
+                        - Upload
+                        type: string
+                      tasks:
+                        items:
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: set
+                    type: object
                   supportedEndpointTypes:
                     items:
                       enum:
@@ -255,8 +274,6 @@ spec:
                       type: string
                     type: array
                     x-kubernetes-list-type: set
-                  task:
-                    type: string
                 type: object
               source:
                 properties:
@@ -265,6 +282,7 @@ spec:
                   resolvedType:
                     enum:
                     - HuggingFace
+                    - Ollama
                     - Upload
                     type: string
                 type: object

@@ -77,12 +77,12 @@ var (
 	modelInfoMetric = newMetricInfo(
 		"model_info",
 		"Static public Model catalog information.",
-		modelLabels("resolved_source_type", "format", "task", "artifact_kind")...,
+		modelLabels("resolved_source_type", "format", "artifact_kind")...,
 	)
 	clusterModelInfoMetric = newMetricInfo(
 		"clustermodel_info",
 		"Static public ClusterModel catalog information.",
-		clusterModelLabels("resolved_source_type", "format", "task", "artifact_kind")...,
+		clusterModelLabels("resolved_source_type", "format", "artifact_kind")...,
 	)
 	modelArtifactSizeMetric = newMetricInfo(
 		"model_artifact_size_bytes",

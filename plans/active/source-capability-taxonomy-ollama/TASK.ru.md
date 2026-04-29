@@ -7,15 +7,16 @@ provider.
 
 ## 2. Контекст
 
-Текущий `status.resolved` одновременно показывает:
+Старый `status.resolved` одновременно показывал:
 
 - `task`, например `text-ranking`;
 - `supportedEndpointTypes`, например `Rerank`;
 - `supportedFeatures`, например `VisionInput` или `ToolCalling`.
 
-Это не одно и то же, но текущие имена выглядят как дублирование. `task` сейчас
-является source/provider taxonomy, а `supportedEndpointTypes` - normalized
-serving-facing taxonomy для будущего `ai-inference`.
+Это не одно и то же, и scalar `task` выглядел как дублирование. Целевое
+решение: source/provider taxonomy живёт только в
+`status.resolved.sourceCapabilities`, а `supportedEndpointTypes` остаётся
+normalized serving-facing taxonomy для будущего `ai-inference`.
 
 Параллельно нужен новый source provider: Ollama library/registry. Для GGUF
 моделей Ollama отдаёт полезную metadata: format, family, parameter size,
@@ -68,10 +69,8 @@ quantization, capabilities и подробный `model_info`.
   - source/provider task/capability используется как provenance/evidence;
   - `supportedEndpointTypes` остаётся normalized serving-facing summary;
   - `supportedFeatures` остаётся orthogonal feature summary.
-- Если public `task` остаётся в CRD, его meaning явно ограничен как
-  provider/source task, а не как serving endpoint.
-- Если public `task` удаляется или переименовывается, CRD/codegen/docs/tests
-  согласованы.
+- Public `status.resolved.task` удалён из CRD; CRD/codegen/docs/tests
+  согласованы с `sourceCapabilities`.
 - Ollama URL проходит source detection отдельно от Hugging Face.
 - Ollama manifest/config/layers читаются через narrow adapter, а не через
   HuggingFace-specific code path.

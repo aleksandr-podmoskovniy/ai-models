@@ -194,8 +194,9 @@ CPU request `1`, CPU limit `4`, and ephemeral-storage request/limit `1Gi`.
 These values stay internal module values, not public `ModuleConfig`.
 
 The public model API is also intentionally minimal. Users specify only
-`spec.source`; format, task, and other model metadata are calculated by the
-controller from the actual model contents and projected into `status.resolved`.
+`spec.source`; format, normalized endpoint/features, and source capability
+evidence are calculated by the controller from the actual model contents and
+projected into `status.resolved`.
 
 `nodeCache` owns the managed local-storage substrate and the workload-facing
 SharedDirect delivery contract:

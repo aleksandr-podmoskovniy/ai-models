@@ -69,11 +69,10 @@ Ollama:
 
 Conclusion:
 
-- HF `task` and Ollama `capabilities` are provider/source taxonomy.
+- HF task taxonomy and Ollama `capabilities` are provider/source taxonomy.
 - `supportedEndpointTypes` is our normalized serving taxonomy.
-- Keeping both is valid only if names/docs make that distinction impossible to
-  miss. If not, public `task` should be renamed or moved out of the main
-  summary.
+- Public scalar `status.resolved.task` is removed now; provider taxonomy moves
+  into `status.resolved.sourceCapabilities`.
 
 ## 5. Field-shape decision
 
@@ -107,15 +106,9 @@ Rationale:
 - `supportedFeatures` remains provider-neutral and orthogonal.
 - `sourceCapabilities` is provenance/evidence and can hold HF `pipeline_tag`
   or Ollama `capabilities` without pretending they are our runtime contract.
-- Existing `task` becomes either deprecated projection of the primary source
-  task for compatibility or is removed before public stabilization.
-
-Fallback if we avoid CRD churn in this slice:
-
-- keep `task`;
-- document it as `source/provider task`;
-- never treat it as the scheduler input;
-- add `TaskConfidence`/internal evidence only in snapshot, not public status.
+- `status.resolved.task` is intentionally absent. Consumers must not infer a
+  primary task from `sourceCapabilities.tasks`; serving decisions use
+  `supportedEndpointTypes`.
 
 ## 6. Slices
 
@@ -123,9 +116,9 @@ Fallback if we avoid CRD churn in this slice:
 
 Goal:
 
-- decide whether to keep, rename, or nest public `task`;
-- update docs and tests so `text-ranking` + `Rerank` no longer looks like two
-  competing task fields.
+- remove public `status.resolved.task`;
+- add `sourceCapabilities` projection and generated CRDs;
+- update docs/tests so source taxonomy and serving endpoint do not compete.
 
 Files:
 
@@ -157,6 +150,12 @@ Checks:
 - source admission/modelsource tests;
 - CRD verify if URL pattern changes.
 
+Status:
+
+- done in this slice for URL schema and `modelsource` parsing;
+- publication remains explicit fail-closed until Slice 3 implements the
+  registry/manifest/range-reader adapter.
+
 ### Slice 3. Ollama remote adapter
 
 Goal:
@@ -174,6 +173,12 @@ Checks:
 
 - sourcefetch tests with fixture manifest/config/layers;
 - negative malformed manifest tests.
+
+Status:
+
+- pending. Current code accepts Ollama library URLs but rejects publication with
+  `ollama ... not implemented yet` before any HTML scraping or filename-based
+  profile guesses.
 
 ### Slice 4. Ollama profile projection
 
@@ -227,4 +232,18 @@ are changed, rollback is deleting this bundle and reverting docs.
 - `cd images/controller && go test ./...`
 - `make helm-template`
 - `make kubeconform`
+- `make verify`
+
+## 9. Slice validation log
+
+2026-04-29:
+
+- `cd api && go test ./...`
+- `bash api/scripts/update-codegen.sh`
+- `bash api/scripts/verify-crdgen.sh`
+- `cd images/controller && go test ./internal/domain/modelsource ./internal/domain/publishstate ./internal/publishedsnapshot ./internal/adapters/modelprofile/... ./internal/dataplane/publishworker ./internal/adapters/sourcefetch ./internal/adapters/k8s/sourceworker ./internal/monitoring/catalogmetrics`
+- `cd images/controller && go test ./...`
+- `make helm-template`
+- `make kubeconform`
+- `git diff --check`
 - `make verify`

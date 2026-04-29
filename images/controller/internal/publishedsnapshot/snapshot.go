@@ -57,6 +57,7 @@ type PublishedArtifact struct {
 type ResolvedProfile struct {
 	Task                          string
 	TaskConfidence                ProfileConfidence
+	SourceCapabilities            SourceCapabilities
 	Family                        string
 	FamilyConfidence              ProfileConfidence
 	License                       string
@@ -73,6 +74,11 @@ type ResolvedProfile struct {
 	SupportedEndpointTypes        []string
 	SupportedFeatures             []string
 	Footprint                     ProfileFootprint
+}
+
+type SourceCapabilities struct {
+	Tasks    []string
+	Features []string
 }
 
 type Result struct {

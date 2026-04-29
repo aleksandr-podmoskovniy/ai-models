@@ -129,8 +129,11 @@ func resolveSummary(
 	}
 
 	resolved := publicationdata.ResolvedProfile{
-		Task:                          task,
-		TaskConfidence:                taskConfidence,
+		Task:           task,
+		TaskConfidence: taskConfidence,
+		SourceCapabilities: publicationdata.SourceCapabilities{
+			Tasks: profilecommon.DeclaredSourceTasks(sourceDeclaredTask),
+		},
 		Family:                        family,
 		FamilyConfidence:              familyConfidence,
 		Architecture:                  architecture,

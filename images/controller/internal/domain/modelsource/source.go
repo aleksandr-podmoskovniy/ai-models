@@ -28,6 +28,7 @@ import (
 var (
 	ErrUnsupportedURLScheme = errors.New("unsupported source URL scheme")
 	ErrUnsupportedURLHost   = errors.New("unsupported source URL host")
+	ErrUnsupportedURLPath   = errors.New("unsupported source URL path")
 )
 
 func DetectType(source modelsv1alpha1.ModelSourceSpec) (modelsv1alpha1.ModelSourceType, error) {
@@ -56,13 +57,20 @@ func DetectRemoteType(rawURL string) (modelsv1alpha1.ModelSourceType, error) {
 	switch host {
 	case "huggingface.co", "www.huggingface.co", "hf.co":
 		return modelsv1alpha1.ModelSourceTypeHuggingFace, nil
+	case "ollama.com", "www.ollama.com":
+		if _, _, err := parseOllamaLibraryPath(parsed.Path); err != nil {
+			return "", err
+		}
+		return modelsv1alpha1.ModelSourceTypeOllama, nil
 	default:
 		return "", fmt.Errorf("%w %q", ErrUnsupportedURLHost, parsed.Hostname())
 	}
 }
 
 func IsUnsupportedRemoteError(err error) bool {
-	return errors.Is(err, ErrUnsupportedURLScheme) || errors.Is(err, ErrUnsupportedURLHost)
+	return errors.Is(err, ErrUnsupportedURLScheme) ||
+		errors.Is(err, ErrUnsupportedURLHost) ||
+		errors.Is(err, ErrUnsupportedURLPath)
 }
 
 func ParseHuggingFaceURL(rawURL string) (string, string, error) {
@@ -93,4 +101,37 @@ func ParseHuggingFaceURL(rawURL string) (string, string, error) {
 	}
 
 	return repoID, revision, nil
+}
+
+func ParseOllamaLibraryURL(rawURL string) (string, string, error) {
+	sourceType, err := DetectRemoteType(rawURL)
+	if err != nil {
+		return "", "", err
+	}
+	if sourceType != modelsv1alpha1.ModelSourceTypeOllama {
+		return "", "", fmt.Errorf("source URL is not an Ollama library URL")
+	}
+
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", "", err
+	}
+	return parseOllamaLibraryPath(parsed.Path)
+}
+
+func parseOllamaLibraryPath(path string) (string, string, error) {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	if len(segments) != 2 || segments[0] != "library" || strings.TrimSpace(segments[1]) == "" {
+		return "", "", fmt.Errorf("%w %q", ErrUnsupportedURLPath, path)
+	}
+
+	reference := strings.TrimSpace(segments[1])
+	name, tag, found := strings.Cut(reference, ":")
+	name = strings.TrimSpace(name)
+	tag = strings.TrimSpace(tag)
+	if name == "" || (found && tag == "") {
+		return "", "", fmt.Errorf("%w %q", ErrUnsupportedURLPath, path)
+	}
+
+	return name, tag, nil
 }

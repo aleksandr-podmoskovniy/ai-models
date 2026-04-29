@@ -25,22 +25,19 @@ runtime/topology. Поэтому `ai-models` считает metadata и resource
 
 ## Публичный CRD contract
 
-Важно: `task` и `supportedEndpointTypes` не являются двумя версиями одного
-поля.
+Source/provider taxonomy и serving contract разделены намеренно:
 
-- `task` в текущем status - это source/provider task taxonomy: например
-  Hugging Face `pipeline_tag` / `model-index.results.task.type` или будущая
-  Ollama capability, нормализованная только по строке задачи.
-- `supportedEndpointTypes` - это наша provider-neutral serving taxonomy:
-  какой тип endpoint вообще имеет смысл предложить будущему `ai-inference`.
+- `sourceCapabilities.tasks` - provenance/evidence: например Hugging Face
+  `pipeline_tag` / `model-index.results.task.type` или Ollama capability;
+- `sourceCapabilities.features` - provider-declared capability words, если они
+  есть и не являются нашим runtime promise;
+- `supportedEndpointTypes` - provider-neutral serving taxonomy: какой тип
+  endpoint вообще имеет смысл предложить будущему `ai-inference`;
+- `supportedFeatures` - normalized model traits, например modality или
+  tool-calling evidence.
 
-Поэтому пример `task: text-ranking` + `supportedEndpointTypes: [Rerank]`
-корректен по смыслу, но плох по читаемости: без явного provenance слоя это
-выглядит как дублирование. Целевой API slice должен либо переименовать/nest
-`task` в source-facing capability, либо оставить его только как compatibility
-projection до стабилизации CRD.
-
-Текущая публичная проекция:
+Публичная проекция не содержит `status.resolved.task`: scalar task создавал
+ложное ощущение, что provider taxonomy и serving endpoint - одно поле.
 
 ```yaml
 status:
@@ -48,7 +45,6 @@ status:
     format: Safetensors | GGUF | Diffusers
     architecture: LlamaForCausalLM
     family: llama
-    task: text-generation
     parameterCount: 7000000000
     quantization: q4_k_m
     contextWindowTokens: 8192
@@ -58,7 +54,15 @@ status:
     supportedFeatures:
       - VisionInput
       - ToolCalling
+    sourceCapabilities:
+      provider: HuggingFace
+      tasks:
+        - text-generation
+      features: []
 ```
+
+Так consumer видит один главный ответ для запуска (`supportedEndpointTypes`) и
+отдельную provenance/evidence часть (`sourceCapabilities`), не путая их.
 
 Смысл полей:
 
@@ -67,37 +71,14 @@ status:
 | `format` | Выбор parser/runtime family. | Когда format известен из source selection или artifact inspection. |
 | `architecture` | Семейство model class для runtime validation. | Только из config/metadata, не из имени файла. |
 | `family` | UX/search и грубая группировка. | Только из надёжного config-derived сигнала. |
-| `task` | Source/provider task provenance, например HF `pipeline_tag`. | Только из config/architecture mapping или другого надёжного source signal. Не является scheduler input. |
 | `parameterCount` | Capacity hint для будущего расчёта. | Только exact/derived. Estimated bytes-based значение наружу не публикуется. |
 | `quantization` | Runtime/parser hint. | Только из metadata/config. Filename-derived GGUF suffix наружу не публикуется как факт. |
 | `contextWindowTokens` | Вход для KV-cache расчёта. | Только из config/tokenizer metadata. |
-| `supportedEndpointTypes` | Предварительная endpoint capability: какой API-тип вообще имеет смысл поднимать. | Только из надёжного `task`. Не заменяет runtime validation. |
-| `supportedFeatures` | Сквозные признаки модели, которые не являются отдельным endpoint: modality и tool calling. | Только из надёжного task/source-declared metadata или tokenizer/chat-template evidence. |
-
-Целевой менее шумный shape для следующего CRD slice:
-
-```yaml
-status:
-  resolved:
-    format: GGUF
-    architecture: qwen35moe
-    family: qwen35moe
-    parameterCount: 36000000000
-    quantization: Q4_K_M
-    contextWindowTokens: 131072
-    supportedEndpointTypes:
-      - Chat
-      - TextGeneration
-    supportedFeatures:
-      - ToolCalling
-    sourceCapabilities:
-      provider: Ollama
-      tasks:
-        - completion
-```
-
-Так consumer видит один главный ответ для запуска (`supportedEndpointTypes`) и
-отдельную provenance/evidence часть (`sourceCapabilities`), не путая их.
+| `supportedEndpointTypes` | Предварительная endpoint capability: какой API-тип вообще имеет смысл поднимать. | Только из надёжной normalized capability mapping. Не заменяет runtime validation. |
+| `supportedFeatures` | Сквозные признаки модели, которые не являются отдельным endpoint: modality и tool calling. | Из надёжной task/source-declared metadata или tokenizer/chat-template evidence. Не требует scalar `task`. |
+| `sourceCapabilities.provider` | Source provider, откуда пришла taxonomy/evidence. | Из `spec.source` / upload workflow. |
+| `sourceCapabilities.tasks` | Source/provider task provenance, например HF `pipeline_tag`. | Только из declared/derived source signals; не является scheduler input. |
+| `sourceCapabilities.features` | Source/provider raw capability words. | Только если provider отдаёт machine-readable capability list; unknown values не мапятся в serving contract автоматически. |
 
 Публично не публикуются:
 
@@ -264,7 +245,7 @@ images/controller/internal/
 - `format = GGUF` можно публиковать;
 - family/quantization из filename остаются `Hint`;
 - parameter count из размера файла остаётся `Estimated`;
-- endpoint types не публикуются без надёжного task;
+- endpoint types не публикуются без надёжной normalized capability mapping;
 - architecture/context не заполняются догадками.
 
 Такой объект может быть опубликован и быть `Ready`, но `MetadataResolved`
@@ -284,10 +265,12 @@ images/controller/internal/
 - `architecture` = `_class_name` из `model_index.json`, например
   `StableDiffusionPipeline` или `TextToVideoSDPipeline`;
 - `family` только из стабильного pipeline-class mapping;
-- `task` из explicit user/runtime option, Hugging Face `pipeline_tag` или
-  надёжного pipeline-class mapping;
-- endpoint/features только если task имеет `Exact`, `Declared` или `Derived`
-  confidence.
+- source provider task уходит в `sourceCapabilities.tasks`, если он пришёл из
+  Hugging Face `pipeline_tag` / `model-index` или другого declared source
+  signal;
+- endpoint types публикуются только из надёжной normalized capability mapping;
+- features могут публиковаться из task/source-declared metadata или отдельного
+  artifact evidence.
 
 Что намеренно не поддерживается в этом slice:
 

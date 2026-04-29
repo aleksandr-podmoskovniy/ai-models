@@ -17,6 +17,8 @@ limitations under the License.
 package publishstate
 
 import (
+	"strings"
+
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	publicationdata "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,6 +44,7 @@ func readyStatus(
 			MediaType: snapshot.Artifact.MediaType,
 		},
 		Resolved: &modelsv1alpha1.ModelResolvedStatus{
+			SourceCapabilities:     publicSourceCapabilities(sourceType, snapshot.Resolved),
 			SupportedEndpointTypes: publicEndpointTypes(snapshot.Resolved),
 			SupportedFeatures:      publicFeatureTypes(snapshot.Resolved),
 		},
@@ -51,9 +54,6 @@ func readyStatus(
 	if snapshot.Artifact.SizeBytes > 0 {
 		sizeBytes := snapshot.Artifact.SizeBytes
 		status.Artifact.SizeBytes = &sizeBytes
-	}
-	if snapshot.Resolved.TaskConfidence.ReliablePublicFact() {
-		status.Resolved.Task = snapshot.Resolved.Task
 	}
 	if format, ok := knownPublicFormat(modelsv1alpha1.ModelInputFormat(snapshot.Resolved.Format)); ok {
 		status.Resolved.Format = format
@@ -119,9 +119,6 @@ func publicEndpointTypes(resolved publicationdata.ResolvedProfile) []modelsv1alp
 }
 
 func publicFeatureTypes(resolved publicationdata.ResolvedProfile) []modelsv1alpha1.ModelFeatureType {
-	if !resolved.TaskConfidence.ReliablePublicFact() {
-		return nil
-	}
 	result := make([]modelsv1alpha1.ModelFeatureType, 0, len(resolved.SupportedFeatures))
 	for _, feature := range resolved.SupportedFeatures {
 		featureType, ok := knownPublicFeatureType(modelsv1alpha1.ModelFeatureType(feature))
@@ -129,6 +126,47 @@ func publicFeatureTypes(resolved publicationdata.ResolvedProfile) []modelsv1alph
 			continue
 		}
 		result = append(result, featureType)
+	}
+	return result
+}
+
+func publicSourceCapabilities(sourceType modelsv1alpha1.ModelSourceType, resolved publicationdata.ResolvedProfile) *modelsv1alpha1.ModelSourceCapabilities {
+	if sourceType == "" {
+		return nil
+	}
+
+	capabilities := &modelsv1alpha1.ModelSourceCapabilities{
+		Provider: sourceType,
+		Tasks:    publicSourceCapabilityTasks(resolved),
+		Features: publicSourceCapabilityFeatures(resolved),
+	}
+	if capabilities.Provider == "" && len(capabilities.Tasks) == 0 && len(capabilities.Features) == 0 {
+		return nil
+	}
+	return capabilities
+}
+
+func publicSourceCapabilityTasks(resolved publicationdata.ResolvedProfile) []string {
+	return uniqueNonEmptyStrings(resolved.SourceCapabilities.Tasks)
+}
+
+func publicSourceCapabilityFeatures(resolved publicationdata.ResolvedProfile) []string {
+	return uniqueNonEmptyStrings(resolved.SourceCapabilities.Features)
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		clean := strings.TrimSpace(value)
+		if clean == "" {
+			continue
+		}
+		if _, found := seen[clean]; found {
+			continue
+		}
+		seen[clean] = struct{}{}
+		result = append(result, clean)
 	}
 	return result
 }

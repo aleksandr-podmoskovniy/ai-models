@@ -64,6 +64,8 @@ func run(ctx context.Context, options Options) (publicationartifact.Result, erro
 	switch options.SourceType {
 	case modelsv1alpha1.ModelSourceTypeHuggingFace:
 		return publishFromHuggingFace(ctx, options)
+	case modelsv1alpha1.ModelSourceTypeOllama:
+		return publicationartifact.Result{}, fmt.Errorf("ollama source publication is not implemented yet")
 	case modelsv1alpha1.ModelSourceTypeUpload:
 		return publishFromUpload(ctx, options)
 	default:

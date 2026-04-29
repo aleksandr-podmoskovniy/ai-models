@@ -34,8 +34,11 @@ func TestDetectRemoteType(t *testing.T) {
 	}{
 		{name: "huggingface root", url: "https://huggingface.co/deepseek-ai/DeepSeek-R1", want: modelsv1alpha1.ModelSourceTypeHuggingFace},
 		{name: "huggingface tree", url: "https://huggingface.co/deepseek-ai/DeepSeek-R1/tree/main", want: modelsv1alpha1.ModelSourceTypeHuggingFace},
+		{name: "ollama library", url: "https://ollama.com/library/qwen3.6", want: modelsv1alpha1.ModelSourceTypeOllama},
+		{name: "ollama library tag", url: "https://ollama.com/library/qwen3.6:latest", want: modelsv1alpha1.ModelSourceTypeOllama},
 		{name: "plain http rejected", url: "http://huggingface.co/deepseek-ai/DeepSeek-R1", err: `unsupported source URL scheme "http"`},
 		{name: "generic http rejected", url: "https://downloads.example.com/model.tar.gz", err: `unsupported source URL host "downloads.example.com"`},
+		{name: "ollama non-library rejected", url: "https://ollama.com/search?q=qwen", err: `unsupported source URL path "/search"`},
 	}
 
 	for _, tc := range cases {
@@ -160,6 +163,30 @@ func TestParseHuggingFaceURLRejectsMissingRepo(t *testing.T) {
 	_, _, err := ParseHuggingFaceURL("https://huggingface.co/deepseek-ai")
 	if err == nil || err.Error() != "huggingface URL must contain owner/repo" {
 		t.Fatalf("ParseHuggingFaceURL() error = %v, want missing repo", err)
+	}
+}
+
+func TestParseOllamaLibraryURL(t *testing.T) {
+	t.Parallel()
+
+	name, tag, err := ParseOllamaLibraryURL("https://ollama.com/library/qwen3.6:latest")
+	if err != nil {
+		t.Fatalf("ParseOllamaLibraryURL() error = %v", err)
+	}
+	if name != "qwen3.6" || tag != "latest" {
+		t.Fatalf("unexpected name/tag %q %q", name, tag)
+	}
+}
+
+func TestParseOllamaLibraryURLAllowsImplicitTag(t *testing.T) {
+	t.Parallel()
+
+	name, tag, err := ParseOllamaLibraryURL("https://ollama.com/library/qwen3.6")
+	if err != nil {
+		t.Fatalf("ParseOllamaLibraryURL() error = %v", err)
+	}
+	if name != "qwen3.6" || tag != "" {
+		t.Fatalf("unexpected name/tag %q %q", name, tag)
 	}
 }
 

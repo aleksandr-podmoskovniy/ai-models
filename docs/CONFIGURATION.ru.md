@@ -193,8 +193,9 @@ worker, CPU request `1`, CPU limit `4`, ephemeral-storage request/limit `1Gi`.
 Эти значения остаются internal module values, а не public `ModuleConfig`.
 
 Публичный model API тоже намеренно минимален. Пользователь задаёт только
-`spec.source`; формат, task и остальная model metadata вычисляются controller'ом
-из фактического содержимого модели и проецируются в `status.resolved`.
+`spec.source`; формат, normalized endpoint/features и source capability
+evidence вычисляются controller'ом из фактического содержимого модели и
+проецируются в `status.resolved`.
 
 `nodeCache` владеет managed local-storage substrate и workload-facing
 SharedDirect delivery contract:

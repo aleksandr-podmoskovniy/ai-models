@@ -65,9 +65,11 @@ func resolveRemoteProfile(
 		return &resolved, nil
 	case modelsv1alpha1.ModelInputFormatGGUF:
 		resolved, err := ggufprofile.ResolveSummary(ggufprofile.SummaryInput{
-			ModelFileName:  remote.ProfileSummary.ModelFileName,
-			ModelSizeBytes: remote.ProfileSummary.ModelSizeBytes,
-			Task:           options.Task,
+			ModelFileName:      remote.ProfileSummary.ModelFileName,
+			ModelSizeBytes:     remote.ProfileSummary.ModelSizeBytes,
+			Task:               options.Task,
+			SourceDeclaredTask: remote.Fallbacks.SourceDeclaredTask,
+			TaskHint:           remote.Fallbacks.TaskHint,
 		})
 		if err != nil {
 			return nil, err

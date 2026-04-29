@@ -149,6 +149,8 @@ func FetchRemoteModel(ctx context.Context, options RemoteOptions) (RemoteResult,
 	switch sourceType {
 	case modelsv1alpha1.ModelSourceTypeHuggingFace:
 		return fetchHuggingFaceModel(ctx, options)
+	case modelsv1alpha1.ModelSourceTypeOllama:
+		return RemoteResult{}, errors.New("ollama remote source fetch is not implemented yet")
 	default:
 		return RemoteResult{}, errors.New("unsupported remote source type")
 	}

@@ -37,7 +37,6 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 			SizeBytes: &modelArtifactSize,
 		},
 		Resolved: &modelsv1alpha1.ModelResolvedStatus{
-			Task:   "text-generation",
 			Format: modelsv1alpha1.ModelInputFormatSafetensors,
 		},
 		Conditions: []metav1.Condition{
@@ -53,7 +52,6 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 			ResolvedType: modelsv1alpha1.ModelSourceTypeHuggingFace,
 		},
 		Resolved: &modelsv1alpha1.ModelResolvedStatus{
-			Task:   "text-generation",
 			Format: modelsv1alpha1.ModelInputFormatGGUF,
 		},
 		Conditions: []metav1.Condition{
@@ -104,7 +102,6 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 		"uid":                  string(model.UID),
 		"resolved_source_type": string(modelsv1alpha1.ModelSourceTypeHuggingFace),
 		"format":               "Safetensors",
-		"task":                 "text-generation",
 		"artifact_kind":        string(modelsv1alpha1.ModelArtifactLocationKindOCI),
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_model_artifact_size_bytes", map[string]string{
@@ -142,7 +139,6 @@ func TestCollectorReportsModelAndClusterModelStateMetrics(t *testing.T) {
 		"uid":                  string(clusterModel.UID),
 		"resolved_source_type": string(modelsv1alpha1.ModelSourceTypeHuggingFace),
 		"format":               "GGUF",
-		"task":                 "text-generation",
 		"artifact_kind":        "",
 	}, 1)
 	assertGaugeValue(t, families, "d8_ai_models_clustermodel_artifact_size_bytes", map[string]string{

@@ -39,6 +39,18 @@ func ResolveCapabilities(task string) Capabilities {
 	return Capabilities{}
 }
 
+func DeclaredSourceTasks(tasks ...string) []string {
+	result := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		normalized := normalize(task)
+		if normalized == "" || slices.Contains(result, normalized) {
+			continue
+		}
+		result = append(result, normalized)
+	}
+	return result
+}
+
 type capabilityRule struct {
 	tasks     []string
 	endpoints []modelsv1alpha1.ModelEndpointType

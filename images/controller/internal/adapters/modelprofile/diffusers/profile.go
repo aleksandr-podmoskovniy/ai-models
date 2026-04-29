@@ -92,8 +92,11 @@ func resolveSummary(modelIndexPayload []byte, weights weightStats, task, sourceD
 	}
 
 	return publicationdata.ResolvedProfile{
-		Task:                   resolvedTask,
-		TaskConfidence:         taskConfidence,
+		Task:           resolvedTask,
+		TaskConfidence: taskConfidence,
+		SourceCapabilities: publicationdata.SourceCapabilities{
+			Tasks: profilecommon.DeclaredSourceTasks(sourceDeclaredTask),
+		},
 		Family:                 family,
 		FamilyConfidence:       confidenceIfSet(family, publicationdata.ProfileConfidenceDerived),
 		Architecture:           pipelineClass,

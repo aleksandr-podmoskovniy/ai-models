@@ -17,6 +17,7 @@ limitations under the License.
 package publishstate
 
 import (
+	"slices"
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -60,8 +61,11 @@ func TestProjectStatusSucceeded(t *testing.T) {
 					SizeBytes: 42,
 				},
 				Resolved: publicationdata.ResolvedProfile{
-					Task:                          "text-generation",
-					TaskConfidence:                publicationdata.ProfileConfidenceDerived,
+					Task:           "text-generation",
+					TaskConfidence: publicationdata.ProfileConfidenceDerived,
+					SourceCapabilities: publicationdata.SourceCapabilities{
+						Tasks: []string{"text-generation"},
+					},
 					Family:                        "deepseek",
 					FamilyConfidence:              publicationdata.ProfileConfidenceExact,
 					Architecture:                  "DeepseekForCausalLM",
@@ -106,6 +110,11 @@ func TestProjectStatusSucceeded(t *testing.T) {
 	}
 	if got, want := projection.Status.Resolved.SupportedFeatures, []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeVisionInput}; !featureTypesEqual(got, want) {
 		t.Fatalf("unexpected features %#v", got)
+	}
+	if got := projection.Status.Resolved.SourceCapabilities; got == nil ||
+		got.Provider != modelsv1alpha1.ModelSourceTypeHuggingFace ||
+		!slices.Equal(got.Tasks, []string{"text-generation"}) {
+		t.Fatalf("unexpected source capabilities %#v", got)
 	}
 	ready := apimeta.FindStatusCondition(projection.Status.Conditions, string(modelsv1alpha1.ModelConditionReady))
 	if ready == nil || ready.Status != metav1.ConditionTrue {
@@ -256,7 +265,7 @@ func TestProjectStatusSucceededFiltersUnknownEndpointTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProjectStatus() error = %v", err)
 	}
-	if got, want := projection.Status.Resolved.SupportedEndpointTypes, []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeChat}; !endpointTypesEqual(got, want) {
+	if got, want := projection.Status.Resolved.SupportedEndpointTypes, []modelsv1alpha1.ModelEndpointType{modelsv1alpha1.ModelEndpointTypeChat}; !slices.Equal(got, want) {
 		t.Fatalf("unexpected endpoint types %#v", got)
 	}
 }
@@ -313,18 +322,6 @@ func TestProjectStatusSucceededRequiresSnapshot(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing snapshot error")
 	}
-}
-
-func endpointTypesEqual(got, want []modelsv1alpha1.ModelEndpointType) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	for i := range got {
-		if got[i] != want[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestProjectStatusSucceededRequiresCleanupHandle(t *testing.T) {

@@ -85,6 +85,21 @@ func TestRequestValidateRejectsInvalidBranches(t *testing.T) {
 			wantErr: "requires a staged upload handle",
 		},
 		{
+			name: "ollama source is fail closed until adapter exists",
+			mutate: func(request *publicationports.Request) {
+				request.Spec.Source.URL = "https://ollama.com/library/qwen3.6"
+			},
+			wantErr: "ollama source publication is not implemented yet",
+		},
+		{
+			name: "ollama auth secret is rejected until auth contract exists",
+			mutate: func(request *publicationports.Request) {
+				request.Spec.Source.URL = "https://ollama.com/library/qwen3.6"
+				request.Spec.Source.AuthSecretRef = &modelsv1alpha1.SecretReference{Name: "ollama-auth"}
+			},
+			wantErr: "ollama authSecretRef is not supported yet",
+		},
+		{
 			name: "unsupported non huggingface host",
 			mutate: func(request *publicationports.Request) {
 				request.Spec.Source.URL = "https://example.invalid/model"

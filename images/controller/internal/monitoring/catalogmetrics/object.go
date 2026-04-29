@@ -40,7 +40,6 @@ type objectMetric struct {
 	phase            modelsv1alpha1.ModelPhase
 	sourceType       string
 	format           string
-	task             string
 	artifactKind     string
 	ready            bool
 	artifactSizeByte float64
@@ -102,7 +101,6 @@ func newObjectMetric(
 		phase:            effectivePhase(status),
 		sourceType:       effectiveSourceType(spec, status),
 		format:           effectiveFormat(spec, status),
-		task:             effectiveTask(spec, status),
 		artifactKind:     trimString(artifactKind(status)),
 		ready:            conditionTrue(status.Conditions, modelsv1alpha1.ModelConditionReady),
 		artifactSizeByte: artifactSize(status),
@@ -135,15 +133,6 @@ func effectiveFormat(spec modelsv1alpha1.ModelSpec, status modelsv1alpha1.ModelS
 	_ = spec
 	if status.Resolved != nil && strings.TrimSpace(string(status.Resolved.Format)) != "" {
 		return string(status.Resolved.Format)
-	}
-
-	return ""
-}
-
-func effectiveTask(spec modelsv1alpha1.ModelSpec, status modelsv1alpha1.ModelStatus) string {
-	_ = spec
-	if status.Resolved != nil && strings.TrimSpace(status.Resolved.Task) != "" {
-		return status.Resolved.Task
 	}
 
 	return ""

@@ -111,7 +111,6 @@ func (c *Collector) reportObjectMetrics(ch chan<- prometheus.Metric, metric *obj
 			metric.uid,
 			metric.sourceType,
 			metric.format,
-			metric.task,
 			metric.artifactKind,
 		)
 		ch <- prometheus.MustNewConstMetric(
@@ -138,7 +137,6 @@ func (c *Collector) reportObjectMetrics(ch chan<- prometheus.Metric, metric *obj
 			metric.uid,
 			metric.sourceType,
 			metric.format,
-			metric.task,
 			metric.artifactKind,
 		)
 		ch <- prometheus.MustNewConstMetric(
