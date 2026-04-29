@@ -59,17 +59,17 @@ func renderAliasBindings(input Input, options Options, bindings []BindingInput) 
 	}
 
 	rendered := Rendered{
-		InitContainerName:         options.InitContainerName,
-		RuntimeEnv:                buildAliasRuntimeEnv(options, runtimeEntries),
-		ImagePullSecretNamesPrune: buildImagePullSecretNamesPrune(input.RuntimeImagePullSecretName),
-		ModelPath:                 runtimeEntries[0].Path,
-		ArtifactURI:               strings.TrimSpace(bindings[0].Artifact.URI),
-		ArtifactFamily:            strings.TrimSpace(bindings[0].ArtifactFamily),
-		ResolvedModels:            string(modelsJSON),
+		InitContainerName: options.InitContainerName,
+		RuntimeEnv:        buildAliasRuntimeEnv(options, runtimeEntries),
+		ModelPath:         runtimeEntries[0].Path,
+		ArtifactURI:       strings.TrimSpace(bindings[0].Artifact.URI),
+		ArtifactFamily:    strings.TrimSpace(bindings[0].ArtifactFamily),
+		ResolvedModels:    string(modelsJSON),
 	}
 	if input.TopologyKind == CacheTopologyDirect {
 		rendered.Volumes = buildAliasCSIVolumes(input.CacheMount.VolumeName, bindings)
 		rendered.RuntimeVolumeMounts = buildAliasVolumeMounts(input.CacheMount.VolumeName, options, bindings)
+		rendered.ImagePullSecretNamesPrune = buildImagePullSecretNamesPrune(input.RuntimeImagePullSecretName)
 		return rendered, nil
 	}
 

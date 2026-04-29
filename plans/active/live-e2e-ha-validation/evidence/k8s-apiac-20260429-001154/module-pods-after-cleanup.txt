@@ -1,0 +1,10 @@
+NAME                                                    READY                 RESTARTS   STATUS      NODE
+ai-model-publish-24a65de0-4e50-479c-8829-218aeec7d929   false                 0          Succeeded   k8s-w6.apiac.ru
+ai-model-publish-87c86d56-476c-4c2e-8d03-844f37012692   false                 0          Succeeded   k8s-w1.apiac.ru
+ai-model-publish-be8b0a46-a134-4b47-ba22-a216832c29b7   false                 0          Succeeded   k8s-w2.apiac.ru
+ai-models-controller-5cd6d99fc7-c9wsr                   true,true             0,0        Running     k8s-w4.apiac.ru
+ai-models-controller-5cd6d99fc7-z86cp                   true,true             0,0        Running     k8s-w2.apiac.ru
+ai-models-upload-gateway-6fd55d498b-2pmf2               true                  0          Running     k8s-w4.apiac.ru
+ai-models-upload-gateway-6fd55d498b-rghhz               true                  0          Running     k8s-w6.apiac.ru
+dmcr-77b5cbc6fd-f48fb                                   true,true,true,true   0,0,0,0    Running     k8s-w6.apiac.ru
+dmcr-77b5cbc6fd-jjtvw                                   true,true,true,true   0,0,0,0    Running     k8s-w4.apiac.ru

@@ -1,0 +1,60 @@
+apiVersion: ai.deckhouse.io/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"ai.deckhouse.io/v1alpha1","kind":"Model","metadata":{"annotations":{},"labels":{"ai.deckhouse.io/e2e-scenario":"upload-direct-multipart","ai.deckhouse.io/live-e2e":"ha-validation"},"name":"e2e-upload-tiny-safetensors","namespace":"ai-models-e2e"},"spec":{"source":{"upload":{}}}}
+  creationTimestamp: "2026-04-28T21:32:15Z"
+  finalizers:
+  - ai.deckhouse.io/model-cleanup
+  generation: 1
+  labels:
+    ai.deckhouse.io/e2e-scenario: upload-direct-multipart
+    ai.deckhouse.io/live-e2e: ha-validation
+  name: e2e-upload-tiny-safetensors
+  namespace: ai-models-e2e
+  resourceVersion: "992907610"
+  uid: 2776b6d8-c7e0-4182-a0af-24dc2d45875a
+spec:
+  source:
+    upload: {}
+status:
+  artifact:
+    digest: sha256:6fe1168225e987cb45115c3be989c29a4bace376acf2b6080ae85ca2ee5a5fb7
+    kind: OCI
+    mediaType: application/vnd.cncf.model.manifest.v1+json
+    sizeBytes: 4134045
+    uri: dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/ai-models-e2e/e2e-upload-tiny-safetensors/2776b6d8-c7e0-4182-a0af-24dc2d45875a@sha256:6fe1168225e987cb45115c3be989c29a4bace376acf2b6080ae85ca2ee5a5fb7
+  conditions:
+  - lastTransitionTime: "2026-04-28T21:35:27Z"
+    message: controller published the model artifact successfully
+    observedGeneration: 1
+    reason: ArtifactPublished
+    status: "True"
+    type: ArtifactResolved
+  - lastTransitionTime: "2026-04-28T21:35:27Z"
+    message: controller resolved partial model metadata and omitted low-confidence
+      fields from public status
+    observedGeneration: 1
+    reason: ModelMetadataPartial
+    status: "True"
+    type: MetadataResolved
+  - lastTransitionTime: "2026-04-28T21:35:27Z"
+    message: model is ready for platform consumption
+    observedGeneration: 1
+    reason: Ready
+    status: "True"
+    type: Ready
+  observedGeneration: 1
+  phase: Ready
+  resolved:
+    architecture: LlamaForCausalLM
+    contextWindowTokens: 2048
+    family: llama
+    format: Safetensors
+    supportedEndpointTypes:
+    - Chat
+    - TextGeneration
+    task: text-generation
+  source:
+    resolvedType: Upload

@@ -1,0 +1,180 @@
+apiVersion: v1
+items:
+- apiVersion: ai.deckhouse.io/v1alpha1
+  kind: Model
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"ai.deckhouse.io/v1alpha1","kind":"Model","metadata":{"annotations":{},"labels":{"ai.deckhouse.io/e2e-scenario":"hf-direct-diffusers","ai.deckhouse.io/live-e2e":"ha-validation"},"name":"e2e-diffusers-image-tiny","namespace":"ai-models-e2e"},"spec":{"source":{"url":"https://huggingface.co/hf-internal-testing/tiny-stable-diffusion-pipe"}}}
+    creationTimestamp: "2026-04-28T21:17:10Z"
+    finalizers:
+    - ai.deckhouse.io/model-cleanup
+    generation: 1
+    labels:
+      ai.deckhouse.io/e2e-scenario: hf-direct-diffusers
+      ai.deckhouse.io/live-e2e: ha-validation
+    name: e2e-diffusers-image-tiny
+    namespace: ai-models-e2e
+    resourceVersion: "992875351"
+    uid: 41c2342b-bda9-4789-8291-5729fb694a03
+  spec:
+    source:
+      url: https://huggingface.co/hf-internal-testing/tiny-stable-diffusion-pipe
+  status:
+    artifact:
+      digest: sha256:732c86a94b0425ebd8421f5fb82bec0aec549c51d3510786f8f1baccf0c4f354
+      kind: OCI
+      mediaType: application/vnd.cncf.model.manifest.v1+json
+      sizeBytes: 9055651
+      uri: dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/ai-models-e2e/e2e-diffusers-image-tiny/41c2342b-bda9-4789-8291-5729fb694a03@sha256:732c86a94b0425ebd8421f5fb82bec0aec549c51d3510786f8f1baccf0c4f354
+    conditions:
+    - lastTransitionTime: "2026-04-28T21:17:35Z"
+      message: controller published the model artifact successfully
+      observedGeneration: 1
+      reason: ArtifactPublished
+      status: "True"
+      type: ArtifactResolved
+    - lastTransitionTime: "2026-04-28T21:17:35Z"
+      message: controller resolved the model technical profile successfully
+      observedGeneration: 1
+      reason: ModelMetadataCalculated
+      status: "True"
+      type: MetadataResolved
+    - lastTransitionTime: "2026-04-28T21:17:35Z"
+      message: model is ready for platform consumption
+      observedGeneration: 1
+      reason: Ready
+      status: "True"
+      type: Ready
+    observedGeneration: 1
+    phase: Ready
+    resolved:
+      architecture: StableDiffusionPipeline
+      family: stable-diffusion
+      format: Diffusers
+      supportedEndpointTypes:
+      - ImageGeneration
+      supportedFeatures:
+      - ImageOutput
+      task: text-to-image
+    source:
+      resolvedRevision: 3ee6c9f225f088ad5d35b624b6514b091e6a4849
+      resolvedType: HuggingFace
+- apiVersion: ai.deckhouse.io/v1alpha1
+  kind: Model
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"ai.deckhouse.io/v1alpha1","kind":"Model","metadata":{"annotations":{},"labels":{"ai.deckhouse.io/e2e-scenario":"hf-direct-gguf","ai.deckhouse.io/live-e2e":"ha-validation"},"name":"e2e-gguf-qwen3-q2","namespace":"ai-models-e2e"},"spec":{"source":{"url":"https://huggingface.co/jnjj/Qwen3-0.6B-Q2_K-GGUF"}}}
+    creationTimestamp: "2026-04-28T21:17:10Z"
+    finalizers:
+    - ai.deckhouse.io/model-cleanup
+    generation: 1
+    labels:
+      ai.deckhouse.io/e2e-scenario: hf-direct-gguf
+      ai.deckhouse.io/live-e2e: ha-validation
+    name: e2e-gguf-qwen3-q2
+    namespace: ai-models-e2e
+    resourceVersion: "992875822"
+    uid: dccb5ab0-da7b-493e-859e-ce151cd37082
+  spec:
+    source:
+      url: https://huggingface.co/jnjj/Qwen3-0.6B-Q2_K-GGUF
+  status:
+    artifact:
+      digest: sha256:0e9b00e21cafbec613fcadeae9b6695d2083362c8cde14e8529341e074108432
+      kind: OCI
+      mediaType: application/vnd.cncf.model.manifest.v1+json
+      sizeBytes: 296238668
+      uri: dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/ai-models-e2e/e2e-gguf-qwen3-q2/dccb5ab0-da7b-493e-859e-ce151cd37082@sha256:0e9b00e21cafbec613fcadeae9b6695d2083362c8cde14e8529341e074108432
+    conditions:
+    - lastTransitionTime: "2026-04-28T21:17:54Z"
+      message: controller published the model artifact successfully
+      observedGeneration: 1
+      reason: ArtifactPublished
+      status: "True"
+      type: ArtifactResolved
+    - lastTransitionTime: "2026-04-28T21:17:54Z"
+      message: controller resolved partial model metadata and omitted low-confidence
+        fields from public status
+      observedGeneration: 1
+      reason: ModelMetadataPartial
+      status: "True"
+      type: MetadataResolved
+    - lastTransitionTime: "2026-04-28T21:17:54Z"
+      message: model is ready for platform consumption
+      observedGeneration: 1
+      reason: Ready
+      status: "True"
+      type: Ready
+    observedGeneration: 1
+    phase: Ready
+    resolved:
+      format: GGUF
+    source:
+      resolvedRevision: b23b038b3a03929a4922263c872b37e2c014e127
+      resolvedType: HuggingFace
+- apiVersion: ai.deckhouse.io/v1alpha1
+  kind: Model
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"ai.deckhouse.io/v1alpha1","kind":"Model","metadata":{"annotations":{},"labels":{"ai.deckhouse.io/e2e-scenario":"hf-direct-safetensors","ai.deckhouse.io/live-e2e":"ha-validation"},"name":"e2e-text-llama-tiny","namespace":"ai-models-e2e"},"spec":{"source":{"url":"https://huggingface.co/hf-internal-testing/tiny-random-LlamaForCausalLM"}}}
+    creationTimestamp: "2026-04-28T21:17:10Z"
+    finalizers:
+    - ai.deckhouse.io/model-cleanup
+    generation: 1
+    labels:
+      ai.deckhouse.io/e2e-scenario: hf-direct-safetensors
+      ai.deckhouse.io/live-e2e: ha-validation
+    name: e2e-text-llama-tiny
+    namespace: ai-models-e2e
+    resourceVersion: "992874974"
+    uid: 1c493cb1-000b-44fa-af7f-929175cd1daf
+  spec:
+    source:
+      url: https://huggingface.co/hf-internal-testing/tiny-random-LlamaForCausalLM
+  status:
+    artifact:
+      digest: sha256:c3cae11d209f046bf7c487dcab3d3823bc2d8fde65b9f4e350741a86ff7588df
+      kind: OCI
+      mediaType: application/vnd.cncf.model.manifest.v1+json
+      sizeBytes: 6483639
+      uri: dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/ai-models-e2e/e2e-text-llama-tiny/1c493cb1-000b-44fa-af7f-929175cd1daf@sha256:c3cae11d209f046bf7c487dcab3d3823bc2d8fde65b9f4e350741a86ff7588df
+    conditions:
+    - lastTransitionTime: "2026-04-28T21:17:24Z"
+      message: controller published the model artifact successfully
+      observedGeneration: 1
+      reason: ArtifactPublished
+      status: "True"
+      type: ArtifactResolved
+    - lastTransitionTime: "2026-04-28T21:17:24Z"
+      message: controller resolved partial model metadata and omitted low-confidence
+        fields from public status
+      observedGeneration: 1
+      reason: ModelMetadataPartial
+      status: "True"
+      type: MetadataResolved
+    - lastTransitionTime: "2026-04-28T21:17:24Z"
+      message: model is ready for platform consumption
+      observedGeneration: 1
+      reason: Ready
+      status: "True"
+      type: Ready
+    observedGeneration: 1
+    phase: Ready
+    resolved:
+      architecture: LlamaForCausalLM
+      contextWindowTokens: 2048
+      family: llama
+      format: Safetensors
+      supportedEndpointTypes:
+      - Chat
+      - TextGeneration
+      task: text-generation
+    source:
+      resolvedRevision: 9fb191250dd56d0ba7ec9785a025ed29c03d5998
+      resolvedType: HuggingFace
+kind: List
+metadata:
+  resourceVersion: ""

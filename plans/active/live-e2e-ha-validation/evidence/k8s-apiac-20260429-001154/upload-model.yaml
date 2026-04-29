@@ -1,0 +1,11 @@
+apiVersion: ai.deckhouse.io/v1alpha1
+kind: Model
+metadata:
+  name: e2e-upload-tiny-safetensors
+  namespace: ai-models-e2e
+  labels:
+    ai.deckhouse.io/live-e2e: ha-validation
+    ai.deckhouse.io/e2e-scenario: upload-direct-multipart
+spec:
+  source:
+    upload: {}

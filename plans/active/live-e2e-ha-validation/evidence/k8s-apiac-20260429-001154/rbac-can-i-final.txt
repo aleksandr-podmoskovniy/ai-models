@@ -1,0 +1,22 @@
+user can read namespaced models                      expected=yes actual=yes models
+user can read cluster models                         expected=yes actual=yes clustermodels
+user cannot create models                            expected=no  actual=no  models
+user cannot read secrets                             expected=no  actual=no  secrets
+user cannot pod logs via module role                 expected=no  actual=no  pods/log
+user cannot pod exec via module role                 expected=no  actual=no  pods/exec
+editor can create models                             expected=yes actual=yes models
+editor can delete models                             expected=yes actual=yes models
+editor cannot create cluster models                  expected=no  actual=no  clustermodels
+editor cannot patch model status                     expected=no  actual=no  models/status
+cluster editor can create cluster models             expected=yes actual=yes clustermodels
+cluster editor cannot patch cluster status           expected=no  actual=no  clustermodels/status
+use view can read models                             expected=yes actual=yes models
+use view cannot create models                        expected=no  actual=no  models
+use edit can create models                           expected=yes actual=yes models
+use edit cannot create cluster models                expected=no  actual=no  clustermodels
+manage view can read module config                   expected=yes actual=yes moduleconfigs.deckhouse.io/ai-models
+manage view cannot patch module config               expected=no  actual=no  moduleconfigs.deckhouse.io/ai-models
+manage edit can patch module config                  expected=yes actual=yes moduleconfigs.deckhouse.io/ai-models
+manage edit can create cluster models                expected=yes actual=yes clustermodels
+manage edit cannot patch model status                expected=no  actual=no  models/status
+failures=0

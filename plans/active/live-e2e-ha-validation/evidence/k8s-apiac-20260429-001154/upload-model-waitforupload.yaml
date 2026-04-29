@@ -1,0 +1,44 @@
+apiVersion: ai.deckhouse.io/v1alpha1
+kind: Model
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"ai.deckhouse.io/v1alpha1","kind":"Model","metadata":{"annotations":{},"labels":{"ai.deckhouse.io/e2e-scenario":"upload-direct-multipart","ai.deckhouse.io/live-e2e":"ha-validation"},"name":"e2e-upload-tiny-safetensors","namespace":"ai-models-e2e"},"spec":{"source":{"upload":{}}}}
+  creationTimestamp: "2026-04-28T21:32:15Z"
+  finalizers:
+  - ai.deckhouse.io/model-cleanup
+  generation: 1
+  labels:
+    ai.deckhouse.io/e2e-scenario: upload-direct-multipart
+    ai.deckhouse.io/live-e2e: ha-validation
+  name: e2e-upload-tiny-safetensors
+  namespace: ai-models-e2e
+  resourceVersion: "992902199"
+  uid: 2776b6d8-c7e0-4182-a0af-24dc2d45875a
+spec:
+  source:
+    upload: {}
+status:
+  conditions:
+  - lastTransitionTime: "2026-04-28T21:32:24Z"
+    message: controller prepared an upload session and is waiting for the user upload
+    observedGeneration: 1
+    reason: WaitingForUserUpload
+    status: "False"
+    type: ArtifactResolved
+  - lastTransitionTime: "2026-04-28T21:32:24Z"
+    message: model is waiting for a user upload before publication can continue
+    observedGeneration: 1
+    reason: Pending
+    status: "False"
+    type: Ready
+  observedGeneration: 1
+  phase: WaitForUpload
+  progress: 0%
+  source:
+    resolvedType: Upload
+  upload:
+    expiresAt: "2026-04-28T22:02:15Z"
+    externalURL: https://ai-models.k8s.apiac.ru/v1/upload/ai-model-upload-auth-2776b6d8-c7e0-4182-a0af-24dc2d45875a
+    inClusterURL: http://ai-models-upload-gateway.d8-ai-models.svc:8444/v1/upload/ai-model-upload-auth-2776b6d8-c7e0-4182-a0af-24dc2d45875a
+    repository: dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/ai-models-e2e/e2e-upload-tiny-safetensors/2776b6d8-c7e0-4182-a0af-24dc2d45875a:published

@@ -1,0 +1,52 @@
+PASS  ai-models-e2e/e2e-rbac-user expect=yes got=yes :: get models.ai.deckhouse.io -n ai-models-e2e
+FAIL  ai-models-e2e/e2e-rbac-user expect=yes got=Warning: resource 'clustermodels' is not namespace scoped in group 'ai.deckhouse.io'
+
+yes :: get clustermodels.ai.deckhouse.io
+PASS  ai-models-e2e/e2e-rbac-user expect=no  got=no  :: create models.ai.deckhouse.io -n ai-models-e2e
+PASS  ai-models-e2e/e2e-rbac-user expect=no  got=no  :: get secrets -n ai-models-e2e
+PASS  ai-models-e2e/e2e-rbac-user expect=no  got=no  :: get pods/log -n ai-models-e2e
+PASS  ai-models-e2e/e2e-rbac-user expect=no  got=no  :: create pods/exec -n ai-models-e2e
+PASS  ai-models-e2e/e2e-rbac-user expect=no  got=no  :: patch models.ai.deckhouse.io/status -n ai-models-e2e
+PASS  ai-models-e2e/e2e-rbac-editor expect=yes got=yes :: create models.ai.deckhouse.io -n ai-models-e2e
+PASS  ai-models-e2e/e2e-rbac-editor expect=yes got=yes :: delete models.ai.deckhouse.io -n ai-models-e2e
+FAIL  ai-models-e2e/e2e-rbac-editor expect=no  got=Warning: resource 'clustermodels' is not namespace scoped in group 'ai.deckhouse.io'
+
+no :: create clustermodels.ai.deckhouse.io
+PASS  ai-models-e2e/e2e-rbac-editor expect=no  got=no  :: get secrets -n ai-models-e2e
+FAIL  ai-models-e2e/e2e-rbac-editor expect=no  got=yes :: patch models.ai.deckhouse.io/status -n ai-models-e2e
+PASS  ai-models-e2e/e2e-rbac-cluster-editor expect=yes got=yes :: create models.ai.deckhouse.io -n ai-models-e2e
+FAIL  ai-models-e2e/e2e-rbac-cluster-editor expect=yes got=Warning: resource 'clustermodels' is not namespace scoped in group 'ai.deckhouse.io'
+
+yes :: create clustermodels.ai.deckhouse.io
+PASS  ai-models-e2e/e2e-rbac-cluster-editor expect=no  got=no  :: get secrets -n ai-models-e2e
+FAIL  ai-models-e2e/e2e-rbac-cluster-editor expect=no  got=Warning: resource 'clustermodels' is not namespace scoped in group 'ai.deckhouse.io'
+
+yes :: patch clustermodels.ai.deckhouse.io/status
+PASS  ai-models-e2e/e2e-rbac-use-view expect=yes got=yes :: get models.ai.deckhouse.io -n ai-models-e2e
+FAIL  ai-models-e2e/e2e-rbac-use-view expect=no  got=Warning: resource 'clustermodels' is not namespace scoped in group 'ai.deckhouse.io'
+
+no :: get clustermodels.ai.deckhouse.io
+PASS  ai-models-e2e/e2e-rbac-use-view expect=no  got=no  :: create models.ai.deckhouse.io -n ai-models-e2e
+PASS  ai-models-e2e/e2e-rbac-use-edit expect=yes got=yes :: create models.ai.deckhouse.io -n ai-models-e2e
+FAIL  ai-models-e2e/e2e-rbac-use-edit expect=no  got=Warning: resource 'clustermodels' is not namespace scoped in group 'ai.deckhouse.io'
+
+no :: create clustermodels.ai.deckhouse.io
+PASS  ai-models-e2e/e2e-rbac-use-edit expect=no  got=no  :: get secrets -n ai-models-e2e
+PASS  ai-models-e2e/e2e-rbac-manage-view expect=yes got=yes :: get models.ai.deckhouse.io -n ai-models-e2e
+FAIL  ai-models-e2e/e2e-rbac-manage-view expect=yes got=Warning: resource 'clustermodels' is not namespace scoped in group 'ai.deckhouse.io'
+
+yes :: get clustermodels.ai.deckhouse.io
+FAIL  ai-models-e2e/e2e-rbac-manage-view expect=yes got=error: you must specify two arguments: verb resource or verb resource/resourceName.
+See 'kubectl auth can-i -h' for help and examples. :: get moduleconfigs.deckhouse.io ai-models
+PASS  ai-models-e2e/e2e-rbac-manage-view expect=no  got=no  :: create models.ai.deckhouse.io -n ai-models-e2e
+PASS  ai-models-e2e/e2e-rbac-manage-edit expect=yes got=yes :: create models.ai.deckhouse.io -n ai-models-e2e
+FAIL  ai-models-e2e/e2e-rbac-manage-edit expect=yes got=Warning: resource 'clustermodels' is not namespace scoped in group 'ai.deckhouse.io'
+
+yes :: create clustermodels.ai.deckhouse.io
+FAIL  ai-models-e2e/e2e-rbac-manage-edit expect=yes got=error: you must specify two arguments: verb resource or verb resource/resourceName.
+See 'kubectl auth can-i -h' for help and examples. :: update moduleconfigs.deckhouse.io ai-models
+FAIL  ai-models-e2e/e2e-rbac-manage-edit expect=no  got=yes :: patch models.ai.deckhouse.io/status -n ai-models-e2e
+PASS  ai-models-e2e/e2e-rbac-manage-edit expect=no  got=no  :: get secrets -n ai-models-e2e
+PASS  d8-ai-models/ai-models-controller expect=yes got=yes :: get models.ai.deckhouse.io -n ai-models-e2e
+PASS  d8-ai-models/ai-models-controller expect=yes got=yes :: patch models.ai.deckhouse.io/status -n ai-models-e2e
+PASS  d8-ai-models/dmcr        expect=no  got=no  :: get secrets -n ai-models-e2e

@@ -22,6 +22,7 @@ import (
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
+	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -62,6 +63,16 @@ func TestDeploymentReconcilerAppliesMultipleModelRefs(t *testing.T) {
 	}
 	if !hasInitContainer(updated.Spec.Template.Spec.InitContainers, "ai-models-materializer-embed") {
 		t.Fatalf("expected embed model materializer")
+	}
+	if got, want := len(updated.Spec.Template.Spec.ImagePullSecrets), 1; got != want {
+		t.Fatalf("image pull secret count = %d, want %d", got, want)
+	}
+	runtimeImagePullSecretName, err := resourcenames.RuntimeImagePullSecretName(workload.UID)
+	if err != nil {
+		t.Fatalf("RuntimeImagePullSecretName() error = %v", err)
+	}
+	if got, want := updated.Spec.Template.Spec.ImagePullSecrets[0].Name, runtimeImagePullSecretName; got != want {
+		t.Fatalf("image pull secret name = %q, want %q", got, want)
 	}
 	if got, want := runtimeEnvValue(updated.Spec.Template.Spec.Containers, modeldelivery.ModelPathEnv), nodecache.WorkloadModelAliasPath(modeldelivery.DefaultCacheMountPath, "main"); got != want {
 		t.Fatalf("primary model path env = %q, want %q", got, want)

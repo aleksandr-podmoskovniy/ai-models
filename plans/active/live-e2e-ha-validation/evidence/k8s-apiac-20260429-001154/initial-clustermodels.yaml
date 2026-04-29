@@ -1,0 +1,174 @@
+apiVersion: v1
+items:
+- apiVersion: ai.deckhouse.io/v1alpha1
+  kind: ClusterModel
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"ai.deckhouse.io/v1alpha1","kind":"ClusterModel","metadata":{"annotations":{},"name":"a30-bge-reranker-v2-m3-en-ru"},"spec":{"source":{"url":"https://huggingface.co/qilowoq/bge-reranker-v2-m3-en-ru"}}}
+    creationTimestamp: "2026-04-28T18:59:40Z"
+    finalizers:
+    - ai.deckhouse.io/model-cleanup
+    generation: 1
+    name: a30-bge-reranker-v2-m3-en-ru
+    resourceVersion: "992638877"
+    uid: be8b0a46-a134-4b47-ba22-a216832c29b7
+  spec:
+    source:
+      url: https://huggingface.co/qilowoq/bge-reranker-v2-m3-en-ru
+  status:
+    artifact:
+      digest: sha256:b641da84c1150a67f12af889b959a9460c18006025f15d08e61c3dff966ce0ae
+      kind: OCI
+      mediaType: application/vnd.cncf.model.manifest.v1+json
+      sizeBytes: 1504096651
+      uri: dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/cluster/a30-bge-reranker-v2-m3-en-ru/be8b0a46-a134-4b47-ba22-a216832c29b7@sha256:b641da84c1150a67f12af889b959a9460c18006025f15d08e61c3dff966ce0ae
+    conditions:
+    - lastTransitionTime: "2026-04-28T19:01:30Z"
+      message: controller published the model artifact successfully
+      observedGeneration: 1
+      reason: ArtifactPublished
+      status: "True"
+      type: ArtifactResolved
+    - lastTransitionTime: "2026-04-28T19:01:30Z"
+      message: controller resolved partial model metadata and omitted low-confidence
+        fields from public status
+      observedGeneration: 1
+      reason: ModelMetadataPartial
+      status: "True"
+      type: MetadataResolved
+    - lastTransitionTime: "2026-04-28T19:01:30Z"
+      message: model is ready for platform consumption
+      observedGeneration: 1
+      reason: Ready
+      status: "True"
+      type: Ready
+    observedGeneration: 1
+    phase: Ready
+    resolved:
+      architecture: XLMRobertaForSequenceClassification
+      contextWindowTokens: 8194
+      family: xlm-roberta
+      format: Safetensors
+      supportedEndpointTypes:
+      - Rerank
+      task: text-ranking
+    source:
+      resolvedRevision: 0ca0a6a717ffbe01e25c6e8e33bad7982d938930
+      resolvedType: HuggingFace
+- apiVersion: ai.deckhouse.io/v1alpha1
+  kind: ClusterModel
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"ai.deckhouse.io/v1alpha1","kind":"ClusterModel","metadata":{"annotations":{},"name":"a30-user-bge-m3"},"spec":{"source":{"url":"https://huggingface.co/deepvk/USER-bge-m3"}}}
+    creationTimestamp: "2026-04-28T18:59:40Z"
+    finalizers:
+    - ai.deckhouse.io/model-cleanup
+    generation: 1
+    name: a30-user-bge-m3
+    resourceVersion: "992638867"
+    uid: 24a65de0-4e50-479c-8829-218aeec7d929
+  spec:
+    source:
+      url: https://huggingface.co/deepvk/USER-bge-m3
+  status:
+    artifact:
+      digest: sha256:cf4416ceb7ce9492bf78d262951bad36217070f64d86f9df94bde10fa4d4895a
+      kind: OCI
+      mediaType: application/vnd.cncf.model.manifest.v1+json
+      sizeBytes: 1440534135
+      uri: dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/cluster/a30-user-bge-m3/24a65de0-4e50-479c-8829-218aeec7d929@sha256:cf4416ceb7ce9492bf78d262951bad36217070f64d86f9df94bde10fa4d4895a
+    conditions:
+    - lastTransitionTime: "2026-04-28T19:01:30Z"
+      message: controller published the model artifact successfully
+      observedGeneration: 1
+      reason: ArtifactPublished
+      status: "True"
+      type: ArtifactResolved
+    - lastTransitionTime: "2026-04-28T19:01:30Z"
+      message: controller resolved partial model metadata and omitted low-confidence
+        fields from public status
+      observedGeneration: 1
+      reason: ModelMetadataPartial
+      status: "True"
+      type: MetadataResolved
+    - lastTransitionTime: "2026-04-28T19:01:30Z"
+      message: model is ready for platform consumption
+      observedGeneration: 1
+      reason: Ready
+      status: "True"
+      type: Ready
+    observedGeneration: 1
+    phase: Ready
+    resolved:
+      architecture: XLMRobertaModel
+      contextWindowTokens: 8194
+      family: xlm-roberta
+      format: Safetensors
+      supportedEndpointTypes:
+      - Embeddings
+      task: sentence-similarity
+    source:
+      resolvedRevision: 0cc6cfe48e260fb0474c753087a69369e88709ae
+      resolvedType: HuggingFace
+- apiVersion: ai.deckhouse.io/v1alpha1
+  kind: ClusterModel
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"ai.deckhouse.io/v1alpha1","kind":"ClusterModel","metadata":{"annotations":{},"name":"a30-whisper-medium"},"spec":{"source":{"url":"https://huggingface.co/openai/whisper-medium"}}}
+    creationTimestamp: "2026-04-28T18:59:40Z"
+    finalizers:
+    - ai.deckhouse.io/model-cleanup
+    generation: 1
+    name: a30-whisper-medium
+    resourceVersion: "992641369"
+    uid: 87c86d56-476c-4c2e-8d03-844f37012692
+  spec:
+    source:
+      url: https://huggingface.co/openai/whisper-medium
+  status:
+    artifact:
+      digest: sha256:d44e706c590cab1701e105c55b3eb57b8db3de84d5ded6072ae07916bc936104
+      kind: OCI
+      mediaType: application/vnd.cncf.model.manifest.v1+json
+      sizeBytes: 3059872471
+      uri: dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/cluster/a30-whisper-medium/87c86d56-476c-4c2e-8d03-844f37012692@sha256:d44e706c590cab1701e105c55b3eb57b8db3de84d5ded6072ae07916bc936104
+    conditions:
+    - lastTransitionTime: "2026-04-28T19:02:53Z"
+      message: controller published the model artifact successfully
+      observedGeneration: 1
+      reason: ArtifactPublished
+      status: "True"
+      type: ArtifactResolved
+    - lastTransitionTime: "2026-04-28T19:02:53Z"
+      message: controller resolved partial model metadata and omitted low-confidence
+        fields from public status
+      observedGeneration: 1
+      reason: ModelMetadataPartial
+      status: "True"
+      type: MetadataResolved
+    - lastTransitionTime: "2026-04-28T19:02:53Z"
+      message: model is ready for platform consumption
+      observedGeneration: 1
+      reason: Ready
+      status: "True"
+      type: Ready
+    observedGeneration: 1
+    phase: Ready
+    resolved:
+      architecture: WhisperForConditionalGeneration
+      family: whisper
+      format: Safetensors
+      supportedEndpointTypes:
+      - SpeechToText
+      supportedFeatures:
+      - AudioInput
+      task: automatic-speech-recognition
+    source:
+      resolvedRevision: abdf7c39ab9d0397620ccaea8974cc764cd0953e
+      resolvedType: HuggingFace
+kind: List
+metadata:
+  resourceVersion: ""

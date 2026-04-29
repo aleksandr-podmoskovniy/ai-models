@@ -1,0 +1,130 @@
+apiVersion: v1
+items:
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: ai-models
+      meta.helm.sh/release-namespace: d8-system
+      user-authz.deckhouse.io/access-level: User
+    creationTimestamp: "2026-04-24T11:59:23Z"
+    labels:
+      app.kubernetes.io/managed-by: Helm
+      heritage: deckhouse
+      module: ai-models
+    name: d8:user-authz:ai-models:user
+    resourceVersion: "985622859"
+    uid: 01bcc699-9563-4c2e-a947-090c76b541c0
+  rules:
+  - apiGroups:
+    - ai.deckhouse.io
+    resources:
+    - models
+    - clustermodels
+    verbs:
+    - get
+    - list
+    - watch
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: ai-models
+      meta.helm.sh/release-namespace: d8-system
+      user-authz.deckhouse.io/access-level: PrivilegedUser
+    creationTimestamp: "2026-04-24T11:59:23Z"
+    labels:
+      app.kubernetes.io/managed-by: Helm
+      heritage: deckhouse
+      module: ai-models
+    name: d8:user-authz:ai-models:privileged-user
+    resourceVersion: "987570628"
+    uid: 35b5c49c-4038-4de9-9dcb-bc894abd51f8
+  rules: null
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: ai-models
+      meta.helm.sh/release-namespace: d8-system
+      user-authz.deckhouse.io/access-level: Editor
+    creationTimestamp: "2026-04-24T11:59:23Z"
+    labels:
+      app.kubernetes.io/managed-by: Helm
+      heritage: deckhouse
+      module: ai-models
+    name: d8:user-authz:ai-models:editor
+    resourceVersion: "987570636"
+    uid: 5da7a2d6-787f-49d3-b4f6-3b38f35f5f0f
+  rules:
+  - apiGroups:
+    - ai.deckhouse.io
+    resources:
+    - models
+    verbs:
+    - create
+    - update
+    - patch
+    - delete
+    - deletecollection
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: ai-models
+      meta.helm.sh/release-namespace: d8-system
+      user-authz.deckhouse.io/access-level: Admin
+    creationTimestamp: "2026-04-24T11:59:23Z"
+    labels:
+      app.kubernetes.io/managed-by: Helm
+      heritage: deckhouse
+      module: ai-models
+    name: d8:user-authz:ai-models:admin
+    resourceVersion: "987570643"
+    uid: 049ff947-f33d-4931-8f62-cdcf87dd7f23
+  rules: null
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: ai-models
+      meta.helm.sh/release-namespace: d8-system
+      user-authz.deckhouse.io/access-level: ClusterEditor
+    creationTimestamp: "2026-04-24T11:59:23Z"
+    labels:
+      app.kubernetes.io/managed-by: Helm
+      heritage: deckhouse
+      module: ai-models
+    name: d8:user-authz:ai-models:cluster-editor
+    resourceVersion: "987570647"
+    uid: 7e0fe7e3-5e5d-4e8c-ad95-120fda5c92a2
+  rules:
+  - apiGroups:
+    - ai.deckhouse.io
+    resources:
+    - clustermodels
+    verbs:
+    - create
+    - update
+    - patch
+    - delete
+    - deletecollection
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: ai-models
+      meta.helm.sh/release-namespace: d8-system
+      user-authz.deckhouse.io/access-level: ClusterAdmin
+    creationTimestamp: "2026-04-24T11:59:23Z"
+    labels:
+      app.kubernetes.io/managed-by: Helm
+      heritage: deckhouse
+      module: ai-models
+    name: d8:user-authz:ai-models:cluster-admin
+    resourceVersion: "987570649"
+    uid: 5af266f1-e930-49f3-b18d-f420017a7819
+  rules: null
+kind: List
+metadata:
+  resourceVersion: ""

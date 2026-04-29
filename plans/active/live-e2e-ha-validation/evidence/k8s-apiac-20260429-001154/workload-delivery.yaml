@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: e2e-model-consumer
+  namespace: ai-models-e2e
+  labels:
+    ai.deckhouse.io/live-e2e: ha-validation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: e2e-model-consumer
+  template:
+    metadata:
+      labels:
+        app: e2e-model-consumer
+      annotations:
+        ai.deckhouse.io/model-refs: main=Model/e2e-text-llama-tiny,upload=Model/e2e-upload-tiny-safetensors,vision=ClusterModel/e2e-gemma4-e2b-anytoany
+    spec:
+      containers:
+      - name: app
+        image: busybox:1.36
+        command: ["sh", "-c", "env | sort | grep '^AI_MODELS_' && find /data/modelcache -maxdepth 3 -type f | head -20 && sleep 3600"]
+        volumeMounts:
+        - name: model-cache
+          mountPath: /data/modelcache
+      volumes:
+      - name: model-cache
+        emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: e2e-model-consumer-blocked
+  namespace: ai-models-e2e
+  labels:
+    ai.deckhouse.io/live-e2e: ha-validation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: e2e-model-consumer-blocked
+  template:
+    metadata:
+      labels:
+        app: e2e-model-consumer-blocked
+      annotations:
+        ai.deckhouse.io/model: e2e-text-llama-tiny
+    spec:
+      containers:
+      - name: app
+        image: busybox:1.36
+        command: ["sh", "-c", "sleep 3600"]

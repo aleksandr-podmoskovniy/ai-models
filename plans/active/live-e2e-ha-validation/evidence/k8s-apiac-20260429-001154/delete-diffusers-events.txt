@@ -1,0 +1,5 @@
+29m         Normal    RemoteFetchStarted     model/e2e-diffusers-image-tiny                     controller started remote source fetch for source type HuggingFace
+29m         Normal    PublicationSucceeded   model/e2e-diffusers-image-tiny                     controller published artifact dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/ai-models-e2e/e2e-diffusers-image-tiny/41c2342b-bda9-4789-8291-5729fb694a03@sha256:732c86a94b0425ebd8421f5fb82bec0aec549c51d3510786f8f1baccf0c4f354
+9m20s       Normal    SuccessfulDelete       replicaset/e2e-model-consumer-blocked-5bb85dcdd    Deleted pod: e2e-model-consumer-blocked-5bb85dcdd-47wl5
+9m20s       Normal    SuccessfulDelete       replicaset/e2e-model-consumer-84b6968d7b           Deleted pod: e2e-model-consumer-84b6968d7b-q2r48
+5m10s       Normal    SuccessfulDelete       replicaset/e2e-model-consumer-single-7b94c7ccc9    Deleted pod: e2e-model-consumer-single-7b94c7ccc9-2bstd

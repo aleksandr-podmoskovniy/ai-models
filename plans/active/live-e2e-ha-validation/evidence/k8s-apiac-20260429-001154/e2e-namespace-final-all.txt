@@ -1,0 +1,3 @@
+NAME                                             READY   STATUS        RESTARTS        AGE
+pod/e2e-model-consumer-blocked-fff95bc4c-rrf7r   1/1     Terminating   0               12m
+pod/e2e-model-consumer-single-55cbf9f6f5-thtlg   1/1     Terminating   1 (3m37s ago)   7m19s

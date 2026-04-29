@@ -1,0 +1,5 @@
+NAME                                          READY   STATUS                  RESTARTS   AGE     IP              NODE              NOMINATED NODE   READINESS GATES
+e2e-model-consumer-5cd976f7fd-mnkzl           0/1     Init:ImagePullBackOff   0          4m41s   10.111.10.196   k8s-w2.apiac.ru   <none>           <none>
+e2e-model-consumer-74bf5d55dd-rmf6f           0/1     SchedulingGated         0          4m41s   <none>          <none>            <none>           <none>
+e2e-model-consumer-blocked-64f8b8944d-rb6xh   0/1     SchedulingGated         0          4m41s   <none>          <none>            <none>           <none>
+e2e-model-consumer-blocked-fff95bc4c-rrf7r    1/1     Running                 0          5m52s   10.111.10.25    k8s-w2.apiac.ru   <none>           <none>

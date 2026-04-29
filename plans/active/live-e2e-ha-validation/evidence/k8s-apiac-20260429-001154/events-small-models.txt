@@ -1,0 +1,7 @@
+LAST SEEN   TYPE     REASON                 OBJECT                           MESSAGE
+107s        Normal   RemoteFetchStarted     model/e2e-diffusers-image-tiny   controller started remote source fetch for source type HuggingFace
+107s        Normal   RemoteFetchStarted     model/e2e-gguf-qwen3-q2          controller started remote source fetch for source type HuggingFace
+107s        Normal   RemoteFetchStarted     model/e2e-text-llama-tiny        controller started remote source fetch for source type HuggingFace
+93s         Normal   PublicationSucceeded   model/e2e-text-llama-tiny        controller published artifact dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/ai-models-e2e/e2e-text-llama-tiny/1c493cb1-000b-44fa-af7f-929175cd1daf@sha256:c3cae11d209f046bf7c487dcab3d3823bc2d8fde65b9f4e350741a86ff7588df
+82s         Normal   PublicationSucceeded   model/e2e-diffusers-image-tiny   controller published artifact dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/ai-models-e2e/e2e-diffusers-image-tiny/41c2342b-bda9-4789-8291-5729fb694a03@sha256:732c86a94b0425ebd8421f5fb82bec0aec549c51d3510786f8f1baccf0c4f354
+63s         Normal   PublicationSucceeded   model/e2e-gguf-qwen3-q2          controller published artifact dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/namespaced/ai-models-e2e/e2e-gguf-qwen3-q2/dccb5ab0-da7b-493e-859e-ce151cd37082@sha256:0e9b00e21cafbec613fcadeae9b6695d2083362c8cde14e8529341e074108432

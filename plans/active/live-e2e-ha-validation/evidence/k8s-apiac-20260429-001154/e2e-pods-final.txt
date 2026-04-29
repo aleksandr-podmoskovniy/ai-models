@@ -1,0 +1,6 @@
+NAME                                          READY    RESTARTS   STATUS    NODE
+e2e-model-consumer-5cd976f7fd-mnkzl           false    0          Pending   k8s-w2.apiac.ru
+e2e-model-consumer-74bf5d55dd-rmf6f           <none>   <none>     Pending   <none>
+e2e-model-consumer-blocked-64f8b8944d-rb6xh   <none>   <none>     Pending   <none>
+e2e-model-consumer-blocked-fff95bc4c-rrf7r    true     0          Running   k8s-w2.apiac.ru
+e2e-model-consumer-single-55cbf9f6f5-thtlg    true     1          Running   k8s-w2.apiac.ru

@@ -1,0 +1,12 @@
+upload flow start
+file_size=2427305
+info_http=200
+probe_http=200
+probe_resolved_input_format=
+init_http=201
+parts_http=200
+put_http=200
+put_etag_present=yes
+complete_http=409
+upload session is already closed
+

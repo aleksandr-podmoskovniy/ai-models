@@ -1,0 +1,35 @@
+apiVersion: ai.deckhouse.io/v1alpha1
+kind: Model
+metadata:
+  name: e2e-text-llama-tiny
+  namespace: ai-models-e2e
+  labels:
+    ai.deckhouse.io/live-e2e: ha-validation
+    ai.deckhouse.io/e2e-scenario: hf-direct-safetensors
+spec:
+  source:
+    url: https://huggingface.co/hf-internal-testing/tiny-random-LlamaForCausalLM
+---
+apiVersion: ai.deckhouse.io/v1alpha1
+kind: Model
+metadata:
+  name: e2e-gguf-qwen3-q2
+  namespace: ai-models-e2e
+  labels:
+    ai.deckhouse.io/live-e2e: ha-validation
+    ai.deckhouse.io/e2e-scenario: hf-direct-gguf
+spec:
+  source:
+    url: https://huggingface.co/jnjj/Qwen3-0.6B-Q2_K-GGUF
+---
+apiVersion: ai.deckhouse.io/v1alpha1
+kind: Model
+metadata:
+  name: e2e-diffusers-image-tiny
+  namespace: ai-models-e2e
+  labels:
+    ai.deckhouse.io/live-e2e: ha-validation
+    ai.deckhouse.io/e2e-scenario: hf-direct-diffusers
+spec:
+  source:
+    url: https://huggingface.co/hf-internal-testing/tiny-stable-diffusion-pipe

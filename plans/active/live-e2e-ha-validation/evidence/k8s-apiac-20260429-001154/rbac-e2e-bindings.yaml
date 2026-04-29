@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: e2e-rbac-user
+  namespace: ai-models-e2e
+  labels: {ai.deckhouse.io/live-e2e: ha-validation}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: e2e-rbac-editor
+  namespace: ai-models-e2e
+  labels: {ai.deckhouse.io/live-e2e: ha-validation}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: e2e-rbac-cluster-editor
+  namespace: ai-models-e2e
+  labels: {ai.deckhouse.io/live-e2e: ha-validation}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: e2e-rbac-use-view
+  namespace: ai-models-e2e
+  labels: {ai.deckhouse.io/live-e2e: ha-validation}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: e2e-rbac-use-edit
+  namespace: ai-models-e2e
+  labels: {ai.deckhouse.io/live-e2e: ha-validation}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: e2e-rbac-manage-view
+  namespace: ai-models-e2e
+  labels: {ai.deckhouse.io/live-e2e: ha-validation}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: e2e-rbac-manage-edit
+  namespace: ai-models-e2e
+  labels: {ai.deckhouse.io/live-e2e: ha-validation}

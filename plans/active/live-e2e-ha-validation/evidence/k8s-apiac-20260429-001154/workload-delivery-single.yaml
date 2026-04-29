@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: e2e-model-consumer-single
+  namespace: ai-models-e2e
+  labels:
+    ai.deckhouse.io/live-e2e: ha-validation
+  annotations:
+    ai.deckhouse.io/model: e2e-text-llama-tiny
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: e2e-model-consumer-single
+  template:
+    metadata:
+      labels:
+        app: e2e-model-consumer-single
+    spec:
+      containers:
+      - name: app
+        image: busybox:1.36
+        command: ["sh", "-c", "env | sort | grep '^AI_MODELS_' && test -e /data/modelcache/model && sleep 3600"]
+        volumeMounts:
+        - name: model-cache
+          mountPath: /data/modelcache
+      volumes:
+      - name: model-cache
+        emptyDir: {}

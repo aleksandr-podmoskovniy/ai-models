@@ -1,0 +1,78 @@
+apiVersion: deckhouse.io/v1alpha1
+kind: Module
+metadata:
+  annotations:
+    en.meta.deckhouse.io/description: DKP module for AI/ML model registry and catalog
+      services.
+    ru.meta.deckhouse.io/description: Модуль DKP для реестра и каталога AI/ML-моделей.
+  creationTimestamp: "2026-03-29T18:13:09Z"
+  generation: 23
+  labels:
+    module.deckhouse.io/ai: ""
+    module.deckhouse.io/ml: ""
+    module.deckhouse.io/models: ""
+  name: ai-models
+  resourceVersion: "992866005"
+  uid: 082aac44-1a6d-4dfe-a805-93159a566d8e
+properties:
+  accessibility:
+    editions:
+      _default:
+        available: false
+      ee:
+        available: true
+      fe:
+        available: true
+  availableSources:
+  - aleksandr-podmoskovniy-ghcr
+  disableOptions:
+    confirmation: true
+    message: |
+      Attention!
+
+      Disabling this module will stop ai-models services, including the internal
+      DMCR publication backend, controller-owned publication/runtime delivery,
+      and the artifact storage integration used by the AI/ML model catalog.
+  namespace: d8-ai-models
+  releaseChannel: Alpha
+  requirements:
+    deckhouse: '>= 1.74.0'
+    kubernetes: '>= 1.30'
+  source: aleksandr-podmoskovniy-ghcr
+  stage: Preview
+  subsystems:
+  - infrastructure
+  - ml
+  updatePolicy: ai-playground
+  version: main
+  weight: 900
+status:
+  conditions:
+  - lastProbeTime: "2026-04-28T21:12:04Z"
+    lastTransitionTime: "2026-04-28T21:04:58Z"
+    status: "True"
+    type: EnabledByModuleManager
+  - lastProbeTime: "2026-04-28T21:12:04Z"
+    lastTransitionTime: "2026-04-28T21:06:11Z"
+    status: "True"
+    type: IsReady
+  - lastProbeTime: "2026-04-18T12:24:42Z"
+    lastTransitionTime: "2026-04-18T12:24:42Z"
+    status: "True"
+    type: EnabledByModuleConfig
+  - lastProbeTime: "2026-04-28T21:04:54Z"
+    lastTransitionTime: "2026-04-18T12:25:20Z"
+    status: "True"
+    type: LastReleaseDeployed
+  - lastProbeTime: "2026-04-28T21:12:11Z"
+    lastTransitionTime: "2026-04-23T06:41:33Z"
+    status: "True"
+    type: IsOverridden
+  hooksState: |-
+    hooks/go/ai-models-module-hooks:pkg/hooks/copy_custom_certificate/main:0: ok
+    hooks/go/ai-models-module-hooks:pkg/hooks/discover_dex_ca/main:1: ok
+    hooks/go/ai-models-module-hooks:pkg/hooks/sync_artifacts_secrets/main:4: ok
+    hooks/go/ai-models-module-hooks:pkg/hooks/tls_certificates_controller/main:5: ok
+    hooks/go/ai-models-module-hooks:pkg/hooks/tls_certificates_dmcr/main:6: ok
+    hooks/go/ai-models-module-hooks:pkg/hooks/tls_secret_type_migration/main:7: ok
+  phase: Ready

@@ -1,0 +1,136 @@
+apiVersion: v1
+items:
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: ai-models
+      meta.helm.sh/release-namespace: d8-system
+    creationTimestamp: "2026-04-24T11:59:23Z"
+    labels:
+      app.kubernetes.io/managed-by: Helm
+      heritage: deckhouse
+      module: ai-models
+      rbac.deckhouse.io/aggregate-to-kubernetes-as: viewer
+      rbac.deckhouse.io/kind: use
+    name: d8:use:capability:module:ai-models:view
+    resourceVersion: "987570621"
+    uid: a46476f0-4c78-4d16-944f-d3e816245fdc
+  rules:
+  - apiGroups:
+    - ai.deckhouse.io
+    resources:
+    - models
+    verbs:
+    - get
+    - list
+    - watch
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: ai-models
+      meta.helm.sh/release-namespace: d8-system
+    creationTimestamp: "2026-04-24T11:59:23Z"
+    labels:
+      app.kubernetes.io/managed-by: Helm
+      heritage: deckhouse
+      module: ai-models
+      rbac.deckhouse.io/aggregate-to-kubernetes-as: manager
+      rbac.deckhouse.io/kind: use
+    name: d8:use:capability:module:ai-models:edit
+    resourceVersion: "987570619"
+    uid: 0a036328-19f6-4aa6-8730-3b0a98cd5538
+  rules:
+  - apiGroups:
+    - ai.deckhouse.io
+    resources:
+    - models
+    verbs:
+    - create
+    - update
+    - patch
+    - delete
+    - deletecollection
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: ai-models
+      meta.helm.sh/release-namespace: d8-system
+    creationTimestamp: "2026-04-24T11:59:23Z"
+    labels:
+      app.kubernetes.io/managed-by: Helm
+      heritage: deckhouse
+      module: ai-models
+      rbac.deckhouse.io/aggregate-to-kubernetes-as: viewer
+      rbac.deckhouse.io/kind: manage
+      rbac.deckhouse.io/level: module
+      rbac.deckhouse.io/namespace: d8-ai-models
+    name: d8:manage:permission:module:ai-models:view
+    resourceVersion: "985622841"
+    uid: e9c22b84-346f-4e42-b2ea-d20a6331b904
+  rules:
+  - apiGroups:
+    - ai.deckhouse.io
+    resources:
+    - models
+    - clustermodels
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - deckhouse.io
+    resourceNames:
+    - ai-models
+    resources:
+    - moduleconfigs
+    verbs:
+    - get
+    - list
+    - watch
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    annotations:
+      meta.helm.sh/release-name: ai-models
+      meta.helm.sh/release-namespace: d8-system
+    creationTimestamp: "2026-04-24T11:59:23Z"
+    labels:
+      app.kubernetes.io/managed-by: Helm
+      heritage: deckhouse
+      module: ai-models
+      rbac.deckhouse.io/aggregate-to-kubernetes-as: manager
+      rbac.deckhouse.io/kind: manage
+      rbac.deckhouse.io/level: module
+      rbac.deckhouse.io/namespace: d8-ai-models
+    name: d8:manage:permission:module:ai-models:edit
+    resourceVersion: "987570617"
+    uid: 0dd71e24-7ba0-4583-a8d3-671d0d6aad2f
+  rules:
+  - apiGroups:
+    - ai.deckhouse.io
+    resources:
+    - models
+    - clustermodels
+    verbs:
+    - create
+    - update
+    - patch
+    - delete
+    - deletecollection
+  - apiGroups:
+    - deckhouse.io
+    resourceNames:
+    - ai-models
+    resources:
+    - moduleconfigs
+    verbs:
+    - create
+    - update
+    - patch
+    - delete
+kind: List
+metadata:
+  resourceVersion: ""

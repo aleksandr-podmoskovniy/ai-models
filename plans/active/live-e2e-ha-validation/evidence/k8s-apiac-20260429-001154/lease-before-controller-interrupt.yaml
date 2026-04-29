@@ -1,0 +1,14 @@
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  creationTimestamp: "2026-04-18T13:16:07Z"
+  name: ai-models-controller.deckhouse.io
+  namespace: d8-ai-models
+  resourceVersion: "992880150"
+  uid: f44b5b7a-da09-4c32-a76b-fd46a030e353
+spec:
+  acquireTime: "2026-04-28T21:06:30.823199Z"
+  holderIdentity: ai-models-controller-5cd6d99fc7-cxrw4_719d047b-8b49-4a9e-a140-51cb1d041603
+  leaseDurationSeconds: 15
+  leaseTransitions: 175
+  renewTime: "2026-04-28T21:20:15.470855Z"

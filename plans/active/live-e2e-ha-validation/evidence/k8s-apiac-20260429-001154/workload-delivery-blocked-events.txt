@@ -1,0 +1,6 @@
+LAST SEEN   TYPE      REASON                 OBJECT                                  MESSAGE
+5m46s       Normal    ScalingReplicaSet      deployment/e2e-model-consumer-blocked   Scaled up replica set e2e-model-consumer-blocked-fff95bc4c from 0 to 1
+4m35s       Normal    ScalingReplicaSet      deployment/e2e-model-consumer-blocked   Scaled up replica set e2e-model-consumer-blocked-5bb85dcdd from 0 to 1
+4m35s       Warning   ModelDeliveryBlocked   deployment/e2e-model-consumer-blocked   runtime delivery annotated workload must mount writable model cache at "/data/modelcache"
+4m35s       Normal    ScalingReplicaSet      deployment/e2e-model-consumer-blocked   Scaled down replica set e2e-model-consumer-blocked-5bb85dcdd from 1 to 0
+4m35s       Normal    ScalingReplicaSet      deployment/e2e-model-consumer-blocked   Scaled up replica set e2e-model-consumer-blocked-64f8b8944d from 0 to 1

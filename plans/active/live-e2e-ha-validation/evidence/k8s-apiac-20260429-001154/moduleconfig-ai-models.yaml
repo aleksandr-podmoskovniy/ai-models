@@ -1,0 +1,32 @@
+apiVersion: deckhouse.io/v1alpha1
+kind: ModuleConfig
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"deckhouse.io/v1alpha1","kind":"ModuleConfig","metadata":{"annotations":{},"name":"ai-models"},"spec":{"enabled":true,"settings":{"artifacts":{"bucket":"k8s-mn-1-bucket","credentialsSecretName":"ai-models-artifacts","endpoint":"https://s3.api.apiac.ru","insecure":false,"region":"rzn-pug","usePathStyle":true},"postgresql":{"mode":"Managed"}},"source":"aleksandr-podmoskovniy-ghcr","updatePolicy":"ai-playground","version":1}}
+  creationTimestamp: "2026-04-11T16:59:41Z"
+  finalizers:
+  - modules.deckhouse.io/module-registered
+  generation: 7
+  labels:
+    k8slens-edit-resource-version: v1alpha1
+  name: ai-models
+  resourceVersion: "974511774"
+  uid: 8693bdb8-5102-4eb3-bd39-1fa9cc87b08a
+spec:
+  enabled: true
+  settings:
+    artifacts:
+      bucket: k8s-mn-1-bucket
+      credentialsSecretName: ai-models-artifacts
+      endpoint: https://s3.api.apiac.ru
+      insecure: false
+      region: rzn-pug
+      usePathStyle: true
+    logLevel: Info
+  source: aleksandr-podmoskovniy-ghcr
+  updatePolicy: ai-playground
+  version: 1
+status:
+  message: ""
+  version: "1"

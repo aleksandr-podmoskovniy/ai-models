@@ -1,0 +1,40 @@
+apiVersion: ai.deckhouse.io/v1alpha1
+kind: ClusterModel
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"ai.deckhouse.io/v1alpha1","kind":"ClusterModel","metadata":{"annotations":{},"labels":{"ai.deckhouse.io/e2e-scenario":"hf-direct-gemma4-anytoany-ha","ai.deckhouse.io/live-e2e":"ha-validation"},"name":"e2e-gemma4-e2b-anytoany"},"spec":{"source":{"url":"https://huggingface.co/google/gemma-4-E2B-it"}}}
+  creationTimestamp: "2026-04-28T21:19:46Z"
+  finalizers:
+  - ai.deckhouse.io/model-cleanup
+  generation: 1
+  labels:
+    ai.deckhouse.io/e2e-scenario: hf-direct-gemma4-anytoany-ha
+    ai.deckhouse.io/live-e2e: ha-validation
+  name: e2e-gemma4-e2b-anytoany
+  resourceVersion: "992882623"
+  uid: 07a5b198-6095-4e26-a987-9f84aee0b73d
+spec:
+  source:
+    url: https://huggingface.co/google/gemma-4-E2B-it
+status:
+  conditions:
+  - lastTransitionTime: "2026-04-28T21:21:34Z"
+    message: 'controller is publishing the model artifact: 1442871296/10278822264
+      bytes uploaded into the internal registry'
+    observedGeneration: 1
+    reason: Publishing
+    status: "False"
+    type: ArtifactResolved
+  - lastTransitionTime: "2026-04-28T21:21:34Z"
+    message: 'controller is publishing the model artifact: 1442871296/10278822264
+      bytes uploaded into the internal registry'
+    observedGeneration: 1
+    reason: Publishing
+    status: "False"
+    type: Ready
+  observedGeneration: 1
+  phase: Publishing
+  progress: 14%
+  source:
+    resolvedType: HuggingFace

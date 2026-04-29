@@ -1,0 +1,14 @@
+NAME                                                    READY   STATUS      RESTARTS   AGE     IP              NODE              NOMINATED NODE   READINESS GATES
+ai-model-publish-07a5b198-6095-4e26-a987-9f84aee0b73d   0/1     Completed   0          9m4s    10.111.10.221   k8s-w2.apiac.ru   <none>           <none>
+ai-model-publish-1c493cb1-000b-44fa-af7f-929175cd1daf   0/1     Completed   0          13m     10.111.10.106   k8s-w2.apiac.ru   <none>           <none>
+ai-model-publish-24a65de0-4e50-479c-8829-218aeec7d929   0/1     Completed   0          150m    10.111.6.155    k8s-w6.apiac.ru   <none>           <none>
+ai-model-publish-41c2342b-bda9-4789-8291-5729fb694a03   0/1     Completed   0          13m     10.111.6.242    k8s-w6.apiac.ru   <none>           <none>
+ai-model-publish-87c86d56-476c-4c2e-8d03-844f37012692   0/1     Completed   0          150m    10.111.7.153    k8s-w1.apiac.ru   <none>           <none>
+ai-model-publish-be8b0a46-a134-4b47-ba22-a216832c29b7   0/1     Completed   0          150m    10.111.10.84    k8s-w2.apiac.ru   <none>           <none>
+ai-model-publish-dccb5ab0-da7b-493e-859e-ce151cd37082   0/1     Completed   0          13m     10.111.1.227    k8s-w4.apiac.ru   <none>           <none>
+ai-models-controller-5cd6d99fc7-c9wsr                   2/2     Running     0          10m     10.111.1.220    k8s-w4.apiac.ru   <none>           <none>
+ai-models-controller-5cd6d99fc7-z86cp                   2/2     Running     0          23m     10.111.10.94    k8s-w2.apiac.ru   <none>           <none>
+ai-models-upload-gateway-6fd55d498b-2pmf2               1/1     Running     0          23m     10.111.1.135    k8s-w4.apiac.ru   <none>           <none>
+ai-models-upload-gateway-6fd55d498b-rghhz               1/1     Running     0          24m     10.111.6.19     k8s-w6.apiac.ru   <none>           <none>
+dmcr-77b5cbc6fd-f48fb                                   4/4     Running     0          24m     10.111.6.158    k8s-w6.apiac.ru   <none>           <none>
+dmcr-77b5cbc6fd-jjtvw                                   4/4     Running     0          9m35s   10.111.1.66     k8s-w4.apiac.ru   <none>           <none>

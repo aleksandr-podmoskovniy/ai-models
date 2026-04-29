@@ -1,0 +1,2 @@
+NAME                      PHASE   PROGRESS   SOURCE        ARTIFACTURI                                                                                                                                                                                          AGE
+e2e-gemma4-e2b-anytoany   Ready              HuggingFace   dmcr.d8-ai-models.svc.cluster.local/ai-models/catalog/cluster/e2e-gemma4-e2b-anytoany/07a5b198-6095-4e26-a987-9f84aee0b73d@sha256:37b0261703b822958fd86ff49a6634699e81a6f4006dd2f902232cb5629fc16a   28m

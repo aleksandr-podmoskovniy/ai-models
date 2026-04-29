@@ -1,0 +1,10 @@
+apiVersion: ai.deckhouse.io/v1alpha1
+kind: ClusterModel
+metadata:
+  name: e2e-gemma4-e2b-anytoany
+  labels:
+    ai.deckhouse.io/live-e2e: ha-validation
+    ai.deckhouse.io/e2e-scenario: hf-direct-gemma4-anytoany-ha
+spec:
+  source:
+    url: https://huggingface.co/google/gemma-4-E2B-it

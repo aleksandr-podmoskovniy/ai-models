@@ -1,0 +1,122 @@
+[
+  {
+    "name": "dmcr-gc-07a5b198-6095-4e26-a987-9f84aee0b73d",
+    "phase": "done",
+    "result": {
+      "completedAt": "2026-04-28T21:50:06.530137401Z",
+      "requestNames": [
+        "dmcr-gc-07a5b198-6095-4e26-a987-9f84aee0b73d",
+        "dmcr-gc-1c493cb1-000b-44fa-af7f-929175cd1daf",
+        "dmcr-gc-2776b6d8-c7e0-4182-a0af-24dc2d45875a",
+        "dmcr-gc-41c2342b-bda9-4789-8291-5729fb694a03",
+        "dmcr-gc-dccb5ab0-da7b-493e-859e-ce151cd37082",
+        "dmcr-gc-scheduled"
+      ],
+      "staleRepositoryPrefixCount": 0,
+      "staleRawPrefixCount": 0,
+      "staleDirectUploadPrefixCount": 0,
+      "openDirectUploadMultipartUploadCount": 0,
+      "openDirectUploadMultipartPartCount": 0,
+      "staleDirectUploadMultipartUploadCount": 0,
+      "deletedRegistryBlobCount": 22,
+      "registryOutputLineCount": 61,
+      "registryOutputSHA256": "e9efb3e57051ee8176b90fe3380ba8fa91825b5096819e06e392f85e446410d9"
+    }
+  },
+  {
+    "name": "dmcr-gc-1c493cb1-000b-44fa-af7f-929175cd1daf",
+    "phase": "done",
+    "result": {
+      "completedAt": "2026-04-28T21:50:06.530137401Z",
+      "requestNames": [
+        "dmcr-gc-07a5b198-6095-4e26-a987-9f84aee0b73d",
+        "dmcr-gc-1c493cb1-000b-44fa-af7f-929175cd1daf",
+        "dmcr-gc-2776b6d8-c7e0-4182-a0af-24dc2d45875a",
+        "dmcr-gc-41c2342b-bda9-4789-8291-5729fb694a03",
+        "dmcr-gc-dccb5ab0-da7b-493e-859e-ce151cd37082",
+        "dmcr-gc-scheduled"
+      ],
+      "staleRepositoryPrefixCount": 0,
+      "staleRawPrefixCount": 0,
+      "staleDirectUploadPrefixCount": 0,
+      "openDirectUploadMultipartUploadCount": 0,
+      "openDirectUploadMultipartPartCount": 0,
+      "staleDirectUploadMultipartUploadCount": 0,
+      "deletedRegistryBlobCount": 22,
+      "registryOutputLineCount": 61,
+      "registryOutputSHA256": "e9efb3e57051ee8176b90fe3380ba8fa91825b5096819e06e392f85e446410d9"
+    }
+  },
+  {
+    "name": "dmcr-gc-2776b6d8-c7e0-4182-a0af-24dc2d45875a",
+    "phase": "done",
+    "result": {
+      "completedAt": "2026-04-28T21:50:06.530137401Z",
+      "requestNames": [
+        "dmcr-gc-07a5b198-6095-4e26-a987-9f84aee0b73d",
+        "dmcr-gc-1c493cb1-000b-44fa-af7f-929175cd1daf",
+        "dmcr-gc-2776b6d8-c7e0-4182-a0af-24dc2d45875a",
+        "dmcr-gc-41c2342b-bda9-4789-8291-5729fb694a03",
+        "dmcr-gc-dccb5ab0-da7b-493e-859e-ce151cd37082",
+        "dmcr-gc-scheduled"
+      ],
+      "staleRepositoryPrefixCount": 0,
+      "staleRawPrefixCount": 0,
+      "staleDirectUploadPrefixCount": 0,
+      "openDirectUploadMultipartUploadCount": 0,
+      "openDirectUploadMultipartPartCount": 0,
+      "staleDirectUploadMultipartUploadCount": 0,
+      "deletedRegistryBlobCount": 22,
+      "registryOutputLineCount": 61,
+      "registryOutputSHA256": "e9efb3e57051ee8176b90fe3380ba8fa91825b5096819e06e392f85e446410d9"
+    }
+  },
+  {
+    "name": "dmcr-gc-41c2342b-bda9-4789-8291-5729fb694a03",
+    "phase": "done",
+    "result": {
+      "completedAt": "2026-04-28T21:50:06.530137401Z",
+      "requestNames": [
+        "dmcr-gc-07a5b198-6095-4e26-a987-9f84aee0b73d",
+        "dmcr-gc-1c493cb1-000b-44fa-af7f-929175cd1daf",
+        "dmcr-gc-2776b6d8-c7e0-4182-a0af-24dc2d45875a",
+        "dmcr-gc-41c2342b-bda9-4789-8291-5729fb694a03",
+        "dmcr-gc-dccb5ab0-da7b-493e-859e-ce151cd37082",
+        "dmcr-gc-scheduled"
+      ],
+      "staleRepositoryPrefixCount": 0,
+      "staleRawPrefixCount": 0,
+      "staleDirectUploadPrefixCount": 0,
+      "openDirectUploadMultipartUploadCount": 0,
+      "openDirectUploadMultipartPartCount": 0,
+      "staleDirectUploadMultipartUploadCount": 0,
+      "deletedRegistryBlobCount": 22,
+      "registryOutputLineCount": 61,
+      "registryOutputSHA256": "e9efb3e57051ee8176b90fe3380ba8fa91825b5096819e06e392f85e446410d9"
+    }
+  },
+  {
+    "name": "dmcr-gc-dccb5ab0-da7b-493e-859e-ce151cd37082",
+    "phase": "done",
+    "result": {
+      "completedAt": "2026-04-28T21:50:06.530137401Z",
+      "requestNames": [
+        "dmcr-gc-07a5b198-6095-4e26-a987-9f84aee0b73d",
+        "dmcr-gc-1c493cb1-000b-44fa-af7f-929175cd1daf",
+        "dmcr-gc-2776b6d8-c7e0-4182-a0af-24dc2d45875a",
+        "dmcr-gc-41c2342b-bda9-4789-8291-5729fb694a03",
+        "dmcr-gc-dccb5ab0-da7b-493e-859e-ce151cd37082",
+        "dmcr-gc-scheduled"
+      ],
+      "staleRepositoryPrefixCount": 0,
+      "staleRawPrefixCount": 0,
+      "staleDirectUploadPrefixCount": 0,
+      "openDirectUploadMultipartUploadCount": 0,
+      "openDirectUploadMultipartPartCount": 0,
+      "staleDirectUploadMultipartUploadCount": 0,
+      "deletedRegistryBlobCount": 22,
+      "registryOutputLineCount": 61,
+      "registryOutputSHA256": "e9efb3e57051ee8176b90fe3380ba8fa91825b5096819e06e392f85e446410d9"
+    }
+  }
+]
