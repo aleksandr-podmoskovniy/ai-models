@@ -224,7 +224,10 @@ spec:
                     properties:
                       features:
                         items:
+                          maxLength: 128
+                          minLength: 1
                           type: string
+                        maxItems: 32
                         type: array
                         x-kubernetes-list-type: set
                       provider:
@@ -235,7 +238,10 @@ spec:
                         type: string
                       tasks:
                         items:
+                          maxLength: 128
+                          minLength: 1
                           type: string
+                        maxItems: 32
                         type: array
                         x-kubernetes-list-type: set
                     type: object
@@ -258,6 +264,7 @@ spec:
                       - VideoGeneration
                       - AudioGeneration
                       type: string
+                    maxItems: 16
                     type: array
                     x-kubernetes-list-type: set
                   supportedFeatures:
@@ -272,6 +279,7 @@ spec:
                       - MultiModalInput
                       - ToolCalling
                       type: string
+                    maxItems: 16
                     type: array
                     x-kubernetes-list-type: set
                 type: object

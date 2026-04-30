@@ -17,18 +17,12 @@ limitations under the License.
 package oci
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/klauspost/compress/zstd"
 
 	"github.com/deckhouse/ai-models/controller/internal/support/archiveio"
 )
@@ -41,6 +35,8 @@ const (
 	chunkIndexSchemaVersion = "modelpack.chunked.v1"
 	chunkCompressionNone    = "none"
 	chunkCompressionZstd    = "zstd"
+	maxChunkPayloadBytes    = 512 * 1024 * 1024
+	maxInt64                = int64(1<<63 - 1)
 )
 
 type modelPackLayerSet struct {
@@ -194,6 +190,9 @@ func validateChunkIndex(index chunkIndex, manifestPacks map[string]chunkLayerDes
 	if index.ChunkSizeBytes <= 0 {
 		return errors.New("chunk index chunkSizeBytes must be positive")
 	}
+	if index.ChunkSizeBytes > maxChunkPayloadBytes {
+		return fmt.Errorf("chunk index chunkSizeBytes must not exceed %d", maxChunkPayloadBytes)
+	}
 	packsByID, err := validateChunkIndexPacks(index.Packs, manifestPacks)
 	if err != nil {
 		return err
@@ -293,6 +292,9 @@ func validateChunkIndexFile(file chunkIndexFile, packsByID map[string]chunkIndex
 		if err := validateChunkIndexChunk(file.Path, chunk, packsByID); err != nil {
 			return err
 		}
+		if expectedOffset > maxInt64-chunk.UncompressedSizeBytes {
+			return fmt.Errorf("chunk index file %q chunks exceed int64 size limit", file.Path)
+		}
 		expectedOffset += chunk.UncompressedSizeBytes
 	}
 	if expectedOffset != file.SizeBytes {
@@ -305,8 +307,14 @@ func validateChunkIndexChunk(filePath string, chunk chunkIndexChunk, packsByID m
 	if chunk.UncompressedSizeBytes <= 0 {
 		return fmt.Errorf("chunk index file %q chunk %d uncompressedSizeBytes must be positive", filePath, chunk.Index)
 	}
+	if chunk.UncompressedSizeBytes > maxChunkPayloadBytes {
+		return fmt.Errorf("chunk index file %q chunk %d uncompressedSizeBytes must not exceed %d", filePath, chunk.Index, maxChunkPayloadBytes)
+	}
 	if chunk.StoredSizeBytes <= 0 {
 		return fmt.Errorf("chunk index file %q chunk %d storedSizeBytes must be positive", filePath, chunk.Index)
+	}
+	if chunk.StoredSizeBytes > maxChunkPayloadBytes {
+		return fmt.Errorf("chunk index file %q chunk %d storedSizeBytes must not exceed %d", filePath, chunk.Index, maxChunkPayloadBytes)
 	}
 	if strings.TrimSpace(chunk.StoredDigest) == "" {
 		return fmt.Errorf("chunk index file %q chunk %d storedDigest must not be empty", filePath, chunk.Index)
@@ -323,6 +331,12 @@ func validateChunkIndexChunk(filePath string, chunk chunkIndexChunk, packsByID m
 	if chunk.PackOffset < 0 || chunk.PackLength <= 0 {
 		return fmt.Errorf("chunk index file %q chunk %d pack range must be positive", filePath, chunk.Index)
 	}
+	if chunk.PackLength > maxChunkPayloadBytes {
+		return fmt.Errorf("chunk index file %q chunk %d packLength must not exceed %d", filePath, chunk.Index, maxChunkPayloadBytes)
+	}
+	if chunk.PackOffset > maxInt64-chunk.PackLength {
+		return fmt.Errorf("chunk index file %q chunk %d pack range overflows int64", filePath, chunk.Index)
+	}
 	if chunk.PackOffset+chunk.PackLength > pack.SizeBytes {
 		return fmt.Errorf("chunk index file %q chunk %d pack range exceeds pack size", filePath, chunk.Index)
 	}
@@ -330,49 +344,4 @@ func validateChunkIndexChunk(filePath string, chunk chunkIndexChunk, packsByID m
 		return fmt.Errorf("chunk index file %q chunk %d storedSizeBytes must match packLength", filePath, chunk.Index)
 	}
 	return nil
-}
-
-func sha256DigestBytes(payload []byte) string {
-	sum := sha256.Sum256(payload)
-	return "sha256:" + hex.EncodeToString(sum[:])
-}
-
-func verifyChunkDigest(payload []byte, digest string) error {
-	if got := sha256DigestBytes(payload); got != strings.TrimSpace(digest) {
-		return fmt.Errorf("chunk digest mismatch: expected %q, got %q", strings.TrimSpace(digest), got)
-	}
-	return nil
-}
-
-func verifyFileDigest(path, digest string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return err
-	}
-	got := "sha256:" + hex.EncodeToString(hasher.Sum(nil))
-	if got != strings.TrimSpace(digest) {
-		return fmt.Errorf("materialized file digest mismatch for %q: expected %q, got %q", path, strings.TrimSpace(digest), got)
-	}
-	return nil
-}
-
-func decodeStoredChunk(payload []byte, compression string) ([]byte, error) {
-	switch strings.TrimSpace(compression) {
-	case "", chunkCompressionNone:
-		return payload, nil
-	case chunkCompressionZstd:
-		decoder, err := zstd.NewReader(nil)
-		if err != nil {
-			return nil, err
-		}
-		defer decoder.Close()
-		return decoder.DecodeAll(payload, nil)
-	default:
-		return nil, fmt.Errorf("unsupported chunk compression %q", compression)
-	}
 }

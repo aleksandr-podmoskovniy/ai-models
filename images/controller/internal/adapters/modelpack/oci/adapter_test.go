@@ -37,6 +37,7 @@ type modelPackServerOptions struct {
 	configBody   []byte
 	blobBodies   map[string][]byte
 	blobHooks    map[string]func()
+	blobHandlers map[string]func(http.ResponseWriter, *http.Request, []byte) bool
 }
 
 func newModelPackTestServer(t *testing.T, options modelPackServerOptions) (*httptest.Server, modelpackports.RegistryAuth, string) {
@@ -76,6 +77,9 @@ func newModelPackTestServer(t *testing.T, options modelPackServerOptions) (*http
 			user, pass, ok := r.BasicAuth()
 			if !ok || user != "writer" || pass != "secret" {
 				t.Fatalf("unexpected auth %q/%q", user, pass)
+			}
+			if handler := options.blobHandlers[digest]; handler != nil && handler(w, r, payload) {
+				return
 			}
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(payload)

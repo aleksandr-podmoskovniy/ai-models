@@ -57,11 +57,11 @@ func (r *baseReconciler) keepManagedDeliveryStopped(
 ) (bool, error) {
 	removeManagedTemplateState(template, r.options.Service)
 	if reason == "" {
-		clearDeliveryBlockedState(template)
+		clearDeliveryBlockedState(object, template)
 	}
 	modeldelivery.EnsureSchedulingGate(template)
 	if reason != "" {
-		setDeliveryBlockedState(template, reason, message)
+		setDeliveryBlockedState(object, template, reason, message)
 	}
 	if err := deleteLegacyProjectedAccess(ctx, r.client, object); err != nil {
 		return false, err
@@ -70,10 +70,23 @@ func (r *baseReconciler) keepManagedDeliveryStopped(
 	if err != nil {
 		return false, err
 	}
-	var removed bool
-	template.Spec.ImagePullSecrets, removed = removeImagePullSecretByName(template.Spec.ImagePullSecrets, runtimeImagePullSecretName)
+	template.Spec.ImagePullSecrets, _ = removeImagePullSecretByName(template.Spec.ImagePullSecrets, runtimeImagePullSecretName)
 	removeDeliveryFinalizer(object)
-	if !removed && equality.Semantic.DeepEqual(original, object) {
+	if equality.Semantic.DeepEqual(original, object) {
+		return false, nil
+	}
+	current, err := r.currentWorkload(ctx, object)
+	if err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
+	currentTemplate, _, err := podTemplateAndHints(current)
+	if err != nil {
+		return false, err
+	}
+	blockedAnnotationsChanged := deliveryBlockedAnnotationsChanged(current, object)
+	if equality.Semantic.DeepEqual(currentTemplate, template) &&
+		equality.Semantic.DeepEqual(current.GetFinalizers(), object.GetFinalizers()) &&
+		!blockedAnnotationsChanged {
 		return false, nil
 	}
 	return true, r.client.Patch(ctx, object, client.MergeFrom(original))

@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/podprojection"
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	deliverycontract "github.com/deckhouse/ai-models/controller/internal/workloaddelivery"
@@ -51,6 +52,7 @@ func DesiredPod(spec RuntimeSpec) (*corev1.Pod, error) {
 		hostPathVolume(csiRegistryVolumeName, nodecache.CSIRegistrationDirectory, corev1.HostPathDirectory),
 		hostPathVolume(kubeletVolumeName, kubeletHostPath, corev1.HostPathDirectory),
 		hostPathVolume(deviceVolumeName, deviceHostPath, corev1.HostPathDirectory),
+		podprojection.KubeAPIServiceAccountVolume(kubeAPIServiceAccountVolume),
 	}
 	volumeMounts := []corev1.VolumeMount{{
 		Name:      cacheRootVolumeName,
@@ -65,6 +67,10 @@ func DesiredPod(spec RuntimeSpec) (*corev1.Pod, error) {
 	}, {
 		Name:      deviceVolumeName,
 		MountPath: deviceHostPath,
+	}, {
+		Name:      kubeAPIServiceAccountVolume,
+		MountPath: kubeAPIServiceAccountMountPath,
+		ReadOnly:  true,
 	}}
 
 	if strings.TrimSpace(spec.OCIRegistryCASecret) != "" {
@@ -99,7 +105,7 @@ func DesiredPod(spec RuntimeSpec) (*corev1.Pod, error) {
 			DNSPolicy:                    corev1.DNSClusterFirst,
 			SchedulerName:                corev1.DefaultSchedulerName,
 			ServiceAccountName:           spec.ServiceAccountName,
-			AutomountServiceAccountToken: ptr.To(true),
+			AutomountServiceAccountToken: ptr.To(false),
 			ImagePullSecrets:             imagePullSecrets(spec.ImagePullSecretName),
 			Affinity:                     runtimeNodeAffinity(spec),
 			Tolerations: []corev1.Toleration{{

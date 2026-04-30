@@ -82,9 +82,9 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 	}
 	ensureDeliveryFinalizer(object)
 	if result.GateReason != "" {
-		setDeliveryBlockedState(template, string(result.GateReason), result.GateMessage)
+		setDeliveryBlockedState(object, template, string(result.GateReason), result.GateMessage)
 	} else {
-		clearDeliveryBlockedState(template)
+		clearDeliveryBlockedState(object, template)
 	}
 
 	patchResult, err := r.patchAppliedWorkload(ctx, object, original, template)
@@ -209,8 +209,9 @@ func (r *baseReconciler) patchAppliedWorkload(
 		return deliveryPatchResult{}, err
 	}
 	templateChanged := !equality.Semantic.DeepEqual(currentTemplate, template)
-	finalizersChanged := !equality.Semantic.DeepEqual(original.GetFinalizers(), object.GetFinalizers())
-	if !templateChanged && !finalizersChanged {
+	finalizersChanged := !equality.Semantic.DeepEqual(current.GetFinalizers(), object.GetFinalizers())
+	blockedAnnotationsChanged := deliveryBlockedAnnotationsChanged(current, object)
+	if !templateChanged && !finalizersChanged && !blockedAnnotationsChanged {
 		return deliveryPatchResult{}, nil
 	}
 

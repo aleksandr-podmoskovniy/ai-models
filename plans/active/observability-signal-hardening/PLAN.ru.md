@@ -7,12 +7,11 @@
 
 ## 2. Orchestration
 
-`solo`.
+`full` for the 2026-04-29 follow-up closure.
 
-Причина: первый slice узкий и механически проверяемый. Пользователь просит
-сверяться с virtualization; для этого достаточно локального read-only сравнения
-collector/logger patterns без запуска subagents. Делегация замедлит slice и не
-добавит сигнала.
+Причина: follow-up затрагивает workload delivery, DMCR logging и общий
+production signal/noise contract. Перед изменениями использованы read-only
+reviews `integration_architect` и `backend_integrator`.
 
 ## 3. Active Bundle Disposition
 
@@ -133,8 +132,33 @@ collector/logger patterns без запуска subagents. Делегация з
 - `make helm-template` и `make kubeconform`, если меняются alerts/templates;
 - live scrape/e2e evidence в `live-e2e-ha-validation`.
 
-Статус: pending. Этот slice оставляет bundle активным и executable; не является
-частью текущего code change.
+Статус: partially completed in current pass.
+
+Выполнено:
+
+- blocked workload diagnostics moved from PodTemplate annotations to top-level
+  workload annotations, so reason/message updates do not create extra
+  Deployment template hash churn;
+- blocked workload log/event dedupe now compares against the current persisted
+  workload, including stale reconcile replay;
+- DMCR main registry process now downgrades only expected manifest `DELETE`
+  `404` misses (`MANIFEST_UNKNOWN`, `NAME_UNKNOWN`) from `error` to `info`
+  while keeping read misses, blob misses, writes and 5xx errors at `error`.
+
+Проверки:
+
+- `cd images/controller && go test ./internal/controllers/workloaddelivery`
+- `cd images/controller && go test ./...`
+- `cd images/dmcr && go test ./internal/logging`
+- `cd images/dmcr && go test ./...`
+- `make verify`
+
+Остаток для live proof:
+
+- повторить live e2e scrape/log evidence after rollout and confirm no active
+  ai-models/DMCR alerts;
+- if noisy S3 SDK checksum warnings remain in the live image, split them into a
+  dedicated backend logging cleanup slice.
 
 ## 5. Rollback Point
 

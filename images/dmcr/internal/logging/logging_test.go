@@ -21,8 +21,11 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
 
 func TestNewComponentLoggerUsesNormalizedJSONEnvelope(t *testing.T) {
@@ -79,5 +82,89 @@ func TestCommandErrorUsesNormalizedErrAttr(t *testing.T) {
 	}
 	if got, ok := entry["err"].(string); !ok || !strings.Contains(got, "boom") {
 		t.Fatalf("err = %v, want boom substring", got)
+	}
+}
+
+func TestDistributionLogFilterDowngradesExpectedDeleteMiss(t *testing.T) {
+	t.Parallel()
+
+	var buffer bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buffer)
+	logger.SetFormatter(&logrus.JSONFormatter{})
+	logger.AddHook(distributionResponseLogHook{})
+
+	logger.WithFields(logrus.Fields{
+		"http.request.method":  http.MethodDelete,
+		"http.request.uri":     "/v2/ai-models/catalog/model/manifests/sha256:deadbeef",
+		"http.response.status": http.StatusNotFound,
+		"err.code":             "MANIFEST_UNKNOWN",
+	}).Error("response completed with error")
+
+	var entry map[string]any
+	if err := json.Unmarshal(buffer.Bytes(), &entry); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got := entry["level"]; got != "info" {
+		t.Fatalf("level = %v, want info", got)
+	}
+	if got := entry["reason"]; got != expectedRegistryDeleteMissReason {
+		t.Fatalf("reason = %v, want %s", got, expectedRegistryDeleteMissReason)
+	}
+}
+
+func TestDistributionLogFilterKeepsUnexpectedErrors(t *testing.T) {
+	t.Parallel()
+
+	var buffer bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buffer)
+	logger.SetFormatter(&logrus.JSONFormatter{})
+	logger.AddHook(distributionResponseLogHook{})
+
+	logger.WithFields(logrus.Fields{
+		"http.request.method":  http.MethodPut,
+		"http.request.uri":     "/v2/ai-models/catalog/model/manifests/sha256:deadbeef",
+		"http.response.status": http.StatusInternalServerError,
+		"err.code":             "UNKNOWN",
+	}).Error("response completed with error")
+
+	var entry map[string]any
+	if err := json.Unmarshal(buffer.Bytes(), &entry); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got := entry["level"]; got != "error" {
+		t.Fatalf("level = %v, want error", got)
+	}
+	if _, found := entry["reason"]; found {
+		t.Fatalf("unexpected reason field in %#v", entry)
+	}
+}
+
+func TestDistributionLogFilterKeepsReadMissesAsErrors(t *testing.T) {
+	t.Parallel()
+
+	var buffer bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buffer)
+	logger.SetFormatter(&logrus.JSONFormatter{})
+	logger.AddHook(distributionResponseLogHook{})
+
+	logger.WithFields(logrus.Fields{
+		"http.request.method":  http.MethodHead,
+		"http.request.uri":     "/v2/ai-models/catalog/model/manifests/sha256:deadbeef",
+		"http.response.status": http.StatusNotFound,
+		"err.code":             "MANIFEST_UNKNOWN",
+	}).Error("response completed with error")
+
+	var entry map[string]any
+	if err := json.Unmarshal(buffer.Bytes(), &entry); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got := entry["level"]; got != "error" {
+		t.Fatalf("level = %v, want error", got)
+	}
+	if _, found := entry["reason"]; found {
+		t.Fatalf("unexpected reason field in %#v", entry)
 	}
 }

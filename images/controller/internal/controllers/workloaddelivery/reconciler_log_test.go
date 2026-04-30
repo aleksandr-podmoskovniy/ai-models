@@ -64,6 +64,7 @@ func TestDeploymentReconcilerSuppressesRepeatedBlockedLog(t *testing.T) {
 	workload := annotatedDeployment(map[string]string{ModelAnnotation: model.Name}, 1, corev1.VolumeSource{
 		PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "legacy-model-cache"},
 	})
+	stale := workload.DeepCopy()
 	reconciler, kubeClient := newDeploymentReconciler(t, model, workload, testRegistryReadAuthSecret())
 
 	logs := newTestLoggerBuffer()
@@ -81,6 +82,18 @@ func TestDeploymentReconcilerSuppressesRepeatedBlockedLog(t *testing.T) {
 	reconcileDeployment(t, reconciler, &blocked)
 	if got, want := logs.count(`"msg":"runtime delivery blocked by workload spec"`), 1; got != want {
 		t.Fatalf("blocked log count after stable reconcile = %d, want %d, logs=%q", got, want, logs.buffer.String())
+	}
+
+	if blocked.Annotations == nil {
+		blocked.Annotations = map[string]string{}
+	}
+	blocked.Annotations["external.example.com/state"] = "touched-by-another-controller"
+	if err := kubeClient.Update(context.Background(), &blocked); err != nil {
+		t.Fatalf("Update(blocked deployment with external annotation) error = %v", err)
+	}
+	reconcileDeployment(t, reconciler, stale)
+	if got, want := logs.count(`"msg":"runtime delivery blocked by workload spec"`), 1; got != want {
+		t.Fatalf("blocked log count after stale reconcile with external annotation drift = %d, want %d, logs=%q", got, want, logs.buffer.String())
 	}
 }
 

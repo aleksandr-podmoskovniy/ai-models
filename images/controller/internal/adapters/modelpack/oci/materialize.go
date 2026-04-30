@@ -125,13 +125,13 @@ func materializeFresh(
 		return modelpackports.MaterializeResult{}, err
 	}
 
-	stagingRoot, err := os.MkdirTemp(materializationParent(input.DestinationDir), ".ai-models-materialize-")
+	stagingRoot, cleanupOnFailure, err := prepareMaterializationRoot(input, digest, payload)
 	if err != nil {
 		return modelpackports.MaterializeResult{}, err
 	}
 	success := false
 	defer func() {
-		if !success {
+		if !success && cleanupOnFailure {
 			_ = os.RemoveAll(stagingRoot)
 		}
 	}()
@@ -150,6 +150,9 @@ func materializeFresh(
 	}
 	modelPath, err = ensureMaterializedModelContract(stagingRoot, modelPath)
 	if err != nil {
+		return modelpackports.MaterializeResult{}, err
+	}
+	if err := removeChunkMaterializeState(stagingRoot); err != nil {
 		return modelpackports.MaterializeResult{}, err
 	}
 	modelRelativePath, err := filepath.Rel(stagingRoot, modelPath)
@@ -179,6 +182,25 @@ func materializeFresh(
 		MediaType:  ArtifactMediaType(payload),
 		MarkerPath: markerPath,
 	}, nil
+}
+
+func prepareMaterializationRoot(
+	input modelpackports.MaterializeInput,
+	digest string,
+	payload InspectPayload,
+) (string, bool, error) {
+	if payloadUsesChunkedLayout(payload) {
+		root := chunkMaterializeWorkRoot(input.DestinationDir)
+		if err := prepareChunkMaterializeWorkRoot(root, digest); err != nil {
+			return "", false, err
+		}
+		return root, false, nil
+	}
+	stagingRoot, err := os.MkdirTemp(materializationParent(input.DestinationDir), ".ai-models-materialize-")
+	if err != nil {
+		return "", false, err
+	}
+	return stagingRoot, true, nil
 }
 
 func layerCount(payload InspectPayload) int {

@@ -53,8 +53,14 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	if got, want := pod.Spec.ServiceAccountName, "ai-models-publication-worker"; got != want {
 		t.Fatalf("unexpected service account %q", got)
 	}
-	if pod.Spec.AutomountServiceAccountToken == nil || !*pod.Spec.AutomountServiceAccountToken {
-		t.Fatalf("expected explicit service account token mount for publication worker, got %#v", pod.Spec.AutomountServiceAccountToken)
+	if pod.Spec.AutomountServiceAccountToken == nil || *pod.Spec.AutomountServiceAccountToken {
+		t.Fatalf("expected legacy service account token automount disabled for publication worker, got %#v", pod.Spec.AutomountServiceAccountToken)
+	}
+	if volumeByName(pod.Spec.Volumes, kubeAPIServiceAccountVolume).Projected == nil {
+		t.Fatalf("expected explicit projected service account token volume, got %#v", pod.Spec.Volumes)
+	}
+	if mountByName(pod.Spec.Containers[0].VolumeMounts, kubeAPIServiceAccountVolume).MountPath != kubeAPIServiceAccountMountPath {
+		t.Fatalf("expected explicit service account token mount, got %#v", pod.Spec.Containers[0].VolumeMounts)
 	}
 	if len(pod.Spec.ImagePullSecrets) != 1 || pod.Spec.ImagePullSecrets[0].Name != "ai-models-module-registry" {
 		t.Fatalf("unexpected imagePullSecrets %#v", pod.Spec.ImagePullSecrets)
@@ -63,8 +69,7 @@ func TestBuildAcceptsHuggingFacePublicationRequest(t *testing.T) {
 	if got, want := pod.Spec.Containers[0].Resources.Requests.Cpu().String(), "1"; got != want {
 		t.Fatalf("unexpected cpu request %q", got)
 	}
-	foundLogFormat := false
-	foundLogLevel := false
+	foundLogFormat, foundLogLevel := false, false
 	for _, item := range pod.Spec.Containers[0].Env {
 		if item.Name == "TMPDIR" {
 			t.Fatal("did not expect TMPDIR env in streaming publish worker pod")
@@ -324,4 +329,22 @@ func assertEnvValue(t *testing.T, env []corev1.EnvVar, name, want string) {
 		return
 	}
 	t.Fatalf("expected env %q in %#v", name, env)
+}
+
+func volumeByName(volumes []corev1.Volume, name string) corev1.Volume {
+	for _, volume := range volumes {
+		if volume.Name == name {
+			return volume
+		}
+	}
+	return corev1.Volume{}
+}
+
+func mountByName(mounts []corev1.VolumeMount, name string) corev1.VolumeMount {
+	for _, mount := range mounts {
+		if mount.Name == name {
+			return mount
+		}
+	}
+	return corev1.VolumeMount{}
 }

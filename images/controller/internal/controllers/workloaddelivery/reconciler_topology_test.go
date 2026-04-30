@@ -56,10 +56,10 @@ func TestDeploymentReconcilerRejectsSharedWorkloadPersistentVolumeClaimBridge(t 
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &blocked); err != nil {
 		t.Fatalf("Get(deployment) error = %v", err)
 	}
-	if got, want := blocked.Spec.Template.Annotations[DeliveryBlockedReasonAnnotation], deliveryBlockedReasonInvalidSpec; got != want {
+	if got, want := blocked.Annotations[DeliveryBlockedReasonAnnotation], deliveryBlockedReasonInvalidSpec; got != want {
 		t.Fatalf("blocked reason = %q, want %q", got, want)
 	}
-	if got := blocked.Spec.Template.Annotations[DeliveryBlockedMessageAnnotation]; !strings.Contains(got, "does not support explicit cache persistentVolumeClaim") {
+	if got := blocked.Annotations[DeliveryBlockedMessageAnnotation]; !strings.Contains(got, "does not support explicit cache persistentVolumeClaim") {
 		t.Fatalf("unexpected blocked message %q", got)
 	}
 	if !modeldelivery.HasSchedulingGate(&blocked.Spec.Template) {

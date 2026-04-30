@@ -17,6 +17,8 @@ limitations under the License.
 package publishstate
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -106,6 +108,28 @@ func TestProjectStatusSucceededProjectsFeatureEvidenceWithoutReliableTask(t *tes
 	want := []modelsv1alpha1.ModelFeatureType{modelsv1alpha1.ModelFeatureTypeToolCalling}
 	if got := projection.Status.Resolved.SupportedFeatures; !featureTypesEqual(got, want) {
 		t.Fatalf("unexpected feature types %#v", got)
+	}
+}
+
+func TestSourceCapabilityEvidenceIsBounded(t *testing.T) {
+	t.Parallel()
+
+	values := []string{"text-generation", " text-generation ", "", strings.Repeat("a", maxSourceCapabilityValueLength+1)}
+	for i := 0; i < maxSourceCapabilityValues+4; i++ {
+		values = append(values, fmt.Sprintf("task-%02d", i))
+	}
+
+	got := uniqueNonEmptyStrings(values)
+	if len(got) != maxSourceCapabilityValues {
+		t.Fatalf("bounded values = %d, want %d: %#v", len(got), maxSourceCapabilityValues, got)
+	}
+	if got[0] != "text-generation" {
+		t.Fatalf("expected stable first unique value, got %#v", got)
+	}
+	for _, value := range got {
+		if len(value) > maxSourceCapabilityValueLength {
+			t.Fatalf("oversized value leaked into public evidence: %q", value)
+		}
 	}
 }
 

@@ -17,8 +17,11 @@ limitations under the License.
 package oci
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
 )
 
 func TestValidatePayloadAcceptsChunkedLayout(t *testing.T) {
@@ -80,6 +83,40 @@ func TestValidateChunkIndexRejectsPathTraversal(t *testing.T) {
 	err := validateChunkIndex(index, testManifestPacks(index))
 	if err == nil || !strings.Contains(err.Error(), "outside of destination") {
 		t.Fatalf("expected path traversal error, got %v", err)
+	}
+}
+
+func TestValidateChunkIndexRejectsOversizedChunkPayload(t *testing.T) {
+	t.Parallel()
+
+	index := validTestChunkIndex()
+	index.ChunkSizeBytes = maxChunkPayloadBytes + 1
+	err := validateChunkIndex(index, testManifestPacks(index))
+	if err == nil || !strings.Contains(err.Error(), "chunkSizeBytes must not exceed") {
+		t.Fatalf("expected chunk size bound error, got %v", err)
+	}
+}
+
+func TestValidateChunkIndexRejectsOverflowingPackRange(t *testing.T) {
+	t.Parallel()
+
+	index := validTestChunkIndex()
+	index.Packs[0].SizeBytes = maxInt64
+	index.Files[0].Chunks[0].PackOffset = maxInt64
+	index.Files[0].Chunks[0].PackLength = 2
+	index.Files[0].Chunks[0].StoredSizeBytes = 2
+	err := validateChunkIndex(index, testManifestPacks(index))
+	if err == nil || !strings.Contains(err.Error(), "pack range overflows int64") {
+		t.Fatalf("expected overflow error, got %v", err)
+	}
+}
+
+func TestFetchBlobRangeRejectsOverflowingRange(t *testing.T) {
+	t.Parallel()
+
+	_, _, err := FetchBlobRange(context.Background(), nil, "registry.example/repo@sha256:deadbeef", "sha256:pack", modelpackports.RegistryAuth{}, maxInt64, 2)
+	if err == nil || !strings.Contains(err.Error(), "overflows int64") {
+		t.Fatalf("expected range overflow error, got %v", err)
 	}
 }
 

@@ -46,9 +46,9 @@ Captured decisions from reviews:
 - `publish_object_source_range.go` умеет синтезировать ranged tar только для
   uncompressed archive.
 - legacy `materialize_layers.go` тянет file-layer blob целиком. Chunked v1
-  materialize routing уже добавлен для synthetic chunk-index/chunk-pack
-  artifacts, но registry range reader, per-chunk markers and resume ещё не
-  реализованы.
+  materialize now has adapter-local registry range reads, full-body fallback,
+  bounded chunk workers and per-chunk resume markers for synthetic
+  chunk-index/chunk-pack artifacts.
 - Текущий `tar+zstd` полезен для маленьких config/doc/code слоёв, но не решает
   быструю доставку больших weight shards.
 - DMCR direct-upload complete API принимает итоговые `Digest` и `SizeBytes`, а
@@ -65,9 +65,9 @@ Captured decisions from reviews:
 - Текущий direct-upload checkpoint хранится одним Secret и перезаписывается на
   каждый save. Per-chunk checkpoint без compaction может упереться в размер
   Secret и API churn.
-- Registry range pull сейчас не является контрактом: blob reader ждёт full
-  `200 OK`; chunked materialize должен добавить `206 Partial Content`, fallback
-  and recovery semantics.
+- Generic blob reader still expects full `200 OK`; chunked materialize owns a
+  separate ranged reader with explicit `206 Partial Content`, `200 OK`
+  fallback and `416 Range Not Satisfiable` failure semantics.
 
 ## External references
 
@@ -293,11 +293,32 @@ Checks:
 - materialize tests for `206`, `200` fallback, ignored `Range` and `416`;
 - corrupted chunk rejected and retried.
 
-Not implemented yet:
+Implemented in current pass:
 
 - registry range reader and `206` / `200` / `416` behavior;
-- per-chunk destination markers and resume after materializer restart;
-- bounded parallel chunk download/decompression.
+- `200 OK` ignored-Range fallback through a local pack file instead of a
+  long-lived whole-pack in-memory cache;
+- per-chunk completion markers under private chunked materialize state and
+  resume after materializer restart, including already verified files when a
+  later file fails before final destination replace;
+- bounded parallel chunk download/decompression inside `modelpack/oci`, without
+  widening `ports/modelpack` or leaking chunk ids into `nodecache`;
+- adapter-local package split keeps chunk validation, integrity helpers,
+  range/fallback fetch and resume state under the controller file-size gate.
+- production-readiness follow-up added per-chunk payload bounds, overflow
+  checks for file/pack ranges and explicit tests for these rejection paths.
+
+Checks run:
+
+- `cd images/controller && go test ./internal/adapters/modelpack/oci`
+- `cd images/controller && go test ./...`
+- `make verify`
+
+Remaining outside this materialize slice:
+
+- Slice 3 streaming chunked publish/compression is still disabled;
+- Slice 5 node-cache/metrics guardrails for chunked artifacts still need a
+  follow-up before chunked artifacts are enabled by default.
 
 ### Slice 5. Node-cache and observability guardrails
 

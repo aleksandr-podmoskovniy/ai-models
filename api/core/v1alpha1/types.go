@@ -114,16 +114,24 @@ type ModelResolvedStatus struct {
 	Quantization   *string `json:"quantization,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	ContextWindowTokens *int64 `json:"contextWindowTokens,omitempty"`
+	// +kubebuilder:validation:MaxItems=16
 	// +listType=set
 	SupportedEndpointTypes []ModelEndpointType `json:"supportedEndpointTypes,omitempty"`
+	// +kubebuilder:validation:MaxItems=16
 	// +listType=set
 	SupportedFeatures []ModelFeatureType `json:"supportedFeatures,omitempty"`
 }
 
 type ModelSourceCapabilities struct {
 	Provider ModelSourceType `json:"provider,omitempty"`
+	// +kubebuilder:validation:MaxItems=32
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=128
 	// +listType=set
 	Tasks []string `json:"tasks,omitempty"`
+	// +kubebuilder:validation:MaxItems=32
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=128
 	// +listType=set
 	Features []string `json:"features,omitempty"`
 }

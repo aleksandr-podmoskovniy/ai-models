@@ -38,6 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 	logging.SetDefaultLogger(logger)
+	logging.ConfigureDistributionLogFilters()
 
 	configureCommands()
 	registerMaintenanceGate()

@@ -50,10 +50,10 @@ func TestDeploymentReconcilerBlocksInvalidCacheMountWithoutRetryNoise(t *testing
 	if !modeldelivery.HasSchedulingGate(&blocked.Spec.Template) {
 		t.Fatalf("expected scheduling gate for invalid runtime delivery spec")
 	}
-	if got, want := blocked.Spec.Template.Annotations[DeliveryBlockedReasonAnnotation], deliveryBlockedReasonInvalidSpec; got != want {
+	if got, want := blocked.Annotations[DeliveryBlockedReasonAnnotation], deliveryBlockedReasonInvalidSpec; got != want {
 		t.Fatalf("blocked reason = %q, want %q", got, want)
 	}
-	if got := blocked.Spec.Template.Annotations[DeliveryBlockedMessageAnnotation]; !strings.Contains(got, "does not support explicit cache persistentVolumeClaim") {
+	if got := blocked.Annotations[DeliveryBlockedMessageAnnotation]; !strings.Contains(got, "does not support explicit cache persistentVolumeClaim") {
 		t.Fatalf("blocked message = %q", got)
 	}
 	if hasInitContainer(blocked.Spec.Template.Spec.InitContainers, modeldelivery.LegacyMaterializerInitContainerName) {
@@ -111,10 +111,10 @@ func TestDeploymentReconcilerClearsBlockedStateAfterSwitchingToSharedDirect(t *t
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &applied); err != nil {
 		t.Fatalf("Get(applied deployment) error = %v", err)
 	}
-	if got := applied.Spec.Template.Annotations[DeliveryBlockedReasonAnnotation]; got != "" {
+	if got := applied.Annotations[DeliveryBlockedReasonAnnotation]; got != "" {
 		t.Fatalf("blocked reason was not cleared: %q", got)
 	}
-	if got := applied.Spec.Template.Annotations[DeliveryBlockedMessageAnnotation]; got != "" {
+	if got := applied.Annotations[DeliveryBlockedMessageAnnotation]; got != "" {
 		t.Fatalf("blocked message was not cleared: %q", got)
 	}
 	if got := applied.Spec.Template.Annotations[modeldelivery.ResolvedDigestAnnotation]; got != testDigest {
@@ -174,10 +174,10 @@ func TestDeploymentReconcilerClearsBlockedStateWhenFixedWorkloadWaitsForModel(t 
 	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(workload), &pending); err != nil {
 		t.Fatalf("Get(pending deployment) error = %v", err)
 	}
-	if got := pending.Spec.Template.Annotations[DeliveryBlockedReasonAnnotation]; got != "" {
+	if got := pending.Annotations[DeliveryBlockedReasonAnnotation]; got != "" {
 		t.Fatalf("blocked reason was not cleared: %q", got)
 	}
-	if got := pending.Spec.Template.Annotations[DeliveryBlockedMessageAnnotation]; got != "" {
+	if got := pending.Annotations[DeliveryBlockedMessageAnnotation]; got != "" {
 		t.Fatalf("blocked message was not cleared: %q", got)
 	}
 	if !modeldelivery.HasSchedulingGate(&pending.Spec.Template) {

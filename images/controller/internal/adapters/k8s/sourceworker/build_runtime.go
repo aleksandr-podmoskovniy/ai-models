@@ -20,11 +20,17 @@ import (
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/ociregistry"
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/podprojection"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/storageprojection"
 	publicationports "github.com/deckhouse/ai-models/controller/internal/ports/publishop"
 	"github.com/deckhouse/ai-models/controller/internal/support/resourcenames"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
+)
+
+const (
+	kubeAPIServiceAccountMountPath = "/var/run/secrets/kubernetes.io/serviceaccount"
+	kubeAPIServiceAccountVolume    = "publication-worker-kube-api-access"
 )
 
 func buildPodSpec(
@@ -35,7 +41,7 @@ func buildPodSpec(
 	return corev1.PodSpec{
 		RestartPolicy:                corev1.RestartPolicyNever,
 		ServiceAccountName:           options.ServiceAccountName,
-		AutomountServiceAccountToken: ptr.To(true),
+		AutomountServiceAccountToken: ptr.To(false),
 		ImagePullSecrets:             imagePullSecrets(options.ImagePullSecretName),
 		Volumes:                      buildVolumes(options, sourcePlan),
 		Containers:                   []corev1.Container{container},
@@ -130,7 +136,11 @@ func buildEnv(
 }
 
 func buildVolumeMounts(options Options, plan SourceWorkerPlan) []corev1.VolumeMount {
-	var extra []corev1.VolumeMount
+	extra := []corev1.VolumeMount{{
+		Name:      kubeAPIServiceAccountVolume,
+		MountPath: kubeAPIServiceAccountMountPath,
+		ReadOnly:  true,
+	}}
 	if sourceUsesObjectStorage(plan, options) || directUploadTrustRequired(options) {
 		extra = storageprojection.VolumeMounts(options.ObjectStorage.CASecretName, extra...)
 	}
@@ -141,7 +151,7 @@ func buildVolumes(
 	options Options,
 	plan SourceWorkerPlan,
 ) []corev1.Volume {
-	var extra []corev1.Volume
+	extra := []corev1.Volume{podprojection.KubeAPIServiceAccountVolume(kubeAPIServiceAccountVolume)}
 	if sourceUsesObjectStorage(plan, options) || directUploadTrustRequired(options) {
 		extra = storageprojection.Volumes(options.ObjectStorage.CASecretName, extra...)
 	}

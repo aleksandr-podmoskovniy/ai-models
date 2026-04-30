@@ -1044,7 +1044,7 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list", "watch", "delete"]
+    verbs: ["delete"]
 ---
 kind: Role
 metadata:
@@ -1117,7 +1117,7 @@ rules:
             errors,
         )
         self.assertIn(
-            "templates/controller/rbac.yaml: controller ClusterRole must not grant cluster-wide secrets create/update/patch verbs",
+            "templates/controller/rbac.yaml: controller ClusterRole must only grant cluster-wide delete on secrets",
             errors,
         )
         self.assertIn(
@@ -1133,7 +1133,7 @@ rules:
             errors,
         )
 
-    def test_validate_render_accepts_explicit_service_account_token_mounts(self) -> None:
+    def test_validate_render_accepts_explicit_service_account_token_projection(self) -> None:
         content = """---
 apiVersion: apps/v1
 kind: Deployment
@@ -1143,7 +1143,19 @@ spec:
   template:
     spec:
       serviceAccountName: ai-models-controller
-      automountServiceAccountToken: true
+      automountServiceAccountToken: false
+      containers:
+        - name: controller
+          volumeMounts:
+            - name: controller-kube-api-access
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      volumes:
+        - name: controller-kube-api-access
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1153,20 +1165,32 @@ spec:
   template:
     spec:
       serviceAccountName: ai-models-upload-gateway
-      automountServiceAccountToken: true
+      automountServiceAccountToken: false
+      containers:
+        - name: upload-gateway
+          volumeMounts:
+            - name: upload-gateway-kube-api-access
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      volumes:
+        - name: upload-gateway-kube-api-access
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
 """ + self._controller_contract_docs()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             render_path = Path(tmpdir) / "helm-template-test.yaml"
             render_path.write_text(content, encoding="utf-8")
-            errors = MODULE._validate_explicit_service_account_token_automount(
+            errors = MODULE._validate_explicit_service_account_token_projection(
                 render_path,
                 render_path.read_text(encoding="utf-8"),
             )
 
         self.assertEqual(errors, [])
 
-    def test_validate_render_rejects_implicit_service_account_token_mounts(self) -> None:
+    def test_validate_render_rejects_legacy_service_account_token_automount(self) -> None:
         content = """---
 apiVersion: apps/v1
 kind: Deployment
@@ -1176,6 +1200,7 @@ spec:
   template:
     spec:
       serviceAccountName: ai-models-controller
+      automountServiceAccountToken: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1185,22 +1210,63 @@ spec:
   template:
     spec:
       serviceAccountName: ai-models-upload-gateway
+      automountServiceAccountToken: true
 """ + self._controller_contract_docs()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             render_path = Path(tmpdir) / "helm-template-test.yaml"
             render_path.write_text(content, encoding="utf-8")
-            errors = MODULE._validate_explicit_service_account_token_automount(
+            errors = MODULE._validate_explicit_service_account_token_projection(
                 render_path,
                 render_path.read_text(encoding="utf-8"),
             )
 
         self.assertIn(
-            "helm-template-test.yaml: Deployment/ai-models-controller must explicitly set automountServiceAccountToken: true",
+            "helm-template-test.yaml: Deployment/ai-models-controller must disable legacy service account token automount",
             errors,
         )
         self.assertIn(
-            "helm-template-test.yaml: Deployment/ai-models-upload-gateway must explicitly set automountServiceAccountToken: true",
+            "helm-template-test.yaml: Deployment/ai-models-upload-gateway must disable legacy service account token automount",
+            errors,
+        )
+
+    def test_validate_render_rejects_missing_service_account_token_projection(self) -> None:
+        content = """---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-models-controller
+spec:
+  template:
+    spec:
+      serviceAccountName: ai-models-controller
+      automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-models-upload-gateway
+spec:
+  template:
+    spec:
+      serviceAccountName: ai-models-upload-gateway
+      automountServiceAccountToken: false
+""" + self._controller_contract_docs()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            render_path = Path(tmpdir) / "helm-template-test.yaml"
+            render_path.write_text(content, encoding="utf-8")
+            errors = MODULE._validate_explicit_service_account_token_projection(
+                render_path,
+                render_path.read_text(encoding="utf-8"),
+            )
+
+        self.assertIn(
+            "helm-template-test.yaml: Deployment/ai-models-controller must use an explicit projected service account token volume",
+            errors,
+        )
+        self.assertIn(
+            "helm-template-test.yaml: Deployment/ai-models-upload-gateway must use an explicit projected service account token volume",
             errors,
         )
 

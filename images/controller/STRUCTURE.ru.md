@@ -83,6 +83,7 @@ images/controller/
         nodecachesubstrate/
         ociregistry/
         ownedresource/
+        podprojection/
         sourceworker/
         storageaccounting/
         storageprojection/
@@ -254,6 +255,7 @@ package без нового owner — patchwork.
 - `uploadsession/`
 - `uploadsessionstate/`
 - `ociregistry/`
+- `podprojection/`
 - `storageaccounting/`
 - `storageprojection/`
 - `ownedresource/`
@@ -281,11 +283,12 @@ Non-K8s adapters:
   one-pass raw publish для range-capable тяжёлых слоёв плюс registry metadata
   path, mixed bundle/raw object-source и archive-source layer handling,
   legacy raw/tar плюс internal chunk-index/chunk-pack `ModelPack` layout
-  validation/materialize routing, manifest/config validation, inspect/materialize
-  и layer/media-type handling не должны утекать в `publicationartifact/` или в
-  worker shell. Chunked layout остаётся internal immutable storage/distribution
-  contract: workloads после materialize видят обычный каталог модели, а не
-  custom runtime format;
+  validation/materialize routing, adapter-local ranged blob reader for chunked
+  materialize, per-chunk resume markers, manifest/config validation,
+  inspect/materialize и layer/media-type handling не должны утекать в
+  `publicationartifact/` или в worker shell. Chunked layout остаётся internal
+  immutable storage/distribution contract: workloads после materialize видят
+  обычный каталог модели, а не custom runtime format;
 - `sourcefetch/` остаётся boundary для remote source fetch, archive inspection,
   remote summary extraction и object-source planning;
 - `k8s/nodecachesubstrate/` держит только shaping и live-state extraction для
@@ -301,6 +304,10 @@ Non-K8s adapters:
 - `k8s/cleanupstate/` держит только module-private Secret-backed cleanup state:
   cleanup handle, completed marker and upload-stage handoff. Public status и
   delete policy остаются в `application/deletion` и controller owner;
+- `k8s/podprojection/` держит только reusable concrete Pod projection
+  primitives, которые реально используются несколькими K8s adapters, например
+  short-lived kube API service account token volume. Он не должен решать
+  scheduling, RBAC, Secret CRUD или runtime policy;
 - `k8s/storageaccounting/` держит только module-private Secret-backed
   capacity ledger: committed published bytes and active upload reservations.
   Quota policy, public usage API and object-storage scans сюда не входят;
@@ -439,8 +446,10 @@ extraction; если пакет решает policy, runtime semantics или st
   registry content-state helper seams вместо одного mixed helper shell;
 - `modelpack/oci` chunked layout tests prove that legacy manifests remain
   valid, chunk-index/chunk-pack manifests validate separately from file layers,
-  invalid chunk indexes fail closed, and synthetic chunked artifacts materialize
-  back into the stable `model/` contract path.
+  invalid chunk indexes fail closed, synthetic chunked artifacts materialize
+  back into the stable `model/` contract path, registry range pulls handle
+  `206`/`200` fallback/`416`, and per-chunk markers resume incomplete
+  materialization without exposing chunk state to `nodecache`.
 
 ## 4. Жёсткие правила на следующий refactor
 
@@ -487,6 +496,9 @@ extraction; если пакет решает policy, runtime semantics или st
 ### `internal/controllers/workloaddelivery/`
 
 - Пакет остаётся owner-level reconciler for supported Kubernetes workloads.
+- Blocked delivery diagnostics live on top-level workload metadata, not in
+  PodTemplate annotations; PodTemplate carries only stable delivery state and
+  the scheduling gate that actually blocks unsafe Pods.
 - Сюда нельзя возвращать branches под конкретные сторонние CRD/controllers
   вроде `RayService` / `RayCluster`: это снова создаст протекание абстракций.
 - Если external runtime требует интеграцию, он должен либо рендерить supported

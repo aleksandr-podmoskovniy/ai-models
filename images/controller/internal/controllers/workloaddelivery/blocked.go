@@ -63,23 +63,47 @@ func (r *baseReconciler) blockWorkloadDelivery(
 	return ctrl.Result{}, nil
 }
 
-func setDeliveryBlockedState(template *corev1.PodTemplateSpec, reason, message string) bool {
-	if template == nil {
+func setDeliveryBlockedState(object client.Object, template *corev1.PodTemplateSpec, reason, message string) bool {
+	if object == nil {
 		return false
 	}
+	changed := clearTemplateDeliveryBlockedState(template)
 	reason = strings.TrimSpace(reason)
 	message = trimBlockedMessage(message)
-	if template.Annotations == nil {
-		template.Annotations = map[string]string{}
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
 	}
-	changed := setAnnotationValue(template.Annotations, DeliveryBlockedReasonAnnotation, reason)
-	if setAnnotationValue(template.Annotations, DeliveryBlockedMessageAnnotation, message) {
+	if setAnnotationValue(annotations, DeliveryBlockedReasonAnnotation, reason) {
 		changed = true
 	}
+	if setAnnotationValue(annotations, DeliveryBlockedMessageAnnotation, message) {
+		changed = true
+	}
+	object.SetAnnotations(annotations)
 	return changed
 }
 
-func clearDeliveryBlockedState(template *corev1.PodTemplateSpec) bool {
+func clearDeliveryBlockedState(object client.Object, template *corev1.PodTemplateSpec) bool {
+	changed := clearTemplateDeliveryBlockedState(template)
+	if object == nil {
+		return changed
+	}
+	var removed bool
+	annotations := object.GetAnnotations()
+	annotations, removed = removeAnnotation(annotations, DeliveryBlockedReasonAnnotation)
+	if removed {
+		changed = true
+	}
+	annotations, removed = removeAnnotation(annotations, DeliveryBlockedMessageAnnotation)
+	if removed {
+		changed = true
+	}
+	object.SetAnnotations(annotations)
+	return changed
+}
+
+func clearTemplateDeliveryBlockedState(template *corev1.PodTemplateSpec) bool {
 	if template == nil {
 		return false
 	}
@@ -94,6 +118,16 @@ func clearDeliveryBlockedState(template *corev1.PodTemplateSpec) bool {
 		changed = true
 	}
 	return changed
+}
+
+func deliveryBlockedAnnotationsChanged(current, desired client.Object) bool {
+	if current == nil || desired == nil {
+		return current != desired
+	}
+	currentAnnotations := current.GetAnnotations()
+	desiredAnnotations := desired.GetAnnotations()
+	return currentAnnotations[DeliveryBlockedReasonAnnotation] != desiredAnnotations[DeliveryBlockedReasonAnnotation] ||
+		currentAnnotations[DeliveryBlockedMessageAnnotation] != desiredAnnotations[DeliveryBlockedMessageAnnotation]
 }
 
 func trimBlockedMessage(message string) string {

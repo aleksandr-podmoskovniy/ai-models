@@ -57,13 +57,13 @@ func TestDesiredPod(t *testing.T) {
 	if pod.Spec.ServiceAccountName != "ai-models-node-cache-runtime" {
 		t.Fatalf("unexpected service account %q", pod.Spec.ServiceAccountName)
 	}
-	if pod.Spec.AutomountServiceAccountToken == nil || !*pod.Spec.AutomountServiceAccountToken {
-		t.Fatalf("expected explicit service account token mount for node-cache runtime, got %#v", pod.Spec.AutomountServiceAccountToken)
+	if pod.Spec.AutomountServiceAccountToken == nil || *pod.Spec.AutomountServiceAccountToken {
+		t.Fatalf("expected legacy service account token automount disabled for node-cache runtime, got %#v", pod.Spec.AutomountServiceAccountToken)
 	}
 	if len(pod.Spec.ImagePullSecrets) != 1 || pod.Spec.ImagePullSecrets[0].Name != "registry-creds" {
 		t.Fatalf("unexpected imagePullSecrets %#v", pod.Spec.ImagePullSecrets)
 	}
-	if len(pod.Spec.Volumes) != 6 {
+	if len(pod.Spec.Volumes) != 7 {
 		t.Fatalf("unexpected volumes %#v", pod.Spec.Volumes)
 	}
 	if pod.Spec.Volumes[0].PersistentVolumeClaim == nil {
@@ -77,6 +77,9 @@ func TestDesiredPod(t *testing.T) {
 	}
 	if volumeByName(pod.Spec.Volumes, registryCASecretVolume).Secret.SecretName != "ai-models-dmcr-ca" {
 		t.Fatalf("unexpected registry CA volume %#v", volumeByName(pod.Spec.Volumes, registryCASecretVolume))
+	}
+	if volumeByName(pod.Spec.Volumes, kubeAPIServiceAccountVolume).Projected == nil {
+		t.Fatalf("expected explicit projected service account token volume, got %#v", pod.Spec.Volumes)
 	}
 	if len(pod.Spec.Containers) != 2 {
 		t.Fatalf("unexpected containers %#v", pod.Spec.Containers)
@@ -92,6 +95,9 @@ func TestDesiredPod(t *testing.T) {
 	if mountByName(runtime.VolumeMounts, kubeletVolumeName).MountPropagation == nil ||
 		*mountByName(runtime.VolumeMounts, kubeletVolumeName).MountPropagation != corev1.MountPropagationBidirectional {
 		t.Fatalf("expected bidirectional kubelet mount, got %#v", mountByName(runtime.VolumeMounts, kubeletVolumeName))
+	}
+	if mountByName(runtime.VolumeMounts, kubeAPIServiceAccountVolume).MountPath != kubeAPIServiceAccountMountPath {
+		t.Fatalf("expected explicit service account token mount, got %#v", runtime.VolumeMounts)
 	}
 	env := map[string]string{}
 	for _, item := range runtime.Env {

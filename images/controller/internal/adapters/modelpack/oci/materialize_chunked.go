@@ -19,12 +19,16 @@ package oci
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	modelpackports "github.com/deckhouse/ai-models/controller/internal/ports/modelpack"
+	"golang.org/x/sync/errgroup"
 )
+
+const chunkedMaterializeWorkers = 4
 
 func extractChunkedLayers(
 	ctx context.Context,
@@ -42,9 +46,9 @@ func extractChunkedLayers(
 	if err != nil {
 		return err
 	}
-	packCache := map[string][]byte{}
+	state := newChunkMaterializeState(client, reference, auth, destination, index.Packs)
 	for _, file := range index.Files {
-		if err := extractChunkedFile(ctx, client, reference, auth, destination, file, index.Packs, packCache); err != nil {
+		if err := extractChunkedFile(ctx, destination, file, state); err != nil {
 			return err
 		}
 	}
@@ -53,13 +57,9 @@ func extractChunkedLayers(
 
 func extractChunkedFile(
 	ctx context.Context,
-	client *http.Client,
-	reference string,
-	auth modelpackports.RegistryAuth,
 	destination string,
 	file chunkIndexFile,
-	packs []chunkIndexPack,
-	packCache map[string][]byte,
+	state *chunkMaterializeState,
 ) error {
 	target, err := materializeTargetPath(destination, file.Path)
 	if err != nil {
@@ -68,84 +68,76 @@ func extractChunkedFile(
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
-	out, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}
-	success := false
+	closed := false
 	defer func() {
-		_ = out.Close()
-		if !success {
-			_ = os.Remove(target)
+		if !closed {
+			_ = out.Close()
 		}
 	}()
 	if err := out.Truncate(file.SizeBytes); err != nil {
 		return err
 	}
+
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(chunkedMaterializeWorkers)
 	for _, chunk := range file.Chunks {
-		payload, err := loadStoredChunk(ctx, client, reference, auth, chunk, packs, packCache)
-		if err != nil {
-			return err
-		}
-		decoded, err := decodeStoredChunk(payload, chunk.Compression)
-		if err != nil {
-			return err
-		}
-		if int64(len(decoded)) != chunk.UncompressedSizeBytes {
-			return fmt.Errorf("chunk index file %q chunk %d decoded size %d does not match expected %d", file.Path, chunk.Index, len(decoded), chunk.UncompressedSizeBytes)
-		}
-		if _, err := out.WriteAt(decoded, chunk.Offset); err != nil {
-			return err
-		}
+		chunk := chunk
+		group.Go(func() error {
+			return materializeChunk(groupCtx, out, target, file, chunk, state)
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return err
 	}
 	if err := out.Close(); err != nil {
 		return err
 	}
+	closed = true
 	if err := verifyFileDigest(target, file.Digest); err != nil {
+		_ = state.clearFileMarkers(file.Path)
 		return err
 	}
-	success = true
 	return nil
 }
 
-func loadStoredChunk(
+func materializeChunk(
 	ctx context.Context,
-	client *http.Client,
-	reference string,
-	auth modelpackports.RegistryAuth,
+	out *os.File,
+	target string,
+	file chunkIndexFile,
 	chunk chunkIndexChunk,
-	packs []chunkIndexPack,
-	packCache map[string][]byte,
-) ([]byte, error) {
-	pack, found := findChunkPack(packs, chunk.Pack)
-	if !found {
-		return nil, fmt.Errorf("chunk %d references missing pack %q", chunk.Index, chunk.Pack)
+	state *chunkMaterializeState,
+) error {
+	if state.chunkComplete(target, file.Path, chunk) {
+		return nil
 	}
-	packPayload, found := packCache[pack.ID]
-	if !found {
-		payload, err := FetchBlob(ctx, client, reference, pack.Digest, auth)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch ModelPack chunk pack %q: %w", pack.ID, err)
-		}
-		packPayload = payload
-		packCache[pack.ID] = payload
+	payload, err := state.loadStoredChunk(ctx, chunk)
+	if err != nil {
+		return err
 	}
-	end := chunk.PackOffset + chunk.PackLength
-	if chunk.PackOffset < 0 || end > int64(len(packPayload)) {
-		return nil, fmt.Errorf("chunk %d pack range is outside fetched pack %q", chunk.Index, pack.ID)
+	decoded, err := decodeStoredChunk(payload, chunk.Compression)
+	if err != nil {
+		return err
 	}
-	stored := packPayload[int(chunk.PackOffset):int(end)]
-	if err := verifyChunkDigest(stored, chunk.StoredDigest); err != nil {
-		return nil, err
+	if int64(len(decoded)) != chunk.UncompressedSizeBytes {
+		return fmt.Errorf("chunk index file %q chunk %d decoded size %d does not match expected %d", file.Path, chunk.Index, len(decoded), chunk.UncompressedSizeBytes)
 	}
-	return stored, nil
-}
-
-func findChunkPack(packs []chunkIndexPack, id string) (chunkIndexPack, bool) {
-	for _, pack := range packs {
-		if pack.ID == id {
-			return pack, true
-		}
+	if _, err := out.WriteAt(decoded, chunk.Offset); err != nil {
+		return err
 	}
-	return chunkIndexPack{}, false
+	if err := state.markChunkComplete(file.Path, chunk); err != nil {
+		return err
+	}
+	slog.Default().Debug(
+		"oci chunked materialization chunk completed",
+		slog.String("path", file.Path),
+		slog.Int("chunk", chunk.Index),
+		slog.Int64("offset", chunk.Offset),
+		slog.Int64("sizeBytes", chunk.UncompressedSizeBytes),
+	)
+	return nil
 }

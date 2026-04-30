@@ -823,7 +823,7 @@ def _validate_upload_gateway_storage_accounting_rbac(path: Path, content: str) -
     return errors
 
 
-def _validate_explicit_service_account_token_automount(path: Path, content: str) -> list[str]:
+def _validate_explicit_service_account_token_projection(path: Path, content: str) -> list[str]:
     errors: list[str] = []
     required = {
         "ai-models-controller": "ai-models-controller",
@@ -843,12 +843,18 @@ def _validate_explicit_service_account_token_automount(path: Path, content: str)
             continue
         if f"serviceAccountName: {service_account}" not in raw_document:
             continue
-        if not re.search(
-            r"(?m)^\s*automountServiceAccountToken:\s+true\s*$",
-            raw_document,
+        if not re.search(r"(?m)^\s*automountServiceAccountToken:\s+false\s*$", raw_document):
+            errors.append(
+                f"{path.name}: Deployment/{name} must disable legacy service account token automount"
+            )
+            continue
+        if (
+            "serviceAccountToken:" not in raw_document
+            or "expirationSeconds: 3600" not in raw_document
+            or "mountPath: /var/run/secrets/kubernetes.io/serviceaccount" not in raw_document
         ):
             errors.append(
-                f"{path.name}: Deployment/{name} must explicitly set automountServiceAccountToken: true"
+                f"{path.name}: Deployment/{name} must use an explicit projected service account token volume"
             )
     return errors
 
@@ -880,13 +886,12 @@ def _validate_controller_runtime_rbac_source(repo_root: Path) -> list[str]:
                 errors.append(
                     f"{path}: controller ClusterRole must not grant cluster-wide {resource} write verbs"
                 )
-        if _document_grants_any_verb(
-            controller_cluster_role, "secrets", ("create", "update", "patch")
-        ):
-            errors.append(
-                f"{path}: controller ClusterRole must not grant cluster-wide secrets create/update/patch verbs"
-            )
         secret_verbs = set().union(*_resource_rule_verbs(controller_cluster_role, "secrets"))
+        unexpected_secret_verbs = secret_verbs - {"delete"}
+        if unexpected_secret_verbs:
+            errors.append(
+                f"{path}: controller ClusterRole must only grant cluster-wide delete on secrets"
+            )
         if "delete" not in secret_verbs:
             errors.append(
                 f"{path}: controller ClusterRole must grant delete on secrets for legacy projected access cleanup"
@@ -1454,7 +1459,7 @@ def validate_render(path: Path) -> list[str]:
     errors.extend(_validate_controller_cleanup_runtime(path, content))
     errors.extend(_validate_publication_worker_identity(path, content))
     errors.extend(_validate_upload_gateway_storage_accounting_rbac(path, content))
-    errors.extend(_validate_explicit_service_account_token_automount(path, content))
+    errors.extend(_validate_explicit_service_account_token_projection(path, content))
     errors.extend(_validate_ai_models_monitoring_wiring(path, content))
     errors.extend(_validate_values_backed_tls_secrets(path, content))
     errors.extend(_validate_upload_gateway_ingress_tls(path, content))

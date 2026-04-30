@@ -24,6 +24,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	maxSourceCapabilityValues      = 32
+	maxSourceCapabilityValueLength = 128
+)
+
 func readyStatus(
 	current modelsv1alpha1.ModelStatus,
 	generation int64,
@@ -155,11 +160,15 @@ func publicSourceCapabilityFeatures(resolved publicationdata.ResolvedProfile) []
 }
 
 func uniqueNonEmptyStrings(values []string) []string {
-	result := make([]string, 0, len(values))
+	capacity := len(values)
+	if capacity > maxSourceCapabilityValues {
+		capacity = maxSourceCapabilityValues
+	}
+	result := make([]string, 0, capacity)
 	seen := map[string]struct{}{}
 	for _, value := range values {
 		clean := strings.TrimSpace(value)
-		if clean == "" {
+		if clean == "" || len(clean) > maxSourceCapabilityValueLength {
 			continue
 		}
 		if _, found := seen[clean]; found {
@@ -167,6 +176,9 @@ func uniqueNonEmptyStrings(values []string) []string {
 		}
 		seen[clean] = struct{}{}
 		result = append(result, clean)
+		if len(result) == maxSourceCapabilityValues {
+			break
+		}
 	}
 	return result
 }
