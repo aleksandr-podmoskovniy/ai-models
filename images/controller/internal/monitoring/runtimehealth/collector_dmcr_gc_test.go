@@ -17,6 +17,8 @@ limitations under the License.
 package runtimehealth
 
 import (
+	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"testing"
@@ -31,6 +33,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+var errUnexpectedCachedSecretList = errors.New("cached reader must not list secrets")
 
 func TestCollectorReportsDMCRGarbageCollectionRequestLifecycleMetrics(t *testing.T) {
 	t.Parallel()
@@ -99,13 +103,48 @@ func TestCollectorReportsDMCRGarbageCollectionRequestLifecycleMetrics(t *testing
 	}, 1)
 }
 
+func TestCollectorUsesDedicatedSecretReaderForDMCRGarbageCollectionRequests(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
+	scheme := testkit.NewScheme(t, appsv1.AddToScheme, batchv1.AddToScheme)
+	cachedReader := secretListRejectingReader{Reader: testkit.NewFakeClient(t, scheme, nil)}
+	secretReader := testkit.NewFakeClient(t, scheme, nil,
+		dmcrGCSecret("queued", "d8-ai-models", map[string]string{
+			dmcrGCPhaseAnnotationKey:     dmcrGCPhaseQueued,
+			dmcrGCRequestedAnnotationKey: now.Add(-2 * time.Minute).Format(time.RFC3339Nano),
+		}),
+	)
+	registry := prometheus.NewPedanticRegistry()
+	collector := NewCollector(
+		cachedReader,
+		secretReader,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Options{CleanupNamespace: "d8-ai-models"},
+	)
+	collector.now = func() time.Time { return now }
+	collector.Register(registry)
+
+	families, err := registry.Gather()
+	if err != nil {
+		t.Fatalf("Gather() error = %v", err)
+	}
+	assertGaugeValue(t, families, "d8_ai_models_dmcr_gc_requests", map[string]string{
+		"namespace": "d8-ai-models",
+		"phase":     dmcrGCPhaseQueued,
+	}, 1)
+	assertGaugeValue(t, families, "d8_ai_models_collector_up", map[string]string{
+		"collector": collectorName,
+	}, 1)
+}
+
 func gatherMetricsAt(t *testing.T, options Options, now time.Time, objects ...client.Object) []*dto.MetricFamily {
 	t.Helper()
 
 	scheme := testkit.NewScheme(t, appsv1.AddToScheme, batchv1.AddToScheme)
 	reader := testkit.NewFakeClient(t, scheme, nil, objects...)
 	registry := prometheus.NewPedanticRegistry()
-	collector := NewCollector(reader, slog.New(slog.NewTextHandler(io.Discard, nil)), options)
+	collector := NewCollector(reader, reader, slog.New(slog.NewTextHandler(io.Discard, nil)), options)
 	collector.now = func() time.Time { return now }
 	collector.Register(registry)
 
@@ -114,6 +153,17 @@ func gatherMetricsAt(t *testing.T, options Options, now time.Time, objects ...cl
 		t.Fatalf("Gather() error = %v", err)
 	}
 	return families
+}
+
+type secretListRejectingReader struct {
+	client.Reader
+}
+
+func (r secretListRejectingReader) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*corev1.SecretList); ok {
+		return errUnexpectedCachedSecretList
+	}
+	return r.Reader.List(ctx, list, opts...)
 }
 
 func dmcrGCSecret(name, namespace string, annotations map[string]string) *corev1.Secret {

@@ -190,6 +190,7 @@ func (a *App) setupManager(mgr ctrl.Manager) error {
 	)
 	runtimehealth.SetupCollector(
 		mgr.GetCache(),
+		mgr.GetAPIReader(),
 		metrics.Registry,
 		a.logger.With(slog.String("runtimeKind", "metrics")),
 		runtimehealth.Options{

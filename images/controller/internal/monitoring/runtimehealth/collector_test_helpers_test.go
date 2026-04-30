@@ -35,7 +35,7 @@ func gatherMetrics(t *testing.T, options Options, objects ...client.Object) []*d
 	scheme := testkit.NewScheme(t, appsv1.AddToScheme, batchv1.AddToScheme)
 	reader := testkit.NewFakeClient(t, scheme, nil, objects...)
 	registry := prometheus.NewPedanticRegistry()
-	NewCollector(reader, slog.New(slog.NewTextHandler(io.Discard, nil)), options).Register(registry)
+	NewCollector(reader, reader, slog.New(slog.NewTextHandler(io.Discard, nil)), options).Register(registry)
 
 	families, err := registry.Gather()
 	if err != nil {

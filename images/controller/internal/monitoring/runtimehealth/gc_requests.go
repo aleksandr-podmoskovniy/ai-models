@@ -46,11 +46,11 @@ var dmcrGCRequestLabels = client.MatchingLabels{
 
 func (c *Collector) listDMCRGCRequests(ctx context.Context) ([]corev1.Secret, error) {
 	var list corev1.SecretList
-	options := []client.ListOption{dmcrGCRequestLabels, client.UnsafeDisableDeepCopy}
+	options := []client.ListOption{dmcrGCRequestLabels}
 	if strings.TrimSpace(c.cleanupNamespace) != "" {
 		options = append(options, client.InNamespace(c.cleanupNamespace))
 	}
-	if err := c.reader.List(ctx, &list, options...); err != nil {
+	if err := c.secretReader.List(ctx, &list, options...); err != nil {
 		return nil, err
 	}
 	return list.Items, nil

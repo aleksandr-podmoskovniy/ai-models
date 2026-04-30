@@ -78,6 +78,10 @@ Findings:
 - Chunked materialize validation covered path/digest/ranges but did not bound
   single-chunk payload size and did not guard all offset/length additions
   against `int64` overflow.
+- Live rollout on `k8s.apiac.ru` showed repeated controller errors:
+  runtime-health listed module-private `Secret` objects through the shared
+  controller cache, which started a cluster-wide `Secret` informer after RBAC
+  was intentionally narrowed to cluster-wide `delete` only.
 
 ### Slice 2. Targeted defect fixes
 
@@ -124,7 +128,10 @@ Implemented:
   projection limits;
 - chunked immutable layout validation now enforces bounded per-chunk payload
   size and rejects overflowing pack/file ranges;
-- chunked materialize avoids double-closing the output file descriptor.
+- chunked materialize avoids double-closing the output file descriptor;
+- runtime-health keeps cached reads for workload/runtime objects but reads
+  DMCR garbage-collection `Secret` requests through a dedicated uncached
+  `APIReader`, preserving narrow RBAC without cluster-wide `Secret` watch.
 
 ### Slice 3. Plan and docs alignment
 
@@ -174,6 +181,7 @@ Validation passed:
 - `bash api/scripts/update-codegen.sh`;
 - `bash api/scripts/verify-crdgen.sh`;
 - `cd images/controller && go test -count=1 ./internal/adapters/modelpack/oci`;
+- `cd images/controller && go test -count=1 ./internal/monitoring/runtimehealth ./internal/bootstrap`;
 - `./tools/ci/run-suite.sh verify`;
 - `git diff --check`.
 

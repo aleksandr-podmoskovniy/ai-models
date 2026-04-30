@@ -37,18 +37,28 @@ type Options struct {
 	NodeSelectorLabels map[string]string
 }
 
-func SetupCollector(reader client.Reader, registerer prometheus.Registerer, logger *slog.Logger, options Options) {
-	NewCollector(reader, logger, options).Register(registerer)
+func SetupCollector(
+	reader client.Reader,
+	secretReader client.Reader,
+	registerer prometheus.Registerer,
+	logger *slog.Logger,
+	options Options,
+) {
+	NewCollector(reader, secretReader, logger, options).Register(registerer)
 }
 
-func NewCollector(reader client.Reader, logger *slog.Logger, options Options) *Collector {
+func NewCollector(reader client.Reader, secretReader client.Reader, logger *slog.Logger, options Options) *Collector {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if secretReader == nil {
+		secretReader = reader
 	}
 	options = normalizeOptions(options)
 
 	return &Collector{
 		reader:             reader,
+		secretReader:       secretReader,
 		logger:             logger.With(slog.String("collector", collectorName)),
 		runtimeNamespace:   options.RuntimeNamespace,
 		cleanupNamespace:   options.CleanupNamespace,
@@ -61,6 +71,7 @@ func NewCollector(reader client.Reader, logger *slog.Logger, options Options) *C
 
 type Collector struct {
 	reader             client.Reader
+	secretReader       client.Reader
 	logger             *slog.Logger
 	runtimeNamespace   string
 	cleanupNamespace   string
