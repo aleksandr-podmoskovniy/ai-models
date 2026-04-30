@@ -41,6 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -302,6 +303,11 @@ func managerOptions(scheme *runtime.Scheme, logger *slog.Logger, runtimeOptions 
 		Logger: bridged,
 		Metrics: metricsserver.Options{
 			BindAddress: runtimeOptions.MetricsBindAddress,
+		},
+		Client: crclient.Options{
+			Cache: &crclient.CacheOptions{
+				DisableFor: []crclient.Object{&corev1.Secret{}},
+			},
 		},
 		HealthProbeBindAddress:        runtimeOptions.HealthProbeBindAddress,
 		LeaderElection:                runtimeOptions.LeaderElection,

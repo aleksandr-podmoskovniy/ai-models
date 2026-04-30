@@ -82,6 +82,10 @@ Findings:
   runtime-health listed module-private `Secret` objects through the shared
   controller cache, which started a cluster-wide `Secret` informer after RBAC
   was intentionally narrowed to cluster-wide `delete` only.
+- A second live rollout check showed that the root issue is broader than the
+  runtime-health collector: any `Secret` read through `mgr.GetClient()` can
+  lazily start the shared cluster-wide `Secret` informer unless the manager
+  client is configured to bypass cache for `Secret`.
 
 ### Slice 2. Targeted defect fixes
 
@@ -131,7 +135,10 @@ Implemented:
 - chunked materialize avoids double-closing the output file descriptor;
 - runtime-health keeps cached reads for workload/runtime objects but reads
   DMCR garbage-collection `Secret` requests through a dedicated uncached
-  `APIReader`, preserving narrow RBAC without cluster-wide `Secret` watch.
+  `APIReader`;
+- manager client bypasses cache for `corev1.Secret`, preserving narrow RBAC
+  for all module-private Secret state/auth reads without cluster-wide `Secret`
+  watch.
 
 ### Slice 3. Plan and docs alignment
 

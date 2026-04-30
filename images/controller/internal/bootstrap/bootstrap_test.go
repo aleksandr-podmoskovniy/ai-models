@@ -33,6 +33,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestNewWiresPublicationRuntimeForOCIArtifactPlane(t *testing.T) {
@@ -194,10 +195,25 @@ func TestManagerOptionsSetProductionControllerDefaults(t *testing.T) {
 	if got, want := options.Controller.CacheSyncTimeout, defaultControllerCacheSyncTimeout; got != want {
 		t.Fatalf("unexpected controller cache sync timeout %s, want %s", got, want)
 	}
+	if options.Client.Cache == nil {
+		t.Fatal("expected manager client cache options to be configured")
+	}
+	if !clientCacheDisabledForSecret(options.Client.Cache.DisableFor) {
+		t.Fatal("expected controller client to bypass cache for Secrets")
+	}
 	if options.Controller.RecoverPanic == nil || !*options.Controller.RecoverPanic {
 		t.Fatal("expected controller recover panic default to be enabled")
 	}
 	if options.Controller.UsePriorityQueue == nil || !*options.Controller.UsePriorityQueue {
 		t.Fatal("expected controller priority queue default to be enabled")
 	}
+}
+
+func clientCacheDisabledForSecret(objects []crclient.Object) bool {
+	for _, object := range objects {
+		if _, ok := object.(*corev1.Secret); ok {
+			return true
+		}
+	}
+	return false
 }
