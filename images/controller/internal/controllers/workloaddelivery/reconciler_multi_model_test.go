@@ -39,12 +39,12 @@ func TestDeploymentReconcilerAppliesMultipleModelRefs(t *testing.T) {
 	secondary.Status.Artifact.Digest = secondaryDigest
 	secondary.Status.Resolved.Family = "embedding"
 	workload := annotatedDeployment(map[string]string{
-		ModelRefsAnnotation: "main=Model/gemma,embed=Model/embed",
+		ModelAnnotation: "gemma,embed",
 	}, 1, corev1.VolumeSource{
 		EmptyDir: &corev1.EmptyDirVolumeSource{},
 	})
 	workload.Spec.Template.Spec.Volumes = nil
-	addNodeCacheAliasVolumes(&workload.Spec.Template, "main", "embed")
+	addNodeCacheModelVolumes(&workload.Spec.Template, "gemma", "embed")
 	reconciler, kubeClient := newDeploymentReconciler(t, primary, secondary, workload, testkit.NewOCIRegistryWriteAuthSecret(testRegistryNamespace, testRegistryAuthName))
 
 	result := reconcileDeployment(t, reconciler, workload)
@@ -62,17 +62,17 @@ func TestDeploymentReconcilerAppliesMultipleModelRefs(t *testing.T) {
 	if got, want := len(updated.Spec.Template.Spec.ImagePullSecrets), 0; got != want {
 		t.Fatalf("image pull secret count = %d, want %d", got, want)
 	}
-	if got := countVolumeByName(updated.Spec.Template.Spec.Volumes, modeldelivery.DefaultManagedCacheName+"-main"); got != 1 {
-		t.Fatalf("main CSI volume count = %d, want 1", got)
+	if got := countVolumeByName(updated.Spec.Template.Spec.Volumes, modeldelivery.DefaultManagedCacheName+"-gemma"); got != 1 {
+		t.Fatalf("gemma CSI volume count = %d, want 1", got)
 	}
 	if got := countVolumeByName(updated.Spec.Template.Spec.Volumes, modeldelivery.DefaultManagedCacheName+"-embed"); got != 1 {
 		t.Fatalf("embed CSI volume count = %d, want 1", got)
 	}
-	if got, want := runtimeEnvValue(updated.Spec.Template.Spec.Containers, modeldelivery.ModelPathEnv), nodecache.WorkloadModelAliasPath(modeldelivery.DefaultCacheMountPath, "main"); got != want {
-		t.Fatalf("primary model path env = %q, want %q", got, want)
+	if got, want := runtimeEnvValue(updated.Spec.Template.Spec.Containers, modeldelivery.ModelsDirEnv), nodecache.WorkloadModelsDirPath(modeldelivery.DefaultCacheMountPath); got != want {
+		t.Fatalf("models dir env = %q, want %q", got, want)
 	}
-	if got, want := runtimeEnvValue(updated.Spec.Template.Spec.Containers, modeldelivery.NamedModelPathEnv("embed")), nodecache.WorkloadModelAliasPath(modeldelivery.DefaultCacheMountPath, "embed"); got != want {
-		t.Fatalf("embed model path env = %q, want %q", got, want)
+	if got := runtimeEnvValue(updated.Spec.Template.Spec.Containers, "AI_MODELS_MODEL_PATH"); got != "" {
+		t.Fatalf("did not expect legacy model path env, got %q", got)
 	}
 	if got := updated.Spec.Template.Annotations[modeldelivery.ResolvedModelsAnnotation]; got == "" {
 		t.Fatalf("expected resolved models annotation")

@@ -78,6 +78,7 @@ type managerConfig struct {
 	NodeCacheNodeSelectorJSON      string
 	NodeCacheBlockDeviceJSON       string
 	DeliveryAuthKey                string
+	SharedPVCStorageClassName      string
 
 	UploadServiceName string
 	UploadPublicHost  string
@@ -131,6 +132,7 @@ func defaultManagerConfig() managerConfig {
 		NodeCacheNodeSelectorJSON:            cmdsupport.EnvOr(nodeCacheNodeSelectorEnv, "{}"),
 		NodeCacheBlockDeviceJSON:             cmdsupport.EnvOr(nodeCacheBlockDeviceSelectorEnv, "{}"),
 		DeliveryAuthKey:                      cmdsupport.EnvOr(deliverycontract.DeliveryAuthKeyEnv, ""),
+		SharedPVCStorageClassName:            cmdsupport.EnvOr(sharedPVCStorageClassNameEnv, ""),
 		UploadServiceName:                    cmdsupport.EnvOr(uploadServiceNameEnv, defaultUploadGatewayServiceName),
 		UploadPublicHost:                     cmdsupport.EnvOr(uploadPublicHostEnv, ""),
 		MetricsBindAddress:                   cmdsupport.EnvOr(metricsBindAddressEnv, ":8080"),
@@ -184,6 +186,7 @@ func parseManagerConfig(args []string) (managerConfig, int, error) {
 	flags.StringVar(&config.NodeCacheThinPoolName, "node-cache-thin-pool-name", config.NodeCacheThinPoolName, "Thin-pool name used for managed node-local cache substrate.")
 	flags.StringVar(&config.NodeCacheNodeSelectorJSON, "node-cache-node-selector-json", config.NodeCacheNodeSelectorJSON, "JSON object with matchLabels for node-local cache substrate node selection.")
 	flags.StringVar(&config.NodeCacheBlockDeviceJSON, "node-cache-block-device-selector-json", config.NodeCacheBlockDeviceJSON, "JSON object with matchLabels for BlockDevice selection in managed node-local cache substrate.")
+	flags.StringVar(&config.SharedPVCStorageClassName, "shared-pvc-storage-class-name", config.SharedPVCStorageClassName, "RWX StorageClass name used for controller-owned SharedPVC workload delivery when node-cache is disabled.")
 	flags.StringVar(&config.UploadServiceName, "upload-service-name", config.UploadServiceName, "Upload gateway Service name used for upload session URLs.")
 	flags.StringVar(&config.UploadPublicHost, "upload-public-host", config.UploadPublicHost, "Public host used for upload session ingress URLs.")
 	flags.StringVar(&config.MetricsBindAddress, "metrics-bind-address", config.MetricsBindAddress, "The address the metric endpoint binds to.")

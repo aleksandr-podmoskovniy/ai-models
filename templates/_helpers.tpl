@@ -173,6 +173,12 @@ model-cache
 {{- toJson $selector -}}
 {{- end -}}
 
+{{- define "ai-models.sharedPVCStorageClassName" -}}
+{{- $moduleValues := (index .Values "aiModels") | default dict -}}
+{{- $sharedPVC := (index $moduleValues "sharedPVC") | default dict -}}
+{{- default "" (index $sharedPVC "storageClassName") -}}
+{{- end -}}
+
 {{- define "ai-models.nodeCacheRuntimeName" -}}
 ai-models-node-cache-runtime
 {{- end -}}

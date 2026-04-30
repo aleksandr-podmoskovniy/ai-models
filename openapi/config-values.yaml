@@ -121,4 +121,20 @@ properties:
           ai.deckhouse.io/model-cache: "true"
         additionalProperties:
           type: string
+  sharedPVC:
+    type: object
+    additionalProperties: false
+    description: |
+      RWX shared-volume delivery settings used only when `nodeCache.enabled=false`.
+      This is the universal network-storage delivery mode for clusters without
+      local cache disks. The StorageClass must support `ReadWriteMany`
+      semantics, for example CephFS, NFS, or another shared filesystem.
+    properties:
+      storageClassName:
+        type: string
+        description: |
+          RWX StorageClass name for controller-owned SharedPVC workload
+          delivery. Empty value disables SharedPVC and keeps annotated
+          workloads fail-closed when node cache is disabled.
+        default: ""
 additionalProperties: false

@@ -31,7 +31,6 @@ type deliverySignalState struct {
 	Digest         string
 	ArtifactURI    string
 	ArtifactFamily string
-	ModelPath      string
 	Models         string
 	DeliveryMode   string
 	DeliveryReason string
@@ -46,7 +45,6 @@ func deliverySignalStateFromTemplate(template *corev1.PodTemplateSpec) deliveryS
 		Digest:         trimmedAnnotation(template.Annotations, modeldelivery.ResolvedDigestAnnotation),
 		ArtifactURI:    trimmedAnnotation(template.Annotations, modeldelivery.ResolvedArtifactURIAnnotation),
 		ArtifactFamily: trimmedAnnotation(template.Annotations, modeldelivery.ResolvedArtifactFamilyAnnotation),
-		ModelPath:      managedRuntimeEnvValue(template.Spec.Containers, modeldelivery.ModelPathEnv),
 		Models:         trimmedAnnotation(template.Annotations, modeldelivery.ResolvedModelsAnnotation),
 		DeliveryMode:   trimmedAnnotation(template.Annotations, modeldelivery.ResolvedDeliveryModeAnnotation),
 		DeliveryReason: trimmedAnnotation(template.Annotations, modeldelivery.ResolvedDeliveryReasonAnnotation),
@@ -62,21 +60,6 @@ func trimmedAnnotation(annotations map[string]string, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(annotations[key])
-}
-
-func managedRuntimeEnvValue(containers []corev1.Container, name string) string {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return ""
-	}
-	for _, container := range containers {
-		for _, env := range container.Env {
-			if env.Name == name {
-				return strings.TrimSpace(env.Value)
-			}
-		}
-	}
-	return ""
 }
 
 func newWorkloadObjectLike(object client.Object) (client.Object, error) {

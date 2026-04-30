@@ -22,11 +22,19 @@ import (
 )
 
 type WorkloadContractError struct {
+	reason  string
 	message string
 }
 
 func NewWorkloadContractError(format string, args ...any) error {
 	return &WorkloadContractError{message: fmt.Sprintf(format, args...)}
+}
+
+func NewWorkloadBlockedError(reason DeliveryGateReason, format string, args ...any) error {
+	return &WorkloadContractError{
+		reason:  string(reason),
+		message: fmt.Sprintf(format, args...),
+	}
 }
 
 func (e *WorkloadContractError) Error() string {
@@ -36,4 +44,12 @@ func (e *WorkloadContractError) Error() string {
 func IsWorkloadContractError(err error) bool {
 	var target *WorkloadContractError
 	return errors.As(err, &target)
+}
+
+func WorkloadContractReason(err error) string {
+	var target *WorkloadContractError
+	if errors.As(err, &target) {
+		return target.reason
+	}
+	return ""
 }

@@ -199,10 +199,10 @@ func annotatedDeploymentWithNodeCacheVolume(annotations map[string]string, repli
 	return workload
 }
 
-func addNodeCacheAliasVolumes(template *corev1.PodTemplateSpec, aliases ...string) {
-	for _, alias := range aliases {
+func addNodeCacheModelVolumes(template *corev1.PodTemplateSpec, names ...string) {
+	for _, name := range names {
 		template.Spec.Volumes = append(template.Spec.Volumes, corev1.Volume{
-			Name: modeldelivery.DefaultManagedCacheName + "-" + alias,
+			Name: modeldelivery.DefaultManagedCacheName + "-" + name,
 			VolumeSource: corev1.VolumeSource{
 				CSI: nodeCacheCSIVolumeSource(),
 			},

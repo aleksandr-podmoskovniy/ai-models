@@ -26,26 +26,19 @@ func (s *Service) pruneManagedCacheTemplateState(
 	template *corev1.PodTemplateSpec,
 	topology CacheTopology,
 	rendered Rendered,
-	aliasContract bool,
 ) {
 	managed := NormalizeManagedCacheOptions(s.options.ManagedCache)
 	if !managed.Enabled {
 		return
 	}
-	PruneManagedCacheTemplateState(template, managed.VolumeName, managedCacheKeepNames(topology, rendered, aliasContract))
+	PruneManagedCacheTemplateState(template, managed.VolumeName, managedCacheKeepNames(topology, rendered))
 }
 
-func managedCacheKeepNames(topology CacheTopology, rendered Rendered, aliasContract bool) []string {
+func managedCacheKeepNames(topology CacheTopology, rendered Rendered) []string {
 	if topology.Kind != CacheTopologyDirect {
 		return nil
 	}
-	if aliasContract {
-		return volumeMountNames(rendered.RuntimeVolumeMounts)
-	}
-	if strings.TrimSpace(topology.CacheMount.VolumeName) == "" {
-		return nil
-	}
-	return []string{strings.TrimSpace(topology.CacheMount.VolumeName)}
+	return volumeMountNames(rendered.RuntimeVolumeMounts)
 }
 
 func volumeMountNames(mounts []corev1.VolumeMount) []string {

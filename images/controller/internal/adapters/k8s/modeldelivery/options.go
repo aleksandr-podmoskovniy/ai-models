@@ -20,7 +20,6 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
@@ -31,6 +30,7 @@ const (
 	LegacyMaterializerInitContainerName = "ai-models-materializer"
 	DefaultCacheMountPath               = "/data/modelcache"
 	DefaultManagedCacheName             = "ai-models-node-cache"
+	DefaultSharedPVCVolumeName          = "ai-models-shared-pvc"
 	NodeCacheCSIDriverName              = nodecache.CSIDriverName
 
 	ResolvedDigestAnnotation         = deliverycontract.ResolvedDigestAnnotation
@@ -41,11 +41,11 @@ const (
 	ResolvedModelsAnnotation         = deliverycontract.ResolvedModelsAnnotation
 	ResolvedSignatureAnnotation      = deliverycontract.ResolvedSignatureAnnotation
 
-	ModelPathEnv   = "AI_MODELS_MODEL_PATH"
-	ModelDigestEnv = "AI_MODELS_MODEL_DIGEST"
-	ModelFamilyEnv = "AI_MODELS_MODEL_FAMILY"
-	ModelsDirEnv   = "AI_MODELS_MODELS_DIR"
-	ModelsEnv      = "AI_MODELS_MODELS"
+	legacyModelPathEnv   = "AI_MODELS_MODEL_PATH"
+	legacyModelDigestEnv = "AI_MODELS_MODEL_DIGEST"
+	legacyModelFamilyEnv = "AI_MODELS_MODEL_FAMILY"
+	ModelsDirEnv         = "AI_MODELS_MODELS_DIR"
+	ModelsEnv            = "AI_MODELS_MODELS"
 
 	nodeCacheCSIAttributeArtifactURI    = nodecache.CSIAttributeArtifactURI
 	nodeCacheCSIAttributeArtifactDigest = nodecache.CSIAttributeArtifactDigest
@@ -62,6 +62,11 @@ type ManagedCacheOptions struct {
 	VolumeName       string
 	CapacityBytes    int64
 	RuntimeNamespace string
+}
+
+type SharedPVCOptions struct {
+	StorageClassName string
+	VolumeName       string
 }
 
 const DeliveryAuthKeyEnv = deliverycontract.DeliveryAuthKeyEnv
@@ -96,6 +101,14 @@ func NormalizeManagedCacheOptions(options ManagedCacheOptions) ManagedCacheOptio
 	return options
 }
 
+func NormalizeSharedPVCOptions(options SharedPVCOptions) SharedPVCOptions {
+	options.StorageClassName = strings.TrimSpace(options.StorageClassName)
+	if strings.TrimSpace(options.VolumeName) == "" {
+		options.VolumeName = DefaultSharedPVCVolumeName
+	}
+	return options
+}
+
 func ValidateManagedCacheOptions(options ManagedCacheOptions) error {
 	if !options.Enabled {
 		return nil
@@ -109,68 +122,80 @@ func ValidateManagedCacheOptions(options ManagedCacheOptions) error {
 	return nil
 }
 
-func ModelPath(options Options) string {
-	return nodecache.WorkloadModelPath(strings.TrimSpace(options.CacheMountPath))
+func ValidateSharedPVCOptions(options SharedPVCOptions) error {
+	options = NormalizeSharedPVCOptions(options)
+	if strings.TrimSpace(options.VolumeName) == "" {
+		return errors.New("runtime delivery shared PVC volume name must not be empty")
+	}
+	return nil
 }
 
 func ModelsDirPath(options Options) string {
 	return nodecache.WorkloadModelsDirPath(strings.TrimSpace(options.CacheMountPath))
 }
 
-func NamedModelPath(options Options, alias string) string {
-	return nodecache.WorkloadModelAliasPath(strings.TrimSpace(options.CacheMountPath), alias)
+func NamedModelPath(options Options, name string) string {
+	return nodecache.WorkloadNamedModelPath(strings.TrimSpace(options.CacheMountPath), name)
 }
 
-func NamedModelPathEnv(alias string) string {
-	return namedModelEnv(alias, "PATH")
-}
-
-func NamedModelDigestEnv(alias string) string {
-	return namedModelEnv(alias, "DIGEST")
-}
-
-func NamedModelFamilyEnv(alias string) string {
-	return namedModelEnv(alias, "FAMILY")
-}
-
-func namedModelEnv(alias, suffix string) string {
-	alias = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(alias), "-", "_"))
-	return fmt.Sprintf("AI_MODELS_MODEL_%s_%s", alias, suffix)
-}
-
-func managedResourceName(baseName, alias string) string {
+func managedResourceName(baseName, name string) string {
 	baseName = strings.TrimSpace(baseName)
-	alias = strings.TrimSpace(alias)
-	name := baseName + "-" + alias
-	if len(name) <= 63 {
-		return name
+	name = strings.TrimSpace(name)
+	suffix := dnsLabelSuffix(name)
+	candidate := baseName + "-" + suffix
+	if suffix == strings.ToLower(name) && len(candidate) <= 63 {
+		return candidate
 	}
-	sum := sha1.Sum([]byte(alias))
+	sum := sha1.Sum([]byte(name))
 	shortHash := hex.EncodeToString(sum[:])[:10]
-	prefixBudget := 63 - len(shortHash) - 1
-	if prefixBudget > len(baseName) {
-		prefixBudget = len(baseName)
+	suffixBudget := 63 - len(baseName) - len(shortHash) - 2
+	if suffixBudget > 0 {
+		return baseName + "-" + dnsLabelPrefix(suffix, suffixBudget) + "-" + shortHash
 	}
-	if prefixBudget < 1 {
-		prefixBudget = 1
-	}
-	return baseName[:prefixBudget] + "-" + shortHash
+	return dnsLabelPrefix(baseName, 63-len(shortHash)-1) + "-" + shortHash
 }
 
-func managedModelVolumeName(baseName, alias string) string {
-	return managedResourceName(baseName, alias)
+func managedModelVolumeName(baseName, name string) string {
+	return managedResourceName(baseName, name)
+}
+
+func dnsLabelSuffix(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.NewReplacer(".", "-", "_", "-").Replace(value)
+	value = strings.Trim(value, "-")
+	if value == "" {
+		return "model"
+	}
+	return value
+}
+
+func dnsLabelPrefix(value string, limit int) string {
+	value = dnsLabelSuffix(value)
+	if limit < 1 {
+		return "m"
+	}
+	if len(value) > limit {
+		value = value[:limit]
+	}
+	value = strings.Trim(value, "-")
+	if value == "" {
+		return "m"
+	}
+	return value
 }
 
 type DeliveryMode string
 
 const (
 	DeliveryModeSharedDirect DeliveryMode = deliverycontract.DeliveryModeSharedDirect
+	DeliveryModeSharedPVC    DeliveryMode = deliverycontract.DeliveryModeSharedPVC
 )
 
 type DeliveryReason string
 
 const (
 	DeliveryReasonNodeSharedRuntimePlane DeliveryReason = deliverycontract.DeliveryReasonNodeSharedRuntimePlane
+	DeliveryReasonRWXSharedVolume        DeliveryReason = deliverycontract.DeliveryReasonRWXSharedVolume
 )
 
 type DeliveryGateReason string
@@ -178,4 +203,7 @@ type DeliveryGateReason string
 const (
 	DeliveryGateReasonInsufficientNodeCacheCapacity DeliveryGateReason = "InsufficientNodeCacheCapacity"
 	DeliveryGateReasonNodeCacheDeliveryDisabled     DeliveryGateReason = "NodeCacheDeliveryDisabled"
+	DeliveryGateReasonSharedPVCStorageClassMissing  DeliveryGateReason = "SharedPVCStorageClassMissing"
+	DeliveryGateReasonSharedPVCClaimPending         DeliveryGateReason = "SharedPVCClaimPending"
+	DeliveryGateReasonSharedPVCMaterializerPending  DeliveryGateReason = "SharedPVCMaterializerPending"
 )

@@ -21,15 +21,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/nodecache"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 const (
 	ModelAnnotation        = "ai.deckhouse.io/model"
 	ClusterModelAnnotation = "ai.deckhouse.io/clustermodel"
-	ModelRefsAnnotation    = "ai.deckhouse.io/model-refs"
-
-	defaultModelAlias = "model"
 )
 
 type ReferenceScope string
@@ -40,93 +37,63 @@ const (
 )
 
 type Reference struct {
-	Alias string
 	Scope ReferenceScope
 	Name  string
 }
 
 func parseReferences(annotations map[string]string) ([]Reference, bool, error) {
-	modelRefs := strings.TrimSpace(annotations[ModelRefsAnnotation])
-	modelName := strings.TrimSpace(annotations[ModelAnnotation])
-	clusterModelName := strings.TrimSpace(annotations[ClusterModelAnnotation])
-
-	if modelRefs != "" {
-		if modelName != "" || clusterModelName != "" {
-			return nil, false, errors.New("workload delivery annotations must not mix model-refs with model or clustermodel")
-		}
-		refs, err := parseModelRefs(modelRefs)
-		return refs, len(refs) > 0, err
+	seen := map[string]struct{}{}
+	refs, err := parseReferenceList(annotations[ModelAnnotation], ReferenceScopeModel, seen)
+	if err != nil {
+		return nil, false, err
 	}
-
-	switch {
-	case modelName != "" && clusterModelName != "":
-		return nil, false, errors.New("workload delivery annotations must not set both model and clustermodel")
-	case modelName != "":
-		return []Reference{{Alias: defaultModelAlias, Scope: ReferenceScopeModel, Name: modelName}}, true, nil
-	case clusterModelName != "":
-		return []Reference{{Alias: defaultModelAlias, Scope: ReferenceScopeClusterModel, Name: clusterModelName}}, true, nil
-	default:
+	clusterRefs, err := parseReferenceList(annotations[ClusterModelAnnotation], ReferenceScopeClusterModel, seen)
+	if err != nil {
+		return nil, false, err
+	}
+	refs = append(refs, clusterRefs...)
+	if len(refs) == 0 {
 		return nil, false, nil
 	}
+	return refs, true, nil
 }
 
-func usesModelRefsAnnotation(annotations map[string]string) bool {
-	return strings.TrimSpace(annotations[ModelRefsAnnotation]) != ""
-}
-
-func parseModelRefs(value string) ([]Reference, error) {
-	parts := strings.FieldsFunc(value, func(r rune) bool {
-		return r == ',' || r == '\n' || r == ';'
-	})
-	if len(parts) == 0 {
-		return nil, errors.New("model-refs annotation must contain at least one reference")
+func parseReferenceList(value string, scope ReferenceScope, seen map[string]struct{}) ([]Reference, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
 	}
-	seenAliases := make(map[string]struct{}, len(parts))
+	parts := strings.Split(value, ",")
 	refs := make([]Reference, 0, len(parts))
 	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
+		name := strings.TrimSpace(part)
+		if name == "" {
+			return nil, errors.New("workload delivery model list must not contain empty names")
 		}
-		ref, err := parseModelRef(part)
-		if err != nil {
-			return nil, err
+		if strings.ContainsAny(name, "=/") {
+			return nil, fmt.Errorf("workload delivery model name %q must not contain renaming syntax, scopes or slashes", name)
 		}
-		if _, found := seenAliases[ref.Alias]; found {
-			return nil, fmt.Errorf("duplicate model alias %q", ref.Alias)
+		if err := validateReferenceName(name); err != nil {
+			return nil, fmt.Errorf("invalid workload delivery model name %q: %w", name, err)
 		}
-		seenAliases[ref.Alias] = struct{}{}
-		refs = append(refs, ref)
+		if _, found := seen[name]; found {
+			return nil, fmt.Errorf("duplicate workload delivery model name %q", name)
+		}
+		seen[name] = struct{}{}
+		refs = append(refs, Reference{Scope: scope, Name: name})
 	}
 	if len(refs) == 0 {
-		return nil, errors.New("model-refs annotation must contain at least one reference")
+		return nil, nil
 	}
 	return refs, nil
 }
 
-func parseModelRef(value string) (Reference, error) {
-	alias, target, found := strings.Cut(value, "=")
-	if !found {
-		return Reference{}, fmt.Errorf("model reference %q must use alias=Kind/name", value)
+func validateReferenceName(name string) error {
+	if name = strings.TrimSpace(name); name == "" {
+		return errors.New("model name must not be empty")
 	}
-	alias = strings.TrimSpace(alias)
-	if err := nodecache.ValidateModelAlias(alias); err != nil {
-		return Reference{}, fmt.Errorf("invalid model alias %q: %w", alias, err)
+	if problems := validation.IsDNS1123Subdomain(name); len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
 	}
-	kind, name, found := strings.Cut(strings.TrimSpace(target), "/")
-	if !found {
-		return Reference{}, fmt.Errorf("model reference %q must use alias=Kind/name", value)
-	}
-	name = strings.TrimSpace(name)
-	if name == "" || strings.Contains(name, "/") {
-		return Reference{}, fmt.Errorf("model reference %q must contain a single non-empty name", value)
-	}
-	switch {
-	case strings.EqualFold(strings.TrimSpace(kind), string(ReferenceScopeModel)):
-		return Reference{Alias: alias, Scope: ReferenceScopeModel, Name: name}, nil
-	case strings.EqualFold(strings.TrimSpace(kind), string(ReferenceScopeClusterModel)):
-		return Reference{Alias: alias, Scope: ReferenceScopeClusterModel, Name: name}, nil
-	default:
-		return Reference{}, fmt.Errorf("model reference %q has unsupported kind %q", value, kind)
-	}
+	return nil
 }

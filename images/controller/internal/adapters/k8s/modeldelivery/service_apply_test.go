@@ -39,7 +39,12 @@ func TestServiceAppliesSharedDirectWithoutWorkloadNamespaceSecrets(t *testing.T)
 	result, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact:       publishedArtifact(),
 		ArtifactFamily: "hf-safetensors-v1",
-		Topology:       TopologyHints{ReplicaCount: 1},
+		Bindings: []ModelBinding{{
+			Name:           "qwen3-14b",
+			Artifact:       publishedArtifact(),
+			ArtifactFamily: "hf-safetensors-v1",
+		}},
+		Topology: TopologyHints{ReplicaCount: 1},
 	}, template)
 	if err != nil {
 		t.Fatalf("ApplyToPodTemplate() error = %v", err)
@@ -54,7 +59,7 @@ func TestServiceAppliesSharedDirectWithoutWorkloadNamespaceSecrets(t *testing.T)
 	if got, want := result.DeliveryReason, DeliveryReasonNodeSharedRuntimePlane; got != want {
 		t.Fatalf("delivery reason = %q, want %q", got, want)
 	}
-	if got, want := result.ModelPath, nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
+	if got, want := result.ModelPath, nodecache.WorkloadNamedModelPath(DefaultCacheMountPath, "qwen3-14b"); got != want {
 		t.Fatalf("model path = %q, want %q", got, want)
 	}
 	if len(template.Spec.InitContainers) != 0 {
@@ -63,8 +68,11 @@ func TestServiceAppliesSharedDirectWithoutWorkloadNamespaceSecrets(t *testing.T)
 	if len(template.Spec.ImagePullSecrets) != 0 {
 		t.Fatalf("did not expect imagePullSecrets, got %#v", template.Spec.ImagePullSecrets)
 	}
-	if got, want := envByName(template.Spec.Containers[0].Env, ModelPathEnv), nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
-		t.Fatalf("%s = %q, want %q", ModelPathEnv, got, want)
+	if got, want := envByName(template.Spec.Containers[0].Env, ModelsDirEnv), nodecache.WorkloadModelsDirPath(DefaultCacheMountPath); got != want {
+		t.Fatalf("%s = %q, want %q", ModelsDirEnv, got, want)
+	}
+	if got := envByName(template.Spec.Containers[0].Env, legacyModelPathEnv); got != "" {
+		t.Fatalf("did not expect legacy %s, got %q", legacyModelPathEnv, got)
 	}
 	if got, want := template.Annotations[ResolvedDeliveryModeAnnotation], string(DeliveryModeSharedDirect); got != want {
 		t.Fatalf("resolved delivery mode annotation = %q, want %q", got, want)
@@ -89,6 +97,10 @@ func TestServiceApplyIsIdempotentForSharedDirect(t *testing.T) {
 	template := podTemplateWithoutCacheMount("runtime")
 	request := ApplyRequest{
 		Artifact: publishedArtifact(),
+		Bindings: []ModelBinding{{
+			Name:     "qwen3-14b",
+			Artifact: publishedArtifact(),
+		}},
 		Topology: TopologyHints{ReplicaCount: 1},
 	}
 
@@ -102,7 +114,7 @@ func TestServiceApplyIsIdempotentForSharedDirect(t *testing.T) {
 	if got := len(template.Spec.InitContainers); got != 0 {
 		t.Fatalf("expected no init containers, got %d", got)
 	}
-	if got := countVolumeByName(template.Spec.Volumes, DefaultManagedCacheName); got != 1 {
+	if got := countVolumeByName(template.Spec.Volumes, managedModelVolumeName(DefaultManagedCacheName, "qwen3-14b")); got != 1 {
 		t.Fatalf("expected single managed CSI volume, got %d", got)
 	}
 	if got := len(template.Spec.Containers[0].VolumeMounts); got != 1 {

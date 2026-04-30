@@ -127,6 +127,9 @@ func removeManagedTemplateState(template *corev1.PodTemplateSpec, options modeld
 	if modeldelivery.RemoveManagedCacheTemplateState(template, options) {
 		changed = true
 	}
+	if modeldelivery.RemoveSharedPVCTemplateState(template, options) {
+		changed = true
+	}
 
 	return changed
 }
@@ -159,7 +162,8 @@ func hasManagedTemplateState(template *corev1.PodTemplateSpec, options modeldeli
 			return true
 		}
 	}
-	return modeldelivery.HasManagedCacheTemplateState(template, options)
+	return modeldelivery.HasManagedCacheTemplateState(template, options) ||
+		modeldelivery.HasSharedPVCTemplateState(template, options)
 }
 
 func hasManagedTemplateStateInAny(templates []workloadPodTemplate, options modeldelivery.ServiceOptions) bool {

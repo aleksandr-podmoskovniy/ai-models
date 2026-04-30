@@ -8,8 +8,8 @@ description: "Готовые YAML-примеры для включения ai-mo
 Все примеры используют публичный контракт модуля. Не добавляйте вручную
 `materialize-artifact` initContainer, registry credentials и DMCR path в
 прикладные манифесты. Задайте только аннотацию модели; workload delivery
-controller сам добавит node-cache CSI volume, artifact attributes и
-workload-facing env/mount contract.
+controller сам добавит SharedDirect CSI volume или SharedPVC mount, artifact
+attributes и workload-facing env/mount contract.
 
 ## Минимальный ModuleConfig
 
@@ -77,6 +77,31 @@ spec:
 kubectl label node k8s-w3-gpu ai.deckhouse.io/model-cache=true
 kubectl label blockdevice <bd-name> ai.deckhouse.io/model-cache=true
 ```
+
+## ModuleConfig с SharedPVC без локального кэша
+
+```yaml
+apiVersion: deckhouse.io/v1alpha1
+kind: ModuleConfig
+metadata:
+  name: ai-models
+spec:
+  enabled: true
+  version: 1
+  settings:
+    artifacts:
+      bucket: ai-models
+      endpoint: https://s3.example.com
+      region: us-east-1
+      credentialsSecretName: ai-models-artifacts
+    nodeCache:
+      enabled: false
+    sharedPVC:
+      storageClassName: cephfs-rwx
+```
+
+`sharedPVC.storageClassName` должен указывать на `StorageClass` с реальной
+поддержкой `ReadWriteMany`.
 
 ## Namespaced Model из Hugging Face
 
@@ -216,7 +241,8 @@ metadata:
   name: rag-service
   namespace: ai-demo
   annotations:
-    ai.deckhouse.io/model-refs: main=ClusterModel/gemma-small,embed=Model/bge-m3
+    ai.deckhouse.io/clustermodel: gemma-small
+    ai.deckhouse.io/model: bge-m3
 spec:
   selector:
     matchLabels:
@@ -233,9 +259,16 @@ spec:
 
 В контейнере:
 
-- `AI_MODELS_MODEL_MAIN_PATH`;
-- `AI_MODELS_MODEL_EMBED_PATH`;
 - `AI_MODELS_MODELS_DIR=/data/modelcache/models`.
+- `AI_MODELS_MODELS` содержит список моделей с `name`, `path`, `digest`,
+  `family`.
+
+Пути:
+
+```text
+/data/modelcache/models/gemma-small
+/data/modelcache/models/bge-m3
+```
 
 ## Внешние контроллеры
 

@@ -35,6 +35,7 @@ func TestServiceRejectsStatefulSetClaimTemplateBridgeTopology(t *testing.T) {
 
 	_, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
+		Bindings: singleModelBinding(),
 		Topology: TopologyHints{
 			ReplicaCount: 3,
 			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{
@@ -55,6 +56,7 @@ func TestServiceRejectsSharedWorkloadPVCBridgeTopology(t *testing.T) {
 
 	_, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
+		Bindings: singleModelBinding(),
 		Topology: TopologyHints{ReplicaCount: 3},
 	}, template)
 	if err == nil || !strings.Contains(err.Error(), "does not support explicit cache persistentVolumeClaim") {
@@ -70,6 +72,7 @@ func TestServiceRejectsEphemeralBridgeTopology(t *testing.T) {
 
 	_, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
+		Bindings: singleModelBinding(),
 		Topology: TopologyHints{ReplicaCount: 1},
 	}, template)
 	if err == nil || !strings.Contains(err.Error(), "does not support explicit cache volume") {
@@ -85,6 +88,7 @@ func TestServiceRejectsNegativeReplicaCount(t *testing.T) {
 
 	_, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
+		Bindings: singleModelBinding(),
 		Topology: TopologyHints{ReplicaCount: -1},
 	}, template)
 	if err == nil || err.Error() != "runtime delivery replica count must not be negative" {

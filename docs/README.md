@@ -21,8 +21,9 @@ workload delivery contract.
   sessions.
 - Calculates public metadata: format, family, architecture, normalized
   endpoint types, features, and provider evidence.
-- Delivers a published model into workloads through annotation-based primary
-  and multi-model alias contracts.
+- Delivers published models into workloads through the
+  `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel` annotation contract
+  and stable `/data/modelcache/models/<model-name>` paths.
 - Can use an SDS-backed managed node-local cache for SharedDirect delivery.
 
 ## Architecture

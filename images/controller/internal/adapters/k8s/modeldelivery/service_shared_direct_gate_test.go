@@ -44,6 +44,7 @@ func TestServiceKeepsSchedulingGateWhenManagedCacheCannotFitArtifact(t *testing.
 
 	result, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
+		Bindings: singleModelBinding(),
 		Topology: TopologyHints{ReplicaCount: 1},
 	}, template)
 	if err != nil {

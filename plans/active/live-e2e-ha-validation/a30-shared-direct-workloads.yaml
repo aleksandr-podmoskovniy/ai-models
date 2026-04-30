@@ -14,7 +14,7 @@ metadata:
     app.kubernetes.io/name: vllm-a30-embed
     ai.deckhouse.io/live-e2e: ha-validation
   annotations:
-    ai.deckhouse.io/model-refs: model=ClusterModel/a30-user-bge-m3
+    ai.deckhouse.io/clustermodel: a30-user-bge-m3
 spec:
   replicas: 1
   strategy:
@@ -46,7 +46,7 @@ spec:
             - sh
             - -lc
             - >
-              exec vllm serve /data/modelcache/models/model
+              exec vllm serve /data/modelcache/models/a30-user-bge-m3
               --runner pooling
               --convert embed
               --served-model-name a30-user-bge-m3
@@ -122,7 +122,7 @@ metadata:
     app.kubernetes.io/name: vllm-a30-rerank
     ai.deckhouse.io/live-e2e: ha-validation
   annotations:
-    ai.deckhouse.io/model-refs: model=ClusterModel/a30-bge-reranker-v2-m3-en-ru
+    ai.deckhouse.io/clustermodel: a30-bge-reranker-v2-m3-en-ru
 spec:
   replicas: 1
   strategy:
@@ -154,7 +154,7 @@ spec:
             - sh
             - -lc
             - >
-              exec vllm serve /data/modelcache/models/model
+              exec vllm serve /data/modelcache/models/a30-bge-reranker-v2-m3-en-ru
               --runner pooling
               --convert reward
               --served-model-name bge-reranker-v2-m3-en-ru
@@ -230,7 +230,7 @@ metadata:
     app.kubernetes.io/name: vllm-a30-whisper
     ai.deckhouse.io/live-e2e: ha-validation
   annotations:
-    ai.deckhouse.io/model-refs: model=ClusterModel/a30-whisper-medium
+    ai.deckhouse.io/clustermodel: a30-whisper-medium
 spec:
   replicas: 1
   strategy:
@@ -262,7 +262,7 @@ spec:
             - sh
             - -lc
             - >
-              exec vllm serve /data/modelcache/models/model
+              exec vllm serve /data/modelcache/models/a30-whisper-medium
               --served-model-name whisper-medium
               --host 0.0.0.0
               --port 8000

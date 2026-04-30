@@ -117,10 +117,10 @@ func (h *admissionHandler) shouldGate(
 		return found, err
 	}
 	oldReferences, oldFound, err := parseReferences(oldObject.GetAnnotations())
-	if err != nil || !oldFound {
+	if err != nil {
 		return true, err
 	}
-	if usesModelRefsAnnotation(oldObject.GetAnnotations()) != usesModelRefsAnnotation(object.GetAnnotations()) {
+	if !oldFound {
 		return true, nil
 	}
 	return !equalReferences(oldReferences, references), nil

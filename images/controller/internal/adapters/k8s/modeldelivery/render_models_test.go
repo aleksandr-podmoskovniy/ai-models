@@ -18,6 +18,7 @@ package modeldelivery
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -25,14 +26,14 @@ import (
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
 )
 
-func TestRenderBuildsAliasRuntimeContractForMultipleSharedDirectModels(t *testing.T) {
+func TestRenderBuildsModelRuntimeContractForMultipleSharedDirectModels(t *testing.T) {
 	t.Parallel()
 
 	rendered, err := Render(Input{
 		Artifact: publishedArtifactWithDigest("sha256:primary"),
 		Bindings: []BindingInput{
-			{Alias: "main", Artifact: publishedArtifactWithDigest("sha256:primary"), ArtifactFamily: "hf-safetensors-v1"},
-			{Alias: "embed", Artifact: publishedArtifactWithDigest("sha256:embed"), ArtifactFamily: "embedding-v1"},
+			{Name: "qwen3-14b", Artifact: publishedArtifactWithDigest("sha256:primary"), ArtifactFamily: "hf-safetensors-v1"},
+			{Name: "bge-m3", Artifact: publishedArtifactWithDigest("sha256:embed"), ArtifactFamily: "embedding-v1"},
 		},
 		CacheMount: CacheMount{
 			VolumeName: DefaultManagedCacheName,
@@ -44,17 +45,14 @@ func TestRenderBuildsAliasRuntimeContractForMultipleSharedDirectModels(t *testin
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.WorkloadModelAliasPath(DefaultCacheMountPath, "main"); got != want {
-		t.Fatalf("primary model path = %q, want %q", got, want)
+	if got := envValue(rendered.RuntimeEnv, legacyModelPathEnv); got != "" {
+		t.Fatalf("did not expect legacy primary model path env, got %q", got)
 	}
 	if got, want := envValue(rendered.RuntimeEnv, ModelsDirEnv), nodecache.WorkloadModelsDirPath(DefaultCacheMountPath); got != want {
 		t.Fatalf("models dir = %q, want %q", got, want)
 	}
-	if got, want := envValue(rendered.RuntimeEnv, NamedModelPathEnv("embed")), nodecache.WorkloadModelAliasPath(DefaultCacheMountPath, "embed"); got != want {
-		t.Fatalf("named model path = %q, want %q", got, want)
-	}
-	if got, want := envValue(rendered.RuntimeEnv, NamedModelDigestEnv("embed")), "sha256:embed"; got != want {
-		t.Fatalf("named model digest = %q, want %q", got, want)
+	if got := envValue(rendered.RuntimeEnv, NamedModelPathEnv("bge-m3")); got != "" {
+		t.Fatalf("did not expect per-model path env, got %q", got)
 	}
 	if rendered.ResolvedModels == "" || envValue(rendered.RuntimeEnv, ModelsEnv) == "" {
 		t.Fatalf("expected rendered model manifest in annotation and env")
@@ -66,6 +64,9 @@ func TestRenderBuildsAliasRuntimeContractForMultipleSharedDirectModels(t *testin
 	}
 	if _, leaksURI := runtimeEntries[0]["uri"]; leaksURI {
 		t.Fatalf("runtime models env must not expose internal artifact URI: %#v", runtimeEntries[0])
+	}
+	if got, want := runtimeEntries[0]["name"], "qwen3-14b"; got != want {
+		t.Fatalf("runtime model name = %q, want %q", got, want)
 	}
 	var resolvedEntries []map[string]any
 	if err := json.Unmarshal([]byte(rendered.ResolvedModels), &resolvedEntries); err != nil {
@@ -79,14 +80,14 @@ func TestRenderBuildsAliasRuntimeContractForMultipleSharedDirectModels(t *testin
 	}
 }
 
-func TestRenderBuildsAliasMountsForManagedSharedDirectVolumes(t *testing.T) {
+func TestRenderBuildsModelMountsForManagedSharedDirectVolumes(t *testing.T) {
 	t.Parallel()
 
 	rendered, err := Render(Input{
 		Artifact: publishedArtifactWithDigest("sha256:primary"),
 		Bindings: []BindingInput{
-			{Alias: "main", Artifact: publishedArtifactWithDigest("sha256:primary")},
-			{Alias: "draft", Artifact: publishedArtifactWithDigest("sha256:draft")},
+			{Name: "qwen3-14b", Artifact: publishedArtifactWithDigest("sha256:primary")},
+			{Name: "bge-reranker", Artifact: publishedArtifactWithDigest("sha256:draft")},
 		},
 		CacheMount: CacheMount{
 			VolumeName: DefaultManagedCacheName,
@@ -101,14 +102,43 @@ func TestRenderBuildsAliasMountsForManagedSharedDirectVolumes(t *testing.T) {
 	if got := len(rendered.Volumes); got != 0 {
 		t.Fatalf("render must keep CSI volume ownership in service layer, got %d", got)
 	}
-	if got, want := rendered.RuntimeVolumeMounts[0].Name, managedModelVolumeName(DefaultManagedCacheName, "main"); got != want {
+	if got, want := rendered.RuntimeVolumeMounts[0].Name, managedModelVolumeName(DefaultManagedCacheName, "qwen3-14b"); got != want {
 		t.Fatalf("main mount volume = %q, want %q", got, want)
 	}
-	if got, want := rendered.RuntimeVolumeMounts[1].MountPath, nodecache.WorkloadModelAliasPath(DefaultCacheMountPath, "draft"); got != want {
+	if got, want := rendered.RuntimeVolumeMounts[1].MountPath, nodecache.WorkloadNamedModelPath(DefaultCacheMountPath, "bge-reranker"); got != want {
 		t.Fatalf("draft mount path = %q, want %q", got, want)
 	}
 	if !rendered.RuntimeVolumeMounts[1].ReadOnly {
 		t.Fatalf("expected read-only shared-direct model mount")
+	}
+}
+
+func TestRenderBuildsSafeVolumeNamesForDNSSubdomainModelNames(t *testing.T) {
+	t.Parallel()
+
+	modelName := "qwen3.14b." + strings.Repeat("a", 45)
+	rendered, err := Render(Input{
+		Artifact: publishedArtifactWithDigest("sha256:primary"),
+		Bindings: []BindingInput{{
+			Name:     modelName,
+			Artifact: publishedArtifactWithDigest("sha256:primary"),
+		}},
+		CacheMount: CacheMount{
+			VolumeName: DefaultManagedCacheName,
+			MountPath:  DefaultCacheMountPath,
+		},
+		TopologyKind: CacheTopologyDirect,
+	}, Options{})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	volumeName := rendered.RuntimeVolumeMounts[0].Name
+	if strings.Contains(volumeName, ".") || len(volumeName) > 63 {
+		t.Fatalf("managed volume name = %q, want DNS label <= 63 chars", volumeName)
+	}
+	if got, want := rendered.RuntimeVolumeMounts[0].MountPath, nodecache.WorkloadNamedModelPath(DefaultCacheMountPath, modelName); got != want {
+		t.Fatalf("model mount path = %q, want %q", got, want)
 	}
 }
 

@@ -54,6 +54,10 @@ func TestServiceInjectsManagedSharedDirectVolume(t *testing.T) {
 
 	result, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
+		Bindings: []ModelBinding{{
+			Name:     "qwen3-14b",
+			Artifact: publishedArtifact(),
+		}},
 		Topology: TopologyHints{ReplicaCount: 1},
 	}, template)
 	if err != nil {
@@ -78,7 +82,7 @@ func TestServiceInjectsManagedSharedDirectVolume(t *testing.T) {
 	if len(template.Spec.InitContainers) != 0 {
 		t.Fatalf("did not expect per-workload materializer for shared-direct delivery, got %#v", template.Spec.InitContainers)
 	}
-	if got, want := template.Spec.Containers[0].VolumeMounts[0].MountPath, DefaultCacheMountPath; got != want {
+	if got, want := template.Spec.Containers[0].VolumeMounts[0].MountPath, nodecache.WorkloadNamedModelPath(DefaultCacheMountPath, "qwen3-14b"); got != want {
 		t.Fatalf("managed cache mount path = %q, want %q", got, want)
 	}
 	if len(template.Spec.NodeSelector) != 0 {
@@ -88,9 +92,10 @@ func TestServiceInjectsManagedSharedDirectVolume(t *testing.T) {
 		t.Fatalf("did not expect scheduling gate for ready managed CSI delivery")
 	}
 
-	volume, found := findVolumeByName(template.Spec.Volumes, DefaultManagedCacheName)
+	volumeName := managedModelVolumeName(DefaultManagedCacheName, "qwen3-14b")
+	volume, found := findVolumeByName(template.Spec.Volumes, volumeName)
 	if !found {
-		t.Fatalf("expected managed cache volume %q", DefaultManagedCacheName)
+		t.Fatalf("expected managed cache volume %q", volumeName)
 	}
 	if volume.CSI == nil {
 		t.Fatalf("expected managed volume to use inline CSI, got %#v", volume.VolumeSource)
@@ -137,16 +142,21 @@ func TestServicePreservesUserProvidedSharedDirectVolumeAttributes(t *testing.T) 
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	template := podTemplateWithNodeCacheVolume("runtime")
+	template := podTemplateWithoutCacheMount("runtime")
+	addNodeCacheVolume(template, managedModelVolumeName(DefaultManagedCacheName, "qwen3-14b"))
 	_, err = service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
+		Bindings: []ModelBinding{{
+			Name:     "qwen3-14b",
+			Artifact: publishedArtifact(),
+		}},
 		Topology: TopologyHints{ReplicaCount: 1},
 	}, template)
 	if err != nil {
 		t.Fatalf("ApplyToPodTemplate() error = %v", err)
 	}
 
-	volume, found := findVolumeByName(template.Spec.Volumes, DefaultManagedCacheName)
+	volume, found := findVolumeByName(template.Spec.Volumes, managedModelVolumeName(DefaultManagedCacheName, "qwen3-14b"))
 	if !found || volume.CSI == nil {
 		t.Fatalf("expected managed CSI volume, got %#v", template.Spec.Volumes)
 	}
@@ -191,7 +201,12 @@ func TestServiceRefreshesManagedSharedDirectVolumeAttributes(t *testing.T) {
 	result, err := service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact:       publishedArtifact(),
 		ArtifactFamily: "hf-safetensors-v1",
-		Topology:       TopologyHints{ReplicaCount: 1},
+		Bindings: []ModelBinding{{
+			Name:           "qwen3-14b",
+			Artifact:       publishedArtifact(),
+			ArtifactFamily: "hf-safetensors-v1",
+		}},
+		Topology: TopologyHints{ReplicaCount: 1},
 	}, template)
 	if err != nil {
 		t.Fatalf("ApplyToPodTemplate() error = %v", err)
@@ -203,7 +218,7 @@ func TestServiceRefreshesManagedSharedDirectVolumeAttributes(t *testing.T) {
 	if got := len(template.Spec.InitContainers); got != 0 {
 		t.Fatalf("expected stale materializer init container to be removed, got %#v", template.Spec.InitContainers)
 	}
-	volume, found := findVolumeByName(template.Spec.Volumes, DefaultManagedCacheName)
+	volume, found := findVolumeByName(template.Spec.Volumes, managedModelVolumeName(DefaultManagedCacheName, "qwen3-14b"))
 	if !found || volume.CSI == nil {
 		t.Fatalf("expected managed CSI volume, got %#v", template.Spec.Volumes)
 	}

@@ -197,19 +197,34 @@ metadata:
 ```yaml
 metadata:
   annotations:
-    ai.deckhouse.io/model-refs: main=ClusterModel/gemma-small,embed=Model/bge-m3
+    ai.deckhouse.io/clustermodel: gemma-small,qwen3-14b
+```
+
+Для нескольких namespaced моделей:
+
+```yaml
+metadata:
+  annotations:
+    ai.deckhouse.io/model: bge-m3,bge-reranker
 ```
 
 В контейнере доступны:
 
-- primary model: `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`,
-  `AI_MODELS_MODEL_FAMILY`;
-- multi-model: `AI_MODELS_MODELS_DIR`, `AI_MODELS_MODELS`;
-- per-alias: `AI_MODELS_MODEL_<ALIAS>_PATH`,
-  `AI_MODELS_MODEL_<ALIAS>_DIGEST`, `AI_MODELS_MODEL_<ALIAS>_FAMILY`.
+- `AI_MODELS_MODELS_DIR=/data/modelcache/models`;
+- `AI_MODELS_MODELS` — JSON со списком `name`, `path`, `digest`, `family`.
 
-Stable path для multi-model aliases:
-`/data/modelcache/models/<alias>`.
+Каждая модель видна по имени ресурса:
+
+```text
+/data/modelcache/models/gemma-small
+/data/modelcache/models/qwen3-14b
+/data/modelcache/models/bge-m3
+```
+
+Если одновременно указаны `ai.deckhouse.io/model` и
+`ai.deckhouse.io/clustermodel`, имена в итоговом списке должны быть
+уникальными. Это нужно, чтобы путь `/data/modelcache/models/<name>` был
+однозначным.
 
 ## Удаление
 

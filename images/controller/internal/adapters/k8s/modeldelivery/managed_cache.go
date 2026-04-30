@@ -25,31 +25,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func ensureManagedCacheMount(template *corev1.PodTemplateSpec, options ServiceOptions, artifact publication.PublishedArtifact, family string) error {
-	managed := NormalizeManagedCacheOptions(options.ManagedCache)
-	if !managed.Enabled {
-		return nil
-	}
-
-	volumeName := managed.VolumeName
-	if cacheMount, found, err := resolveCacheMount(template, options.Render.CacheMountPath); err != nil {
-		return err
-	} else if found {
-		if volume, volumeFound := findVolumeByName(template.Spec.Volumes, cacheMount.VolumeName); volumeFound && !isNodeCacheCSIVolume(volume) {
-			return unsupportedCacheVolumeError(cacheMount, volume)
-		}
-		volumeName = cacheMount.VolumeName
-	}
-	var err error
-	template.Spec.Volumes, err = stampManagedCacheVolume(template.Spec.Volumes, volumeName, artifact, family)
-	if err != nil {
-		return err
-	}
-	template.Spec.Containers = ensureManagedCacheVolumeMounts(template.Spec.Containers, volumeName, options.Render.CacheMountPath)
-	template.Spec.InitContainers = ensureManagedCacheVolumeMounts(template.Spec.InitContainers, volumeName, options.Render.CacheMountPath)
-	return nil
-}
-
 func HasManagedCacheTemplateState(template *corev1.PodTemplateSpec, options ServiceOptions) bool {
 	if template == nil {
 		return false
@@ -243,7 +218,7 @@ func HasManagedInitContainer(containers []corev1.Container, baseName string) boo
 
 func isManagedRuntimeEnv(name string) bool {
 	switch name {
-	case ModelPathEnv, ModelDigestEnv, ModelFamilyEnv, ModelsDirEnv, ModelsEnv:
+	case legacyModelPathEnv, legacyModelDigestEnv, legacyModelFamilyEnv, ModelsDirEnv, ModelsEnv:
 		return true
 	default:
 		return strings.HasPrefix(name, "AI_MODELS_MODEL_") &&

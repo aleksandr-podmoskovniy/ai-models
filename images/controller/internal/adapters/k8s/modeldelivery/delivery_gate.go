@@ -18,6 +18,7 @@ package modeldelivery
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	publication "github.com/deckhouse/ai-models/controller/internal/publishedsnapshot"
@@ -30,12 +31,21 @@ type deliveryGate struct {
 }
 
 func (s *Service) deliveryGateForTemplate(
-	topologyKind CacheTopologyKind,
+	topology CacheTopology,
 	input Input,
+	pvcState sharedPVCState,
 ) (deliveryGate, error) {
-	if topologyKind != CacheTopologyDirect {
+	switch topology.Kind {
+	case CacheTopologyDirect:
+		return s.sharedDirectGate(input)
+	case CacheTopologySharedPVC:
+		return sharedPVCGate(pvcState), nil
+	default:
 		return deliveryGate{Ready: true}, nil
 	}
+}
+
+func (s *Service) sharedDirectGate(input Input) (deliveryGate, error) {
 	managed := NormalizeManagedCacheOptions(s.options.ManagedCache)
 	if !managed.Enabled {
 		return deliveryGate{
@@ -51,6 +61,25 @@ func (s *Service) deliveryGateForTemplate(
 		}, nil
 	}
 	return deliveryGate{Ready: true}, nil
+}
+
+func sharedPVCGate(state sharedPVCState) deliveryGate {
+	if strings.TrimSpace(state.ClaimName) == "" {
+		return deliveryGate{
+			Reason:  DeliveryGateReasonSharedPVCStorageClassMissing,
+			Message: "SharedPVC delivery requires sharedPVC.storageClassName with an RWX StorageClass",
+		}
+	}
+	if !state.Bound {
+		return deliveryGate{
+			Reason:  DeliveryGateReasonSharedPVCClaimPending,
+			Message: "SharedPVC delivery is waiting for the controller-owned RWX PVC to become Bound",
+		}
+	}
+	return deliveryGate{
+		Reason:  DeliveryGateReasonSharedPVCMaterializerPending,
+		Message: "SharedPVC delivery is waiting for digest-scoped materialization to complete",
+	}
 }
 
 func managedCacheCapacityError(managed ManagedCacheOptions, artifacts []nodecache.DesiredArtifact) error {

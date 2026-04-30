@@ -190,15 +190,13 @@ paths и test surfaces.
   - publication-path zero-copy claims do not pretend away consumer-side cache
     materialization;
   - workload cache policy remains separate from publish-worker byte path;
-  - workload-facing runtime contract keeps primary compatibility through
-    `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`, and
-    `AI_MODELS_MODEL_FAMILY`, while multi-model delivery exposes
-    `/data/modelcache/models/<alias>`, `AI_MODELS_MODELS_DIR`,
-    `AI_MODELS_MODELS`, and per-alias
-    `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}` variables; managed
-    workload env does not expose internal artifact URIs, managed SharedDirect
-    delivery reads stable alias projections from inline CSI mounts that bind the
-    ready digest model directory instead of the cache entry root,
+  - workload-facing runtime contract exposes every model by Kubernetes
+    resource name under `/data/modelcache/models/<model-name>` and uses only
+    `AI_MODELS_MODELS_DIR` plus `AI_MODELS_MODELS` for runtime discovery;
+    managed workload env does not expose internal artifact URIs, managed
+    SharedDirect delivery reads stable model-name projections from inline CSI
+    mounts that bind the ready digest model directory instead of the cache
+    entry root,
     CSI returns transient `Unavailable` until the requested digest has a ready
     marker and model path in the node shared store,
     and NodePublish denies manual inline-CSI use unless the requesting Pod is
@@ -207,9 +205,9 @@ paths и test surfaces.
     the dynamic node-cache runtime ready label,
     runtime delivery apply reconciles module-managed env, resolved
     annotations, inline CSI mounts and registry CA volume as exact state during
-    multi-model -> single-model and alias-shrink transitions, and fails fast
+    multi-model -> single-model and model-set-shrink transitions, and fails fast
     instead of producing duplicate mount paths when a workload already owns a
-    model alias mount path,
+    model mount path,
     while explicit shared PVC bridge topology still reads a digest-scoped path
     inside the shared store instead of depending on a global
     `/data/modelcache/current` link.

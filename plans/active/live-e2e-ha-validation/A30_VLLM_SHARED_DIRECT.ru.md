@@ -134,7 +134,7 @@ kubectl --context "$CTX" apply -f \
 ```
 
 В этих манифестах ai-models-specific часть — только annotation
-`ai.deckhouse.io/model-refs` на metadata Deployment. Artifact URI/digest, CSI
+`ai.deckhouse.io/clustermodel` на metadata Deployment. Artifact URI/digest, CSI
 volume, mounts и env руками не задаются: их заполнит controller.
 
 ```bash
@@ -149,7 +149,7 @@ metadata:
     app.kubernetes.io/name: vllm-a30-embed
     ai.deckhouse.io/live-e2e: ha-validation
   annotations:
-    ai.deckhouse.io/model-refs: model=ClusterModel/a30-user-bge-m3
+    ai.deckhouse.io/clustermodel: a30-user-bge-m3
 spec:
   replicas: 1
   strategy:
@@ -180,7 +180,7 @@ spec:
             - sh
             - -lc
             - >
-              exec vllm serve /data/modelcache/models/model
+              exec vllm serve /data/modelcache/models/a30-user-bge-m3
               --runner pooling
               --convert embed
               --served-model-name a30-user-bge-m3
@@ -258,7 +258,7 @@ kubectl --context "$CTX" -n "$NS" describe pod -l app.kubernetes.io/name=vllm-a3
 
 Pass в Deployment/PodTemplate:
 
-- annotation `ai.deckhouse.io/model-refs` осталась user intent;
+- annotation `ai.deckhouse.io/clustermodel` осталась user intent;
 - появились resolved annotations:
   `ai.deckhouse.io/resolved-artifact-uri`,
   `ai.deckhouse.io/resolved-digest`,
@@ -267,10 +267,8 @@ Pass в Deployment/PodTemplate:
 - controller-created inline CSI volume с driver
   `node-cache.ai-models.deckhouse.io` содержит resolved artifact
   URI/digest/family attributes;
-- есть mount `/data/modelcache`;
-- есть env:
-  `AI_MODELS_MODELS_DIR`, `AI_MODELS_MODELS`,
-  `AI_MODELS_MODEL_MODEL_PATH`, `AI_MODELS_MODEL_MODEL_DIGEST`;
+- есть mount `/data/modelcache/models/a30-user-bge-m3`;
+- есть env: `AI_MODELS_MODELS_DIR`, `AI_MODELS_MODELS`;
 - нет init container `materialize-artifact`;
 - нет PVC `model-cache-pvc`;
 - нет projected DMCR read Secret/CA в workload namespace.
@@ -297,7 +295,7 @@ kubectl --context "$CTX" -n d8-ai-models logs -l ai.deckhouse.io/node-cache-runt
 
 Pass:
 
-- vLLM читает `/data/modelcache/models/model`;
+- vLLM читает `/data/modelcache/models/a30-user-bge-m3`;
 - при `HF_HUB_OFFLINE=1` нет попытки скачать модель из Hugging Face;
 - node-cache logs показывают desired artifact, materialize/prefetch, ready
   marker и CSI publish;

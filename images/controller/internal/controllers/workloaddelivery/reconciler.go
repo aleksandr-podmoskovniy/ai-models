@@ -70,7 +70,7 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 	result, err := r.delivery.ApplyToPodTemplate(ctx, object, modeldelivery.ApplyRequest{
 		Artifact:       resolution.Artifact,
 		ArtifactFamily: resolution.Family,
-		Bindings:       resolution.modelDeliveryBindings(usesModelRefsAnnotation(object.GetAnnotations())),
+		Bindings:       resolution.modelDeliveryBindings(),
 		Topology:       hints,
 	}, template)
 	if err != nil {
@@ -110,7 +110,6 @@ func (r *baseReconciler) reconcileWorkload(ctx context.Context, object client.Ob
 		slog.Int("modelCount", resolution.modelCount()),
 		slog.String("previousArtifactDigest", patchResult.currentState.Digest),
 		slog.String("modelPath", result.ModelPath),
-		slog.String("previousModelPath", patchResult.currentState.ModelPath),
 		slog.String("topologyKind", string(result.TopologyKind)),
 		slog.String("deliveryMode", string(result.DeliveryMode)),
 		slog.String("previousDeliveryMode", patchResult.currentState.DeliveryMode),

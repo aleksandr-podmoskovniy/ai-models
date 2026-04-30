@@ -201,19 +201,34 @@ For multiple models:
 ```yaml
 metadata:
   annotations:
-    ai.deckhouse.io/model-refs: main=ClusterModel/gemma-small,embed=Model/bge-m3
+    ai.deckhouse.io/clustermodel: gemma-small,qwen3-14b
+```
+
+For multiple namespaced models:
+
+```yaml
+metadata:
+  annotations:
+    ai.deckhouse.io/model: bge-m3,bge-reranker
 ```
 
 Available environment variables:
 
-- primary model: `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST`,
-  `AI_MODELS_MODEL_FAMILY`;
-- multi-model: `AI_MODELS_MODELS_DIR`, `AI_MODELS_MODELS`;
-- per-alias: `AI_MODELS_MODEL_<ALIAS>_PATH`,
-  `AI_MODELS_MODEL_<ALIAS>_DIGEST`, `AI_MODELS_MODEL_<ALIAS>_FAMILY`.
+- `AI_MODELS_MODELS_DIR=/data/modelcache/models`;
+- `AI_MODELS_MODELS`, a JSON list with `name`, `path`, `digest`, and
+  `family`.
 
-Stable path for multi-model aliases:
-`/data/modelcache/models/<alias>`.
+Every model is visible by resource name:
+
+```text
+/data/modelcache/models/gemma-small
+/data/modelcache/models/qwen3-14b
+/data/modelcache/models/bge-m3
+```
+
+If both `ai.deckhouse.io/model` and `ai.deckhouse.io/clustermodel` are set, the
+final model names must be unique. This keeps `/data/modelcache/models/<name>`
+unambiguous.
 
 ## Deletion
 

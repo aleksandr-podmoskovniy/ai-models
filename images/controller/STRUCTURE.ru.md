@@ -233,11 +233,11 @@ Domain не должен знать concrete Kubernetes objects, pod shaping, se
   runtime-readiness Node label and node-selection reconciliation.
 - `workloaddelivery/` — owner controller for built-in Kubernetes workloads
   with stable PodTemplate fields and annotations `ai.deckhouse.io/model` /
-  `ai.deckhouse.io/clustermodel` / `ai.deckhouse.io/model-refs`. External
-  controllers must render one of the supported Kubernetes workload templates
-  or use a future trusted delivery API; ai-models не должен снова тащить
-  controller-specific shims для `RayService`, `RayCluster` или любых других
-  сторонних CRD.
+  `ai.deckhouse.io/clustermodel`, where each annotation value is a
+  comma-separated list of model names. External controllers must render one of
+  the supported Kubernetes workload templates or use a future trusted delivery
+  API; ai-models не должен снова тащить controller-specific shims для
+  `RayService`, `RayCluster` или любых других сторонних CRD.
 
 Controller package оправдан ownership, а не удобством чтения. Новый controller
 package без нового owner — patchwork.
@@ -315,18 +315,15 @@ Non-K8s adapters:
   direct-upload: owner-generation reset, persisted current-layer session state,
   committed-layer journal и terminal phase handoff; public progress/status
   policy не должна утекать туда;
-- `k8s/modeldelivery/` остаётся boundary для workload mutation и теперь держит
-  module-managed local bridge volume injection отдельно от storage substrate
-  CR shaping, плюс стабильный workload-facing env contract: legacy primary
-  model остаётся в `AI_MODELS_MODEL_PATH`, `AI_MODELS_MODEL_DIGEST` и
-  `AI_MODELS_MODEL_FAMILY`, а multi-model delivery отдаёт alias paths
-  `/data/modelcache/models/<alias>`, `AI_MODELS_MODELS_DIR`,
-  `AI_MODELS_MODELS` со списком alias/path/digest/family и per-alias
-  `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}`. Bridge paths создают
-  alias symlink поверх shared-store layout, а managed SharedDirect использует
-  отдельные inline CSI volume attributes на каждый alias. Raw
-  cache-root/current internals остаются внутри `internal/nodecache` and CSI
-  runtime, не в workload mutation policy;
+- `k8s/modeldelivery/` остаётся boundary для workload mutation и держит
+  module-managed SharedDirect CSI volume injection отдельно от storage
+  substrate CR shaping. Workload-facing contract один для single и
+  multi-model: `/data/modelcache/models/<model-name>`,
+  `AI_MODELS_MODELS_DIR` и `AI_MODELS_MODELS` со списком
+  `name/path/digest/family`. Пользовательское переименование моделей,
+  primary `/model` path и per-model env больше не являются публичным runtime
+  contract. Raw cache-root/current internals остаются внутри
+  `internal/nodecache` and CSI runtime, не в workload mutation policy;
 - live `HuggingFace` publish path больше не держит локальный
   `workspace/model` fallback: canonical path — direct or mirrored object source,
   cluster-level default теперь `Direct`, planning failure explicit, а

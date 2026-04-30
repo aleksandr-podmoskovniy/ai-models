@@ -22,8 +22,9 @@ controller-owned OCI artifact во внутренний `DMCR` и подгота
   upload-сессии.
 - Рассчитывает публичную metadata: формат, семейство, архитектуру,
   normalized endpoint types, features и provider evidence.
-- Доставляет опубликованную модель в workload через annotation-based contract:
-  primary model и multi-model aliases.
+- Доставляет опубликованные модели в workload через annotation-based contract:
+  `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel` и стабильные пути
+  `/data/modelcache/models/<model-name>`.
 - Может использовать managed node-local cache поверх SDS для SharedDirect
   delivery.
 

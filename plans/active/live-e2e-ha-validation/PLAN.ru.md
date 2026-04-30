@@ -26,7 +26,10 @@ unit/template-level evidence.
 Keep active:
 
 - `live-e2e-ha-validation` — канонический executable runbook для следующего
-  live запуска.
+  live запуска. Historical evidence `k8s-apiac-20260429-001154` перенесён в
+  `plans/archive/2026/live-e2e-ha-validation-legacy-evidence/`, потому что он
+  относится к старому delivery contract и больше не является исполняемой
+  матрицей.
 - `observability-signal-hardening` — остаётся executable: pending Slice 4
   должен проверить live metrics/alerts и добить log field dictionary.
 - `ray-a30-ai-models-registry-cutover` — archived: KubeRay-specific delivery
@@ -272,10 +275,11 @@ Scenarios:
 
 - single model annotation;
 - cluster model annotation;
-- multi-model annotation with stable env/path aliases;
+- multi-model annotations with stable model-name paths;
 - transition from one model to another;
 - deletion of model while workload exists;
-- MaterializeBridge baseline;
+- blocked delivery when neither SharedDirect nor implemented SharedPVC is
+  available;
 - SharedDirect only when node-cache preflight passes.
 
 SharedDirect preflight:
@@ -283,7 +287,7 @@ SharedDirect preflight:
 - `ModuleConfig` has `nodeCache.enabled=true`;
 - SDS/local storage CRDs exist and runtime PVCs are bound;
 - workload metadata declares only the model annotation; controller injects
-  node-cache CSI volumes for requested model aliases;
+  node-cache CSI volumes for requested model names;
 - user workload or ai-inference sets nodeSelector/affinity/tolerations for a
   node where node-cache runtime and local storage are actually ready.
 
@@ -356,14 +360,14 @@ Pass:
 Stop/fix:
 
 - workload requires manually written ai-models internals;
-- mutation leaves MaterializeBridge instead of SharedDirect while node-cache is
-  ready;
+- mutation leaves the workload blocked instead of SharedDirect while
+  node-cache is ready;
 - workload schedules onto a node without ready node-cache runtime and then
   hangs/fails on CSI mount instead of being rejected by scheduler/placement
   policy;
 - CSI mount hangs without clear condition/log reason;
-- vLLM downloads the model from HF instead of reading
-  `/data/modelcache/models/model`;
+- vLLM downloads the model from HF instead of reading the matching
+  `/data/modelcache/models/<model-name>` path;
 - GPU extended resource is absent on the target node after GPU module checks.
 
 ### Slice 8. Controlled interruption replay

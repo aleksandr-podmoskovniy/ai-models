@@ -879,13 +879,31 @@ def _validate_controller_runtime_rbac_source(repo_root: Path) -> list[str]:
     if not controller_cluster_role:
         errors.append(f"{path}: missing controller ClusterRole")
     else:
-        for resource in ("pods", "persistentvolumeclaims", "leases"):
+        for resource in ("pods", "leases"):
             if _document_grants_any_verb(
                 controller_cluster_role, resource, CONTROLLER_RUNTIME_WRITE_VERBS
             ):
                 errors.append(
                     f"{path}: controller ClusterRole must not grant cluster-wide {resource} write verbs"
                 )
+        pvc_verbs = set().union(
+            *_resource_rule_verbs(controller_cluster_role, "persistentvolumeclaims")
+        )
+        expected_pvc_verbs = {
+            "get",
+            "list",
+            "watch",
+            *CONTROLLER_RUNTIME_WRITE_VERBS,
+        }
+        unexpected_pvc_verbs = pvc_verbs - expected_pvc_verbs
+        if unexpected_pvc_verbs:
+            errors.append(
+                f"{path}: controller ClusterRole must only grant SharedPVC lifecycle verbs on persistentvolumeclaims"
+            )
+        if not expected_pvc_verbs.issubset(pvc_verbs):
+            errors.append(
+                f"{path}: controller ClusterRole must grant SharedPVC lifecycle verbs on persistentvolumeclaims"
+            )
         secret_verbs = set().union(*_resource_rule_verbs(controller_cluster_role, "secrets"))
         unexpected_secret_verbs = secret_verbs - {"delete"}
         if unexpected_secret_verbs:

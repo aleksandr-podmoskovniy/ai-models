@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,12 +41,16 @@ func (r *baseReconciler) blockWorkloadDelivery(
 	template *corev1.PodTemplateSpec,
 	cause error,
 ) (ctrl.Result, error) {
+	reason := deliveryBlockedReasonInvalidSpec
+	if contractReason := modeldelivery.WorkloadContractReason(cause); contractReason != "" {
+		reason = contractReason
+	}
 	changed, err := r.keepManagedDeliveryBlocked(
 		ctx,
 		object,
 		original,
 		template,
-		deliveryBlockedReasonInvalidSpec,
+		reason,
 		cause.Error(),
 	)
 	if err != nil {
@@ -54,10 +59,10 @@ func (r *baseReconciler) blockWorkloadDelivery(
 	if changed {
 		r.recorder.Event(object, "Warning", "ModelDeliveryBlocked", cause.Error())
 		r.logger.Info(
-			"runtime delivery blocked by workload spec",
+			"runtime delivery blocked",
 			slog.String("namespace", object.GetNamespace()),
 			slog.String("name", object.GetName()),
-			slog.String("reason", deliveryBlockedReasonInvalidSpec),
+			slog.String("reason", reason),
 		)
 	}
 	return ctrl.Result{}, nil

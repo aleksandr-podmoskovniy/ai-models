@@ -18,23 +18,16 @@ package modeldelivery
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 func normalizeApplyBindings(request ApplyRequest) ([]ModelBinding, bool, error) {
 	if len(request.Bindings) == 0 {
-		binding := ModelBinding{
-			Alias:          "model",
-			Artifact:       request.Artifact,
-			ArtifactFamily: request.ArtifactFamily,
-		}
-		if err := validateModelBinding(binding); err != nil {
-			return nil, false, err
-		}
-		return []ModelBinding{binding}, false, nil
+		return nil, false, errors.New("runtime delivery requires at least one model binding")
 	}
 
 	seen := make(map[string]struct{}, len(request.Bindings))
@@ -43,17 +36,17 @@ func normalizeApplyBindings(request ApplyRequest) ([]ModelBinding, bool, error) 
 		if err := validateModelBinding(binding); err != nil {
 			return nil, false, err
 		}
-		if _, found := seen[binding.Alias]; found {
-			return nil, false, errors.New("runtime delivery model aliases must be unique")
+		if _, found := seen[binding.Name]; found {
+			return nil, false, errors.New("runtime delivery model names must be unique")
 		}
-		seen[binding.Alias] = struct{}{}
+		seen[binding.Name] = struct{}{}
 		bindings = append(bindings, binding)
 	}
 	return bindings, true, nil
 }
 
 func validateModelBinding(binding ModelBinding) error {
-	if err := nodecache.ValidateModelAlias(binding.Alias); err != nil {
+	if err := validateModelName(binding.Name); err != nil {
 		return err
 	}
 	if err := binding.Artifact.Validate(); err != nil {
@@ -65,14 +58,22 @@ func validateModelBinding(binding ModelBinding) error {
 	return nil
 }
 
-func inputBindings(bindings []ModelBinding, aliasContract bool) []BindingInput {
-	if !aliasContract {
-		return nil
+func validateModelName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("runtime delivery model name must not be empty")
 	}
+	if problems := validation.IsDNS1123Subdomain(name); len(problems) > 0 {
+		return fmt.Errorf("runtime delivery model name must be a valid Kubernetes object name: %s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func inputBindings(bindings []ModelBinding) []BindingInput {
 	result := make([]BindingInput, 0, len(bindings))
 	for _, binding := range bindings {
 		result = append(result, BindingInput{
-			Alias:          binding.Alias,
+			Name:           binding.Name,
 			Artifact:       binding.Artifact,
 			ArtifactFamily: binding.ArtifactFamily,
 		})
@@ -84,15 +85,11 @@ func ensureManagedCacheTemplate(
 	template *corev1.PodTemplateSpec,
 	options ServiceOptions,
 	bindings []ModelBinding,
-	aliasContract bool,
 ) error {
-	if aliasContract {
-		return ensureManagedAliasCacheTemplate(template, options, bindings)
-	}
-	return ensureManagedCacheMount(template, options, bindings[0].Artifact, bindings[0].ArtifactFamily)
+	return ensureManagedModelCacheTemplate(template, options, bindings)
 }
 
-func ensureManagedAliasCacheTemplate(
+func ensureManagedModelCacheTemplate(
 	template *corev1.PodTemplateSpec,
 	options ServiceOptions,
 	bindings []ModelBinding,
@@ -101,14 +98,21 @@ func ensureManagedAliasCacheTemplate(
 	if !managed.Enabled {
 		return nil
 	}
+	if cacheMount, found, err := resolveCacheMount(template, options.Render.CacheMountPath); err != nil {
+		return err
+	} else if found {
+		if volume, volumeFound := findVolumeByName(template.Spec.Volumes, cacheMount.VolumeName); volumeFound && !isNodeCacheCSIVolume(volume) {
+			return unsupportedCacheVolumeError(cacheMount, volume)
+		}
+	}
 	for _, binding := range bindings {
-		volumeName := managedModelVolumeName(managed.VolumeName, binding.Alias)
+		volumeName := managedModelVolumeName(managed.VolumeName, binding.Name)
 		var err error
 		template.Spec.Volumes, err = stampManagedCacheVolume(template.Spec.Volumes, volumeName, binding.Artifact, binding.ArtifactFamily)
 		if err != nil {
 			return err
 		}
-		mountPath := NamedModelPath(options.Render, binding.Alias)
+		mountPath := NamedModelPath(options.Render, binding.Name)
 		template.Spec.Containers = ensureManagedCacheVolumeMounts(template.Spec.Containers, volumeName, mountPath)
 		template.Spec.InitContainers = ensureManagedCacheVolumeMounts(template.Spec.InitContainers, volumeName, mountPath)
 	}
@@ -120,15 +124,39 @@ func detectApplyTopology(
 	hints TopologyHints,
 	mountPath string,
 	managedVolumeName string,
-	managedAliasDirect bool,
+	managedDirect bool,
+	sharedPVCClaimName string,
+	sharedPVCVolumeName string,
 ) (CacheTopology, error) {
-	if managedAliasDirect {
+	if managedDirect {
 		return CacheTopology{
 			Kind:           CacheTopologyDirect,
 			CacheMount:     CacheMount{VolumeName: managedVolumeName, MountPath: mountPath},
 			DeliveryMode:   DeliveryModeSharedDirect,
 			DeliveryReason: DeliveryReasonNodeSharedRuntimePlane,
 		}, nil
+	}
+	if strings.TrimSpace(sharedPVCClaimName) != "" {
+		if cacheMount, found, err := resolveCacheMount(template, mountPath); err != nil {
+			return CacheTopology{}, err
+		} else if found {
+			return CacheTopology{}, NewWorkloadContractError("runtime delivery does not support explicit cache volume %q when SharedPVC is controller-owned", cacheMount.VolumeName)
+		}
+		return CacheTopology{
+			Kind:           CacheTopologySharedPVC,
+			CacheMount:     CacheMount{VolumeName: sharedPVCVolumeName, MountPath: mountPath},
+			ClaimName:      sharedPVCClaimName,
+			DeliveryMode:   DeliveryModeSharedPVC,
+			DeliveryReason: DeliveryReasonRWXSharedVolume,
+		}, nil
+	}
+	if _, found, err := resolveCacheMount(template, mountPath); err != nil {
+		return CacheTopology{}, err
+	} else if !found {
+		return CacheTopology{}, NewWorkloadBlockedError(
+			DeliveryGateReasonSharedPVCStorageClassMissing,
+			"runtime delivery requires nodeCache.enabled=true or sharedPVC.storageClassName with an RWX StorageClass",
+		)
 	}
 	return detectCacheTopology(template, hints, mountPath, managedVolumeName)
 }

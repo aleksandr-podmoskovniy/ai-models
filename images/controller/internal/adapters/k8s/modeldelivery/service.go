@@ -31,6 +31,7 @@ import (
 type ServiceOptions struct {
 	Render          Options
 	ManagedCache    ManagedCacheOptions
+	SharedPVC       SharedPVCOptions
 	DeliveryAuthKey string
 
 	RegistrySourceNamespace string
@@ -44,7 +45,7 @@ type ApplyRequest struct {
 }
 
 type ModelBinding struct {
-	Alias          string
+	Name           string
 	Artifact       publication.PublishedArtifact
 	ArtifactFamily string
 }
@@ -94,11 +95,11 @@ func (s *Service) ApplyToPodTemplate(
 	if err := validateApplyInputs(s, owner, template, request.Topology); err != nil {
 		return ApplyResult{}, err
 	}
-	input, topology, aliasContract, err := s.renderInput(ctx, owner, request, template)
+	input, topology, pvcState, err := s.renderInput(ctx, owner, request, template)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	gate, err := s.deliveryGateForTemplate(topology.Kind, input)
+	gate, err := s.deliveryGateForTemplate(topology, input, pvcState)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -111,7 +112,7 @@ func (s *Service) ApplyToPodTemplate(
 	if err := applyRendered(template, owner.GetNamespace(), rendered, input.Artifact.Digest, topology.DeliveryMode, topology.DeliveryReason, s.options.DeliveryAuthKey); err != nil {
 		return ApplyResult{}, err
 	}
-	s.pruneManagedCacheTemplateState(template, topology, rendered, aliasContract)
+	s.pruneManagedCacheTemplateState(template, topology, rendered)
 	applyDeliverySchedulingGate(template, topology.Kind, gate.Ready)
 
 	return ApplyResult{
@@ -131,36 +132,46 @@ func (s *Service) renderInput(
 	owner client.Object,
 	request ApplyRequest,
 	template *corev1.PodTemplateSpec,
-) (Input, CacheTopology, bool, error) {
-	bindings, aliasContract, err := normalizeApplyBindings(request)
+) (Input, CacheTopology, sharedPVCState, error) {
+	bindings, _, err := normalizeApplyBindings(request)
 	if err != nil {
-		return Input{}, CacheTopology{}, false, err
+		return Input{}, CacheTopology{}, sharedPVCState{}, err
 	}
-	if err := ensureManagedCacheTemplate(template, s.options, bindings, aliasContract); err != nil {
-		return Input{}, CacheTopology{}, false, err
+	if err := ensureManagedCacheTemplate(template, s.options, bindings); err != nil {
+		return Input{}, CacheTopology{}, sharedPVCState{}, err
 	}
 
+	shared := NormalizeSharedPVCOptions(s.options.SharedPVC)
+	sharedClaimName := ""
+	if !s.options.ManagedCache.Enabled && shared.StorageClassName != "" {
+		sharedClaimName = sharedPVCClaimName(owner, bindings)
+	}
 	topology, err := detectApplyTopology(
 		template,
 		request.Topology,
 		s.options.Render.CacheMountPath,
 		s.options.ManagedCache.VolumeName,
-		aliasContract && s.options.ManagedCache.Enabled,
+		s.options.ManagedCache.Enabled,
+		sharedClaimName,
+		shared.VolumeName,
 	)
 	if err != nil {
-		return Input{}, CacheTopology{}, false, err
+		return Input{}, CacheTopology{}, sharedPVCState{}, err
 	}
-	input, err := s.resolveRenderInput(owner, bindings, aliasContract, topology)
+	pvcState, err := s.ensureSharedPVC(ctx, owner, bindings, topology.ClaimName)
 	if err != nil {
-		return Input{}, CacheTopology{}, false, err
+		return Input{}, CacheTopology{}, sharedPVCState{}, err
 	}
-	return input, topology, aliasContract, nil
+	input, err := s.resolveRenderInput(owner, bindings, topology)
+	if err != nil {
+		return Input{}, CacheTopology{}, sharedPVCState{}, err
+	}
+	return input, topology, pvcState, nil
 }
 
 func (s *Service) resolveRenderInput(
 	owner client.Object,
 	bindings []ModelBinding,
-	aliasContract bool,
 	topology CacheTopology,
 ) (Input, error) {
 	legacyImagePullSecretName, err := legacyRuntimeImagePullSecretName(owner, topology.Kind)
@@ -170,15 +181,16 @@ func (s *Service) resolveRenderInput(
 	return Input{
 		Artifact:                  bindings[0].Artifact,
 		ArtifactFamily:            bindings[0].ArtifactFamily,
-		Bindings:                  inputBindings(bindings, aliasContract),
+		Bindings:                  inputBindings(bindings),
 		LegacyImagePullSecretName: legacyImagePullSecretName,
 		CacheMount:                topology.CacheMount,
+		SharedPVCClaimName:        topology.ClaimName,
 		TopologyKind:              topology.Kind,
 	}, nil
 }
 
 func applyDeliverySchedulingGate(template *corev1.PodTemplateSpec, topologyKind CacheTopologyKind, ready bool) {
-	if topologyKind == CacheTopologyDirect && !ready {
+	if !ready {
 		EnsureSchedulingGate(template)
 	}
 }
@@ -206,6 +218,7 @@ func legacyRuntimeImagePullSecretName(owner client.Object, topologyKind CacheTop
 func NormalizeServiceOptions(options ServiceOptions) ServiceOptions {
 	options.Render = NormalizeOptions(options.Render)
 	options.ManagedCache = NormalizeManagedCacheOptions(options.ManagedCache)
+	options.SharedPVC = NormalizeSharedPVCOptions(options.SharedPVC)
 	options.DeliveryAuthKey = strings.TrimSpace(options.DeliveryAuthKey)
 	return options
 }
@@ -215,6 +228,9 @@ func validateServiceOptions(options ServiceOptions) error {
 		return err
 	}
 	if err := ValidateManagedCacheOptions(options.ManagedCache); err != nil {
+		return err
+	}
+	if err := ValidateSharedPVCOptions(options.SharedPVC); err != nil {
 		return err
 	}
 	switch {

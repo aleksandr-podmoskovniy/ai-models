@@ -21,21 +21,16 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	corev1 "k8s.io/api/core/v1"
 )
 
 func renderBindings(input Input) ([]BindingInput, bool, error) {
 	if len(input.Bindings) == 0 {
-		return []BindingInput{{
-			Alias:          "model",
-			Artifact:       input.Artifact,
-			ArtifactFamily: input.ArtifactFamily,
-		}}, false, nil
+		return nil, false, errors.New("runtime delivery requires at least one model binding")
 	}
 	bindings := make([]BindingInput, 0, len(input.Bindings))
 	for _, binding := range input.Bindings {
-		if err := nodecache.ValidateModelAlias(binding.Alias); err != nil {
+		if err := validateModelName(binding.Name); err != nil {
 			return nil, false, err
 		}
 		if err := binding.Artifact.Validate(); err != nil {
@@ -49,7 +44,7 @@ func renderBindings(input Input) ([]BindingInput, bool, error) {
 	return bindings, true, nil
 }
 
-func renderAliasBindings(input Input, options Options, bindings []BindingInput) (Rendered, error) {
+func renderModelBindings(input Input, options Options, bindings []BindingInput) (Rendered, error) {
 	runtimeEntries := runtimeModelEntries(options, bindings)
 	resolvedEntries := resolvedModelEntries(bindings)
 	modelsJSON, err := json.Marshal(resolvedEntries)
@@ -58,27 +53,35 @@ func renderAliasBindings(input Input, options Options, bindings []BindingInput) 
 	}
 
 	rendered := Rendered{
-		RuntimeEnv:              buildAliasRuntimeEnv(options, runtimeEntries),
+		RuntimeEnv:              buildModelRuntimeEnv(options, runtimeEntries),
 		LegacyInitContainerName: options.LegacyInitContainerName,
 		ModelPath:               runtimeEntries[0].Path,
 		ArtifactURI:             strings.TrimSpace(bindings[0].Artifact.URI),
 		ArtifactFamily:          strings.TrimSpace(bindings[0].ArtifactFamily),
 		ResolvedModels:          string(modelsJSON),
 	}
-	rendered.RuntimeVolumeMounts = buildAliasVolumeMounts(input.CacheMount.VolumeName, options, bindings)
+	rendered.RuntimeVolumeMounts = buildModelVolumeMounts(input.CacheMount.VolumeName, options, bindings)
+	if input.TopologyKind == CacheTopologySharedPVC {
+		rendered.Volumes = []corev1.Volume{sharedPVCVolume(input.CacheMount.VolumeName, input.SharedPVCClaimName)}
+		rendered.RuntimeVolumeMounts = []corev1.VolumeMount{{
+			Name:      input.CacheMount.VolumeName,
+			MountPath: ModelsDirPath(options),
+			ReadOnly:  true,
+		}}
+	}
 	rendered.ImagePullSecretNamesPrune = buildImagePullSecretNamesPrune(input.LegacyImagePullSecretName)
 	return rendered, nil
 }
 
 type runtimeModelEntry struct {
-	Alias  string `json:"alias"`
+	Name   string `json:"name"`
 	Path   string `json:"path"`
 	Digest string `json:"digest"`
 	Family string `json:"family,omitempty"`
 }
 
 type resolvedModelEntry struct {
-	Alias     string `json:"alias"`
+	Name      string `json:"name"`
 	URI       string `json:"uri"`
 	Digest    string `json:"digest"`
 	Family    string `json:"family,omitempty"`
@@ -89,8 +92,8 @@ func runtimeModelEntries(options Options, bindings []BindingInput) []runtimeMode
 	entries := make([]runtimeModelEntry, 0, len(bindings))
 	for _, binding := range bindings {
 		entries = append(entries, runtimeModelEntry{
-			Alias:  binding.Alias,
-			Path:   NamedModelPath(options, binding.Alias),
+			Name:   binding.Name,
+			Path:   NamedModelPath(options, binding.Name),
 			Digest: strings.TrimSpace(binding.Artifact.Digest),
 			Family: strings.TrimSpace(binding.ArtifactFamily),
 		})
@@ -102,7 +105,7 @@ func resolvedModelEntries(bindings []BindingInput) []resolvedModelEntry {
 	entries := make([]resolvedModelEntry, 0, len(bindings))
 	for _, binding := range bindings {
 		entries = append(entries, resolvedModelEntry{
-			Alias:     binding.Alias,
+			Name:      binding.Name,
 			URI:       strings.TrimSpace(binding.Artifact.URI),
 			Digest:    strings.TrimSpace(binding.Artifact.Digest),
 			Family:    strings.TrimSpace(binding.ArtifactFamily),
@@ -112,40 +115,37 @@ func resolvedModelEntries(bindings []BindingInput) []resolvedModelEntry {
 	return entries
 }
 
-func buildAliasRuntimeEnv(options Options, entries []runtimeModelEntry) []corev1.EnvVar {
+func buildModelRuntimeEnv(options Options, entries []runtimeModelEntry) []corev1.EnvVar {
 	modelsJSON, _ := json.Marshal(entries)
-	env := []corev1.EnvVar{
-		{Name: ModelPathEnv, Value: entries[0].Path},
-		{Name: ModelDigestEnv, Value: entries[0].Digest},
+	return []corev1.EnvVar{
 		{Name: ModelsDirEnv, Value: ModelsDirPath(options)},
 		{Name: ModelsEnv, Value: string(modelsJSON)},
 	}
-	if entries[0].Family != "" {
-		env = append(env, corev1.EnvVar{Name: ModelFamilyEnv, Value: entries[0].Family})
-	}
-	for _, entry := range entries {
-		env = append(env,
-			corev1.EnvVar{Name: NamedModelPathEnv(entry.Alias), Value: entry.Path},
-			corev1.EnvVar{Name: NamedModelDigestEnv(entry.Alias), Value: entry.Digest},
-		)
-		if entry.Family != "" {
-			env = append(env, corev1.EnvVar{Name: NamedModelFamilyEnv(entry.Alias), Value: entry.Family})
-		}
-	}
-	return env
 }
 
-func buildAliasVolumeMounts(volumeNamePrefix string, options Options, bindings []BindingInput) []corev1.VolumeMount {
+func buildModelVolumeMounts(volumeNamePrefix string, options Options, bindings []BindingInput) []corev1.VolumeMount {
 	if strings.TrimSpace(volumeNamePrefix) == "" {
 		volumeNamePrefix = DefaultManagedCacheName
 	}
 	mounts := make([]corev1.VolumeMount, 0, len(bindings))
 	for _, binding := range bindings {
 		mounts = append(mounts, corev1.VolumeMount{
-			Name:      managedModelVolumeName(volumeNamePrefix, binding.Alias),
-			MountPath: NamedModelPath(options, binding.Alias),
+			Name:      managedModelVolumeName(volumeNamePrefix, binding.Name),
+			MountPath: NamedModelPath(options, binding.Name),
 			ReadOnly:  true,
 		})
 	}
 	return mounts
+}
+
+func sharedPVCVolume(volumeName, claimName string) corev1.Volume {
+	return corev1.Volume{
+		Name: volumeName,
+		VolumeSource: corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+				ClaimName: strings.TrimSpace(claimName),
+				ReadOnly:  true,
+			},
+		},
+	}
 }

@@ -186,6 +186,9 @@ func (c managerConfig) workloadDeliveryOptions() workloaddelivery.Options {
 				CapacityBytes:    cacheCapacityBytes,
 				RuntimeNamespace: c.CleanupNamespace,
 			},
+			SharedPVC: modeldelivery.SharedPVCOptions{
+				StorageClassName: c.SharedPVCStorageClassName,
+			},
 			DeliveryAuthKey:         c.DeliveryAuthKey,
 			RegistrySourceNamespace: cmdsupport.FallbackString(c.PublicationWorkerNamespace, c.CleanupNamespace),
 		},

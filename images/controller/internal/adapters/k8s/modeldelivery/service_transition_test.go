@@ -51,8 +51,8 @@ func TestServicePrunesStaleMultiModelStateWhenSwitchingToSingleSharedDirect(t *t
 	multi := ApplyRequest{
 		Artifact: publishedArtifactWithDigest("sha256:primary"),
 		Bindings: []ModelBinding{
-			{Alias: "main", Artifact: publishedArtifactWithDigest("sha256:primary"), ArtifactFamily: "family-a"},
-			{Alias: "embed", Artifact: publishedArtifactWithDigest("sha256:embed"), ArtifactFamily: "family-b"},
+			{Name: "qwen3-14b", Artifact: publishedArtifactWithDigest("sha256:primary"), ArtifactFamily: "family-a"},
+			{Name: "bge-m3", Artifact: publishedArtifactWithDigest("sha256:embed"), ArtifactFamily: "family-b"},
 		},
 		Topology: TopologyHints{ReplicaCount: 1},
 	}
@@ -68,6 +68,9 @@ func TestServicePrunesStaleMultiModelStateWhenSwitchingToSingleSharedDirect(t *t
 
 	single := ApplyRequest{
 		Artifact: publishedArtifact(),
+		Bindings: []ModelBinding{
+			{Name: "gemma", Artifact: publishedArtifact()},
+		},
 		Topology: TopologyHints{ReplicaCount: 1},
 	}
 	if _, err := service.ApplyToPodTemplate(context.Background(), owner, single, template); err != nil {
@@ -76,44 +79,45 @@ func TestServicePrunesStaleMultiModelStateWhenSwitchingToSingleSharedDirect(t *t
 
 	container := template.Spec.Containers[0]
 	for _, name := range []string{
-		ModelsDirEnv,
-		ModelsEnv,
-		NamedModelPathEnv("main"),
-		NamedModelDigestEnv("main"),
-		NamedModelFamilyEnv("main"),
-		NamedModelPathEnv("embed"),
-		NamedModelDigestEnv("embed"),
-		NamedModelFamilyEnv("embed"),
-		ModelFamilyEnv,
+		NamedModelPathEnv("qwen3-14b"),
+		NamedModelDigestEnv("qwen3-14b"),
+		NamedModelFamilyEnv("qwen3-14b"),
+		NamedModelPathEnv("bge-m3"),
+		NamedModelDigestEnv("bge-m3"),
+		NamedModelFamilyEnv("bge-m3"),
+		legacyModelFamilyEnv,
 	} {
 		if got := envByName(container.Env, name); got != "" {
 			t.Fatalf("expected stale env %s to be removed, got %q", name, got)
 		}
 	}
-	if got, want := envByName(container.Env, ModelPathEnv), ModelPath(NormalizeOptions(Options{})); got != want {
-		t.Fatalf("single model path env = %q, want %q", got, want)
+	if got, want := envByName(container.Env, ModelsDirEnv), ModelsDirPath(NormalizeOptions(Options{})); got != want {
+		t.Fatalf("models dir env = %q, want %q", got, want)
 	}
-	if got := countVolumeByName(template.Spec.Volumes, DefaultManagedCacheName+"-main"); got != 0 {
-		t.Fatalf("expected stale main CSI volume to be removed, got %d", got)
+	if got := envByName(container.Env, legacyModelPathEnv); got != "" {
+		t.Fatalf("did not expect legacy model path env, got %q", got)
 	}
-	if got := countVolumeByName(template.Spec.Volumes, DefaultManagedCacheName+"-embed"); got != 0 {
+	if got := countVolumeByName(template.Spec.Volumes, managedModelVolumeName(DefaultManagedCacheName, "qwen3-14b")); got != 0 {
+		t.Fatalf("expected stale qwen CSI volume to be removed, got %d", got)
+	}
+	if got := countVolumeByName(template.Spec.Volumes, managedModelVolumeName(DefaultManagedCacheName, "bge-m3")); got != 0 {
 		t.Fatalf("expected stale embed CSI volume to be removed, got %d", got)
 	}
-	if got := countVolumeByName(template.Spec.Volumes, DefaultManagedCacheName); got != 1 {
+	if got := countVolumeByName(template.Spec.Volumes, managedModelVolumeName(DefaultManagedCacheName, "gemma")); got != 1 {
 		t.Fatalf("expected single managed CSI volume, got %d", got)
 	}
 	if got := countVolumeByName(template.Spec.Volumes, ociregistry.CAVolumeName); got != 0 {
 		t.Fatalf("expected orphan registry CA volume to be removed, got %d", got)
 	}
-	if _, found := template.Annotations[ResolvedModelsAnnotation]; found {
-		t.Fatalf("expected stale resolved models annotation to be removed")
+	if _, found := template.Annotations[ResolvedModelsAnnotation]; !found {
+		t.Fatalf("expected resolved models annotation to remain for single model")
 	}
 	if _, found := template.Annotations[ResolvedArtifactFamilyAnnotation]; found {
 		t.Fatalf("expected stale artifact family annotation to be removed")
 	}
 }
 
-func TestServicePrunesRemovedAliasFromSharedDirectDelivery(t *testing.T) {
+func TestServicePrunesRemovedModelFromSharedDirectDelivery(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
@@ -137,8 +141,8 @@ func TestServicePrunesRemovedAliasFromSharedDirectDelivery(t *testing.T) {
 	multi := ApplyRequest{
 		Artifact: publishedArtifactWithDigest("sha256:primary"),
 		Bindings: []ModelBinding{
-			{Alias: "main", Artifact: publishedArtifactWithDigest("sha256:primary")},
-			{Alias: "embed", Artifact: publishedArtifactWithDigest("sha256:embed")},
+			{Name: "qwen3-14b", Artifact: publishedArtifactWithDigest("sha256:primary")},
+			{Name: "bge-m3", Artifact: publishedArtifactWithDigest("sha256:embed")},
 		},
 		Topology: TopologyHints{ReplicaCount: 1},
 	}
@@ -149,7 +153,7 @@ func TestServicePrunesRemovedAliasFromSharedDirectDelivery(t *testing.T) {
 	primaryOnly := ApplyRequest{
 		Artifact: publishedArtifactWithDigest("sha256:primary"),
 		Bindings: []ModelBinding{
-			{Alias: "main", Artifact: publishedArtifactWithDigest("sha256:primary")},
+			{Name: "qwen3-14b", Artifact: publishedArtifactWithDigest("sha256:primary")},
 		},
 		Topology: TopologyHints{ReplicaCount: 1},
 	}
@@ -161,26 +165,26 @@ func TestServicePrunesRemovedAliasFromSharedDirectDelivery(t *testing.T) {
 		t.Fatalf("did not expect shared-direct init containers, got %#v", template.Spec.InitContainers)
 	}
 	for _, name := range []string{
-		NamedModelPathEnv("embed"),
-		NamedModelDigestEnv("embed"),
-		NamedModelFamilyEnv("embed"),
+		NamedModelPathEnv("bge-m3"),
+		NamedModelDigestEnv("bge-m3"),
+		NamedModelFamilyEnv("bge-m3"),
 	} {
 		if got := envByName(template.Spec.Containers[0].Env, name); got != "" {
 			t.Fatalf("expected stale env %s to be removed, got %q", name, got)
 		}
 	}
-	if got := template.Annotations[ResolvedModelsAnnotation]; strings.Contains(got, "embed") {
-		t.Fatalf("expected resolved models annotation to drop embed alias, got %q", got)
+	if got := template.Annotations[ResolvedModelsAnnotation]; strings.Contains(got, "bge-m3") {
+		t.Fatalf("expected resolved models annotation to drop removed model, got %q", got)
 	}
-	if got := countVolumeByName(template.Spec.Volumes, DefaultManagedCacheName+"-embed"); got != 0 {
-		t.Fatalf("expected removed alias CSI volume to be pruned, got %d", got)
+	if got := countVolumeByName(template.Spec.Volumes, managedModelVolumeName(DefaultManagedCacheName, "bge-m3")); got != 0 {
+		t.Fatalf("expected removed model CSI volume to be pruned, got %d", got)
 	}
-	if got := countVolumeByName(template.Spec.Volumes, DefaultManagedCacheName+"-main"); got != 1 {
-		t.Fatalf("expected main alias CSI volume to remain, got %d", got)
+	if got := countVolumeByName(template.Spec.Volumes, managedModelVolumeName(DefaultManagedCacheName, "qwen3-14b")); got != 1 {
+		t.Fatalf("expected qwen model CSI volume to remain, got %d", got)
 	}
 }
 
-func TestServiceRejectsAliasMountPathConflict(t *testing.T) {
+func TestServiceRejectsModelMountPathConflict(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
@@ -210,7 +214,7 @@ func TestServiceRejectsAliasMountPathConflict(t *testing.T) {
 	_, err = service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifactWithDigest("sha256:primary"),
 		Bindings: []ModelBinding{
-			{Alias: "main", Artifact: publishedArtifactWithDigest("sha256:primary")},
+			{Name: "main", Artifact: publishedArtifactWithDigest("sha256:primary")},
 		},
 		Topology: TopologyHints{ReplicaCount: 1},
 	}, template)

@@ -42,10 +42,7 @@ func TestDeliverySignalStateFromTemplateProjectsWorkloadFacingContract(t *testin
 			Containers: []corev1.Container{
 				{
 					Name: "runtime",
-					Env: []corev1.EnvVar{
-						{Name: "OTHER_ENV", Value: "ignored"},
-						{Name: modeldelivery.ModelPathEnv, Value: " /data/modelcache/model "},
-					},
+					Env:  []corev1.EnvVar{{Name: "OTHER_ENV", Value: "ignored"}},
 				},
 			},
 		},
@@ -56,7 +53,6 @@ func TestDeliverySignalStateFromTemplateProjectsWorkloadFacingContract(t *testin
 		Digest:         "sha256:test",
 		ArtifactURI:    "registry.example/gemma@sha256:test",
 		ArtifactFamily: "gemma",
-		ModelPath:      "/data/modelcache/model",
 		DeliveryMode:   "SharedDirect",
 		DeliveryReason: "NodeSharedRuntimePlane",
 	}

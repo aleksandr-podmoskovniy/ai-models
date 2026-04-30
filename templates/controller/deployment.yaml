@@ -88,6 +88,7 @@ spec:
             - --node-cache-thin-pool-name={{ include "ai-models.nodeCacheThinPoolName" . }}
             - {{ printf "--node-cache-node-selector-json=%s" (include "ai-models.nodeCacheNodeSelectorJSON" .) | quote }}
             - {{ printf "--node-cache-block-device-selector-json=%s" (include "ai-models.nodeCacheBlockDeviceSelectorJSON" .) | quote }}
+            - --shared-pvc-storage-class-name={{ include "ai-models.sharedPVCStorageClassName" . }}
             - --upload-service-name={{ include "ai-models.uploadGatewayServiceName" . }}
             - --upload-public-host={{ include "ai-models.uploadPublicHost" . }}
           env:

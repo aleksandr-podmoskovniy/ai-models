@@ -1,113 +1,205 @@
-# CSI workload UX contract plan
+# CSI workload UX and SharedPVC delivery contract plan
 
 ## Active bundle disposition
 
-- `live-e2e-ha-validation`: keep. Это следующий executable validation stream
-  после выката runtime changes.
-- `modelpack-efficient-compression-design`: keep. Отдельный research/design
-  stream по storage efficiency, не пересекается с CSI UX implementation.
-- `observability-signal-hardening`: keep. Отдельный observability stream,
-  нужен для логов/метрик и не должен смешиваться с workload delivery contract.
+- `csi-workload-ux-contract`: keep/current только для следующего executable
+  slice `SharedPVC RWX delivery contract`. Текущий rename-removal slice закрыт,
+  но bundle не архивируется, потому что в нём остался целевой SharedPVC
+  ownership/auth/GC design, который нельзя делать hidden fallback'ом.
+- `live-e2e-ha-validation`: keep. Исполняемый validation stream после выката.
+- `modelpack-efficient-compression-design`: keep. Отдельная storage-efficiency
+  оптимизация.
+- `observability-signal-hardening`: keep. Отдельный observability stream.
+- `production-readiness-hardening`: keep. Широкий hardening stream; этот slice
+  не должен дублировать его.
 
 ## Orchestration
 
-Mode: `light`.
+Mode: `full` для contract/storage boundary review.
 
 Read-only review before implementation:
 
-- `integration_architect`: CSI/Vault/Stronghold/Deckhouse UX, storage/HA
-  boundaries.
-- `api_designer`: annotations, K8s API conventions, spec/status split and
-  failure UX.
+- `api_designer`: annotations, public contract, failure UX.
+- `integration_architect`: SharedDirect/SharedPVC storage/auth/HA boundaries.
 
-Reviewer findings captured:
+Reviewer findings recorded:
 
-- Do not expose a public self-rendered CSI contract now: raw
-  `resolved-*` annotations are user-mutable and must not be trusted by
-  node-cache runtime.
-- Supported UX is annotation-only on supported Kubernetes workload Pod
-  templates. Controller owns CSI volume injection and internal attributes.
-- If a future external renderer is needed, it must use a trusted delivery
-  ticket/API, not copied Pod annotations.
-- CronJob admission must match controller support, otherwise the first Job can
-  start before the controller stamps delivery state.
+- Name-only mount paths require a collision rule. Decision: `Model/foo` and
+  `ClusterModel/foo` cannot be used in the same workload because both would
+  target `/data/modelcache/models/foo`.
+- `SharedPVC` must be controller-owned end to end. User-facing contract remains
+  only workload model annotations; users must not bring their own PVC or DMCR
+  path.
+- Safe implementation requires exactly one public admin knob:
+  `sharedPVC.storageClassName`.
+- Workload-scoped claim/materializer readiness must not be pushed into
+  `Model` / `ClusterModel` status.
+- Controller-only RBAC may write internal PVCs in workload namespaces; human
+  roles stay limited to `Model` / `ClusterModel`.
+- Hidden materialize fallback or namespace DMCR Secret copy remains forbidden.
 
-## Reference scan
-
-- Kubernetes CSI inline/ephemeral volume semantics.
-- Secrets Store CSI Driver and Vault CSI Provider UX: workload declares intent,
-  driver/provider owns mount-time materialization, sync-to-Secret is explicit.
-- Local Deckhouse/virtualization/Stronghold patterns: avoid leaking third-party
-  object internals into module-specific controllers.
-
-## Slice 1. Contract decision
+## Slice 1. Public annotation simplification
 
 Files:
 
-- `plans/active/csi-workload-ux-contract/PLAN.ru.md`
-- docs under `docs/*`
-- e2e runbook under `plans/active/live-e2e-ha-validation/*`
-
-Decision:
-
-- One annotation is the preferred built-in workload UX.
-- Internal CSI attributes are controller-stamped.
-- External controllers get no raw CSI escape hatch in this slice; they must use
-  supported PodTemplate mutation or a future trusted ticket/API.
-- Node-cache runtime trusts only controller-signed resolved delivery
-  annotations.
-
-Validation:
-
-- Review notes captured in this plan.
-
-## Slice 2. Generic mutation implementation
-
-Files:
-
-- `images/controller/internal/adapters/k8s/modeldelivery/*`
-- `images/controller/internal/controllers/workloaddelivery/*`
-- tests in the same packages.
+- `images/controller/internal/controllers/workloaddelivery/annotations.go`
+- `images/controller/internal/controllers/workloaddelivery/resolve.go`
+- tests in `internal/controllers/workloaddelivery`
 
 Implementation:
 
-- Auto-create missing node-cache CSI volumes for managed SharedDirect.
-- Stamp internal attributes for single and alias model volumes.
-- Keep explicit wrong-volume rejection.
-- Keep no nodeSelector/affinity mutation.
-- Sign resolved delivery annotations with module-private HMAC.
-- Verify the signature in node-cache runtime before desired-artifact prefetch
-  and CSI NodePublish authorization.
-- Add CronJob to the workload delivery admission webhook.
+- Replace legacy rename parser with comma-separated model names.
+- Use model name as stable path name.
+- Allow both namespaced and cluster models, reject duplicate path names.
+- Remove legacy reference annotation from parser, webhook trigger and tests.
 
 Validation:
 
-- Focused Go tests for modeldelivery and workloaddelivery.
+- `cd images/controller && go test ./internal/controllers/workloaddelivery`
 
-## Slice 3. Docs and e2e alignment
+Status: implemented.
+
+## Slice 2. Stable model paths without primary special-case
+
+Files:
+
+- `images/controller/internal/nodecache/materialization_layout.go`
+- `images/controller/internal/adapters/k8s/modeldelivery/*`
+- `images/controller/internal/workloaddelivery/*`
+- related tests.
+
+Implementation:
+
+- Always expose `/data/modelcache/models/<model-name>`.
+- Remove `/data/modelcache/model` from runtime env/mount contract.
+- Keep simple env surface: `AI_MODELS_MODELS_DIR` and `AI_MODELS_MODELS`.
+- Remove per-model legacy env variables from public docs; code may keep internal
+  helpers only if tests prove they are not user-facing.
+
+Validation:
+
+- `cd images/controller && go test ./internal/nodecache ./internal/adapters/k8s/modeldelivery ./internal/workloaddelivery`
+
+Status: implemented for `modeldelivery` and `workloaddelivery` controller.
+
+## Slice 3. SharedDirect / SharedPVC target boundary
 
 Files:
 
 - `docs/CONFIGURATION*.md`
-- `docs/USER_GUIDE*.md`
-- `docs/EXAMPLES*.md`
 - `docs/FAQ*.md`
-- `plans/active/live-e2e-ha-validation/A30_VLLM_SHARED_DIRECT.ru.md`
-- `plans/active/live-e2e-ha-validation/RUNBOOK.ru.md`
+- `docs/EXAMPLES*.md`
+- `docs/USER_GUIDE*.md`
+- `plans/active/csi-workload-ux-contract/PLAN.ru.md`
 
 Implementation:
 
-- Show annotation-first UX.
-- Remove explicit CSI volume from user examples.
-- State no PVC fallback and no third-party CRD special cases.
+- Document only three delivery outcomes: `SharedDirect`, `SharedPVC`,
+  `Disabled/Blocked`.
+- State RWX StorageClass requirement for `SharedPVC`.
+- State no user-facing RWO mode.
+- State SharedPVC implementation requires workload-owned RWX PVC and
+  digest-scoped materializer auth; unsafe secret-copy fallback is forbidden.
 
 Validation:
 
 - `git diff --check`
 
+Status: docs updated for current `SharedDirect` behavior and target
+`SharedPVC` boundary.
+
 ## Slice 4. Final review
 
-- Run focused tests.
+- Run focused Go tests.
+- Run `git diff --check`.
 - Run `make verify` if feasible.
-- Run `review-gate`; if delegation produced substantial architecture
-  findings, run final reviewer.
+- Run `review-gate`.
+- If subagent findings add blockers, record them in this plan before final.
+
+Status:
+
+- implemented.
+- Focused checks passed:
+  `cd images/controller && go test ./internal/nodecache ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery ./internal/workloaddelivery`.
+- Full controller check passed:
+  `cd images/controller && go test ./...`.
+- Repo checks passed:
+  `make deadcode`, `make helm-template`, `make kubeconform`,
+  `git diff --check`, `make verify`.
+- Final reviewer required because the slice used architecture subagents and
+  changed controller/runtime/docs surfaces.
+
+Status:
+
+- `cd images/controller && go test ./internal/nodecache ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery ./internal/workloaddelivery` passed.
+- `cd images/controller && go test ./...` passed.
+- `make helm-template` passed.
+- `make kubeconform` passed.
+- `make deadcode` passed after removing the unreachable legacy single-model
+  managed cache path.
+- `make verify` passed.
+
+## Slice 5. SharedPVC RWX delivery foundation
+
+Files:
+
+- `openapi/config-values.yaml`
+- `openapi/values.yaml`
+- `templates/_helpers.tpl`
+- `templates/controller/deployment.yaml`
+- `templates/controller/rbac.yaml`
+- `images/controller/cmd/ai-models-controller/*`
+- `images/controller/internal/adapters/k8s/modeldelivery/*`
+- `images/controller/internal/controllers/workloaddelivery/*`
+- `docs/CONFIGURATION*.md`
+- `docs/FAQ*.md`
+
+Implementation:
+
+- Add public `sharedPVC.storageClassName` as the single RWX StorageClass knob.
+- Pass SharedPVC config into controller runtime.
+- Add controller-owned RWX PVC naming/ownership based on workload owner and
+  requested model name/digest set.
+- Compute PVC request from published artifact `sizeBytes` plus internal
+  filesystem headroom.
+- Mutate workload template to mount the controller-owned PVC read-only at
+  `/data/modelcache/models`.
+- Keep workload fail-closed on scheduling gate while the PVC is not `Bound` or
+  digest-scoped materialization is not ready.
+- Delete stale SharedPVC claims for the same workload owner when the model set
+  changes and on delivery cleanup.
+- Delete SharedPVC claims when delivery becomes pending/blocked again, so stale
+  bytes are not kept behind a stopped workload.
+- Report missing delivery backend as stable `SharedPVCStorageClassMissing`
+  instead of a generic cache-mount contract error.
+- Update helm render guardrails: controller cluster-wide writes remain
+  forbidden for Pods/Leases/Secrets; PVC lifecycle verbs are intentional for
+  controller-owned SharedPVC.
+- Do not create workload namespace DMCR Secret/CA or materializer init
+  container.
+
+Validation:
+
+- `cd images/controller && go test ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery ./cmd/ai-models-controller`
+- `cd images/controller && go test ./...`
+- `make helm-template`
+- `make kubeconform`
+- `make deadcode`
+- `git diff --check`
+- `make verify`
+
+Status: implemented.
+
+## Next executable slice. SharedPVC digest-scoped materializer grant
+
+Open work that remains intentionally out of this code slice:
+
+- define digest-scoped materializer auth/read-grant without copying shared
+  registry Secrets into workload namespaces;
+- define controller-owned short-lived materializer Job lifecycle, retry and
+  cleanup;
+- release SharedPVC gate only after all requested model directories have ready
+  markers;
+- add metrics for materialized RWX bytes and stale claim pressure;
+- add RBAC evidence for namespace-local materializer Jobs/ServiceAccounts
+  before implementation.

@@ -28,7 +28,7 @@ webhooks:
     matchPolicy: Equivalent
     matchConditions:
       - name: ai-models-workload-reference
-        expression: "has(object.metadata.annotations) && ('ai.deckhouse.io/model' in object.metadata.annotations || 'ai.deckhouse.io/clustermodel' in object.metadata.annotations || 'ai.deckhouse.io/model-refs' in object.metadata.annotations)"
+        expression: "has(object.metadata.annotations) && ('ai.deckhouse.io/model' in object.metadata.annotations || 'ai.deckhouse.io/clustermodel' in object.metadata.annotations)"
     reinvocationPolicy: Never
     sideEffects: None
     timeoutSeconds: 2

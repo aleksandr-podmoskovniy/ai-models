@@ -71,7 +71,7 @@ func TestDeploymentReconcilerSuppressesRepeatedBlockedLog(t *testing.T) {
 	reconciler.logger = logs.logger
 
 	reconcileDeployment(t, reconciler, workload)
-	if got, want := logs.count(`"msg":"runtime delivery blocked by workload spec"`), 1; got != want {
+	if got, want := logs.count(`"msg":"runtime delivery blocked"`), 1; got != want {
 		t.Fatalf("blocked log count after first reconcile = %d, want %d, logs=%q", got, want, logs.buffer.String())
 	}
 
@@ -80,7 +80,7 @@ func TestDeploymentReconcilerSuppressesRepeatedBlockedLog(t *testing.T) {
 		t.Fatalf("Get(blocked deployment) error = %v", err)
 	}
 	reconcileDeployment(t, reconciler, &blocked)
-	if got, want := logs.count(`"msg":"runtime delivery blocked by workload spec"`), 1; got != want {
+	if got, want := logs.count(`"msg":"runtime delivery blocked"`), 1; got != want {
 		t.Fatalf("blocked log count after stable reconcile = %d, want %d, logs=%q", got, want, logs.buffer.String())
 	}
 
@@ -92,7 +92,7 @@ func TestDeploymentReconcilerSuppressesRepeatedBlockedLog(t *testing.T) {
 		t.Fatalf("Update(blocked deployment with external annotation) error = %v", err)
 	}
 	reconcileDeployment(t, reconciler, stale)
-	if got, want := logs.count(`"msg":"runtime delivery blocked by workload spec"`), 1; got != want {
+	if got, want := logs.count(`"msg":"runtime delivery blocked"`), 1; got != want {
 		t.Fatalf("blocked log count after stale reconcile with external annotation drift = %d, want %d, logs=%q", got, want, logs.buffer.String())
 	}
 }

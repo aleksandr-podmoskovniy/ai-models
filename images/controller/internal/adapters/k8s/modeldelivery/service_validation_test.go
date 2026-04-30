@@ -24,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func TestServiceRejectsMissingCacheMount(t *testing.T) {
+func TestServiceBlocksMissingCacheBackend(t *testing.T) {
 	t.Parallel()
 
 	scheme := testkit.NewScheme(t)
@@ -49,13 +49,17 @@ func TestServiceRejectsMissingCacheMount(t *testing.T) {
 
 	_, err = service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
+		Bindings: singleModelBinding(),
 		Topology: TopologyHints{ReplicaCount: 1},
 	}, template)
-	if err == nil || err.Error() != "runtime delivery annotated workload must mount writable model cache at \"/data/modelcache\"" {
+	if err == nil || err.Error() != "runtime delivery requires nodeCache.enabled=true or sharedPVC.storageClassName with an RWX StorageClass" {
 		t.Fatalf("unexpected error %v", err)
 	}
 	if !IsWorkloadContractError(err) {
 		t.Fatalf("expected workload contract error, got %T", err)
+	}
+	if got, want := WorkloadContractReason(err), string(DeliveryGateReasonSharedPVCStorageClassMissing); got != want {
+		t.Fatalf("workload contract reason = %q, want %q", got, want)
 	}
 }
 
@@ -99,6 +103,7 @@ func TestServiceRejectsAmbiguousCacheMountVolume(t *testing.T) {
 
 	_, err = service.ApplyToPodTemplate(context.Background(), owner, ApplyRequest{
 		Artifact: publishedArtifact(),
+		Bindings: singleModelBinding(),
 		Topology: TopologyHints{ReplicaCount: 1},
 	}, template)
 	if err == nil || err.Error() != "runtime delivery cache mount \"/data/modelcache\" must reference a single backing volume" {

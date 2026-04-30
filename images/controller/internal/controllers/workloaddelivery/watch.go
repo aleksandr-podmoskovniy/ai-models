@@ -53,8 +53,7 @@ func indexWorkloadReferences(ctx context.Context, indexer client.FieldIndexer, k
 
 func workloadReferenceIndex(object client.Object) []string {
 	if strings.TrimSpace(object.GetAnnotations()[ModelAnnotation]) == "" &&
-		strings.TrimSpace(object.GetAnnotations()[ClusterModelAnnotation]) == "" &&
-		strings.TrimSpace(object.GetAnnotations()[ModelRefsAnnotation]) == "" {
+		strings.TrimSpace(object.GetAnnotations()[ClusterModelAnnotation]) == "" {
 		return nil
 	}
 	return []string{workloadReferenceIndexValue}

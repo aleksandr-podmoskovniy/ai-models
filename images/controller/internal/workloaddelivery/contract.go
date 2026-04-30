@@ -28,6 +28,8 @@ const (
 	DeliveryAuthKeyEnv = "AI_MODELS_DELIVERY_AUTH_KEY"
 
 	DeliveryModeSharedDirect = "SharedDirect"
+	DeliveryModeSharedPVC    = "SharedPVC"
 
 	DeliveryReasonNodeSharedRuntimePlane = "NodeSharedRuntimePlane"
+	DeliveryReasonRWXSharedVolume        = "RWXSharedVolume"
 )

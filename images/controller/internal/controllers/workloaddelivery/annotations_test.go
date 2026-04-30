@@ -16,21 +16,26 @@ limitations under the License.
 
 package workloaddelivery
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestParseReferencesPreservesLegacySingleAnnotations(t *testing.T) {
+func TestParseReferencesAcceptsSingleAndMultiModelAnnotations(t *testing.T) {
 	t.Parallel()
 
-	refs, found, err := parseReferences(map[string]string{ModelAnnotation: "gemma"})
+	refs, found, err := parseReferences(map[string]string{ModelAnnotation: "gemma,bge-m3"})
 	if err != nil {
 		t.Fatalf("parseReferences(model) error = %v", err)
 	}
-	if len(refs) != 1 {
-		t.Fatalf("expected one model reference, got %#v", refs)
+	if !found || len(refs) != 2 {
+		t.Fatalf("expected two model references, got %#v found=%v", refs, found)
 	}
-	ref := refs[0]
-	if !found || ref.Alias != defaultModelAlias || ref.Scope != ReferenceScopeModel || ref.Name != "gemma" {
-		t.Fatalf("unexpected model reference %#v found=%v", ref, found)
+	if refs[0] != (Reference{Scope: ReferenceScopeModel, Name: "gemma"}) {
+		t.Fatalf("unexpected first model reference %#v", refs[0])
+	}
+	if refs[1] != (Reference{Scope: ReferenceScopeModel, Name: "bge-m3"}) {
+		t.Fatalf("unexpected second model reference %#v", refs[1])
 	}
 
 	refs, found, err = parseReferences(map[string]string{ClusterModelAnnotation: "gemma"})
@@ -40,13 +45,25 @@ func TestParseReferencesPreservesLegacySingleAnnotations(t *testing.T) {
 	if len(refs) != 1 {
 		t.Fatalf("expected one clustermodel reference, got %#v", refs)
 	}
-	ref = refs[0]
-	if !found || ref.Alias != defaultModelAlias || ref.Scope != ReferenceScopeClusterModel || ref.Name != "gemma" {
-		t.Fatalf("unexpected clustermodel reference %#v found=%v", ref, found)
+	if refs[0] != (Reference{Scope: ReferenceScopeClusterModel, Name: "gemma"}) {
+		t.Fatalf("unexpected clustermodel reference %#v found=%v", refs[0], found)
 	}
 }
 
-func TestParseReferenceRejectsBothScopes(t *testing.T) {
+func TestParseReferencesAcceptsKubernetesResourceNames(t *testing.T) {
+	t.Parallel()
+
+	longName := "model-" + strings.Repeat("a", 60) + ".v1"
+	refs, found, err := parseReferences(map[string]string{ClusterModelAnnotation: longName})
+	if err != nil {
+		t.Fatalf("parseReferences() error = %v", err)
+	}
+	if !found || len(refs) != 1 || refs[0].Name != longName {
+		t.Fatalf("unexpected refs %#v found=%v", refs, found)
+	}
+}
+
+func TestParseReferenceRejectsDuplicateMountNamesAcrossScopes(t *testing.T) {
 	t.Parallel()
 
 	_, _, err := parseReferences(map[string]string{
@@ -54,15 +71,16 @@ func TestParseReferenceRejectsBothScopes(t *testing.T) {
 		ClusterModelAnnotation: "gemma",
 	})
 	if err == nil {
-		t.Fatal("expected error when both model and clustermodel annotations are set")
+		t.Fatal("expected duplicate model names across scopes to be rejected")
 	}
 }
 
-func TestParseReferencesFromModelRefs(t *testing.T) {
+func TestParseReferencesAllowsBothScopesWhenNamesAreDistinct(t *testing.T) {
 	t.Parallel()
 
 	refs, found, err := parseReferences(map[string]string{
-		ModelRefsAnnotation: "main=Model/gemma, embed=ClusterModel/bge-reranker",
+		ModelAnnotation:        "team-embed",
+		ClusterModelAnnotation: "qwen3-14b",
 	})
 	if err != nil {
 		t.Fatalf("parseReferences() error = %v", err)
@@ -70,37 +88,28 @@ func TestParseReferencesFromModelRefs(t *testing.T) {
 	if !found || len(refs) != 2 {
 		t.Fatalf("unexpected refs %#v found=%v", refs, found)
 	}
-	if refs[0] != (Reference{Alias: "main", Scope: ReferenceScopeModel, Name: "gemma"}) {
+	if refs[0] != (Reference{Scope: ReferenceScopeModel, Name: "team-embed"}) {
 		t.Fatalf("unexpected first ref %#v", refs[0])
 	}
-	if refs[1] != (Reference{Alias: "embed", Scope: ReferenceScopeClusterModel, Name: "bge-reranker"}) {
+	if refs[1] != (Reference{Scope: ReferenceScopeClusterModel, Name: "qwen3-14b"}) {
 		t.Fatalf("unexpected second ref %#v", refs[1])
 	}
 }
 
-func TestParseReferencesRejectsMixedLegacyAndModelRefs(t *testing.T) {
-	t.Parallel()
-
-	_, _, err := parseReferences(map[string]string{
-		ModelAnnotation:     "gemma",
-		ModelRefsAnnotation: "main=Model/gemma",
-	})
-	if err == nil {
-		t.Fatal("expected mixed annotations to be rejected")
-	}
-}
-
-func TestParseReferencesRejectsUnsafeAliasAndDuplicateAlias(t *testing.T) {
+func TestParseReferencesRejectsUnsafeNames(t *testing.T) {
 	t.Parallel()
 
 	for _, value := range []string{
-		"Main=Model/gemma",
-		"main_model=Model/gemma",
-		"main=Model/gemma,main=ClusterModel/bge",
-		"main=Unknown/gemma",
-		"main=Model/",
+		"Main",
+		"main_model",
+		"main=gemma",
+		"team/gemma",
+		"gemma;bge",
+		"gemma\nbge",
+		"gemma,,bge",
+		"gemma,gemma",
 	} {
-		if _, _, err := parseReferences(map[string]string{ModelRefsAnnotation: value}); err == nil {
+		if _, _, err := parseReferences(map[string]string{ModelAnnotation: value}); err == nil {
 			t.Fatalf("expected %q to be rejected", value)
 		}
 	}

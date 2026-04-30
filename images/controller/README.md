@@ -84,16 +84,13 @@ Current phase-2 slice implemented here:
   `SharedDirect` inline CSI contract. It does not render workload-namespace
   materializer init containers, projected registry credentials, explicit cache
   PVC bridges, or emptyDir/ephemeral fallbacks; unsupported storage topology
-  fails closed. The stable workload-facing runtime env contract keeps
-  legacy primary-model variables (`AI_MODELS_MODEL_PATH` /
-  `AI_MODELS_MODEL_DIGEST` / `AI_MODELS_MODEL_FAMILY`) and adds alias-based
-  multi-model delivery through `ai.deckhouse.io/model-refs`,
-  `/data/modelcache/models/<alias>`, `AI_MODELS_MODELS_DIR`,
-  `AI_MODELS_MODELS` with alias/path/digest/family entries, and per-alias
-  `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}` variables without leaking raw
-  cache-root layout details into consumers; managed `SharedDirect` requires a
-  user-declared node-cache CSI volume and leaves node placement to the workload
-  owner or scheduler;
+  fails closed. The stable workload-facing runtime env contract is the same
+  for single-model and multi-model delivery: models are addressed by
+  Kubernetes resource name under `/data/modelcache/models/<model-name>`, and
+  the container receives `AI_MODELS_MODELS_DIR` plus `AI_MODELS_MODELS` with
+  `name/path/digest/family` entries without leaking raw cache-root layout
+  details into consumers; managed `SharedDirect` injects node-cache CSI volumes
+  and leaves node placement to the workload owner or scheduler;
 - `internal/adapters/k8s/nodecacheruntime` for stable per-node Pod/PVC shaping
   of the node-cache runtime plane, Deckhouse-style CSI registration sidecar and
   hostPath/socket wiring, plus runtime-side extraction of the published
@@ -337,8 +334,8 @@ Current phase-2 slice implemented here:
   errors;
 - `internal/controllers/workloaddelivery` for direct workload mutation over
   top-level annotations `ai.deckhouse.io/model`,
-  `ai.deckhouse.io/clustermodel`, and alias-based
-  `ai.deckhouse.io/model-refs`; this controller intentionally stays
+  `ai.deckhouse.io/clustermodel` with comma-separated model names; this
+  controller intentionally stays
   on mutable workload templates (`Deployment`, `StatefulSet`, `DaemonSet`,
   `CronJob`), uses admission only for the scheduling gate, and does not pretend
   that direct `Job` mutation is safe after creation;

@@ -68,14 +68,14 @@ func TestDeploymentReconcilerRemovesManagedStateWhenAnnotationDisappears(t *test
 	if hasInitContainer(cleaned.Spec.Template.Spec.InitContainers, modeldelivery.LegacyMaterializerInitContainerName) {
 		t.Fatalf("did not expect init container %q after annotation removal", modeldelivery.LegacyMaterializerInitContainerName)
 	}
-	if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, modeldelivery.ModelPathEnv) {
-		t.Fatalf("did not expect runtime env %q after annotation removal", modeldelivery.ModelPathEnv)
+	if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, "AI_MODELS_MODEL_PATH") {
+		t.Fatalf("did not expect runtime env %q after annotation removal", "AI_MODELS_MODEL_PATH")
 	}
-	if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, modeldelivery.ModelDigestEnv) {
-		t.Fatalf("did not expect runtime env %q after annotation removal", modeldelivery.ModelDigestEnv)
+	if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, "AI_MODELS_MODEL_DIGEST") {
+		t.Fatalf("did not expect runtime env %q after annotation removal", "AI_MODELS_MODEL_DIGEST")
 	}
-	if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, modeldelivery.ModelFamilyEnv) {
-		t.Fatalf("did not expect runtime env %q after annotation removal", modeldelivery.ModelFamilyEnv)
+	if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, "AI_MODELS_MODEL_FAMILY") {
+		t.Fatalf("did not expect runtime env %q after annotation removal", "AI_MODELS_MODEL_FAMILY")
 	}
 	if _, found := cleaned.Spec.Template.Annotations[modeldelivery.ResolvedDigestAnnotation]; found {
 		t.Fatal("did not expect resolved digest annotation after annotation removal")
@@ -225,9 +225,9 @@ func TestDeploymentReconcilerRemovesInjectedManagedCacheStateWhenAnnotationDisap
 		t.Fatalf("did not expect delivery cleanup finalizer after managed cache cleanup, got %#v", cleaned.Finalizers)
 	}
 	for _, envName := range []string{
-		modeldelivery.ModelPathEnv,
-		modeldelivery.ModelDigestEnv,
-		modeldelivery.ModelFamilyEnv,
+		"AI_MODELS_MODEL_PATH",
+		"AI_MODELS_MODEL_DIGEST",
+		"AI_MODELS_MODEL_FAMILY",
 	} {
 		if hasRuntimeEnv(cleaned.Spec.Template.Spec.Containers, envName) {
 			t.Fatalf("did not expect runtime env %q after cleanup", envName)

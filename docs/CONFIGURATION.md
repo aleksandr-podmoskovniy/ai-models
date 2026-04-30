@@ -11,7 +11,8 @@ Only stable module-level settings are exposed:
 
 - `logLevel`;
 - `artifacts`;
-- `nodeCache`.
+- `nodeCache`;
+- `sharedPVC`.
 
 High availability mode, HTTPS policy, ingress class, controller/runtime wiring,
 `DMCR`, upload-gateway, publication worker internals, source-fetch policy and
@@ -195,27 +196,22 @@ With `nodeCache.enabled=true`, SharedDirect is an annotation-only workload
 contract:
 
 - workload metadata declares only `ai.deckhouse.io/model`,
-  `ai.deckhouse.io/clustermodel` or `ai.deckhouse.io/model-refs`;
+  `ai.deckhouse.io/clustermodel`, or both fields. The value is one name or a
+  comma-separated list of names without custom renaming syntax;
 - the controller injects the inline CSI volume with driver
   `node-cache.ai-models.deckhouse.io`, the stable mount, runtime env and
   internal artifact attributes;
-- for a single model the managed volume name is `ai-models-node-cache`; for
-  `ai.deckhouse.io/model-refs` each alias gets
-  `ai-models-node-cache-<alias>`;
+- each model gets its own managed CSI volume
+  `ai-models-node-cache-<model-name>` and a read-only mount at
+  `/data/modelcache/models/<model-name>`;
 - the controller does not add node selectors, labels, affinity or workload
   scheduling policy. Placement is owned by the user workload, ai-inference or
   another scheduler;
 - the workload namespace no longer receives projected DMCR read Secret/CA or
   bridge runtime imagePullSecret for the managed SharedDirect path;
-- workloads get a stable runtime-facing model delivery contract. Legacy
-  `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel` annotations still
-  expose the primary model through `AI_MODELS_MODEL_PATH`,
-  `AI_MODELS_MODEL_DIGEST`, and `AI_MODELS_MODEL_FAMILY`; multi-model
-  workloads can use `ai.deckhouse.io/model-refs` with values such as
-  `main=Model/gemma,embed=ClusterModel/bge`, which exposes stable alias paths
-  under `/data/modelcache/models/<alias>` plus `AI_MODELS_MODELS_DIR`,
-  `AI_MODELS_MODELS` with alias/path/digest/family entries, and per-alias
-  `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}` variables;
+- workloads get a stable runtime-facing model delivery contract:
+  `AI_MODELS_MODELS_DIR=/data/modelcache/models` and `AI_MODELS_MODELS` with
+  `name`, `path`, `digest`, and `family` entries;
 - ai-models does not contain CRD-specific adapters for higher-level
   controllers such as KubeRay. Render a supported Kubernetes workload with the
   model annotation on workload metadata, or let ai-inference render a native
@@ -272,12 +268,24 @@ Failure scenarios:
   fit into the configured per-node cache size, ai-models keeps its scheduling
   gate and reports a clear delivery condition/event.
 
-Explicit workload-provided cache volumes are no longer a delivery fallback:
-the controller rejects such templates with a clear condition/event and waits
-for the managed SharedDirect CSI contract. User manifests should set only the
-model annotation. A pre-existing mount at `/data/modelcache` is allowed only if
-it already uses the node-cache CSI driver; otherwise it is rejected instead of
-being silently converted.
+When `nodeCache.enabled=false`, the module switches to the SharedPVC contract
+only if the administrator sets `sharedPVC.storageClassName`. The referenced
+`StorageClass` must actually support `ReadWriteMany`, for example CephFS, NFS,
+or another shared filesystem. User workloads still declare only model
+annotations. The controller creates an RWX PVC in the workload namespace, ties
+it to the top-level workload owner, and mounts that PVC read-only at
+`/data/modelcache/models`. PVC size is calculated from the requested published
+models' `status.artifact.sizeBytes` plus a small internal filesystem headroom.
+If `storageClassName` is empty, the PVC is not `Bound`, or digest-scoped
+materialization has not completed yet, the workload stays behind the scheduling
+gate with a clear reason. Copying the DMCR read Secret/CA into the workload
+namespace is forbidden.
+
+Explicit workload-provided cache volumes are not supported as a model delivery
+mechanism. The controller rejects such templates with a clear condition/event
+and waits for the managed SharedDirect CSI contract. User manifests should set
+only the model annotation. A pre-existing mount at `/data/modelcache` is allowed
+only if it already uses the node-cache CSI driver; otherwise it is rejected.
 
 There is still no public cleanup or TTL knob yet: the workload-facing shared
 mount contract now exists, but eviction policy remains internal runtime

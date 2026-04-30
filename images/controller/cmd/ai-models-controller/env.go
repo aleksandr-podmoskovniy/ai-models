@@ -56,6 +56,7 @@ const (
 	nodeCacheThinPoolNameEnv              = "NODE_CACHE_THIN_POOL_NAME"
 	nodeCacheNodeSelectorEnv              = "NODE_CACHE_NODE_SELECTOR_JSON"
 	nodeCacheBlockDeviceSelectorEnv       = "NODE_CACHE_BLOCK_DEVICE_SELECTOR_JSON"
+	sharedPVCStorageClassNameEnv          = "SHARED_PVC_STORAGE_CLASS_NAME"
 	uploadServiceNameEnv                  = "UPLOAD_SERVICE_NAME"
 	uploadPublicHostEnv                   = "UPLOAD_PUBLIC_HOST"
 	metricsBindAddressEnv                 = "METRICS_BIND_ADDRESS"

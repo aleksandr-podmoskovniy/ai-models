@@ -1041,7 +1041,7 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["delete"]
@@ -1109,7 +1109,7 @@ rules:
             errors,
         )
         self.assertIn(
-            "templates/controller/rbac.yaml: controller ClusterRole must not grant cluster-wide persistentvolumeclaims write verbs",
+            "templates/controller/rbac.yaml: controller ClusterRole must grant SharedPVC lifecycle verbs on persistentvolumeclaims",
             errors,
         )
         self.assertIn(

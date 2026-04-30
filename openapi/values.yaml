@@ -80,6 +80,16 @@ properties:
           ai.deckhouse.io/model-cache: "true"
         additionalProperties:
           type: string
+  sharedPVC:
+    type: object
+    description: RWX shared-volume delivery settings used when node-cache is disabled.
+    additionalProperties: false
+    default:
+      storageClassName: ""
+    properties:
+      storageClassName:
+        type: string
+        default: ""
   registry:
     type: object
     description: Registry credentials injected by Deckhouse runtime.
@@ -148,6 +158,8 @@ properties:
               ai.deckhouse.io/model-cache: "true"
             blockDeviceSelector:
               ai.deckhouse.io/model-cache: "true"
+          sharedPVC:
+            storageClassName: ""
         additionalProperties: true
       controller:
         type: object

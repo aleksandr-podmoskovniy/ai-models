@@ -32,6 +32,11 @@ func TestRenderBuildsSharedDirectWithoutMaterializer(t *testing.T) {
 	rendered, err := Render(Input{
 		Artifact:       renderArtifact(),
 		ArtifactFamily: "hf-safetensors-v1",
+		Bindings: []BindingInput{{
+			Name:           "gemma",
+			Artifact:       renderArtifact(),
+			ArtifactFamily: "hf-safetensors-v1",
+		}},
 		CacheMount: CacheMount{
 			VolumeName: DefaultManagedCacheName,
 			MountPath:  DefaultCacheMountPath,
@@ -46,17 +51,14 @@ func TestRenderBuildsSharedDirectWithoutMaterializer(t *testing.T) {
 	if got, want := rendered.ImagePullSecretNamesPrune, []string{"legacy-runtime-pull"}; len(got) != len(want) || got[0] != want[0] {
 		t.Fatalf("image pull secret prune list = %#v, want %#v", got, want)
 	}
-	if got, want := rendered.ModelPath, nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
+	if got, want := rendered.ModelPath, nodecache.WorkloadNamedModelPath(DefaultCacheMountPath, "gemma"); got != want {
 		t.Fatalf("model path = %q, want %q", got, want)
 	}
-	if got, want := envValue(rendered.RuntimeEnv, ModelPathEnv), nodecache.WorkloadModelPath(DefaultCacheMountPath); got != want {
-		t.Fatalf("runtime model path env = %q, want %q", got, want)
+	if got, want := envValue(rendered.RuntimeEnv, ModelsDirEnv), nodecache.WorkloadModelsDirPath(DefaultCacheMountPath); got != want {
+		t.Fatalf("runtime models dir env = %q, want %q", got, want)
 	}
-	if got, want := envValue(rendered.RuntimeEnv, ModelDigestEnv), "sha256:deadbeef"; got != want {
-		t.Fatalf("runtime model digest env = %q, want %q", got, want)
-	}
-	if got, want := envValue(rendered.RuntimeEnv, ModelFamilyEnv), "hf-safetensors-v1"; got != want {
-		t.Fatalf("runtime model family env = %q, want %q", got, want)
+	if got := envValue(rendered.RuntimeEnv, legacyModelPathEnv); got != "" {
+		t.Fatalf("did not expect legacy runtime model path env, got %q", got)
 	}
 	if len(rendered.Volumes) != 0 {
 		t.Fatalf("did not expect registry CA volumes for shared-direct render, got %#v", rendered.Volumes)
@@ -68,14 +70,49 @@ func TestRenderRejectsNonDirectTopology(t *testing.T) {
 
 	_, err := Render(Input{
 		Artifact: renderArtifact(),
+		Bindings: []BindingInput{{
+			Name:     "gemma",
+			Artifact: renderArtifact(),
+		}},
 		CacheMount: CacheMount{
 			VolumeName: DefaultManagedCacheName,
 			MountPath:  DefaultCacheMountPath,
 		},
-		TopologyKind: CacheTopologySharedPVC,
+		TopologyKind: CacheTopologyPerPod,
 	}, Options{})
-	if err == nil || !strings.Contains(err.Error(), "supports only node-cache CSI SharedDirect delivery") {
+	if err == nil || !strings.Contains(err.Error(), "supports only SharedDirect or SharedPVC delivery") {
 		t.Fatalf("expected non-direct delivery error, got %v", err)
+	}
+}
+
+func TestRenderBuildsSharedPVCMount(t *testing.T) {
+	t.Parallel()
+
+	rendered, err := Render(Input{
+		Artifact: renderArtifact(),
+		Bindings: []BindingInput{{
+			Name:     "gemma",
+			Artifact: renderArtifact(),
+		}},
+		CacheMount: CacheMount{
+			VolumeName: DefaultSharedPVCVolumeName,
+			MountPath:  DefaultCacheMountPath,
+		},
+		SharedPVCClaimName: "ai-models-cache-abc123",
+		TopologyKind:       CacheTopologySharedPVC,
+	}, Options{})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if got, want := len(rendered.Volumes), 1; got != want {
+		t.Fatalf("volumes = %d, want %d", got, want)
+	}
+	claim := rendered.Volumes[0].PersistentVolumeClaim
+	if claim == nil || claim.ClaimName != "ai-models-cache-abc123" || !claim.ReadOnly {
+		t.Fatalf("unexpected shared pvc volume %#v", rendered.Volumes[0])
+	}
+	if got, want := rendered.RuntimeVolumeMounts[0].MountPath, nodecache.WorkloadModelsDirPath(DefaultCacheMountPath); got != want {
+		t.Fatalf("shared pvc mount path = %q, want %q", got, want)
 	}
 }
 
@@ -83,7 +120,11 @@ func TestRenderRejectsMissingCacheVolume(t *testing.T) {
 	t.Parallel()
 
 	_, err := Render(Input{
-		Artifact:     renderArtifact(),
+		Artifact: renderArtifact(),
+		Bindings: []BindingInput{{
+			Name:     "gemma",
+			Artifact: renderArtifact(),
+		}},
 		TopologyKind: CacheTopologyDirect,
 	}, Options{})
 	if err == nil || err.Error() != "runtime delivery cache volume name must not be empty" {
@@ -96,6 +137,10 @@ func TestRenderRejectsMismatchedCacheMountContract(t *testing.T) {
 
 	_, err := Render(Input{
 		Artifact: renderArtifact(),
+		Bindings: []BindingInput{{
+			Name:     "gemma",
+			Artifact: renderArtifact(),
+		}},
 		CacheMount: CacheMount{
 			VolumeName: DefaultManagedCacheName,
 			MountPath:  "/models",

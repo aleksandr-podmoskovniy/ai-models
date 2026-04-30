@@ -11,7 +11,8 @@ weight: 60
 
 - `logLevel`;
 - `artifacts`;
-- `nodeCache`.
+- `nodeCache`;
+- `sharedPVC`.
 
 Режим HA, HTTPS policy, ingress class, controller/runtime wiring, внутренний
 `DMCR`, upload-gateway, publication worker, source-fetch policy и GC cadence
@@ -45,7 +46,7 @@ storage credentials напрямую в `d8-ai-models`.
 Custom trust для S3-compatible endpoint задаётся через `artifacts.caSecretName`.
 Этот Secret должен жить в `d8-system` и содержать `ca.crt`. Если
 `caSecretName` пустой, ai-models сначала reuse'ит `credentialsSecretName`,
-если тот же Secret тоже содержит `ca.crt`, а иначе fallback'ится на platform CA,
+если тот же Secret тоже содержит `ca.crt`, иначе использует platform CA,
 который уже discovered module runtime или скопирован из global HTTPS
 `CustomCertificate` path.
 
@@ -196,28 +197,22 @@ SharedDirect delivery contract:
 workload:
 
 - metadata workload'а задаёт только `ai.deckhouse.io/model`,
-  `ai.deckhouse.io/clustermodel` или `ai.deckhouse.io/model-refs`;
+  `ai.deckhouse.io/clustermodel` или оба поля сразу. Значение — одно имя или
+  comma-separated список имён без синтаксиса переименования;
 - controller сам добавляет inline CSI volume с driver
   `node-cache.ai-models.deckhouse.io`, stable mount, runtime env и internal
   artifact attributes;
-- для одной модели managed volume name — `ai-models-node-cache`; для
-  `ai.deckhouse.io/model-refs` каждый alias получает
-  `ai-models-node-cache-<alias>`;
+- каждая модель получает отдельный managed CSI volume
+  `ai-models-node-cache-<model-name>` и read-only mount
+  `/data/modelcache/models/<model-name>`;
 - controller не добавляет node selectors, labels, affinity или scheduling
   policy workload'а. Placement остаётся ответственностью workload'а,
   ai-inference или внешнего scheduler'а;
 - namespace workload'а больше не получает projected DMCR read Secret/CA и
   bridge runtime imagePullSecret для managed SharedDirect path;
-- workload получает стабильный runtime-facing contract. Legacy annotations
-  `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel` по-прежнему
-  отдают primary model через `AI_MODELS_MODEL_PATH`,
-  `AI_MODELS_MODEL_DIGEST` и `AI_MODELS_MODEL_FAMILY`; для нескольких моделей
-  используется `ai.deckhouse.io/model-refs` со значением вроде
-  `main=Model/gemma,embed=ClusterModel/bge`, после чего каждая модель видна по
-  стабильному alias path `/data/modelcache/models/<alias>`, а workload получает
-  `AI_MODELS_MODELS_DIR`, `AI_MODELS_MODELS` со списком
-  alias/path/digest/family и per-alias env
-  `AI_MODELS_MODEL_<ALIAS>_{PATH,DIGEST,FAMILY}`;
+- workload получает стабильный runtime-facing contract:
+  `AI_MODELS_MODELS_DIR=/data/modelcache/models` и `AI_MODELS_MODELS` со
+  списком `name`, `path`, `digest`, `family`;
 - ai-models не держит CRD-specific adapters для внешних контроллеров вроде
   KubeRay. Надо рендерить поддержанный Kubernetes workload с model annotation
   на metadata workload'а либо отдавать рендеринг workload'а ai-inference;
@@ -273,12 +268,24 @@ workload:
   configured per-node cache size, ai-models сохраняет свой scheduling gate и
   пишет понятный condition/event.
 
-Явно заданные workload cache volumes больше не являются delivery fallback:
-controller отклоняет такие шаблоны понятным condition/event и ждёт managed
-SharedDirect CSI contract. Пользовательские манифесты должны задавать только
-аннотацию модели. Уже существующий mount на `/data/modelcache` допустим только
-если он использует node-cache CSI driver; иначе он отклоняется, а не
-конвертируется молча.
+При `nodeCache.enabled=false` модуль переходит в SharedPVC contract только если
+администратор задал `sharedPVC.storageClassName`. Это должен быть
+`StorageClass`, который реально поддерживает `ReadWriteMany`:
+CephFS/NFS/аналогичный shared filesystem. Пользовательский workload по-прежнему
+задаёт только model annotations. Controller создаёт RWX PVC в namespace
+workload'а, привязывает его к top-level workload owner и монтирует PVC read-only
+в `/data/modelcache/models`. Размер PVC считается из опубликованных
+`status.artifact.sizeBytes` запрошенных моделей плюс небольшой internal
+filesystem headroom. Если `storageClassName` не задан, PVC не bound или
+digest-scoped materialization ещё не завершён, workload остаётся на scheduling
+gate с понятным reason. Копирование DMCR read Secret/CA в namespace workload'а
+запрещено.
+
+Явно заданные workload cache volumes не поддерживаются как способ доставки
+моделей. Controller отклоняет такие шаблоны понятным condition/event и ждёт
+managed SharedDirect CSI contract. Пользовательские манифесты должны задавать
+только аннотацию модели. Уже существующий mount на `/data/modelcache` допустим
+только если он использует node-cache CSI driver; иначе он отклоняется.
 
 При этом публичного cleanup/TTL knob пока нет: workload-facing shared mount уже
 есть, но eviction policy остаётся internal runtime behavior, а не обещанным

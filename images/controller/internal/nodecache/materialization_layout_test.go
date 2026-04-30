@@ -19,7 +19,6 @@ package nodecache
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -95,16 +94,16 @@ func TestSharedArtifactModelPathUsesDigestStoreContractPath(t *testing.T) {
 	}
 }
 
-func TestWorkloadModelAliasPathUsesStableModelsDirectory(t *testing.T) {
+func TestWorkloadNamedModelPathUsesStableModelsDirectory(t *testing.T) {
 	t.Parallel()
 
 	cacheRoot := filepath.Join(t.TempDir(), "cache")
-	if got, want := WorkloadModelAliasPath(cacheRoot, "main"), filepath.Join(cacheRoot, "models", "main"); got != want {
-		t.Fatalf("workload model alias path = %q, want %q", got, want)
+	if got, want := WorkloadNamedModelPath(cacheRoot, "main"), filepath.Join(cacheRoot, "models", "main"); got != want {
+		t.Fatalf("workload named model path = %q, want %q", got, want)
 	}
 }
 
-func TestUpdateWorkloadModelAliasLinkCreatesRelativeSymlink(t *testing.T) {
+func TestUpdateWorkloadNamedModelLinkCreatesRelativeSymlink(t *testing.T) {
 	t.Parallel()
 
 	cacheRoot := filepath.Join(t.TempDir(), "cache")
@@ -112,27 +111,27 @@ func TestUpdateWorkloadModelAliasLinkCreatesRelativeSymlink(t *testing.T) {
 	if err := os.MkdirAll(targetPath, 0o755); err != nil {
 		t.Fatalf("MkdirAll(targetPath) error = %v", err)
 	}
-	if err := UpdateWorkloadModelAliasLink(cacheRoot, "main", targetPath); err != nil {
-		t.Fatalf("UpdateWorkloadModelAliasLink() error = %v", err)
+	if err := UpdateWorkloadNamedModelLink(cacheRoot, "main", targetPath); err != nil {
+		t.Fatalf("UpdateWorkloadNamedModelLink() error = %v", err)
 	}
-	linkTarget, err := os.Readlink(WorkloadModelAliasPath(cacheRoot, "main"))
+	linkTarget, err := os.Readlink(WorkloadNamedModelPath(cacheRoot, "main"))
 	if err != nil {
-		t.Fatalf("Readlink(alias) error = %v", err)
+		t.Fatalf("Readlink(named model) error = %v", err)
 	}
 	if filepath.IsAbs(linkTarget) {
-		t.Fatalf("expected relative alias symlink, got %q", linkTarget)
+		t.Fatalf("expected relative named-model symlink, got %q", linkTarget)
 	}
 }
 
-func TestValidateModelAliasRejectsUnsafeNames(t *testing.T) {
+func TestValidateWorkloadModelNameRejectsUnsafeNames(t *testing.T) {
 	t.Parallel()
 
-	for _, alias := range []string{"", "Main", "main_model", "-main", "main-", strings.Repeat("a", 41)} {
-		if err := ValidateModelAlias(alias); err == nil {
-			t.Fatalf("expected alias %q to be rejected", alias)
+	for _, name := range []string{"", "Main", "main_model", "-main", "main-"} {
+		if err := ValidateWorkloadModelName(name); err == nil {
+			t.Fatalf("expected model name %q to be rejected", name)
 		}
 	}
-	if err := ValidateModelAlias("draft-model2"); err != nil {
-		t.Fatalf("expected valid alias: %v", err)
+	if err := ValidateWorkloadModelName("draft-model2.v1"); err != nil {
+		t.Fatalf("expected valid model name: %v", err)
 	}
 }

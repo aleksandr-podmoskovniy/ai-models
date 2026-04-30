@@ -17,6 +17,8 @@ limitations under the License.
 package modeldelivery
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
@@ -36,6 +38,13 @@ func publishedArtifact() publication.PublishedArtifact {
 		MediaType: "application/vnd.cncf.model.manifest.v1+json",
 		SizeBytes: 42,
 	}
+}
+
+func singleModelBinding() []ModelBinding {
+	return []ModelBinding{{
+		Name:     "qwen3-14b",
+		Artifact: publishedArtifact(),
+	}}
 }
 
 func legacyRuntimeImagePullSecretNameForTest(t *testing.T, ownerUID types.UID) string {
@@ -101,12 +110,6 @@ func podTemplateWithPVCMount(containerName, volumeName, claimName, mountPath str
 	}
 }
 
-func podTemplateWithNodeCacheVolume(containerName string) *corev1.PodTemplateSpec {
-	template := podTemplateWithoutCacheMount(containerName)
-	addNodeCacheVolume(template, DefaultManagedCacheName)
-	return template
-}
-
 func addNodeCacheVolume(template *corev1.PodTemplateSpec, name string) {
 	template.Spec.Volumes = append(template.Spec.Volumes, corev1.Volume{
 		Name: name,
@@ -138,4 +141,21 @@ func envByName(env []corev1.EnvVar, name string) string {
 		}
 	}
 	return ""
+}
+
+func NamedModelPathEnv(name string) string {
+	return namedModelEnv(name, "PATH")
+}
+
+func NamedModelDigestEnv(name string) string {
+	return namedModelEnv(name, "DIGEST")
+}
+
+func NamedModelFamilyEnv(name string) string {
+	return namedModelEnv(name, "FAMILY")
+}
+
+func namedModelEnv(name, suffix string) string {
+	name = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(name), "-", "_"))
+	return fmt.Sprintf("AI_MODELS_MODEL_%s_%s", name, suffix)
 }

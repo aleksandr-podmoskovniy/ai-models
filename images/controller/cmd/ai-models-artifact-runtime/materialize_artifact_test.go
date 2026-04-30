@@ -174,7 +174,7 @@ func TestRunMaterializeArtifactUsesSharedStoreWithoutGlobalSymlinks(t *testing.T
 	t.Setenv("AI_MODELS_MATERIALIZE_ARTIFACT_URI", strings.TrimPrefix(server.URL, "https://")+"/ai-models/catalog/model@sha256:deadbeef")
 	t.Setenv("AI_MODELS_MATERIALIZE_CACHE_ROOT", cacheRoot)
 	t.Setenv("AI_MODELS_MATERIALIZE_SHARED_STORE", "true")
-	t.Setenv("AI_MODELS_MATERIALIZE_MODEL_ALIAS", "main")
+	t.Setenv("AI_MODELS_MATERIALIZE_MODEL_NAME", "main")
 	t.Setenv("AI_MODELS_OCI_USERNAME", "reader")
 	t.Setenv("AI_MODELS_OCI_PASSWORD", "secret")
 	t.Setenv("AI_MODELS_OCI_CA_FILE", caFile)
@@ -186,9 +186,9 @@ func TestRunMaterializeArtifactUsesSharedStoreWithoutGlobalSymlinks(t *testing.T
 	if _, err := os.Stat(filepath.Join(nodecache.SharedArtifactModelPath(cacheRoot, "sha256:deadbeef"), "config.json")); err != nil {
 		t.Fatalf("expected config.json through shared artifact model path: %v", err)
 	}
-	aliasPath := nodecache.WorkloadModelAliasPath(cacheRoot, "main")
-	if _, err := os.Stat(filepath.Join(aliasPath, "config.json")); err != nil {
-		t.Fatalf("expected config.json through alias model path: %v", err)
+	modelPath := nodecache.WorkloadNamedModelPath(cacheRoot, "main")
+	if _, err := os.Stat(filepath.Join(modelPath, "config.json")); err != nil {
+		t.Fatalf("expected config.json through named model path: %v", err)
 	}
 	if _, err := os.Lstat(filepath.Join(cacheRoot, "current")); !os.IsNotExist(err) {
 		t.Fatalf("did not expect current symlink in shared-store mode, stat err=%v", err)

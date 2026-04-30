@@ -55,6 +55,7 @@ func normalizeOptions(options Options) Options {
 	options.Service = modeldelivery.ServiceOptions{
 		Render:                  modeldelivery.NormalizeOptions(options.Service.Render),
 		ManagedCache:            modeldelivery.NormalizeManagedCacheOptions(options.Service.ManagedCache),
+		SharedPVC:               modeldelivery.NormalizeSharedPVCOptions(options.Service.SharedPVC),
 		DeliveryAuthKey:         strings.TrimSpace(options.Service.DeliveryAuthKey),
 		RegistrySourceNamespace: options.Service.RegistrySourceNamespace,
 	}

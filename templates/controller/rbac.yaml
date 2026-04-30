@@ -47,7 +47,7 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["ai.deckhouse.io"]
     resources: ["models", "clustermodels"]
     verbs: ["get", "list", "watch", "update", "patch"]

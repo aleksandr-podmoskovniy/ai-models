@@ -37,8 +37,8 @@ placement, node-cache/SharedDirect, delete/GC и восстановление п
 - metadata/capabilities для chat, embeddings, rerank, STT, TTS, CV,
   multimodal, image/video generation и tool-calling;
 - storage capacity reporting/reservation/admission failure;
-- workload delivery: MaterializeBridge, multi-model annotations и SharedDirect
-  только если node-cache реально включён и готов;
+- workload delivery: multi-model annotations, stable model-name paths and
+  SharedDirect только если node-cache реально включён и готов;
 - controller/DMCR/upload-gateway/source-worker interruption replay;
 - delete/finalizer/cleanup/DMCR GC lifecycle;
 - RBAC deny paths и service-account boundaries;
@@ -109,8 +109,9 @@ placement, node-cache/SharedDirect, delete/GC и восстановление п
 - Storage: metrics/status показывают used/free/limit где limit задан; upload
   reservation не допускает превышение capacity и возвращает понятную ошибку.
 - SharedDirect: если node-cache включён, workload стартует только на ready
-  node-cache nodes и CSI mount получает готовый digest; если не включён, тест
-  явно фиксирует MaterializeBridge-only baseline.
+  node-cache nodes и CSI mount получает готовый digest; если node-cache не
+  включён и SharedPVC ещё не реализован, workload получает понятный blocked
+  state без скрытого materialize/PVC fallback.
 - HA: controlled delete/restart controller, upload-gateway, DMCR pod и active
   source-worker не создаёт ложный terminal failure и не теряет direct-upload
   progress/state.

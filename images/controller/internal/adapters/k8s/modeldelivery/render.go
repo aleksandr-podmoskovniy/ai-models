@@ -30,11 +30,12 @@ type Input struct {
 	Bindings                  []BindingInput
 	LegacyImagePullSecretName string
 	CacheMount                CacheMount
+	SharedPVCClaimName        string
 	TopologyKind              CacheTopologyKind
 }
 
 type BindingInput struct {
-	Alias          string
+	Name           string
 	Artifact       publication.PublishedArtifact
 	ArtifactFamily string
 }
@@ -62,12 +63,18 @@ func Render(input Input, options Options) (Rendered, error) {
 	if strings.TrimSpace(input.Artifact.Digest) == "" {
 		return Rendered{}, errors.New("runtime delivery artifact digest must not be empty")
 	}
-	bindings, aliasContract, err := renderBindings(input)
+	bindings, _, err := renderBindings(input)
 	if err != nil {
 		return Rendered{}, err
 	}
-	if input.TopologyKind != CacheTopologyDirect {
-		return Rendered{}, NewWorkloadContractError("runtime delivery supports only node-cache CSI SharedDirect delivery")
+	switch input.TopologyKind {
+	case CacheTopologyDirect:
+	case CacheTopologySharedPVC:
+		if strings.TrimSpace(input.SharedPVCClaimName) == "" {
+			return Rendered{}, errors.New("runtime delivery SharedPVC claim name must not be empty")
+		}
+	default:
+		return Rendered{}, NewWorkloadContractError("runtime delivery supports only SharedDirect or SharedPVC delivery")
 	}
 	if strings.TrimSpace(input.CacheMount.VolumeName) == "" {
 		return Rendered{}, errors.New("runtime delivery cache volume name must not be empty")
@@ -76,19 +83,7 @@ func Render(input Input, options Options) (Rendered, error) {
 		return Rendered{}, errors.New("runtime delivery cache mount contract is inconsistent")
 	}
 
-	if aliasContract {
-		return renderAliasBindings(input, options, bindings)
-	}
-
-	modelPath := ModelPath(options)
-	return Rendered{
-		RuntimeEnv:                buildRuntimeEnv(input, options, modelPath),
-		LegacyInitContainerName:   options.LegacyInitContainerName,
-		ImagePullSecretNamesPrune: buildImagePullSecretNamesPrune(input.LegacyImagePullSecretName),
-		ModelPath:                 modelPath,
-		ArtifactURI:               strings.TrimSpace(input.Artifact.URI),
-		ArtifactFamily:            strings.TrimSpace(input.ArtifactFamily),
-	}, nil
+	return renderModelBindings(input, options, bindings)
 }
 
 func buildImagePullSecretNamesPrune(secretName string) []string {
@@ -96,15 +91,4 @@ func buildImagePullSecretNamesPrune(secretName string) []string {
 		return nil
 	}
 	return []string{strings.TrimSpace(secretName)}
-}
-
-func buildRuntimeEnv(input Input, options Options, modelPath string) []corev1.EnvVar {
-	env := []corev1.EnvVar{
-		{Name: ModelPathEnv, Value: modelPath},
-		{Name: ModelDigestEnv, Value: strings.TrimSpace(input.Artifact.Digest)},
-	}
-	if family := strings.TrimSpace(input.ArtifactFamily); family != "" {
-		env = append(env, corev1.EnvVar{Name: ModelFamilyEnv, Value: family})
-	}
-	return env
 }

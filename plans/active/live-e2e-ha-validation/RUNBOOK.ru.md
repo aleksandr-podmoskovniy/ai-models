@@ -119,13 +119,14 @@ Workload delivery:
 
 - single-model annotation;
 - `ClusterModel` annotation;
-- multi-model aliases and stable paths;
+- multi-model name lists and stable paths;
 - model switch on existing workload;
 - delete model while workload exists;
-- MaterializeBridge baseline;
+- blocked delivery when neither SharedDirect nor implemented SharedPVC is
+  available;
 - SharedDirect только если node-cache/SDS/local storage preflight полностью
   готов;
-- SharedDirect получает scheduling gate, если сумма `sizeBytes` всех aliases
+- SharedDirect получает scheduling gate, если сумма `sizeBytes` всех моделей
   больше per-node shared cache capacity или size неизвестен.
 
 Manual A30/vLLM SharedDirect drill:
@@ -137,7 +138,7 @@ Manual A30/vLLM SharedDirect drill:
 - target model: `ClusterModel/a30-user-bge-m3`;
 - target image: `rayproject/ray-llm:2.54.0-py311-cu128`;
 - workload manifest должен содержать annotation
-  `ai.deckhouse.io/model-refs: model=ClusterModel/a30-user-bge-m3`, vLLM
+  `ai.deckhouse.io/clustermodel: a30-user-bge-m3`, vLLM
   command/resources/probes and GPU scheduling; node-cache CSI volume должен
   появиться только после mutation;
 - запрещены ручные `materialize-artifact`, PVC `model-cache-pvc`, DMCR Secret

@@ -28,7 +28,6 @@ import (
 )
 
 type ResolvedBinding struct {
-	Alias     string
 	Reference Reference
 	Artifact  publication.PublishedArtifact
 	Family    string
@@ -53,7 +52,6 @@ func (r *baseReconciler) resolveReferences(ctx context.Context, namespace string
 			return resolution, err
 		}
 		bindings = append(bindings, ResolvedBinding{
-			Alias:     ref.Alias,
 			Reference: ref,
 			Artifact:  resolution.Artifact,
 			Family:    resolution.Family,
@@ -88,14 +86,11 @@ func (r *baseReconciler) resolveSingleReference(ctx context.Context, namespace s
 	}
 }
 
-func (r Resolution) modelDeliveryBindings(aliasContract bool) []modeldelivery.ModelBinding {
-	if !aliasContract {
-		return nil
-	}
+func (r Resolution) modelDeliveryBindings() []modeldelivery.ModelBinding {
 	bindings := make([]modeldelivery.ModelBinding, 0, len(r.Bindings))
 	for _, binding := range r.Bindings {
 		bindings = append(bindings, modeldelivery.ModelBinding{
-			Alias:          binding.Alias,
+			Name:           binding.Reference.Name,
 			Artifact:       binding.Artifact,
 			ArtifactFamily: binding.Family,
 		})

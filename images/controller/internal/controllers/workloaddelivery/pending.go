@@ -66,6 +66,11 @@ func (r *baseReconciler) keepManagedDeliveryStopped(
 	if err := deleteLegacyProjectedAccess(ctx, r.client, object); err != nil {
 		return false, err
 	}
+	if r.delivery != nil {
+		if err := r.delivery.DeleteSharedPVCsForOwner(ctx, object); err != nil {
+			return false, err
+		}
+	}
 	runtimeImagePullSecretName, err := resourcenames.RuntimeImagePullSecretName(object.GetUID())
 	if err != nil {
 		return false, err

@@ -38,7 +38,7 @@ const (
 	materializeCacheRootEnv      = "AI_MODELS_MATERIALIZE_CACHE_ROOT"
 	materializeArtifactFamilyEnv = "AI_MODELS_MATERIALIZE_ARTIFACT_FAMILY"
 	materializeSharedStoreEnv    = "AI_MODELS_MATERIALIZE_SHARED_STORE"
-	materializeModelAliasEnv     = "AI_MODELS_MATERIALIZE_MODEL_ALIAS"
+	materializeModelNameEnv      = "AI_MODELS_MATERIALIZE_MODEL_NAME"
 )
 
 func runMaterializeArtifact(args []string) int {
@@ -49,14 +49,14 @@ func runMaterializeArtifact(args []string) int {
 	var destinationDir string
 	var cacheRoot string
 	var artifactFamily string
-	var modelAlias string
+	var modelName string
 
 	flags.StringVar(&artifactURI, "artifact-uri", cmdsupport.EnvOr(materializeArtifactURIEnv, ""), "Immutable published OCI reference.")
 	flags.StringVar(&artifactDigest, "artifact-digest", cmdsupport.EnvOr(materializeArtifactDigestEnv, ""), "Expected immutable digest.")
 	flags.StringVar(&destinationDir, "destination-dir", cmdsupport.EnvOr(materializeDestinationEnv, ""), "Destination directory for local model materialization.")
 	flags.StringVar(&cacheRoot, "cache-root", cmdsupport.EnvOr(materializeCacheRootEnv, ""), "Model cache root with stable current symlink.")
 	flags.StringVar(&artifactFamily, "artifact-family", cmdsupport.EnvOr(materializeArtifactFamilyEnv, ""), "Optional canonical artifact family label.")
-	flags.StringVar(&modelAlias, "model-alias", cmdsupport.EnvOr(materializeModelAliasEnv, ""), "Optional stable workload model alias link.")
+	flags.StringVar(&modelName, "model-name", cmdsupport.EnvOr(materializeModelNameEnv, ""), "Optional stable workload model-name link.")
 
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -86,8 +86,8 @@ func runMaterializeArtifact(args []string) int {
 	if artifactFamily != "" {
 		logger = logger.With(slog.String("artifactFamily", artifactFamily))
 	}
-	if modelAlias != "" {
-		logger = logger.With(slog.String("modelAlias", modelAlias))
+	if modelName != "" {
+		logger = logger.With(slog.String("modelName", modelName))
 	}
 	if cacheCurrent != "" {
 		logger = logger.With(slog.String("cacheRoot", cacheRoot))
@@ -118,17 +118,17 @@ func runMaterializeArtifact(args []string) int {
 		logger.Error("artifact materialization failed", slog.Any("error", err))
 		return cmdsupport.CommandError(commandMaterializeArtifact, err)
 	}
-	if modelAlias != "" {
+	if modelName != "" {
 		if cacheRoot == "" {
-			err := errors.New("model-alias requires cache-root")
+			err := errors.New("model-name requires cache-root")
 			logger.Error("artifact materialization failed", slog.Any("error", err))
 			return cmdsupport.CommandError(commandMaterializeArtifact, err)
 		}
-		aliasTarget := result.ModelPath
+		modelTarget := result.ModelPath
 		if strings.TrimSpace(result.Digest) != "" {
-			aliasTarget = nodecache.SharedArtifactModelPath(cacheRoot, result.Digest)
+			modelTarget = nodecache.SharedArtifactModelPath(cacheRoot, result.Digest)
 		}
-		if err := nodecache.UpdateWorkloadModelAliasLink(cacheRoot, modelAlias, aliasTarget); err != nil {
+		if err := nodecache.UpdateWorkloadNamedModelLink(cacheRoot, modelName, modelTarget); err != nil {
 			logger.Error("artifact materialization failed", slog.Any("error", err))
 			return cmdsupport.CommandError(commandMaterializeArtifact, err)
 		}

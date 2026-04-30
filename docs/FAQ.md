@@ -12,14 +12,6 @@ public module contract is `Model`, `ClusterModel`, `status.artifact`, and
 workload annotations. Exposing DMCR prefixes, TLS, auth, or GC cadence would
 make users depend on implementation details the module must be able to change.
 
-## Why can't users select sourceFetchMode?
-
-Fetch transport is controller/runtime responsibility, not user responsibility.
-The user defines the model source, and the module chooses the safe path:
-streaming, temporary object-source, or upload staging. This keeps the
-configuration smaller and avoids unsupported publication variants for the same
-kind of model.
-
 ## Is sds-node-configurator required?
 
 SDS is not required for `Model` / `ClusterModel` publication. Workload
@@ -27,16 +19,36 @@ delivery through the target SharedDirect CSI contract requires managed node
 cache, so it needs `sds-node-configurator` and `sds-local-volume` or another
 explicitly supported substrate for node-local cache.
 
-## Is mixed mode supported: cache where a local disk exists, PVC elsewhere?
+## Which model delivery modes are supported?
 
-The target model is explicit: node-cache runtime is installed only on nodes
-selected for local cache, while workload placement stays outside ai-models.
-SharedDirect workloads must be scheduled by the workload, ai-inference, or
-another scheduler onto nodes where local cache is ready and the model fits. Do
-not label nodes without suitable local disks as
-`ai.deckhouse.io/model-cache=true`. PVC/materialize fallback in workload
-namespaces is no longer a supported path: if a workload lands on an unprepared
-node, the CSI mount fails or waits with kubelet events.
+The current working mode is `SharedDirect`:
+
+- `nodeCache.enabled=true`;
+- the selected node has local SDS storage;
+- node-cache runtime materializes required digests into node-local cache;
+- the workload receives a read-only CSI mount at
+  `/data/modelcache/models/<model-name>`.
+
+The target universal mode without local disks is `SharedPVC`:
+
+- `nodeCache.enabled=false`;
+- an RWX `StorageClass` is configured, for example CephFS, NFS, or another
+  shared filesystem;
+- the module creates a controller-owned RWX PVC for the concrete
+  workload/service and requested model set;
+- all Pods of that workload read models from one network shared volume.
+
+`SharedPVC` is a separate controller-owned mode with its own ownership/auth/GC
+path, not an automatic download through a Secret in the workload namespace. If
+neither `SharedDirect` nor a safe `SharedPVC` path is ready, the module fails
+closed: the workload receives a clear blocking reason instead of an empty
+directory or hidden namespace-local download.
+
+The current safe SharedPVC foundation already creates the controller-owned RWX
+PVC and keeps the workload behind a scheduling gate until claim/materialization
+readiness. Starting workloads through SharedPVC requires the digest-scoped
+materializer grant path; the shared DMCR read Secret is not copied into the
+workload namespace and will not be used there.
 
 ## sds-node-configurator does not see a disk. What should I check?
 

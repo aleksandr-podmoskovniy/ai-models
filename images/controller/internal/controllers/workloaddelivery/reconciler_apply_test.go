@@ -22,6 +22,7 @@ import (
 
 	modelsv1alpha1 "github.com/deckhouse/ai-models/api/core/v1alpha1"
 	"github.com/deckhouse/ai-models/controller/internal/adapters/k8s/modeldelivery"
+	"github.com/deckhouse/ai-models/controller/internal/nodecache"
 	"github.com/deckhouse/ai-models/controller/internal/support/testkit"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -62,17 +63,14 @@ func TestDeploymentReconcilerAppliesRuntimeDelivery(t *testing.T) {
 	if hasInitContainer(updated.Spec.Template.Spec.InitContainers, modeldelivery.LegacyMaterializerInitContainerName) {
 		t.Fatalf("did not expect init container %q", modeldelivery.LegacyMaterializerInitContainerName)
 	}
-	if !hasRuntimeEnv(updated.Spec.Template.Spec.Containers, modeldelivery.ModelPathEnv) {
-		t.Fatalf("expected runtime env %q", modeldelivery.ModelPathEnv)
+	if hasRuntimeEnv(updated.Spec.Template.Spec.Containers, "AI_MODELS_MODEL_PATH") {
+		t.Fatalf("did not expect legacy runtime env %q", "AI_MODELS_MODEL_PATH")
 	}
-	if got, want := runtimeEnvValue(updated.Spec.Template.Spec.Containers, modeldelivery.ModelPathEnv), modeldelivery.ModelPath(modeldelivery.Options{CacheMountPath: modeldelivery.DefaultCacheMountPath}); got != want {
-		t.Fatalf("runtime model path env = %q, want %q", got, want)
+	if got, want := runtimeEnvValue(updated.Spec.Template.Spec.Containers, modeldelivery.ModelsDirEnv), nodecache.WorkloadModelsDirPath(modeldelivery.DefaultCacheMountPath); got != want {
+		t.Fatalf("runtime models dir env = %q, want %q", got, want)
 	}
-	if !hasRuntimeEnv(updated.Spec.Template.Spec.Containers, modeldelivery.ModelDigestEnv) {
-		t.Fatalf("expected runtime env %q", modeldelivery.ModelDigestEnv)
-	}
-	if !hasRuntimeEnv(updated.Spec.Template.Spec.Containers, modeldelivery.ModelFamilyEnv) {
-		t.Fatalf("expected runtime env %q", modeldelivery.ModelFamilyEnv)
+	if !hasRuntimeEnv(updated.Spec.Template.Spec.Containers, modeldelivery.ModelsEnv) {
+		t.Fatalf("expected runtime env %q", modeldelivery.ModelsEnv)
 	}
 	if modeldelivery.HasSchedulingGate(&updated.Spec.Template) {
 		t.Fatalf("did not expect scheduling gate %q after delivery apply", modeldelivery.SchedulingGateName)
@@ -117,7 +115,8 @@ func TestDeploymentReconcilerInjectsSharedDirectCache(t *testing.T) {
 	if len(updated.Spec.Template.Spec.Containers[0].VolumeMounts) != 1 {
 		t.Fatalf("expected managed local cache mount, got %#v", updated.Spec.Template.Spec.Containers[0].VolumeMounts)
 	}
-	if got, want := updated.Spec.Template.Spec.Containers[0].VolumeMounts[0].Name, modeldelivery.DefaultManagedCacheName; got != want {
+	managedVolumeName := modeldelivery.DefaultManagedCacheName + "-" + model.Name
+	if got, want := updated.Spec.Template.Spec.Containers[0].VolumeMounts[0].Name, managedVolumeName; got != want {
 		t.Fatalf("managed cache volume name = %q, want %q", got, want)
 	}
 	if len(updated.Spec.Template.Spec.NodeSelector) != 0 {
@@ -129,7 +128,7 @@ func TestDeploymentReconcilerInjectsSharedDirectCache(t *testing.T) {
 	var volume corev1.Volume
 	found := false
 	for _, item := range updated.Spec.Template.Spec.Volumes {
-		if item.Name == modeldelivery.DefaultManagedCacheName {
+		if item.Name == managedVolumeName {
 			volume = item
 			found = true
 			break
@@ -168,7 +167,7 @@ func TestDeploymentReconcilerInjectsSharedDirectWithoutDeclaredCSIVolume(t *test
 	if modeldelivery.HasSchedulingGate(&updated.Spec.Template) {
 		t.Fatalf("did not expect scheduling gate for injected managed CSI delivery")
 	}
-	if got := countVolumeByName(updated.Spec.Template.Spec.Volumes, modeldelivery.DefaultManagedCacheName); got != 1 {
+	if got := countVolumeByName(updated.Spec.Template.Spec.Volumes, modeldelivery.DefaultManagedCacheName+"-"+model.Name); got != 1 {
 		t.Fatalf("expected injected managed CSI volume, got %d", got)
 	}
 }

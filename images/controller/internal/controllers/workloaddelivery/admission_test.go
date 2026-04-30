@@ -135,7 +135,7 @@ func TestAdmissionHandlerRejectsAmbiguousReference(t *testing.T) {
 	t.Parallel()
 
 	deployment := admissionDeployment("gemma")
-	deployment.Annotations[ClusterModelAnnotation] = "cluster-gemma"
+	deployment.Annotations[ClusterModelAnnotation] = "gemma"
 
 	handler := newAdmissionHandler(testkit.NewScheme(t, appsv1.AddToScheme))
 	response := handler.Handle(t.Context(), admissionRequest(

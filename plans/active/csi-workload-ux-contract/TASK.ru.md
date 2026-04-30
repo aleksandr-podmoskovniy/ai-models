@@ -1,58 +1,78 @@
-# CSI workload UX contract
+# CSI workload UX and SharedPVC delivery contract
 
 ## Задача
 
-Пересмотреть и реализовать целевой UX доставки моделей в workload через
-node-cache CSI: пользователь должен объявлять модель, а не вручную собирать
-внутренние `volumeAttributes`, registry URI, digest и runtime wiring.
+Упростить user-facing delivery contract для моделей в workload и выровнять
+runtime delivery modes:
 
-Решение должно оставаться generic: `ai-models` не должен знать KubeRay,
-RayService, Stronghold или другие third-party CRD как отдельные сущности.
+- `nodeCache.enabled=true` -> только `SharedDirect` через ai-models CSI поверх
+  managed SDS local node-cache;
+- `nodeCache.enabled=false` -> целевой `SharedPVC` через RWX StorageClass;
+- если ни один режим недоступен -> `Disabled/Blocked` с понятной condition,
+  без hidden fallback;
+- убрать legacy reference/rename annotation из code, templates, docs и tests.
+
+Пользователь объявляет только имена моделей:
+
+```yaml
+metadata:
+  annotations:
+    ai.deckhouse.io/clustermodel: qwen3-14b,bge-m3
+```
+
+Модели всегда доступны по стабильному пути:
+
+```text
+/data/modelcache/models/<model-name>
+```
 
 ## Scope
 
-- Сравнить текущий контракт с паттернами Deckhouse, virtualization,
-  Stronghold/Vault и CSI-подходом Kubernetes.
-- Сформулировать один простой user-facing contract для supported workload
-  templates без public CSI attributes escape hatch.
-- Реализовать generic mutation path для поддерживаемых PodTemplate workloads.
-- Сохранить controller-owned stamping внутренних CSI атрибутов.
-- Обновить tests/docs/e2e runbook под новый контракт.
+- Перевести parser annotations на comma-separated списки в
+  `ai.deckhouse.io/model` и `ai.deckhouse.io/clustermodel`.
+- Удалить legacy reference/rename UX из code/docs/tests.
+- Сохранить controller-owned CSI stamping для `SharedDirect`.
+- Зафиксировать целевой `SharedPVC` contract: controller-owned RWX PVC в
+  namespace workload'а per owner/model-set, no RWO delivery, no workload
+  namespace registry credentials.
+- Обновить пользовательские docs так, чтобы они описывали конечную реализацию,
+  а не историю разработки.
 
 ## Non-goals
 
-- Не возвращать Ray/KubeRay-specific reconciliation.
-- Не добавлять PVC/materialize fallback.
-- Не добавлять namespace Secret fallback для runtime auth.
+- Не возвращать materialize/PVC fallback через namespace Secret.
+- Не добавлять RWO как user-facing delivery mode.
+- Не делать быстрый небезопасный SharedPVC через копирование DMCR read secret в
+  workload namespace.
+- Не добавлять Ray/KubeRay-specific branches.
 - Не проектировать полный ai-inference scheduler в этом slice.
-- Не менять node-cache CSI protocol сверх needed workload UX contract.
 
 ## Acceptance criteria
 
-- Для поддерживаемого workload достаточно аннотации
-  `ai.deckhouse.io/model` / `ai.deckhouse.io/clustermodel` /
-  `ai.deckhouse.io/model-refs`; controller сам добавляет CSI volume, mounts,
-  env и internal volume attributes.
-- Пользователь не обязан и не должен задавать CSI volume, artifact URI/digest
-  или registry credentials.
-- Для third-party controllers нет package-local special cases: они должны
-  отдавать PodTemplate через supported Kubernetes workload path либо ждать
-  отдельного доверенного delivery ticket/API.
-- Controller не выставляет node labels/selectors/affinity за пользователя.
-- При отсутствии node-cache/local storage нет silent fallback; failure виден
-  как понятный condition/event.
-- Tests покрывают single-model, multi-model, existing CSI volume, wrong volume
-  source, no nodeSelector injection and cleanup.
+- `ai.deckhouse.io/model` принимает `name-a,name-b` и создаёт пути
+  `/data/modelcache/models/name-a`, `/data/modelcache/models/name-b`.
+- `ai.deckhouse.io/clustermodel` работает аналогично.
+- Одновременное использование `model` и `clustermodel` допустимо, если имена не
+  конфликтуют по target path; конфликт fail-closed.
+- legacy reference/rename annotation не участвует в webhook, parser или tests.
+- В single-model и multi-model случаях нет `/data/modelcache/model` как
+  special-case path.
+- `SharedDirect` остаётся единственным реализованным runtime path при
+  `nodeCache.enabled=true`.
+- `SharedPVC` имеет явный public admin knob `sharedPVC.storageClassName`,
+  controller-owned RWX PVC foundation и fail-closed gate до digest-scoped
+  materializer readiness; запрещён unsafe shortcut через общие registry secrets
+  в workload namespace.
+- Docs/FAQ/Examples/User guide не содержат вопросов и объяснений, завязанных на
+  ход разработки вместо конечного UX.
 
 ## Validation
 
-- `cd images/controller && go test ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery ./cmd/ai-models-controller`
-- `python3 -m unittest tools/helm-tests/validate_renders_test.py`
+- `cd images/controller && go test ./internal/nodecache ./internal/adapters/k8s/modeldelivery ./internal/controllers/workloaddelivery ./internal/workloaddelivery`
 - `git diff --check`
-- `make verify`
+- `make verify` если focused checks зелёные и окружение позволяет.
 
 ## Rollback point
 
-Вернуть предыдущий explicit-volume contract: пользователь сам объявляет
-inline CSI volume, а controller только stamps internal attributes. Rollback не
-должен возвращать Ray/KubeRay-specific code и PVC fallback.
+Вернуть предыдущий rename parser и `/data/modelcache/model` primary path без
+возврата PVC/materialize fallback и без Ray-specific reconciliation.
