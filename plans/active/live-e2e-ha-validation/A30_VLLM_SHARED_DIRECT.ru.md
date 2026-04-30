@@ -99,6 +99,14 @@ Pass:
 - runtime Pod для `k8s-w3-gpu.apiac.ru` `Running`;
 - node label `ai.deckhouse.io/node-cache-runtime-ready=true`.
 
+Stop/fix:
+
+- если controller падает с `runtime delivery auth key must not be empty when
+  managed node-cache delivery is enabled`, откатить `nodeCache.enabled=false`
+  и выкатывать фикс, где `workloaddelivery.normalizeOptions` сохраняет
+  `DeliveryAuthKey`;
+- не переходить к workload manifests, пока controller rollout нестабилен.
+
 ## 3. Проверка published ClusterModel
 
 ```bash
@@ -118,7 +126,14 @@ kubectl --context "$CTX" get clustermodel a30-user-bge-m3 -o yaml
 
 ## 4. Apply ручного vLLM Deployment
 
-В этом манифесте ai-models-specific часть — только annotation
+Канонический manifest для текущего run лежит рядом с runbook:
+
+```bash
+kubectl --context "$CTX" apply -f \
+  plans/active/live-e2e-ha-validation/a30-shared-direct-workloads.yaml
+```
+
+В этих манифестах ai-models-specific часть — только annotation
 `ai.deckhouse.io/model-refs` на metadata Deployment. Artifact URI/digest, CSI
 volume, mounts и env руками не задаются: их заполнит controller.
 

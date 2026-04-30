@@ -35,3 +35,21 @@ func TestOptionsValidateAppliesModelDeliveryDefaults(t *testing.T) {
 		t.Fatalf("Validate() error = %v", err)
 	}
 }
+
+func TestNormalizeOptionsPreservesDeliveryAuthKey(t *testing.T) {
+	t.Parallel()
+
+	options := normalizeOptions(Options{
+		Service: modeldelivery.ServiceOptions{
+			ManagedCache: modeldelivery.ManagedCacheOptions{
+				Enabled: true,
+			},
+			DeliveryAuthKey:         "  test-delivery-auth-key  ",
+			RegistrySourceNamespace: "d8-ai-models",
+		},
+	})
+
+	if got, want := options.Service.DeliveryAuthKey, "test-delivery-auth-key"; got != want {
+		t.Fatalf("DeliveryAuthKey = %q, want %q", got, want)
+	}
+}

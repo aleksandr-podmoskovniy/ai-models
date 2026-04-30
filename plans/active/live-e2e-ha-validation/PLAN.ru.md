@@ -48,7 +48,11 @@ Archived:
 
 ## 4. Start gate
 
-Начинать live run только после явной команды пользователя.
+Live run started after explicit user command on 2026-04-30. Scope for this run:
+`k8s.apiac.ru`, managed node-cache enablement first, then plain
+Deployment-based A30 validation for embedder, reranker and Whisper STT. KubeRay
+resources are not used in this run: they are an integration target, not the
+model-delivery contract.
 
 Перед стартом зафиксировать:
 
@@ -60,9 +64,15 @@ Archived:
 - текущие usage/capacity metrics, если доступны;
 - текущие active `Model`/`ClusterModel` во всех namespaces.
 
-Live mutation/config changes are not allowed until the user confirms that the
-new module version has been rolled out. In particular, do not enable
-`nodeCache` or apply manual vLLM workloads before that confirmation.
+Live mutation/config changes are allowed only inside this runbook scope:
+
+- `ModuleConfig ai-models.spec.settings.nodeCache` may be enabled after SDS,
+  `BlockDevice`, `LocalStorageClass` and target node checks;
+- test namespace/resources must be labelled
+  `ai.deckhouse.io/live-e2e=ha-validation`;
+- workload manifests must be annotation-only from the ai-models contract point
+  of view: no hand-written registry credentials, materialize init containers or
+  internal artifact URIs.
 
 ## 5. Execution slices
 
@@ -89,6 +99,38 @@ Pass:
 - controller/upload-gateway rendered/live placement does not target or tolerate
   master/control-plane;
 - no stale e2e resources from previous runs.
+
+### Slice 1A. A30 node-cache enablement
+
+Цель:
+
+- включить managed node-cache только на A30 ноде с локальными дисками;
+- доказать, что SDS/local-volume substrate создан и node-cache runtime готов;
+- не затрагивать другие GPU/worker nodes.
+
+Проверки:
+
+- найти target node по фактическим GPU/SDS labels and allocatable resources;
+- проверить `BlockDevice` на target node и label
+  `ai.deckhouse.io/model-cache=true`;
+- включить `nodeCache.enabled=true` с selector на target node;
+- дождаться `LocalStorageClass`, `LVMVolumeGroupSet`, `LVMVolumeGroup`,
+  runtime `PVC` and node-cache runtime Pod;
+- проверить label `ai.deckhouse.io/node-cache-runtime-ready=true` на target
+  node.
+
+Pass:
+
+- на target node есть ready node-cache runtime and bound PVC;
+- на остальных nodes node-cache runtime не создан;
+- controller logs не содержат cluster-scope Secret informer/RBAC errors.
+
+Rollback:
+
+- удалить test workloads;
+- вернуть `nodeCache.enabled=false` in `ModuleConfig ai-models`;
+- удалить только module-owned node-cache resources, если они остались
+  orphaned and имеют labels/owner identity ai-models.
 
 ### Slice 2. Observability and log capture preflight
 
@@ -278,9 +320,18 @@ Pass:
   `a30-whisper-medium`;
 - current `ModuleConfig ai-models` has `nodeCache` disabled, so SharedDirect
   cannot be tested until node-cache is enabled after rollout.
+- 2026-04-30 live attempt with controller image
+  `sha256:2182b460a7e5691f6ebb69080ac4056e3f3933ffc85b67095ae1375430454494`
+  failed closed before substrate creation: `workloaddelivery.normalizeOptions`
+  dropped `DeliveryAuthKey`, so controller crashed with
+  `runtime delivery auth key must not be empty when managed node-cache delivery
+  is enabled`. `nodeCache` was rolled back to `enabled=false`; repeat this
+  slice only after the fixed image is rolled out.
 
 Detailed commands and manifests live in
 `plans/active/live-e2e-ha-validation/A30_VLLM_SHARED_DIRECT.ru.md`.
+Plain Deployment manifests for embedder/reranker/Whisper live in
+`plans/active/live-e2e-ha-validation/a30-shared-direct-workloads.yaml`.
 
 Pass:
 
